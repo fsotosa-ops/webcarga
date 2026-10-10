@@ -428,7 +428,11 @@ export type Trip = {
   /** Anulación con motivo (spec 2026-10-10): null si el viaje está vigente. */
   voided_at?:           string | null
   voided_by_name?:      string | null
-  void_reason?:         string | null
+  void_reason_id?:      string | null
+  /** Etiqueta del motivo del catálogo TRIP_VOID_REASON (aunque después se desactive). */
+  void_reason_label?:   string | null
+  /** Comentario de la anulación; obligatorio con «Otro». */
+  void_note?:           string | null
   /** Solo viajes manuales: TMS de origen declarado al registrarlo (null si no aplica) */
   origin_tms?:            string | null
   client_name:            string | null

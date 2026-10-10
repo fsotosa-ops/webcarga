@@ -30,6 +30,7 @@ import { usePinnedAlertSignals } from '@/hooks/usePinnedAlertSignals'
 import { AlertsPopover } from '@/components/dashboard/AlertsPopover'
 import { AsignarConductorPopover } from '@/components/dashboard/AsignarConductorPopover'
 import { useAnularViajes } from '@/hooks/useAnularViajes'
+import { useMotivosDeAnulacion } from '@/hooks/useMotivosDeAnulacion'
 import { BarraDeSeleccion } from '@/components/ui/BarraDeSeleccion'
 import { cuantos } from '@/lib/utils/cuantos'
 import { driversApi } from '@/lib/api/drivers'
@@ -243,6 +244,7 @@ export default function DiarioPage() {
   // Anular viajes manuales con motivo, uno o varios (spec 2026-10-10). La
   // selección vive sobre lo que se ve: un viaje que sale de la vista se desmarca solo.
   const anulacion = useAnularViajes(visibleTrips)
+  const { motivos: motivosDeAnulacion } = useMotivosDeAnulacion()
 
   // PERSONAS, no viajes. 27 personas explican 208 viajes: contar viajes
   // exagera el trabajo por 7,7 y hace que la tarea parezca infinita.
@@ -625,11 +627,11 @@ export default function DiarioPage() {
                       onLimpiar={anulacion.limpiar}
                       destructiva={{
                         etiqueta:     `Anular ${cuantos(anulacion.seleccion.ids.size, 'viaje')}`,
-                        advertencia:  'Quedan anulados, con el motivo; no se borran',
-                        pideMotivo:   'Motivo',
+                        advertencia:  'Quedan anulados con su motivo; no se borran',
+                        motivos:      { etiqueta: 'Motivo', opciones: motivosDeAnulacion },
                         icono:        Ban,
                         confirmacion: `Sí, anular ${anulacion.seleccion.ids.size}`,
-                        onConfirmar:  motivo => { void anulacion.anularSeleccion(motivo) },
+                        onConfirmar:  eleccion => anulacion.anularSeleccion(eleccion!),
                         ocupado:      anulacion.ocupado,
                       }}
                     />

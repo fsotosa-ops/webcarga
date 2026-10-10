@@ -6,6 +6,7 @@ import { Ban, Loader2, Undo2 } from 'lucide-react'
 import { tripsApi } from '@/lib/api/trips'
 import type { Trip } from '@/lib/types'
 import { CLAVES_AFECTADAS, mensajeDeRechazo } from '@/hooks/useAnularViajes'
+import { eleccionCompleta, useMotivosDeAnulacion, type EleccionDeMotivo } from '@/hooks/useMotivosDeAnulacion'
 
 interface Props {
   trip:     Trip
@@ -14,7 +15,8 @@ interface Props {
   onCambio?: () => void
 }
 
-/** Anular un viaje manual con motivo, o deshacer la anulación, desde su detalle.
+/** Anular un viaje manual con un motivo del catálogo (Configuración › Motivos de
+ *  anulación), o deshacer la anulación, desde su detalle.
  *
  *  Confirma en el mismo lugar, como la barra de selección del Monitor. El viaje no
  *  se borra: queda con quién, cuándo y por qué. Sólo aparece si el backend dice que
@@ -22,7 +24,8 @@ interface Props {
 export function AnularViaje({ trip, onCambio }: Props) {
   const queryClient = useQueryClient()
   const [confirmando, setConfirmando] = useState(false)
-  const [motivo, setMotivo] = useState('')
+  const { motivos } = useMotivosDeAnulacion()
+  const [eleccion, setEleccion] = useState<EleccionDeMotivo>({ motivoId: '', nota: '' })
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -34,7 +37,7 @@ export function AnularViaje({ trip, onCambio }: Props) {
     try {
       await accion()
       setConfirmando(false)
-      setMotivo('')
+      setEleccion({ motivoId: '', nota: '' })
       await Promise.all(CLAVES_AFECTADAS.map(queryKey => queryClient.invalidateQueries({ queryKey })))
       onCambio?.()
     } catch (e) {
@@ -57,23 +60,34 @@ export function AnularViaje({ trip, onCambio }: Props) {
         <>
           <label className="flex items-center gap-1.5 text-etiqueta text-white/70">
             Motivo
-            <input
-              value={motivo}
-              onChange={e => setMotivo(e.target.value)}
+            <select
+              value={eleccion.motivoId}
+              onChange={e => setEleccion(prev => ({ ...prev, motivoId: e.target.value }))}
               autoFocus
+              className="rounded bg-white/10 px-2 py-1 text-etiqueta text-white focus:outline-none focus:ring-2 focus:ring-white/40"
+            >
+              <option value="" className="text-text-primary">Elige…</option>
+              {motivos.map(m => <option key={m.id} value={m.id} className="text-text-primary">{m.label}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5 text-etiqueta text-white/70">
+            Comentario
+            <input
+              value={eleccion.nota}
+              onChange={e => setEleccion(prev => ({ ...prev, nota: e.target.value }))}
               className="rounded bg-white/10 px-2 py-1 text-etiqueta text-white focus:outline-none focus:ring-2 focus:ring-white/40"
             />
           </label>
           <button
             type="button"
-            disabled={ocupado || !motivo.trim()}
-            onClick={() => correr(() => tripsApi.voidTrips([trip.id], motivo.trim()))}
+            disabled={ocupado || !eleccionCompleta(motivos, eleccion)}
+            onClick={() => correr(() => tripsApi.voidTrips([trip.id], eleccion.motivoId, eleccion.nota.trim() || undefined))}
             className="flex items-center gap-1 text-etiqueta font-bold bg-status-incidente hover:bg-status-incidente/90 disabled:opacity-60 text-white rounded px-2 py-1 transition-colors focus:outline-none focus:ring-2 focus:ring-white/40"
           >
             {ocupado && <Loader2 size={11} className="animate-spin" />}
             Sí, anular
           </button>
-          <button type="button" disabled={ocupado} onClick={() => setConfirmando(false)} className="text-etiqueta font-semibold text-white/60 hover:text-white transition-colors">
+          <button type="button" disabled={ocupado} onClick={() => { setConfirmando(false); setEleccion({ motivoId: '', nota: '' }) }} className="text-etiqueta font-semibold text-white/60 hover:text-white transition-colors">
             Cancelar
           </button>
         </>

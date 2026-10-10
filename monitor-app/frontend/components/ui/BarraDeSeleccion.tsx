@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from 'react'
 import { Trash2, X, type LucideIcon } from 'lucide-react'
+import { eleccionCompleta, type EleccionDeMotivo, type MotivoDeAnulacion } from '@/hooks/useMotivosDeAnulacion'
 
 interface AccionDestructiva {
   /** Texto del botón en reposo: "Descartar los 3", "Eliminar 1 viaje". */
@@ -10,10 +11,12 @@ interface AccionDestructiva {
   advertencia:  string
   /** Texto del botón que confirma: "Sí, descartar 3". */
   confirmacion: string
-  /** Si la acción exige un motivo: la etiqueta del campo. El botón de confirmar
-   *  queda deshabilitado mientras esté vacío, y `onConfirmar` recibe el texto. */
-  pideMotivo?:  string
-  onConfirmar:  (motivo: string) => void
+  /** Si la acción exige un motivo de catálogo: la etiqueta y las opciones. El
+   *  comentario aparece al lado y es obligatorio si la opción lo pide. */
+  motivos?:     { etiqueta: string; opciones: MotivoDeAnulacion[] }
+  /** Devuelve `false` si el backend rechazó: la barra conserva lo elegido para
+   *  reintentar. Sin motivo, se llama sin argumentos. */
+  onConfirmar:  (eleccion?: EleccionDeMotivo) => void | boolean | Promise<boolean | void>
   /** Ícono del botón en reposo. Por defecto, la papelera (descartar, borrar);
    *  anular no borra, y por eso pasa otro. */
   icono?:       LucideIcon
@@ -45,7 +48,9 @@ interface Props {
  *  prop, no un componente hermano. */
 export function BarraDeSeleccion({ seleccionados, ayuda, onLimpiar, destructiva, children }: Props) {
   const [confirmando, setConfirmando] = useState(false)
-  const [motivo, setMotivo] = useState('')
+  const [eleccion, setEleccion] = useState<EleccionDeMotivo>({ motivoId: '', nota: '' })
+  const listo = !destructiva?.motivos || eleccionCompleta(destructiva.motivos.opciones, eleccion)
+  const reiniciar = () => { setConfirmando(false); setEleccion({ motivoId: '', nota: '' }) }
   const IconoDestructiva = destructiva?.icono ?? Trash2
 
   if (!seleccionados) {
@@ -70,28 +75,47 @@ export function BarraDeSeleccion({ seleccionados, ayuda, onLimpiar, destructiva,
       {destructiva && (confirmando ? (
         <>
           <span className="text-[11px] text-amber-200">{destructiva.advertencia}</span>
-          {destructiva.pideMotivo && (
-            <label className="flex items-center gap-1.5 text-[11px] text-white/80">
-              {destructiva.pideMotivo}
-              <input
-                value={motivo}
-                onChange={e => setMotivo(e.target.value)}
-                className="rounded bg-white/10 px-2 py-1 text-[11px] text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/40"
-                autoFocus
-              />
-            </label>
+          {destructiva.motivos && (
+            <>
+              <label className="flex items-center gap-1.5 text-[11px] text-white/80">
+                {destructiva.motivos.etiqueta}
+                <select
+                  value={eleccion.motivoId}
+                  onChange={e => setEleccion(prev => ({ ...prev, motivoId: e.target.value }))}
+                  className="rounded bg-white/10 px-2 py-1 text-[11px] text-white focus:outline-none focus:ring-2 focus:ring-white/40"
+                  autoFocus
+                >
+                  <option value="" className="text-text-primary">Elige…</option>
+                  {destructiva.motivos.opciones.map(o => (
+                    <option key={o.id} value={o.id} className="text-text-primary">{o.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-1.5 text-[11px] text-white/80">
+                Comentario
+                <input
+                  value={eleccion.nota}
+                  onChange={e => setEleccion(prev => ({ ...prev, nota: e.target.value }))}
+                  className="rounded bg-white/10 px-2 py-1 text-[11px] text-white focus:outline-none focus:ring-2 focus:ring-white/40"
+                />
+              </label>
+            </>
           )}
           <button
             type="button"
-            disabled={destructiva.ocupado || (!!destructiva.pideMotivo && !motivo.trim())}
-            onClick={() => { setConfirmando(false); destructiva.onConfirmar(motivo.trim()); setMotivo('') }}
-            className="text-[11px] font-bold bg-red-500 hover:bg-red-400 text-white rounded px-2 py-1 transition-colors focus:outline-none focus:ring-2 focus:ring-red-300"
+            disabled={destructiva.ocupado || !listo}
+            onClick={async () => {
+              // Si el backend rechaza, se conserva lo elegido para reintentar.
+              const ok = await destructiva.onConfirmar(destructiva.motivos ? eleccion : undefined)
+              if (ok !== false) reiniciar()
+            }}
+            className="text-[11px] font-bold bg-red-500 hover:bg-red-400 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded px-2 py-1 transition-colors focus:outline-none focus:ring-2 focus:ring-red-300"
           >
             {destructiva.confirmacion}
           </button>
           <button
             type="button"
-            onClick={() => setConfirmando(false)}
+            onClick={reiniciar}
             className="text-[11px] font-semibold text-white/60 hover:text-white transition-colors"
           >
             Cancelar

@@ -28,6 +28,7 @@ vi.mock('../flota-tabs', () => ({
   TiposOperacionTab: () => <div>panel tipos de operacion</div>,
   MotivosConductorTab: () => <div>panel motivos</div>,
   MotivosNoAsignacionTab: () => <div>panel motivos no asignacion</div>,
+  MotivosAnulacionTab: () => <div>panel motivos de anulacion</div>,
 }))
 vi.mock('../usuarios-tab', () => ({ UsuariosTab: () => <div>panel usuarios</div> }))
 vi.mock('../roles-tab', () => ({ RolesTab: () => <div>panel roles</div> }))

@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { tripsApi } from '@/lib/api/trips'
 import { ApiError } from '@/lib/api/client'
 import type { Trip } from '@/lib/types'
+import type { EleccionDeMotivo } from '@/hooks/useMotivosDeAnulacion'
 
 /** Tras anular o revertir, lo que puede haber cambiado: el listado, el detalle
  *  (la insignia "Anulado") y el cierre del día (un viaje menos cuenta distinto, y
@@ -55,11 +56,11 @@ export function useAnularViajes(visibles: Trip[]) {
     setIds(prev => (anulables.every(id => prev.has(id)) ? new Set() : new Set(anulables)))
   }
 
-  async function anular(tripIds: string[], motivo: string): Promise<boolean> {
+  async function anular(tripIds: string[], eleccion: EleccionDeMotivo): Promise<boolean> {
     setOcupado(true)
     setError(null)
     try {
-      await tripsApi.voidTrips(tripIds, motivo)
+      await tripsApi.voidTrips(tripIds, eleccion.motivoId, eleccion.nota.trim() || undefined)
       setIds(prev => new Set([...prev].filter(id => !tripIds.includes(id))))
       await Promise.all(CLAVES_AFECTADAS.map(queryKey => queryClient.invalidateQueries({ queryKey })))
       return true
@@ -75,7 +76,7 @@ export function useAnularViajes(visibles: Trip[]) {
     seleccion: { ids, onToggle, onToggleAll },
     hayAnulables: anulables.length > 0,
     limpiar: () => setIds(new Set()),
-    anularSeleccion: (motivo: string) => anular([...ids], motivo),
+    anularSeleccion: (eleccion: EleccionDeMotivo) => anular([...ids], eleccion),
     anular,
     ocupado,
     error,

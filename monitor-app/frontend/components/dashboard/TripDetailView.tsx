@@ -176,7 +176,8 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
             <strong>Anulado</strong>
             {trip.voided_by_name && <> por {trip.voided_by_name}</>}
             {' · '}{fmtDT(trip.voided_at)}
-            {trip.void_reason && <> · Motivo: {trip.void_reason}</>}
+            {trip.void_reason_label && <> · Motivo: {trip.void_reason_label}</>}
+            {trip.void_note && <> · {trip.void_note}</>}
           </span>
         </div>
       )}

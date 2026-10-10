@@ -143,10 +143,10 @@ export const tripsApi = {
     ),
 
   /** Sólo viajes manuales; todo o nada. Ver services/anular_viajes.py. */
-  voidTrips: (tripIds: string[], reason: string) =>
+  voidTrips: (tripIds: string[], reasonId: string, note?: string) =>
     apiFetch<{ ok: boolean; voided: number }>(`/api/v1/trips/void`, {
       method: 'POST',
-      body: JSON.stringify({ trip_ids: tripIds, reason }),
+      body: JSON.stringify({ trip_ids: tripIds, reason_id: reasonId, note: note || undefined }),
     }),
 
   revertVoid: (tripIds: string[]) =>

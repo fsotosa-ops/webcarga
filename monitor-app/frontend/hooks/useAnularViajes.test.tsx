@@ -50,7 +50,7 @@ describe('useAnularViajes', () => {
     const { result } = montar([viaje('a', true)])
     act(() => result.current.seleccion.onToggle('a'))
 
-    await act(async () => { await result.current.anularSeleccion('Duplicado') })
+    await act(async () => { await result.current.anularSeleccion({ motivoId: 'dup', nota: '' }) })
 
     expect(result.current.error).toMatch(/cierre del 22\/09 está firmado/)
     expect(result.current.seleccion.ids.has('a')).toBe(true)
@@ -61,9 +61,9 @@ describe('useAnularViajes', () => {
     const { result } = montar([viaje('a', true), viaje('c', true)])
     act(() => result.current.seleccion.onToggleAll())
 
-    await act(async () => { await result.current.anularSeleccion('Duplicado') })
+    await act(async () => { await result.current.anularSeleccion({ motivoId: 'dup', nota: '' }) })
 
-    expect(voidTrips).toHaveBeenCalledWith(['a', 'c'], 'Duplicado')
+    expect(voidTrips).toHaveBeenCalledWith(['a', 'c'], 'dup', undefined)
     expect(result.current.seleccion.ids.size).toBe(0)
     expect(result.current.error).toBeNull()
   })

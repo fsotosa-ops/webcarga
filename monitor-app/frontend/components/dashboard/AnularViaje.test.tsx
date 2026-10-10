@@ -5,6 +5,14 @@ import type { Trip } from '@/lib/types'
 
 vi.mock('@/lib/api/trips', () => ({ tripsApi: { voidTrips: vi.fn(), revertVoid: vi.fn() } }))
 
+vi.mock('@/hooks/useMotivosDeAnulacion', async importOriginal => ({
+  ...(await importOriginal<typeof import('@/hooks/useMotivosDeAnulacion')>()),
+  useMotivosDeAnulacion: () => ({ cargando: false, motivos: [
+    { id: 'dup', label: 'Duplicado', pideNota: false },
+    { id: 'otro', label: 'Otro', pideNota: true },
+  ] }),
+}))
+
 import { AnularViaje } from './AnularViaje'
 import { tripsApi } from '@/lib/api/trips'
 
@@ -34,18 +42,25 @@ describe('AnularViaje', () => {
     expect(screen.getByRole('button', { name: /sí, anular/i })).toBeDisabled()
   })
 
-  it('anula con el motivo escrito', async () => {
+  it('anula con el motivo elegido', async () => {
     voidTrips.mockResolvedValue({ ok: true, voided: 1 })
     montar({ can_void: true })
     fireEvent.click(screen.getByRole('button', { name: /anular viaje/i }))
-    fireEvent.change(screen.getByLabelText(/motivo/i), { target: { value: 'Duplicado' } })
+    fireEvent.change(screen.getByLabelText(/motivo/i), { target: { value: 'dup' } })
     fireEvent.click(screen.getByRole('button', { name: /sí, anular/i }))
-    await waitFor(() => expect(voidTrips).toHaveBeenCalledWith(['t1'], 'Duplicado'))
+    await waitFor(() => expect(voidTrips).toHaveBeenCalledWith(['t1'], 'dup', undefined))
+  })
+
+  it('con «Otro» exige comentario', () => {
+    montar({ can_void: true })
+    fireEvent.click(screen.getByRole('button', { name: /anular viaje/i }))
+    fireEvent.change(screen.getByLabelText(/motivo/i), { target: { value: 'otro' } })
+    expect(screen.getByRole('button', { name: /sí, anular/i })).toBeDisabled()
   })
 
   it('un viaje anulado ofrece deshacer la anulación', async () => {
     revertVoid.mockResolvedValue({ ok: true, reverted: 1 })
-    montar({ can_revert_void: true, voided_at: '2026-10-10T20:00:00Z', void_reason: 'Duplicado' })
+    montar({ can_revert_void: true, voided_at: '2026-10-10T20:00:00Z', void_reason_label: 'Duplicado' })
     fireEvent.click(screen.getByRole('button', { name: /deshacer anulación/i }))
     await waitFor(() => expect(revertVoid).toHaveBeenCalledWith(['t1']))
   })
