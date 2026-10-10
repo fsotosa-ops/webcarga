@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 MODELO = Path(__file__).resolve().parents[4] / ".mage-agent/local_sync/dbt/tms/models/app/trips.sql"
-COLUMNAS = ("voided_at", "voided_by", "void_reason")
+COLUMNAS = ("voided_at", "voided_by", "void_reason_id", "void_note")
 
 
 def _texto() -> str:
