@@ -20,16 +20,14 @@ def servicio_de_cierre(monkeypatch):
     solo la forma de la respuesta del router: el servicio queda como stub, y un
     test puede darle a `periodo` un dia cerrado."""
     import app.routers.equipment_closures as modulo
-    stubs = {"recalcular": AsyncMock(return_value={}), "periodo": AsyncMock(return_value=None)}
+    stubs = {"periodo": AsyncMock(return_value=None), "frescura_del_dia": AsyncMock(return_value={"calculado_a": None, "pendiente_desde": None})}
     for nombre, stub in stubs.items():
         monkeypatch.setattr(modulo, nombre, stub)
     return stubs
 
 
 def make_client(pool, user=None):
-    """run_pre_cierre corre antes de cada recompute (mismo criterio que
-    daily_closures.py) — stub vacío por defecto salvo que el test ya wiree
-    pool.acquire a mano."""
+    """Stub vacío de pool.acquire por defecto salvo que el test ya lo wiree a mano."""
     if isinstance(pool.acquire, AsyncMock):
         conn = AsyncMock()
         conn.fetch.return_value = []
@@ -202,3 +200,10 @@ def test_el_detalle_trae_el_generador_de_carga():
     assert "COALESCE(sh.name, t.client_name) AS client_name" in _DETAIL_SQL
     assert "LEFT JOIN public.shippers sh" in _DETAIL_SQL
 
+
+def test_el_router_no_recalcula_al_leer():
+    """Spec 2026-10-10: las líneas las calcula el ejecutor de la cola; este
+    router solo lee. La prueba de conducta (0 filas escritas) está en
+    test_get_del_cierre_no_escribe_integracion.py."""
+    import app.routers.equipment_closures as modulo
+    assert not hasattr(modulo, "recalcular") and not hasattr(modulo, "_recompute")

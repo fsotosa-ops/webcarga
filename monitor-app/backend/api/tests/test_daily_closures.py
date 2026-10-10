@@ -15,23 +15,23 @@ ADMIN_USER = usuario("admin", "operations_supervisor", "certification_supervisor
 
 @pytest.fixture(autouse=True)
 def servicio_de_cierre(monkeypatch):
-    """Desde el 16/09 el recalculo y el periodo viven en services/cierre_lineas.py
-    y se prueban contra la base (tests/test_cierre_lineas.py). Aca se prueba
-    solo la forma de la respuesta del router: el servicio queda como stub, y un
-    test puede darle a `periodo` un dia cerrado."""
+    """El periodo, la frescura y los avisos viven en services/ y se prueban
+    contra la base (test_cierre_lineas.py, test_pre_cierre_integracion.py,
+    test_get_del_cierre_no_escribe_integracion.py). Aca se prueba solo la forma
+    de la respuesta del router: el servicio queda como stub, y un test puede
+    darle a `periodo` un dia cerrado."""
     import app.routers.daily_closures as modulo
-    stubs = {"recalcular": AsyncMock(return_value={}), "periodo": AsyncMock(return_value=None)}
+    stubs = {"periodo": AsyncMock(return_value=None), "frescura_del_dia": AsyncMock(return_value={"calculado_a": None, "pendiente_desde": None}),
+             "avisos_del_dia": AsyncMock(return_value={"auto_resolved": [], "escalations": {}})}
     for nombre, stub in stubs.items():
         monkeypatch.setattr(modulo, nombre, stub)
     return stubs
 
 
 def make_client(pool, user=None):
-    """HU-02 (Fase 3): _recompute ahora corre run_pre_cierre primero, que
-    usa pool.acquire()/conn.transaction() — se wirea acá un stub vacío por
-    defecto (ningún viaje, ninguna inconsistencia) para que los tests de
-    este archivo (que no ejercitan pre-cierre, ver test_pre_cierre.py) no
-    tengan que repetir el wiring uno por uno."""
+    """Los avisos del pre-cierre se leen con pool.acquire(): se wirea acá un
+    stub vacío por defecto para que los tests de este archivo no tengan que
+    repetir el wiring uno por uno."""
     if isinstance(pool.acquire, AsyncMock):
         # Todavía no wireado a mano — stub vacío.
         conn = AsyncMock()
@@ -476,3 +476,10 @@ def test_detail_sql_trae_numero_de_viaje_y_local_de_origen():
     assert "ts3.local AS origen" in _DETAIL_SQL
     assert "ts3.stop_type = 'ORIGIN'" in _DETAIL_SQL
 
+
+def test_el_router_no_recalcula_al_leer():
+    """Spec 2026-10-10: las líneas las calcula el ejecutor de la cola; este
+    router solo lee. La prueba de conducta (0 filas escritas) está en
+    test_get_del_cierre_no_escribe_integracion.py."""
+    import app.routers.daily_closures as modulo
+    assert not hasattr(modulo, "recalcular") and not hasattr(modulo, "_recompute")

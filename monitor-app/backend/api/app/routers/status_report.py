@@ -48,7 +48,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
-from ..services.cierre_lineas import GRUPO_NO_TRABAJANDO, LINEAS_CONDUCTORES, LINEAS_TRACTOS, recalcular
+from ..services.cierre_lineas import GRUPO_NO_TRABAJANDO, LINEAS_CONDUCTORES, LINEAS_TRACTOS, frescura_del_dia
 from ..services.driver_roster import TRACTOREO_ROSTER_CTE
 from .trips import _load_operation_type_buckets, _resolve_operation_type
 
@@ -156,10 +156,6 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
     """Una fila enriquecida por equipo activo — insumo único del que se
     derivan las 6 secciones (mismo patrón que fleet_daily_overview/
     equipment_closures: calcular una vez, derivar todo en Python)."""
-    # HU-02 (pre-cierre) + cuadratura por equipo (HU-03) corren primero —
-    # el reporte debe reflejar el directorio ya corregido y los motivos ya
-    # capturados por el coordinador.
-    await recalcular(pool, business_date)
 
     roster_rows = await pool.fetch(_ROSTER_SQL)
 
@@ -558,4 +554,5 @@ async def get_status_report(fecha: str, client: str | None = None, pool=Depends(
         "section5_equipos_completos": _section5_equipos_completos(rows),
         "section6_resumen_general": _section6_resumen_general(rows),
         "section7_desvios_de_cd": _section_desvios_de_cd(rows),
+        **await frescura_del_dia(pool, business_date),
     }

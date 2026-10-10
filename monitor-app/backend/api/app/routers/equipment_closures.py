@@ -35,7 +35,7 @@ from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.equipment_closures import EquipmentBatchReasonBody, EquipmentDayStatusPatchBody
-from ..services.cierre_lineas import LINEAS_TRACTOS, periodo, poner_motivo, recalcular
+from ..services.cierre_lineas import LINEAS_TRACTOS, frescura_del_dia, periodo, poner_motivo
 
 router = APIRouter(prefix="/equipment-closures", tags=["equipment-closures"])
 
@@ -150,15 +150,9 @@ ORDER BY a.license_plate
 """
 
 
-async def _recompute(pool, business_date: _date) -> dict | None:
-    """None si el día está cerrado: un día firmado no se recalcula."""
-    return await recalcular(pool, business_date)
-
-
 @router.get("")
 async def get_equipment_closure_status(fecha: str, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
     business_date = _parse_business_date(fecha)
-    pre_cierre = await _recompute(pool, business_date)
 
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     equipment = [dict(r) for r in rows]
@@ -218,7 +212,7 @@ async def get_equipment_closure_status(fecha: str, pool=Depends(get_pool), _=Dep
             # vista Equipo Completo con la misma estructura que Tractoreo.
             "equipment": equipos_completos,
         },
-        "pre_cierre": pre_cierre,
+        **await frescura_del_dia(pool, business_date),
     }
 
 

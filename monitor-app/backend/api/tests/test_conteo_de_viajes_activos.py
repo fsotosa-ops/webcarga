@@ -76,9 +76,9 @@ async def test_cuenta_los_viajes_activos_de_un_conductor_que_los_tiene(conexion_
 async def test_la_propuesta_de_vinculo_corre_y_nunca_contradice_al_padron(conexion_revertida):
     from datetime import date
 
-    from app.services.pre_cierre import run_pre_cierre
+    from app.services.pre_cierre import avisos_del_dia
 
-    resultado = await run_pre_cierre(PoolDeUnaConexion(conexion_revertida), date(2026, 8, 25))
+    resultado = await avisos_del_dia(conexion_revertida, date(2026, 8, 25))
     propuestas = resultado["escalations"]["CONDUCTOR_SIN_EMPRESA"]
 
     # Ninguna propuesta puede caer sobre alguien que YA tiene empresa: eso

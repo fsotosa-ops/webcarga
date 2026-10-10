@@ -5,6 +5,7 @@ _build_asset_rows) — ahí es donde vive la lógica real de negocio."""
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -26,6 +27,15 @@ from app.routers.status_report import (
     router,
 )
 from tests.conftest import USER, wire_transactional_conn
+
+
+@pytest.fixture(autouse=True)
+def frescura(monkeypatch):
+    """La frescura del día se prueba contra la base
+    (test_get_del_cierre_no_escribe_integracion.py); acá, stub."""
+    import app.routers.status_report as modulo
+    monkeypatch.setattr(modulo, "frescura_del_dia",
+                        AsyncMock(return_value={"calculado_a": None, "pendiente_desde": None}))
 
 
 def _row(**overrides):
@@ -290,6 +300,8 @@ def test_get_status_report_returns_all_sections_with_empty_roster():
         # el origen habitual no sirve para que todos calcen, sino para poder VER cuando
         # no calzan.
         "section7_desvios_de_cd",
+        # Spec 2026-10-10: cuándo se calculó el día y desde cuándo hay cambios por entrar.
+        "calculado_a", "pendiente_desde",
     }
     assert body["section1_resumen"]["total_equipos_activos"] == 0
 

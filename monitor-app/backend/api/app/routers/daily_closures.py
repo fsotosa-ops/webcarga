@@ -7,11 +7,11 @@ la caja" — todo conductor activo debe quedar clasificado al cierre del día
 guardado en app.daily_closures para que se pueda revisar el descuadre de
 días anteriores.
 
-app.driver_day_status se recalcula en cada GET (mismo criterio "resolución
-en vivo" ya usado en trips.py — evita watermarks incrementales), pero
-preserva unassigned_reason_id/resolved_by/resolved_at ya capturados a mano
-mientras el conductor siga UNASSIGNED. El cierre (POST .../close) es lo
-único que persiste un snapshot inmutable.
+Las líneas del día las calcula el ejecutor de la cola
+(services/cola_del_cierre.py) cuando cambia un dato de entrada; este GET solo
+lee (spec 2026-10-10). El recálculo preserva los motivos ya capturados a mano
+mientras el conductor siga UNASSIGNED. El cierre (POST .../close) es lo único
+que congela el día.
 
 Tarea 4 (plan Tarea 2.1, minuta 2026-08-03): el roster de este router quedó
 acotado a conductores de empresas que operan Tractoreo (ver
@@ -25,7 +25,8 @@ from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.daily_closures import DriverBatchReasonBody, DriverDayStatusPatchBody
-from ..services.cierre_lineas import LINEAS_CONDUCTORES, periodo, poner_motivo, recalcular
+from ..services.cierre_lineas import LINEAS_CONDUCTORES, frescura_del_dia, periodo, poner_motivo
+from ..services.pre_cierre import avisos_del_dia
 from ..services.cierre_viajes import SQL_TOTAL_TRIPS_DEL_DIA
 from ..services.driver_roster import TRACTOREO_ROSTER_CTE
 from .trips import _compliance_alert_lateral, _DRIVER_CRITICAL_DOC_CODES
@@ -205,15 +206,9 @@ ORDER BY dds.business_date, d.full_name
 """
 
 
-async def _recompute(pool, business_date: _date) -> dict | None:
-    """None si el día está cerrado: un día firmado no se recalcula."""
-    return await recalcular(pool, business_date)
-
-
 @router.get("")
 async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
     business_date = _parse_business_date(fecha)
-    pre_cierre = await _recompute(pool, business_date)
 
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     drivers = [dict(r) for r in rows]
@@ -232,6 +227,13 @@ async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends
         "override_count": info["override_count"],
         "total_trips": totales.get("viajes"),
     } if cerrado else None
+
+    if cerrado:
+        pre_cierre = None   # un día firmado no muestra avisos: ya no se puede corregir sin reabrir
+    else:
+        async with pool.acquire() as conn:
+            pre_cierre = await avisos_del_dia(conn, business_date)
+    frescura = await frescura_del_dia(pool, business_date)
 
     assigned = sum(1 for d in drivers if d["status"] == "ASSIGNED")
     unassigned = [d for d in drivers if d["status"] == "UNASSIGNED"]
@@ -264,6 +266,7 @@ async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends
         "pending_count": len(unassigned_without_reason) + len(mismatch),
         "drivers": drivers,
         "pre_cierre": pre_cierre,
+        **frescura,
     }
 
 
@@ -318,7 +321,6 @@ async def patch_driver_day_status(
 ):
     """El motivo, su vigencia y el comentario de un conductor ese día."""
     business_date = _parse_business_date(fecha)
-    await _recompute(pool, business_date)
     await poner_motivo(
         pool, business_date, "DRIVER", [driver_id],
         campos=body.model_fields_set, reason_id=body.unassigned_reason_id,
