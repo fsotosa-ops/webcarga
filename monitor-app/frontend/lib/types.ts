@@ -1398,6 +1398,10 @@ export type DailyClosureStatus = {
   /** null con el día cerrado: un día firmado no vuelve a correr el pre-cierre,
    *  que escribe en el directorio como efecto. */
   pre_cierre:       PreCierreResult | null
+  /** Spec 2026-10-10: cuándo se calcularon las líneas del día, y desde cuándo hay
+   *  cambios esperando al ejecutor (null = al día). */
+  calculado_a?:     string | null
+  pendiente_desde?: string | null
 }
 
 // ── Reportería (spec 2026-07-21-cuadratura-reporteria-redesign-design.md) ──
@@ -1551,6 +1555,10 @@ export type EquipmentClosureStatus = {
      *  la usa Flota del día para la vista Equipo Completo. */
     equipment:   EquipmentDayStatusRow[]
   }
+  /** Spec 2026-10-10: cuándo se calcularon las líneas del día, y desde cuándo hay
+   *  cambios esperando al ejecutor (null = al día). */
+  calculado_a?:     string | null
+  pendiente_desde?: string | null
 }
 
 export type EquipmentClosePending = {
@@ -1656,6 +1664,10 @@ export type DriverDetailRow = {
 export type StatusReport = {
   business_date: string
   client_filter: string | null
+  /** Spec 2026-10-10: cuándo se calcularon las líneas del día, y desde cuándo hay
+   *  cambios esperando al ejecutor (null = al día). */
+  calculado_a?:     string | null
+  pendiente_desde?: string | null
   section1_resumen: {
     total_equipos_activos: number
     tractoreo:              EquipmentCategorySummary

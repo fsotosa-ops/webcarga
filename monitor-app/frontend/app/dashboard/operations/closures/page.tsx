@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -20,6 +20,7 @@ import { PreCierrePendingSection } from '@/components/dashboard/sections/PreCier
 import { StatusReportSection } from '@/components/dashboard/sections/StatusReportSection'
 import { PasoViajesSection } from '@/components/dashboard/sections/PasoViajesSection'
 import { AvisoPosteriorAlCierre } from '@/components/dashboard/AvisoPosteriorAlCierre'
+import { AvisoDeActualizacion } from '@/components/dashboard/AvisoDeActualizacion'
 import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import type { PeriodoDeCierre, TripsMeta } from '@/lib/types'
@@ -111,9 +112,24 @@ function ClosuresCenterPageInner() {
   const cierreQuery = useQuery({
     queryKey: ['daily-closure', fecha],
     queryFn: () => dailyClosuresApi.get(fecha),
+    // El Cierre se calcula en segundo plano (spec 2026-10-10): mientras el día
+    // tiene cambios por entrar, se vuelve a pedir hasta que estén.
+    refetchInterval: q => (q.state.data?.pendiente_desde ? 15_000 : false),
   })
 
   const diaCerrado = cierreQuery.data?.closed ?? false
+
+  // Cuando el día queda al día, las otras dos consultas del mismo día también
+  // se refrescan: las tres leen las mismas líneas.
+  const pendiente = cierreQuery.data?.pendiente_desde ?? null
+  const pendienteAnterior = useRef<string | null>(null)
+  useEffect(() => {
+    if (pendienteAnterior.current && !pendiente) {
+      queryClient.invalidateQueries({ queryKey: ['equipment-closures', fecha] })
+      queryClient.invalidateQueries({ queryKey: ['status-report', fecha] })
+    }
+    pendienteAnterior.current = pendiente
+  }, [pendiente, fecha, queryClient])
 
   useEffect(() => {
     fetchTripsMeta().then(setTripsMeta).catch(() => { /* fallback gracioso — usa defaults en la sección */ })
@@ -267,6 +283,7 @@ function ClosuresCenterPageInner() {
       <AvisoPosteriorAlCierre
         cantidad={cierreQuery.data?.cierre?.posteriores_al_cierre ?? 0}
       />
+      <AvisoDeActualizacion pendienteDesde={pendiente} />
 
       {/* Un solo lienzo: tab bar arriba, panel de contenido abajo (solo la
           tab activa se renderiza), "Confirmar cierre" fijo al pie. */}
