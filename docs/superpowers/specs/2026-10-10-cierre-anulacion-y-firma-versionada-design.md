@@ -1,6 +1,12 @@
 # Cierre: anulación con motivo y firma versionada — diseño
 
-Fecha: 2026-10-10 · Estado: diseño aprobado por secciones (10/10), spec en revisión · Rama: `dev`
+Fecha: 2026-10-10 · Estado: spec aprobada (10/10) · Rama: `dev`
+
+> **Ajuste al planificar (10/10):** "los viajes del día" de la firma y de los ajustes son
+> `app.trips` con `planning_date = D` y sin anular, no `trips_del_dia(D)`. Es el universo que ya
+> firmaba `frozen_totals.viajes` y que usa el aviso actual (`SQL_TOTAL_TRIPS_DEL_DIA`), y reconstruye
+> exacto las 25 firmas existentes (`created_at <= closed_at`: 25 de 25 iguales a `viajes`;
+> con `trips_del_dia` cuadraban 4 de 15). La regla de quién anula mira ese mismo día.
 
 ## 1. Contexto y objetivo
 
@@ -57,10 +63,17 @@ anularlo sería mentir. Es la misma regla que hoy tiene eliminar.
 
 ### 2.2 Efecto
 
-- `app.trips_del_dia(D)` excluye `voided_at IS NOT NULL`. Como es la única definición de los viajes del día,
-  esto cubre a la vez el Cierre, el reporte, los disponibles y la vista de flota, sin tocar a cada consumidor.
-- Monitor: los anulados se ocultan por defecto. El detalle y el historial los muestran con la insignia
-  "Anulado", quién, cuándo y el motivo.
+- El filtro `voided_at IS NULL` va en las definiciones únicas, no en cada consumidor:
+  - `app.trips_del_dia(D)`: los viajes que ocupan el día. Cubre las líneas del Cierre, el reporte, los
+    disponibles y la vista de flota.
+  - `SQL_VIAJES_DEL_DIA` (`services/cierre_viajes.py`, reemplaza a `SQL_TOTAL_TRIPS_DEL_DIA`): los viajes del día
+    (`planning_date = D`) para la firma y los ajustes.
+  - `SQL_BASE` de `services/cierre_viajes.py`: la pestaña "Viajes" del Cierre.
+  - El listado del Monitor (`GET /trips`).
+  Las heurísticas sobre historia (último tracto conocido, sugerencia de origen, actividad de 30 días en
+  Certificación) no se filtran: miran viajes de cualquier fecha y un duplicado anulado no las cambia.
+- Monitor: los anulados no aparecen en el listado. El detalle (`GET /trips/{id}`) sí los abre, con la insignia
+  "Anulado", quién, cuándo y el motivo; así llega a ellos el enlace "Ver viaje" de un ajuste.
 - Un día abierto se recalcula solo: el `UPDATE` en `app.trips` dispara `trg_enqueue_closure_recompute_upd`.
 - En un día firmado no cambia nada de lo firmado: el día no se recalcula (status `CLOSED`) y la anulación
   aparece como ajuste posterior (sección 4).
@@ -73,8 +86,8 @@ bloqueo que usan el listado (`can_void`) y la escritura, y el máximo de 200 por
 
 | Día del viaje | Puede anular |
 |---|---|
-| Ningún día firmado | Quien lo creó (`trips.void`), o `trips.void_any` (Administración). |
-| Algún día firmado (`app.trips_del_dia`, cota de 45 días) | `closures.sign`. |
+| Su día (`planning_date`) abierto | Quien lo creó (`trips.void`), o `trips.void_any` (Administración). |
+| Su día (`planning_date`) firmado | `closures.sign`. |
 
 - Motivo obligatorio (texto no vacío, 422 si falta).
 - **Revertir la anulación** (`POST /trips/void/revert`) exige los mismos permisos, devuelve el viaje al día y
@@ -111,8 +124,8 @@ Tres tablas nuevas, solo de inserción:
 `signature_id` más las columnas de la línea: sujeto, estado, motivo, vigencia, comentario, origen habitual,
 quién resolvió y cuándo. Es tabla y no un JSON para poder consultarla y validarla.
 
-**`app.closure_signature_trips`** (`signature_id`, `trip_id`, PK compuesta): el conjunto de `trips_del_dia(D)`
-al firmar. Es lo que permite decir qué viajes llegaron o salieron después (sección 4). No basta con
+**`app.closure_signature_trips`** (`signature_id`, `trip_id`, PK compuesta): los viajes del día al firmar, es
+decir, `app.trips` con `planning_date = D` y sin anular. Es el mismo universo que `totals.viajes`. Es lo que permite decir qué viajes llegaron o salieron después (sección 4). No basta con
 `created_at > signed_at`, porque un viaje del TMS que llega tarde también es posterior al cierre.
 
 **Inmutabilidad en la base:** el trigger `trg_reject_signature_changes`, con la función
@@ -138,11 +151,11 @@ Cada día `CLOSED` recibe su versión 1 con `captured_from = 'backfill'`:
 - Firma: desde `closure_periods`, con `closed_by`, `closed_at`, `override_count`, `override_note` y
   `frozen_totals`.
 - Líneas: desde su `closure_lines` actual, que es la firmada (el 23/09 ya está restaurado).
-- Viajes: `trips_del_dia(D)` excluyendo los de `app.trips.created_at > closed_at`.
+- Viajes: `app.trips` con `planning_date = D` y `created_at <= closed_at` (`created_at` está en
+  `merge_exclude_columns`: es la primera vez que el viaje entró).
 
 La migración compara, para cada día, las líneas copiadas con las de `closure_lines` y los viajes con
-`frozen_totals->>'viajes'`. Las líneas tienen que coincidir siempre; si no, la migración aborta. Una diferencia
-de viajes no aborta, pero se lista en la salida para revisarla antes del contract.
+`frozen_totals->>'viajes'`. Si algo no coincide, aborta (medido el 10/10: los 25 días coinciden).
 
 ## 4. Ajustes posteriores al cierre
 
@@ -150,8 +163,8 @@ Reemplazan el conteo "N viajes posteriores al cierre" por una lista. Hay una sol
 `services/cierre_lineas.py` (`ajustes_posteriores(conn, fecha)`), que sustituye a `SQL_TOTAL_TRIPS_DEL_DIA`
 y a la resta en `daily_closures.py`:
 
-- **Agregado:** está en `trips_del_dia(D)` y no en `closure_signature_trips` de la firma vigente.
-- **Quitado:** está en la firma y no en `trips_del_dia(D)`. Si fue por anulación, trae quién, cuándo y el motivo.
+- **Agregado:** está en los viajes del día (`planning_date = D`, sin anular) y no en `closure_signature_trips` de la firma vigente.
+- **Quitado:** está en la firma y no en los viajes del día. Si fue por anulación, trae quién, cuándo y el motivo.
   Si no, figura como "Ya no está en el día" (por ejemplo, el TMS lo movió de fecha).
 
 `GET /daily-closures` devuelve `cierre.ajustes` (lista) en lugar de `posteriores_al_cierre`.
