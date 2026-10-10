@@ -23,6 +23,7 @@ from .routers.closures import router as closures_router
 from .routers.daily_closures import router as daily_closures_router
 from .routers.drivers import router as drivers_router
 from .routers.equipment_closures import router as equipment_closures_router
+from .routers.internal import router as internal_router
 from .routers.filter_groups import router as filter_groups_router
 from .routers.locations import router as locations_router
 from .routers.policies import router as policies_router
@@ -146,6 +147,7 @@ app.include_router(equipment_closures_router,  prefix="/api/v1")
 app.include_router(closures_router,            prefix="/api/v1")
 # Reporte de estatus del día, 6 secciones (Fase 5, HU-04)
 app.include_router(status_report_router,       prefix="/api/v1")
+app.include_router(internal_router,            prefix="/api/v1")
 
 
 @app.get("/health", tags=["health"])

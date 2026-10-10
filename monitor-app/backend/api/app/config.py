@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     sharepoint_client_id: str = ""
     sharepoint_client_secret: str = ""
     sharepoint_tenant_id: str = ""
+    # Cloud Scheduler → POST /api/v1/internal/closures/recompute (spec
+    # 2026-10-10). Vacíos: el endpoint no deja entrar a nadie.
+    scheduler_service_account: str = ""
+    scheduler_audience: str = ""
 
     class Config:
         env_file = ".env"

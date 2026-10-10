@@ -64,7 +64,7 @@ jobs:
             --max-instances=5
             --service-account=${{ env.CLOUD_RUN_SA }}
             --allow-unauthenticated
-            --set-env-vars=ENVIRONMENT=${{ env.ENV_SUFFIX }}
+            --set-env-vars=ENVIRONMENT=${{ env.ENV_SUFFIX }},SCHEDULER_SERVICE_ACCOUNT=${{ env.ENV_SUFFIX == 'dev' && format('cierre-scheduler@{0}.iam.gserviceaccount.com', env.PROJECT_ID) || '' }},SCHEDULER_AUDIENCE=${{ env.ENV_SUFFIX == 'dev' && 'https://webcarga-monitor-api-dev-zcdyyci7ta-uc.a.run.app/api/v1/internal/closures/recompute' || '' }}
             --set-secrets=DATABASE_URL=monitor-api-database-url:latest,SUPABASE_URL=monitor-api-supabase-url:latest,SUPABASE_SERVICE_ROLE_KEY=monitor-api-supabase-service-role-key:latest,ALLOWED_ORIGINS=monitor-api-allowed-origins:latest,UPSTASH_REDIS_REST_URL=monitor-api-upstash-url:latest,UPSTASH_REDIS_REST_TOKEN=monitor-api-upstash-token:latest
 
       - name: Show service URL
