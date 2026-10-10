@@ -26,8 +26,7 @@ from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.daily_closures import DriverBatchReasonBody, DriverDayStatusPatchBody
 from ..services.origen_del_viaje import origen_del_viaje
-from ..services.cierre_viajes import SQL_VIAJES_DEL_DIA
-from ..services.cierre_lineas import LINEAS_CONDUCTORES, frescura_del_dia, periodo, poner_motivo
+from ..services.cierre_lineas import LINEAS_CONDUCTORES, ajustes_posteriores, frescura_del_dia, periodo, poner_motivo
 from ..services.pre_cierre import avisos_del_dia
 from ..services.driver_roster import TRACTOREO_ROSTER_CTE
 from .trips import _compliance_alert_lateral, _DRIVER_CRITICAL_DOC_CODES
@@ -237,15 +236,11 @@ async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends
     mismatch = [d for d in drivers if d["status"] == "MISMATCH"]
     unassigned_without_reason = [d for d in unassigned if d["category"] == "SIN_RESOLVER"]
 
-    # El dia sigue cerrado: la firma sigue siendo verdadera sobre lo que
-    # existia cuando se firmo, y no se recalcula. Lo que llega despues es un
-    # delta -- "posterior al cierre" -- que se resuelve aparte, sin invalidar
-    # la firma original.
+    # El día sigue cerrado: la firma es una copia inmutable de lo que existía al
+    # firmar y no se recalcula. Lo que cambió después se muestra viaje por viaje,
+    # como ajuste posterior al cierre (spec 2026-10-10 §4), sin invalidar la firma.
     total_trips_al_firmar = closure_dict.get("total_trips") if closure_dict else None
-    posteriores_al_cierre = 0
-    if total_trips_al_firmar is not None:
-        ahora = await pool.fetchval(f"SELECT count(*) FROM ({SQL_VIAJES_DEL_DIA}) v", business_date)
-        posteriores_al_cierre = max(0, ahora - total_trips_al_firmar)
+    ajustes = await ajustes_posteriores(pool, business_date) if cerrado else []
 
     return {
         "business_date": business_date.isoformat(),
@@ -254,7 +249,7 @@ async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends
         "periodo": info,
         "cierre": {
             "total_trips_al_firmar": total_trips_al_firmar,
-            "posteriores_al_cierre": posteriores_al_cierre,
+            "ajustes": ajustes,
         },
         "total_drivers": len(drivers),
         "assigned_count": assigned,

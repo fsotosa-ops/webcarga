@@ -388,6 +388,40 @@ async def firmas_del_dia(pool, fecha: date) -> list[dict]:
     ]
 
 
+_SQL_AJUSTES = f"""
+WITH firma AS (
+    SELECT s.id
+    FROM app.closure_periods p
+    {ultima_firma('p.business_date', 's')}
+    WHERE p.business_date = $1 AND p.status = 'CLOSED' AND s.id IS NOT NULL
+),
+firmados AS (SELECT v.trip_id FROM app.closure_signature_trips v WHERE v.signature_id = (SELECT id FROM firma)),
+del_dia AS (SELECT d.id AS trip_id FROM ({SQL_VIAJES_DEL_DIA}) d),
+cambios AS (
+    (SELECT trip_id, 'agregado' AS tipo FROM del_dia EXCEPT SELECT trip_id, 'agregado' FROM firmados)
+    UNION ALL
+    (SELECT trip_id, 'quitado' FROM firmados EXCEPT SELECT trip_id, 'quitado' FROM del_dia)
+)
+SELECT c.trip_id::text AS trip_id, c.tipo, t.source_system_trip_id, t.client_name,
+       t.voided_at, p.full_name AS voided_by_name, t.void_reason
+FROM cambios c
+LEFT JOIN app.trips t ON t.id = c.trip_id
+LEFT JOIN public.profiles p ON p.id = t.voided_by
+WHERE EXISTS (SELECT 1 FROM firma)
+ORDER BY c.tipo, t.source_system_trip_id NULLS LAST
+"""
+
+
+async def ajustes_posteriores(pool, fecha: date) -> list[dict]:
+    """Lo que cambió en un día firmado desde su última firma (spec 2026-10-10 §4):
+    viajes del día que no estaban en la firma (agregados) y viajes firmados que ya no
+    están (quitados; si fue por anulación, quién, cuándo y el motivo). Un día abierto
+    no tiene ajustes: lo que cambia entra en su recálculo."""
+    return [
+        {**dict(f), "voided_at": f["voided_at"].isoformat() if f["voided_at"] else None}
+        for f in await pool.fetch(_SQL_AJUSTES, fecha)
+    ]
+
 
 # ── recalcular ───────────────────────────────────────────────────────────────
 
