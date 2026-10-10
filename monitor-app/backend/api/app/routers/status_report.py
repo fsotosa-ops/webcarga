@@ -16,10 +16,11 @@ Cierre del Día). Reusa:
 Decisiones documentadas donde la HU es ambigua o depende de un insumo que
 todavía no llega (ver docs/casuistica-negocio-diario.md y AGENTLOG.md):
   - Sección 2 (Tractoreo asignado): la HU lista una columna "Se retiró sin
-    carga" junto a RM/Z0/Región — ese es un motivo de NO asignación
-    (Bloque 1 del cierre), no un tipo de destino. Se omite acá para no
-    modelar dos veces el mismo concepto; ya aparece en la Sección 4
-    (Tractoreo no trabajando) como una columna de motivo más.
+    carga" junto a RM/Z0/Región. Es un motivo, no un tipo de destino: va como
+    columnas aparte ("sin carga"), una por cada motivo del grupo "trabajando
+    sin asignación" del catálogo, contando los tractos sin viaje de esa
+    categoría (la calcula cierre_lineas). Minuta 09/10: no aparecía en
+    ninguna sección, porque la 4 solo muestra a los que no trabajaron.
   - "CD de origen" para equipos SIN CARGA: no existe un CD habitual por
     equipo/empresa en el modelo hoy (mismo gap de Fase 2/4) — mejor
     esfuerzo: el origen de su viaje más reciente, cualquiera sea la fecha.
@@ -49,7 +50,9 @@ from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
 from ..services.origen_del_viaje import origen_del_viaje
-from ..services.cierre_lineas import GRUPO_NO_TRABAJANDO, LINEAS_CONDUCTORES, LINEAS_TRACTOS, frescura_del_dia
+from ..services.cierre_lineas import (
+    GRUPO_NO_TRABAJANDO, GRUPO_TRABAJANDO_SIN_ASIGNACION, LINEAS_CONDUCTORES, LINEAS_TRACTOS, frescura_del_dia,
+)
 from ..services.driver_roster import TRACTOREO_ROSTER_CTE
 from .trips import _load_operation_type_buckets, _resolve_operation_type
 
@@ -175,7 +178,7 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
 
     status_rows = await pool.fetch(
         f"""
-        SELECT eds.asset_id, eds.status, eds.requires_motivo, st.label AS unassigned_reason_label,
+        SELECT eds.asset_id, eds.status, eds.requires_motivo, eds.category, st.label AS unassigned_reason_label,
                hcd.name AS home_cd
         FROM {LINEAS_TRACTOS} eds
         LEFT JOIN app.status_taxonomies st ON st.id = eds.unassigned_reason_id
@@ -237,6 +240,9 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
             "dias_en_curso": dias_en_curso,
             "vueltas": max((leg_by_trip.get(t["trip_id"], 1) for t in asset_trips), default=0),
             "unassigned_reason_label": status_row["unassigned_reason_label"] if status_row else None,
+            # La categoría de la línea, tal como la calcula cierre_lineas: el
+            # reporte no la deduce del motivo por su cuenta.
+            "category": status_row["category"] if status_row else None,
         })
     return rows
 
@@ -335,16 +341,34 @@ def _cross_tab_by_zone(rows: list[dict], key_fn) -> list[dict]:
     return buckets
 
 
-def _section2_tractoreo_asignado(rows: list[dict]) -> dict:
+def _section2_tractoreo_asignado(rows: list[dict], motivos_sin_carga: list[str]) -> dict:
     """Agrupa por el CD BASE declarado, no por el origen del viaje (HU-28, ola 4).
 
     Tiene que ser el declarado para que cuadre con la Sección 7: ahí "enrolados"
     incluye a quien no salió, que no tiene origen. Con dos claves distintas, el
-    "asignados" de una y el de la otra no darían el mismo número."""
+    "asignados" de una y el de la otra no darían el mismo número.
+
+    `total` son los asignados. `sin_carga` cuenta aparte, por motivo, a los que
+    trabajaron sin asignación (minuta 09/10)."""
     tractoreo = [r for r in rows if "TRACTOREO" in r["categories"]]
-    por_cd = _cross_tab_by_zone(tractoreo, lambda r: r["home_cd"] or "Sin origen")
-    por_empresa_y_cd = _cross_tab_by_zone(tractoreo, lambda r: (r["home_cd"] or "Sin origen", r["carrier_name"]))
+    sin_carga = [r for r in tractoreo if not r["con_carga"] and r["category"] == "TRABAJANDO_SIN_ASIGNACION"]
+
+    def tabla(key_fn) -> dict:
+        buckets = _cross_tab_by_zone(tractoreo, key_fn)
+        for r in sin_carga:
+            buckets.setdefault(key_fn(r), {"RM": 0, "Z0": 0, "Región": 0, "Sin clasificar": 0, "total": 0})
+        for b in buckets.values():
+            b["sin_carga"] = {m: 0 for m in motivos_sin_carga}
+        for r in sin_carga:
+            motivo = r["unassigned_reason_label"]
+            if motivo in buckets[key_fn(r)]["sin_carga"]:
+                buckets[key_fn(r)]["sin_carga"][motivo] += 1
+        return buckets
+
+    por_cd = tabla(lambda r: r["home_cd"] or "Sin origen")
+    por_empresa_y_cd = tabla(lambda r: (r["home_cd"] or "Sin origen", r["carrier_name"]))
     return {
+        "motivos_sin_carga": motivos_sin_carga,
         "por_cd": [{"cd": k, **v} for k, v in sorted(por_cd.items())],
         "por_empresa_y_cd": [
             {"cd": k[0], "carrier_name": k[1], **v} for k, v in sorted(por_empresa_y_cd.items())
@@ -368,11 +392,12 @@ def _section3_vueltas(rows: list[dict]) -> list[dict]:
 
 # Las columnas de motivo salen del catálogo, no de una lista escrita a mano:
 # la que había (y su copia en StatusReportSection.tsx) dejaba fuera 9 motivos
-# que sólo sumaban al total.
-_SQL_MOTIVOS_NO_TRABAJANDO = f"""
+# que sólo sumaban al total. $1 es el grupo; un motivo sin grupo se lee como
+# "no trabajando", igual que en cierre_lineas.
+_SQL_MOTIVOS_DEL_GRUPO = f"""
 SELECT label FROM app.status_taxonomies
 WHERE domain = 'DRIVER_REASON' AND active
-  AND COALESCE(group_id, '{GRUPO_NO_TRABAJANDO}') = '{GRUPO_NO_TRABAJANDO}'
+  AND COALESCE(group_id, '{GRUPO_NO_TRABAJANDO}') = $1
 ORDER BY sort_order, label
 """
 
@@ -543,15 +568,19 @@ async def get_status_report(fecha: str, client: str | None = None, pool=Depends(
     # idle en _filter_by_client.
     driver_rows = await _build_driver_rows(pool, business_date)
     motivos = _columnas_de_motivo(
-        [r["label"] for r in await pool.fetch(_SQL_MOTIVOS_NO_TRABAJANDO)], driver_rows,
+        [r["label"] for r in await pool.fetch(_SQL_MOTIVOS_DEL_GRUPO, GRUPO_NO_TRABAJANDO)], driver_rows,
     )
     rows = _filter_by_client(all_rows, client)
+    motivos_sin_carga = _columnas_de_motivo(
+        [r["label"] for r in await pool.fetch(_SQL_MOTIVOS_DEL_GRUPO, GRUPO_TRABAJANDO_SIN_ASIGNACION)],
+        [r for r in rows if r["category"] == "TRABAJANDO_SIN_ASIGNACION"],
+    )
 
     return {
         "business_date": business_date.isoformat(),
         "client_filter": client,
         "section1_resumen": _section1_resumen(rows),
-        "section2_tractoreo_asignado": _section2_tractoreo_asignado(rows),
+        "section2_tractoreo_asignado": _section2_tractoreo_asignado(rows, motivos_sin_carga),
         "section3_vueltas": _section3_vueltas(rows),
         "section4_tractoreo_no_trabajando": _section4_tractoreo_no_trabajando(driver_rows, motivos),
         "section_tractoreo_por_empresa": _section_tractoreo_por_empresa(rows),

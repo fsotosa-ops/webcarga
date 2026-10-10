@@ -48,6 +48,7 @@ def _row(**overrides):
         # tapando el hueco de quien no salio.
         "home_cd": "CD Lo Aguirre", "origin_cd": "CD Lo Aguirre", "client_name": "Walmart",
         "destination_zone": "RM", "dias_en_curso": 0, "vueltas": 1, "unassigned_reason_label": None,
+        "category": "ASIGNADO",
     }
     base.update(overrides)
     return base
@@ -104,9 +105,11 @@ def test_section2_cruza_por_cd_y_por_empresa_y_cd_sin_incluir_sin_carga():
         _row(asset_id="a2", home_cd="CD Lo Aguirre", destination_zone="Z0", carrier_name="Otra Spa"),
         _row(asset_id="a3", home_cd="CD Lo Aguirre", con_carga=False, destination_zone=None),
     ]
-    result = _section2_tractoreo_asignado(rows)
-    assert result["por_cd"] == [{"cd": "CD Lo Aguirre", "RM": 1, "Z0": 1, "Región": 0, "Sin clasificar": 0, "total": 2}]
-    assert {"cd": "CD Lo Aguirre", "carrier_name": "Otra Spa", "RM": 0, "Z0": 1, "Región": 0, "Sin clasificar": 0, "total": 1} in result["por_empresa_y_cd"]
+    result = _section2_tractoreo_asignado(rows, [])
+    assert result["por_cd"] == [{"cd": "CD Lo Aguirre", "RM": 1, "Z0": 1, "Región": 0, "Sin clasificar": 0, "total": 2,
+                                 "sin_carga": {}}]
+    assert {"cd": "CD Lo Aguirre", "carrier_name": "Otra Spa", "RM": 0, "Z0": 1, "Región": 0, "Sin clasificar": 0,
+            "total": 1, "sin_carga": {}} in result["por_empresa_y_cd"]
 
 
 def test_section3_vueltas_solo_incluye_equipos_con_2_o_mas_viajes_hoy():
@@ -504,3 +507,34 @@ def test_sin_cd_base_ya_no_significa_no_pudimos_adivinar():
 
     assert {"cd": "Sin origen", "enrolled": 1, "assigned": 1} in resumen["por_cd"]
     assert {"cd": "CD El Peñón", "enrolled": 1, "assigned": 1} in resumen["por_cd"]
+
+
+# ── Minuta 09/10, ítem 12: "Se retira sin carga" no aparecía en ninguna parte ─
+# Un tracto que trabajó sin asignación (Se retira sin carga, Esperando carga…)
+# no tiene viaje y tampoco es "no trabajando": quedaba fuera de las Secciones
+# 2 y 4. La HU-04 lo pedía como columna junto a RM/Z0/Región. La categoría la
+# calcula cierre_lineas (`category`); el reporte no vuelve a deducirla.
+
+MOTIVOS_SIN_CARGA = ["Se retira sin carga", "Esperando carga"]
+
+
+def test_seccion2_cuenta_los_tractos_que_trabajaron_sin_asignacion_por_motivo():
+    rows = [
+        _row(asset_id="a1"),
+        _row(asset_id="a2", con_carga=False, category="TRABAJANDO_SIN_ASIGNACION",
+             unassigned_reason_label="Se retira sin carga"),
+        _row(asset_id="a3", con_carga=False, category="NO_TRABAJANDO", unassigned_reason_label="Panne"),
+    ]
+    seccion = _section2_tractoreo_asignado(rows, MOTIVOS_SIN_CARGA)
+    cd = next(f for f in seccion["por_cd"] if f["cd"] == "CD Lo Aguirre")
+    assert cd["total"] == 1, "el total sigue siendo los asignados: cuadra con la Sección 7"
+    assert cd["sin_carga"] == {"Se retira sin carga": 1, "Esperando carga": 0}
+    assert seccion["motivos_sin_carga"] == MOTIVOS_SIN_CARGA
+
+
+def test_un_origen_con_solo_tractos_sin_carga_igual_aparece():
+    rows = [_row(asset_id="a1", home_cd="CD Quilicura", con_carga=False,
+                 category="TRABAJANDO_SIN_ASIGNACION", unassigned_reason_label="Esperando carga")]
+    seccion = _section2_tractoreo_asignado(rows, MOTIVOS_SIN_CARGA)
+    assert seccion["por_cd"] == [{"cd": "CD Quilicura", "RM": 0, "Z0": 0, "Región": 0, "Sin clasificar": 0,
+                                  "total": 0, "sin_carga": {"Se retira sin carga": 0, "Esperando carga": 1}}]

@@ -31,9 +31,11 @@ function exportReportCsv(report: StatusReport, fecha: string) {
   const lines: string[] = [`Reporte de Estatus del Día;${fecha}`, '']
 
   lines.push('SECCIÓN 2 — Tractoreo asignado por empresa y origen habitual')
-  lines.push(['Origen habitual', 'Empresa', 'RM', 'Z0', 'Región', 'Sin clasificar', 'Total'].map(csvEscape).join(';'))
+  const sinCarga = report.section2_tractoreo_asignado.motivos_sin_carga ?? []
+  lines.push(['Origen habitual', 'Empresa', 'RM', 'Z0', 'Región', 'Sin clasificar', 'Total', ...sinCarga].map(csvEscape).join(';'))
   for (const r of report.section2_tractoreo_asignado.por_empresa_y_cd) {
-    lines.push([r.cd, r.carrier_name, r.RM, r.Z0, r['Región'], r['Sin clasificar'], r.total].map(csvEscape).join(';'))
+    lines.push([r.cd, r.carrier_name, r.RM, r.Z0, r['Región'], r['Sin clasificar'], r.total,
+      ...sinCarga.map(m => r.sin_carga?.[m] ?? 0)].map(csvEscape).join(';'))
   }
   lines.push('')
 
@@ -91,7 +93,7 @@ function exportReportCsv(report: StatusReport, fecha: string) {
   URL.revokeObjectURL(url)
 }
 
-const ZONE_COLS: (keyof ZoneCrossTab)[] = ['RM', 'Z0', 'Región', 'Sin clasificar', 'total']
+const ZONE_COLS = ['RM', 'Z0', 'Región', 'Sin clasificar', 'total'] as const satisfies readonly (keyof ZoneCrossTab)[]
 // Las columnas de motivo las manda el backend (`section4.motivos`), desde el
 // catálogo: la lista escrita acá dejaba fuera 9 motivos, que sólo sumaban al
 // total sin que se viera cuáles eran.
@@ -314,8 +316,10 @@ export function StatusReportSection({ fecha, shippers }: Props) {
 
           {tab === 'asignado' && (
             <div className="space-y-4">
-              <ZoneTable title="Por origen habitual" rows={data.section2_tractoreo_asignado.por_cd} />
-              <ZoneTable title="Por empresa dentro de cada origen" rows={data.section2_tractoreo_asignado.por_empresa_y_cd} showCarrier />
+              <ZoneTable title="Por origen habitual" rows={data.section2_tractoreo_asignado.por_cd}
+                motivosSinCarga={data.section2_tractoreo_asignado.motivos_sin_carga} />
+              <ZoneTable title="Por empresa dentro de cada origen" rows={data.section2_tractoreo_asignado.por_empresa_y_cd} showCarrier
+                motivosSinCarga={data.section2_tractoreo_asignado.motivos_sin_carga} />
             </div>
           )}
 
@@ -547,7 +551,11 @@ function CarrierUtilizationTable({ rows, emptyLabel }: { rows: CarrierUtilizatio
   )
 }
 
-function ZoneTable({ title, rows, showCarrier }: { title: string; rows: ZoneCrossTab[]; showCarrier?: boolean }) {
+/** `motivosSinCarga`: columnas aparte, después del total, con los que
+ *  trabajaron sin asignación (Sección 2, minuta 09/10). */
+function ZoneTable({ title, rows, showCarrier, motivosSinCarga = [] }: {
+  title: string; rows: ZoneCrossTab[]; showCarrier?: boolean; motivosSinCarga?: string[]
+}) {
   return (
     <div>
       <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">{title}</p>
@@ -558,11 +566,12 @@ function ZoneTable({ title, rows, showCarrier }: { title: string; rows: ZoneCros
               <th className="text-left px-3 py-2">Origen habitual</th>
               {showCarrier && <th className="text-left px-3 py-2">Empresa</th>}
               {ZONE_COLS.map(c => <th key={c} className="text-right px-3 py-2">{c}</th>)}
+              {motivosSinCarga.map(m => <th key={m} className="text-right px-3 py-2">{m}</th>)}
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
             {rows.length === 0 && (
-              <tr><td colSpan={(showCarrier ? 2 : 1) + ZONE_COLS.length} className="px-3 py-4 text-center text-gray-300 italic">Sin datos</td></tr>
+              <tr><td colSpan={(showCarrier ? 2 : 1) + ZONE_COLS.length + motivosSinCarga.length} className="px-3 py-4 text-center text-gray-300 italic">Sin datos</td></tr>
             )}
             {rows.map((r, i) => (
               <tr key={i}>
@@ -570,6 +579,9 @@ function ZoneTable({ title, rows, showCarrier }: { title: string; rows: ZoneCros
                 {showCarrier && <td className="px-3 py-2">{r.carrier_name}</td>}
                 {ZONE_COLS.map(c => (
                   <td key={c} className={`px-3 py-2 text-right ${c === 'total' ? 'font-bold' : ''}`}>{r[c]}</td>
+                ))}
+                {motivosSinCarga.map(m => (
+                  <td key={m} className="px-3 py-2 text-right text-gray-500">{r.sin_carga?.[m] ?? 0}</td>
                 ))}
               </tr>
             ))}

@@ -1620,6 +1620,9 @@ export type ZoneCrossTab = {
   "Región": number
   "Sin clasificar": number
   total: number
+  /** Minuta 09/10: los que trabajaron sin asignación, por motivo del catálogo.
+   *  Va aparte del total, que son los asignados. */
+  sin_carga?: Record<string, number>
 }
 
 export type MotivoCrossTab = {
@@ -1677,6 +1680,9 @@ export type StatusReport = {
     multi_dia_activos: { total: number; por_dias_atras: Record<string, number> }
   }
   section2_tractoreo_asignado: {
+    /** Columnas "sin carga" en el orden del catálogo. Opcional: backend y
+     *  frontend se despliegan por separado. */
+    motivos_sin_carga?: string[]
     por_cd:          ZoneCrossTab[]
     por_empresa_y_cd: ZoneCrossTab[]
   }

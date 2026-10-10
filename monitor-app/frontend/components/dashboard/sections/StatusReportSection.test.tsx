@@ -22,8 +22,9 @@ const REPORT: StatusReport = {
     multi_dia_activos: { total: 5, por_dias_atras: { "1": 3, "2": 2 } },
   },
   section2_tractoreo_asignado: {
-    por_cd: [{ cd: 'CD Lo Aguirre', RM: 3, Z0: 1, "Región": 0, "Sin clasificar": 0, total: 4 }],
-    por_empresa_y_cd: [{ cd: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', RM: 3, Z0: 1, "Región": 0, "Sin clasificar": 0, total: 4 }],
+    motivos_sin_carga: ['Se retira sin carga'],
+    por_cd: [{ cd: 'CD Lo Aguirre', RM: 3, Z0: 1, "Región": 0, "Sin clasificar": 0, total: 4, sin_carga: { 'Se retira sin carga': 2 } }],
+    por_empresa_y_cd: [{ cd: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', RM: 3, Z0: 1, "Región": 0, "Sin clasificar": 0, total: 4, sin_carga: { 'Se retira sin carga': 2 } }],
   },
   section3_vueltas: [
     { tractor_plate: 'ABCD12', carrier_name: 'Transportes Sur', cd_origen: 'CD Lo Aguirre', tipo_destino: 'RM', vueltas: 2 },
@@ -85,6 +86,15 @@ describe('StatusReportSection', () => {
     fireEvent.click(body.getByRole('button', { name: '2. Asignado' }))
     expect((await body.findAllByText('CD Lo Aguirre')).length).toBe(2)
     expect(body.getByText('Transportes Sur')).toBeInTheDocument()
+  })
+
+  it('la Sección 2 muestra aparte a los que trabajaron sin asignación, por motivo (minuta 09/10)', async () => {
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    fireEvent.click(body.getByRole('button', { name: '2. Asignado' }))
+    expect((await body.findAllByRole('columnheader', { name: 'Se retira sin carga' })).length).toBe(2)
+    const fila = body.getByText('Transportes Sur').closest('tr')!
+    expect(within(fila).getByText('2')).toBeInTheDocument()
   })
 
   it('cambia a la Sección 3 (vueltas) y muestra los equipos con 2+ vueltas', async () => {
