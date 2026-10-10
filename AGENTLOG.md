@@ -59,8 +59,16 @@ códigos generados; expand/contract con compuerta por la API de `main` (lee `pro
 - [x] Prueba con escritura en producción (autorizada): rol "Prueba RBAC" creado, asignado a demo, 409 al borrarlo
       asignado, desasignado y borrado desde la pantalla. Base sin restos; auditoría completa. El 409 de "último
       Propietario" queda cubierto por el test de integración (hay 2 Propietarios: probarlo en vivo lo quitaría).
-- [ ] **Siguiente:** revisión final de toda la rama (revisor fresco, modelo más capaz), incluido el hallazgo del
-      inventario; después Task 13 (contract) cuando la API de `main` se redespliegue o retire.
+- [x] Revisión final (Opus fresco): sin vías de escalada. 4 Important corregidos y desplegados en dev:
+      caída de la API ya no cierra sesión (`7d70b10b`); candado del último Propietario (`e73fe88c`); cada
+      sección de Configuración edita con el permiso de su API, alertas de vencimiento → certification.configure
+      (`29e5266a`); extender la vigencia de un documento aprobado exige revisar (`5e8582d8`).
+- [ ] **Menores diferidos (decide el usuario)**: ver líneas `minor (deferred)` del ledger — PUT roles con [] y
+      500 por id inválido, prefijo para códigos personalizados, inventario de Configuración, "Confirmar cierre"
+      sin closures.sign, toggleActive silencioso, lecturas no separadas por área, huecos de test.
+- [ ] Spec §9: registrar el otorgamiento del 09/10 (3 Lectura → + Operador de Operaciones, pedido del usuario).
+- [ ] Task 13 (contract) cuando la API de `main` se redespliegue o retire; resuelve también que set_user_roles
+      no escribe profiles.role.
 - [ ] Hallazgo para la revisión final: `GET /config/inventario` exige settings.manage (Supervisores ven la portada
       sin conteos) y expone el conteo de personas sin users.manage.
 - [ ] Task 13: contract (DROP `profiles.role` / `admin_whitelist.role`) — compuerta: la API de `main`
