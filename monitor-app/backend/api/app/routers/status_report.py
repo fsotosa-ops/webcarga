@@ -48,6 +48,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
+from ..services.origen_del_viaje import origen_del_viaje
 from ..services.cierre_lineas import GRUPO_NO_TRABAJANDO, LINEAS_CONDUCTORES, LINEAS_TRACTOS, frescura_del_dia
 from ..services.driver_roster import TRACTOREO_ROSTER_CTE
 from .trips import _load_operation_type_buckets, _resolve_operation_type
@@ -87,14 +88,14 @@ WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
 # "Con carga hoy" — app.trips_del_dia(), el mismo criterio del Cierre, para
 # todos los TMS. Trae también planning_date (para "días en curso" de la
 # Sección 1) y el último destino (para clasificar RM/Z0/Región, §7.6).
-_TODAY_TRIPS_SQL = """
+_TODAY_TRIPS_SQL = f"""
 SELECT
     t.id AS trip_id,
     vfr.resolved_tractor_asset_id AS asset_id,
     t.client_name,
     t.planning_date,
     t.status_reported_at,
-    (SELECT ts.local FROM app.trip_stops ts WHERE ts.trip_id = t.id AND ts.stop_type = 'ORIGIN' LIMIT 1) AS origin_cd,
+    {origen_del_viaje('t')} AS origin_cd,
     (
         SELECT ts.local FROM app.trip_stops ts
         WHERE ts.trip_id = t.id AND ts.stop_type = 'DESTINATION'

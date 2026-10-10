@@ -25,6 +25,7 @@ from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.daily_closures import DriverBatchReasonBody, DriverDayStatusPatchBody
+from ..services.origen_del_viaje import origen_del_viaje
 from ..services.cierre_lineas import LINEAS_CONDUCTORES, frescura_del_dia, periodo, poner_motivo
 from ..services.pre_cierre import avisos_del_dia
 from ..services.cierre_viajes import SQL_TOTAL_TRIPS_DEL_DIA
@@ -150,13 +151,9 @@ LEFT JOIN LATERAL (
 -- distintas, dos columnas distintas: un NULL con dos significados es la
 -- clase de bug que este proyecto ya vio cinco veces.
 LEFT JOIN LATERAL (
-    SELECT t3.id AS trip_id, t3.source_system_trip_id, ts3.local AS origen
+    SELECT t3.id AS trip_id, t3.source_system_trip_id, {origen_del_viaje('t3')} AS origen
     FROM app.trips t3
     JOIN app.v_trip_fleet_resolution vfr3 ON vfr3.trip_id = t3.id
-    -- El local de origen vive en trip_stops, no en trips.origin_tms — esa
-    -- columna esta vacia en las 2.204 filas (medido 2026-09-07) y es de donde
-    -- ya lo lee el Diario.
-    LEFT JOIN app.trip_stops ts3 ON ts3.trip_id = t3.id AND ts3.stop_type = 'ORIGIN'
     WHERE vfr3.resolved_driver_id = dds.driver_id
       AND t3.id IN (SELECT trip_id FROM app.trips_del_dia($1))
     ORDER BY t3.status_reported_at DESC NULLS LAST

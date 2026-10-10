@@ -12,6 +12,7 @@ from ..schemas.contact import ContactCreateBody
 from ..schemas.driver import DriverCreateBody, DriverPatchBody
 from ..services.audit import log_change, record_manual_edit
 from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
+from ..services.origen_del_viaje import origen_del_viaje
 from ..utils.document_storage import resolve_signed_url
 
 router = APIRouter(prefix="/drivers", tags=["drivers"])
@@ -175,17 +176,13 @@ _UMBRAL_SUGERENCIA_CD = 80.0
 # services/pre_cierre.py: una inferencia llena un silencio y jamás contradice un
 # hecho. El origen habitual es dato maestro declarado; esto sólo evita que Operaciones
 # tenga que llenar 41 campos a ciegas.
-_SQL_SUGERENCIA_CD = """
+_SQL_SUGERENCIA_CD = f"""
 WITH viajes AS (
     SELECT l.id AS cd_id, l.name AS cd_name
     FROM app.trip_fleet_links fl
     JOIN app.trips t ON t.id = fl.trip_id
-    -- ORDER BY stop_order: Sodimac tiene viajes con más de una parada ORIGIN.
-    JOIN LATERAL (
-        SELECT s.local FROM app.trip_stops s
-        WHERE s.trip_id = t.id AND s.stop_type = 'ORIGIN'
-        ORDER BY s.stop_order ASC LIMIT 1
-    ) ts ON true
+    -- El origen del viaje: una sola definición (services/origen_del_viaje.py).
+    JOIN LATERAL (SELECT {origen_del_viaje('t')} AS local) ts ON ts.local IS NOT NULL
     JOIN public.shippers sh
       ON lower(btrim(sh.name)) = lower(btrim(t.client_name)) AND sh.status = 'ACTIVE'
     -- lower(name) y no lower(btrim(name)): es la expresión exacta del índice

@@ -470,11 +470,10 @@ def test_detail_sql_trae_numero_de_viaje_y_local_de_origen():
     from app.routers.daily_closures import _DETAIL_SQL
     assert "today_trip_code" in _DETAIL_SQL
     assert "today_trip_origin" in _DETAIL_SQL
-    # El origen sale del JOIN a trip_stops, no de la columna vacia. Se afirma
-    # sobre el SELECT y no sobre la ausencia de la palabra: "origin_tms" vive
-    # tambien en el comentario que explica por que no se usa.
-    assert "ts3.local AS origen" in _DETAIL_SQL
-    assert "ts3.stop_type = 'ORIGIN'" in _DETAIL_SQL
+    # El origen sale de las paradas con la definición única del origen del
+    # viaje (services/origen_del_viaje.py, 10/10), no de la columna vacía.
+    from app.services.origen_del_viaje import origen_del_viaje
+    assert f"{origen_del_viaje('t3')} AS origen" in _DETAIL_SQL
 
 
 def test_el_router_no_recalcula_al_leer():

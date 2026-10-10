@@ -35,6 +35,7 @@ from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.equipment_closures import EquipmentBatchReasonBody, EquipmentDayStatusPatchBody
+from ..services.origen_del_viaje import origen_del_viaje
 from ..services.cierre_lineas import LINEAS_TRACTOS, frescura_del_dia, periodo, poner_motivo
 
 router = APIRouter(prefix="/equipment-closures", tags=["equipment-closures"])
@@ -128,7 +129,7 @@ LEFT JOIN LATERAL (
 ) sd ON true
 LEFT JOIN LATERAL (
     SELECT t.id AS trip_id, vfr.resolved_driver_id AS trip_driver_id, td.full_name AS trip_driver_name,
-           t.source_system_trip_id, ts_o.local AS origen,
+           t.source_system_trip_id, {origen_del_viaje('t')} AS origen,
            COALESCE(sh.name, t.client_name) AS client_name
     FROM app.trips t
     JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
@@ -138,8 +139,6 @@ LEFT JOIN LATERAL (
     -- public.shippers tiene el nombre prolijo.
     LEFT JOIN public.shippers sh
            ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE'
-    -- Mismo motivo que en daily_closures: trips.origin_tms esta vacia.
-    LEFT JOIN app.trip_stops ts_o ON ts_o.trip_id = t.id AND ts_o.stop_type = 'ORIGIN'
     WHERE vfr.resolved_tractor_asset_id = eds.asset_id
       AND t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
     ORDER BY t.status_reported_at DESC NULLS LAST

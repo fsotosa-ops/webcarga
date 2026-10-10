@@ -22,6 +22,7 @@ from ..services.eliminar_viajes import (
     SQL_COLUMNAS_ELIMINABLE, SQL_JOIN_ELIMINABLE, anotar_eliminable, eliminar_viajes_manuales,
 )
 from ..services.cierre_viajes import SQL_CON_MOTIVO, SQL_GRUPOS_CIERRE
+from ..services.origen_del_viaje import origen_del_viaje
 
 
 def _parse_date(s: str) -> _date | None:
@@ -1488,7 +1489,7 @@ async def fleet_daily_overview(
     origin_list = [o.strip().lower() for o in origin.split(',') if o.strip()]
 
     rows = await pool.fetch(
-        """
+        f"""
         WITH active_roster AS (
             SELECT a.id AS asset_id, a.license_plate AS tractor_plate,
                    c.id AS carrier_id, c.business_name AS carrier_name,
@@ -1505,10 +1506,7 @@ async def fleet_daily_overview(
                 vfr.resolved_tractor_asset_id AS asset_id,
                 t.id AS trip_id,
                 t.client_name,
-                (
-                    SELECT ts.local FROM app.trip_stops ts
-                    WHERE ts.trip_id = t.id AND ts.stop_type = 'ORIGIN' LIMIT 1
-                ) AS origin_local
+                {origen_del_viaje('t')} AS origin_local
             FROM app.trips t
             JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
             WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
