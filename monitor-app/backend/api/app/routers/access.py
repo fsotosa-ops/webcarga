@@ -50,7 +50,9 @@ async def list_roles(pool=Depends(get_pool), _=Depends(require(Permission.USERS_
 
 
 class RoleIn(BaseModel):
-    code: str = Field(pattern=r"^[a-z][a-z0-9_]{2,40}$")
+    # custom_*: un rol de sistema nunca usa ese prefijo (test del catálogo),
+    # así que un personalizado no puede ocupar el código de uno futuro.
+    code: str = Field(pattern=r"^custom_[a-z0-9_]{2,40}$")
     name: str = Field(min_length=2)
     description: str = ""
     permissions: list[str] = Field(min_length=1)

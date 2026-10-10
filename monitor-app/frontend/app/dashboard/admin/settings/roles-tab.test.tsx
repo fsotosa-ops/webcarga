@@ -46,7 +46,7 @@ describe('RolesTab', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /Firmar y reabrir/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Crear rol' }))
     await waitFor(() => expect(accessApi.createRole).toHaveBeenCalledWith({
-      code: 'bodega_cd_lo_aguirre', name: 'Bodega CD Lo Aguirre', description: '',
+      code: 'custom_bodega_cd_lo_aguirre', name: 'Bodega CD Lo Aguirre', description: '',
       permissions: ['operations.read', 'closures.sign'],
     }))
   })
@@ -74,10 +74,13 @@ describe('RolesTab', () => {
 })
 
 describe('codigoDeRol', () => {
-  it('sale del nombre, sin tildes ni espacios, con el formato que exige la API', () => {
-    expect(codigoDeRol('Bodega CD Lo Aguirre')).toBe('bodega_cd_lo_aguirre')
-    expect(codigoDeRol('Auditoría (externa)')).toBe('auditoria_externa')
-    expect(codigoDeRol('1 rol')).toBe('rol_1_rol')
+  it('sale del nombre, sin tildes ni espacios, con el prefijo de los personalizados', () => {
+    expect(codigoDeRol('Bodega CD Lo Aguirre')).toBe('custom_bodega_cd_lo_aguirre')
+    expect(codigoDeRol('Auditoría (externa)')).toBe('custom_auditoria_externa')
+    expect(codigoDeRol('1 rol')).toBe('custom_1_rol')
+  })
+  it('respeta el largo que acepta la API (^custom_[a-z0-9_]{2,40}$)', () => {
+    expect(codigoDeRol('x'.repeat(80))).toMatch(/^custom_[a-z0-9_]{2,40}$/)
   })
 })
 

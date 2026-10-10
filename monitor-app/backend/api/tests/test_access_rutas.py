@@ -50,3 +50,10 @@ def test_poner_roles_exige_al_menos_uno():
 def test_poner_roles_con_un_id_mal_formado_es_422_y_no_500():
     res = _cliente(usuario("admin")).put("/api/v1/users/no-es-un-uuid/roles", json={"roles": ["reader"]})
     assert res.status_code == 422
+
+
+def test_un_rol_personalizado_lleva_el_prefijo_custom():
+    """Menor 6: sin prefijo, un rol de sistema futuro podría tener su código."""
+    res = _cliente(usuario("owner")).post("/api/v1/roles", json={
+        "code": "bodega", "name": "Bodega", "permissions": ["operations.read"]})
+    assert res.status_code == 422

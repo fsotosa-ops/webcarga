@@ -96,3 +96,9 @@ def test_lo_que_hoy_es_solo_de_admin_queda_en_administracion():
         if r.code not in ("admin", "owner"):
             assert Permission.CLOSURES_OVERRIDE not in r.permissions, r.code
             assert Permission.TRIPS_DELETE_ANY not in r.permissions, r.code
+
+
+def test_ningun_rol_de_sistema_usa_el_prefijo_de_los_personalizados():
+    """Menor 6 de la revisión final RBAC: los personalizados son custom_*; un
+    rol de sistema con ese prefijo podría chocar con uno ya creado."""
+    assert not [r.code for r in SYSTEM_ROLES if r.code.startswith("custom_")]

@@ -38,3 +38,15 @@ async def test_un_permiso_retirado_del_codigo_se_informa_y_no_rompe(conexion_rev
     rid = await conn.fetchval("INSERT INTO app.roles (code, name) VALUES ('custom_x', 'X') RETURNING id")
     await conn.execute("INSERT INTO app.role_permissions VALUES ($1, 'legacy.gone')", rid)
     assert await sync_catalog(conn) == ["legacy.gone"]
+
+
+async def test_sync_no_adopta_un_rol_personalizado_con_codigo_de_sistema(conexion_revertida):
+    """Menor 6: si un rol personalizado ocupara el código de un rol de sistema,
+    adoptarlo le daría a sus personas permisos que nadie les dio. Mejor fallar
+    al arrancar que hacerlo en silencio."""
+    import pytest
+    conn = conexion_revertida
+    await sync_catalog(conn)
+    await conn.execute("UPDATE app.roles SET is_system = false WHERE code = 'support'")
+    with pytest.raises(RuntimeError, match="support"):
+        await sync_catalog(conn)

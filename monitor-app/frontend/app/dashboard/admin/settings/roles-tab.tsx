@@ -8,11 +8,12 @@ import { AREAS, TITULO_DE_AREA, codigoDe } from '@/lib/authz/roles'
 import { LoadState } from './shared'
 
 /** El código de un rol personalizado sale de su nombre, con el formato que
- *  exige la API (^[a-z][a-z0-9_]{2,40}$). Nadie lo escribe a mano. */
+ *  exige la API (^custom_[a-z0-9_]{2,40}$). Nadie lo escribe a mano. El
+ *  prefijo lo separa de los roles de sistema, presentes y futuros. */
 export function codigoDeRol(nombre: string): string {
-  const base = nombre.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
-  return (/^[a-z]/.test(base) ? base : `rol_${base}`).slice(0, 41)
+  const base = nombre.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40).replace(/_+$/, '')
+  return `custom_${base.padEnd(2, '_')}`
 }
 
 function porArea(catalogo: PermisoInfo[]): [string, PermisoInfo[]][] {

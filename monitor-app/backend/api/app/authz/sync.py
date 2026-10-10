@@ -40,6 +40,14 @@ async def sync_catalog(conn) -> list[str]:
                AND NOT EXISTS (SELECT 1 FROM app.role_permissions rp
                                JOIN app.roles r ON r.id = rp.role_id
                                WHERE rp.permission_code = p.code AND NOT r.is_system)""", vigentes)
+        # Un rol personalizado con el código de uno de sistema no se adopta:
+        # sus personas recibirían permisos que nadie les dio. Con el prefijo
+        # custom_ no debería pasar; si pasa, que la API no arranque.
+        ocupados = [r["code"] for r in await conn.fetch(
+            "SELECT code FROM app.roles WHERE NOT is_system AND code = ANY($1::text[])",
+            [r.code for r in SYSTEM_ROLES])]
+        if ocupados:
+            raise RuntimeError(f"Roles personalizados con código de sistema: {', '.join(ocupados)}")
         for rol in SYSTEM_ROLES:
             rid = await conn.fetchval(
                 """INSERT INTO app.roles (code, name, description, is_system, grants_all)
