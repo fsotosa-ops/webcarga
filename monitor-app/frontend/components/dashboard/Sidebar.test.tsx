@@ -188,3 +188,19 @@ describe('Sidebar — Usuarios se mudo a Configuracion', () => {
     expect(screen.getByRole('link', { name: /configuración/i })).toBeInTheDocument()
   })
 })
+
+// Contraída, la barra muestra el cubo de WebCarga (no una flecha suelta), y
+// el cubo es el botón para expandirla.
+describe('barra contraída', () => {
+  beforeEach(() => { localStorage.setItem('sidebar-collapsed', 'true') })
+
+  it('muestra el isotipo como botón para expandir', async () => {
+    setup()
+    const expandir = await screen.findByRole('button', { name: 'Expandir barra lateral' })
+    expect(within(expandir).getByRole('img', { name: 'WebCarga' }).getAttribute('src')).toContain('webcarga-icon.png')
+    fireEvent.click(expandir)
+    expect(await screen.findByRole('button', { name: 'Contraer barra lateral' })).toBeInTheDocument()
+    localStorage.removeItem('sidebar-collapsed')
+  })
+})
+

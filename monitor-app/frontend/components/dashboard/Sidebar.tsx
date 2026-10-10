@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
   Truck, Users, LogOut, BookUser, KeyRound,
-  ChevronLeft, ChevronRight, ChevronDown, Shield, Settings, Receipt, BadgeCheck,
+  ChevronLeft, ChevronDown, Shield, Settings, Receipt, BadgeCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -266,11 +266,14 @@ export default function Sidebar({ acceso }: SidebarProps) {
         {/* ── Header ── */}
         <div className={`h-14 border-b border-white/8 flex items-center shrink-0 ${collapsed ? 'justify-center px-0' : 'px-4 gap-3'}`}>
           {collapsed ? (
+            /* Contraída: el cubo de WebCarga, que también expande la barra. */
             <button
               onClick={toggle}
-              className="w-full h-full flex items-center justify-center text-white/30 hover:text-white/70 hover:bg-white/5 transition-colors"
+              aria-label="Expandir barra lateral"
+              title="Expandir barra lateral"
+              className="w-full h-full flex items-center justify-center hover:bg-white/5 transition-colors"
             >
-              <ChevronRight size={15} />
+              <LogoWebCarga forma="isotipo" alto={28} prioridad />
             </button>
           ) : (
             <>
@@ -282,6 +285,8 @@ export default function Sidebar({ acceso }: SidebarProps) {
               </div>
               <button
                 onClick={toggle}
+                aria-label="Contraer barra lateral"
+                title="Contraer barra lateral"
                 className="shrink-0 p-1.5 rounded-lg text-white/25 hover:text-white/60 hover:bg-white/5 transition-colors"
               >
                 <ChevronLeft size={14} />
