@@ -1,37 +1,35 @@
-"""HU-02 (Cierre del Día, Fase 3): pre-cierre automático — corrige lo que el
-sistema puede resolver con confianza (Tipo A) y escala lo que no puede
-(Tipo B). Se ejecuta al inicio de cada request de `daily_closures.py` que
-calcula la cuadratura del día (mismo punto donde hoy corre `_recompute`),
-ANTES de calcular MISMATCH — así, cuando el coordinador llega a "Cerrar el
-día", la mayoría de los MISMATCH por empresa mal asociada ya no existen: el
-Tipo A los corrigió solo. MISMATCH sigue existiendo como red de contención
-para lo que el Tipo A explícitamente decide NO tocar (señal ambigua dentro
-del mismo día, ver `_single_value` más abajo) — no son 2 mecanismos
-compitiendo por la misma señal, es un pipeline: Tipo A resuelve lo claro,
-MISMATCH atrapa lo que queda.
+"""HU-02 (Cierre del Día): pre-cierre — corrige lo que el sistema puede resolver
+con confianza (Tipo A) y avisa lo que no (Tipo B).
 
-Todas las correcciones Tipo A usan `log_change(source='pre_cierre_auto')`,
-NUNCA `record_manual_edit` (que fija `is_manual_override=true`): una
-corrección automática que resulta ser un falso positivo debe poder
-autocorregirse sola en la próxima corrida (con una nueva señal), no quedar
-fijada para siempre. Mismo criterio que ya usan `assign_driver`/
-`assign_asset` en carriers.py para una asignación "normal" (no
-`unassign`, que sí fija override porque ahí SÍ es una decisión deliberada
-del coordinador).
+Desde la spec 2026-10-10 son dos caminos:
 
-Hallazgo real verificado contra producción (2026-08-02): `transporter_name_tms`
-(qué empresa dice el TMS que opera el tracto) es una variante de "WEBCARGA"
-en ~3270 de ~3280 viajes reales — WebCarga es el operador de la plataforma,
-no una empresa transportista real, así que ese valor nunca debe disparar una
-reasignación. Se excluye explícitamente (`_looks_like_webcarga_itself`).
+- `aplicar_correcciones` (Tipo A) corre DENTRO de `cierre_lineas.recalcular_en`,
+  con el período tomado y el origen de la escritura declarado, así que sus
+  escrituras no vuelven a encolar el día. Lee las señales por conjuntos (un
+  número fijo de consultas) y escribe en lote.
+- `avisos_del_dia` (Tipo B y lo resuelto solo) es lectura pura: la usan el GET
+  de daily-closures y la firma.
+
+Las reglas no cambiaron con eso; viven en `clasificar`, que es pura. MISMATCH
+sigue siendo la red para lo que el Tipo A decide NO tocar (señal ambigua, ver
+`_single_value`): Tipo A resuelve lo claro, MISMATCH atrapa lo que queda.
+
+Las correcciones Tipo A se auditan con `source='pre_cierre_auto'` y NUNCA fijan
+`is_manual_override`: un falso positivo tiene que poder autocorregirse con una
+señal nueva, no quedar fijado para siempre.
+
+Hallazgo verificado contra producción (2026-08-02): `transporter_name_tms` es una
+variante de "WEBCARGA" en ~3270 de ~3280 viajes — WebCarga opera la plataforma,
+no es una empresa transportista, así que ese valor nunca dispara una
+reasignación (`_looks_like_webcarga_itself`).
 """
+import json
 import re
 import unicodedata
+from dataclasses import dataclass, field
 from datetime import date as _date
 
-import asyncpg
-
-from .audit import log_change
+from .audit import auditar_en_lote
 
 
 def _normalize(value: str | None) -> str:
@@ -58,381 +56,377 @@ def _single_value(values: list[str]) -> str | None:
     return next(iter(distinct)) if len(distinct) == 1 else None
 
 
-async def run_pre_cierre(pool: asyncpg.Pool, business_date: _date) -> dict:
-    auto_resolved: list[dict] = []
-    escalations: dict[str, list[dict]] = {
-        "PATENTE_NO_REGISTRADA": [],
-        "EMPRESA_NO_RECONOCIDA": [],
-        "CONDUCTOR_NO_REGISTRADO": [],
-        "EMPRESA_ONBOARDING": [],
-        "SIN_TIPO_OPERACION": [],
-        "CONDUCTOR_SIN_EMPRESA": [],
-    }
+FUENTE = "pre_cierre_auto"
+ESCALACIONES = (
+    "PATENTE_NO_REGISTRADA", "EMPRESA_NO_RECONOCIDA", "CONDUCTOR_NO_REGISTRADO",
+    "EMPRESA_ONBOARDING", "SIN_TIPO_OPERACION", "CONDUCTOR_SIN_EMPRESA",
+)
 
-    # FIX 2026-08-18: las 5 consultas de acá usaban `planning_date = $1`
-    # exacto mientras el resto del Cierre ya usaba el criterio multi-día
-    # (daily_closures.py:92, equipment_closures.py:68, status_report.py:106).
-    # Como `run_pre_cierre` corre DENTRO de `_recompute()`, justo antes del
-    # cálculo que sí es multi-día, un viaje multi-día no disparaba ninguna
-    # corrección Tipo A ni ninguna escalación Tipo B: el pre-cierre miraba un
-    # universo más chico que la cuadratura que venía a preparar.
-    # Delta medido sobre el 2026-08-14 antes de aplicarlo: patentes 33 → 35,
-    # conductores por RUT 1 → 1, cliente+patente 33 → 35, onboarding 0 → 0,
-    # sin tipo de operación 1 → 1. El ensanche está acotado porque el segundo
-    # término exige `is_active`, que ya exige recencia.
-    #
-    # NO se agrega acá la exclusión de Sodimac que sí se agregó a
-    # daily_closures.py, y es deliberado: sería código muerto. Las 5 consultas
-    # exigen `tractor_plate` o `driver_rut_tms`, y de los 54 viajes Sodimac que
-    # existen en app.trips, 0 traen patente y 0 traen RUT (verificado
-    # 2026-08-18). Esa fuente no puede aportar señal a un Tipo A ni a un
-    # Tipo B: ya está excluida por construcción.
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            # ── Tipo A #1 + Tipo B "patente" ────────────────────────────────
-            plate_rows = await conn.fetch(
-                """
-                SELECT upper(trim(t.fleet->>'tractor_plate')) AS plate,
-                       array_agg(t.fleet->>'transporter_name_tms') AS carrier_names
-                FROM app.trips t
-                WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND t.fleet->>'tractor_plate' IS NOT NULL
-                GROUP BY 1
-                """,
-                business_date,
-            )
-            resolved_carrier_by_plate: dict[str, str] = {}
-            for r in plate_rows:
-                plate = r["plate"]
-                asset = await conn.fetchrow(
-                    "SELECT id FROM public.assets WHERE upper(trim(license_plate)) = $1", plate,
-                )
-                # Con la empresa que informa el TMS, si es una sola: GPRZ30 no
-                # tiene empresa en el directorio y el TMS la informa en
-                # Transporte Vicente Bugarin. Es lo que la persona necesita
-                # para decidir a quién asignarla.
-                tms_carrier_name = _single_value(r["carrier_names"])
-                if not asset:
-                    escalations["PATENTE_NO_REGISTRADA"].append({
-                        "tractor_plate": plate, "reason": "La patente no existe en public.assets",
-                        "tms_carrier_name": tms_carrier_name,
-                    })
-                    continue
-                assignment = await conn.fetchrow(
-                    """
-                    SELECT aa.carrier_id, c.business_name, aa.is_manual_override
-                    FROM public.asset_assignments aa
-                    JOIN public.carriers c ON c.id = aa.carrier_id
-                    WHERE aa.asset_id = $1 AND aa.status = 'ACTIVE'
-                    """,
-                    asset["id"],
-                )
-                if not assignment:
-                    escalations["PATENTE_NO_REGISTRADA"].append({
-                        "tractor_plate": plate, "reason": "La patente existe pero no tiene empresa asignada",
-                        "tms_carrier_name": tms_carrier_name,
-                    })
-                    continue
-                resolved_carrier_by_plate[plate] = assignment["carrier_id"]
 
-                tms_name = _single_value(r["carrier_names"])
-                if not tms_name or _looks_like_webcarga_itself(tms_name):
-                    continue
-                if _normalize(tms_name) == _normalize(assignment["business_name"]):
-                    continue
-                if assignment["is_manual_override"]:
-                    continue  # override manual: nunca lo pisa una corrección automática
+@dataclass(frozen=True)
+class Patente:
+    plate: str
+    carrier_names: list[str]
+    asset_id: str | None
+    carrier_id: str | None
+    carrier_name: str | None
+    is_manual_override: bool
 
-                candidates = await conn.fetch(
-                    "SELECT id, business_name FROM public.carriers WHERE upper(trim(business_name)) = $1",
-                    _normalize(tms_name),
-                )
-                if len(candidates) != 1:
-                    # `directory_carrier_id` viaja desde el 2026-08-27: sin él
-                    # el panel del Cierre sólo podía enlazar al índice del
-                    # directorio y la persona tenía que buscar a mano la
-                    # empresa que la pantalla ya sabía cuál era.
-                    escalations["EMPRESA_NO_RECONOCIDA"].append({
-                        "tractor_plate": plate, "tms_carrier_name": tms_name,
-                        "directory_carrier_name": assignment["business_name"],
-                        "directory_carrier_id": str(assignment["carrier_id"]),
-                    })
-                    continue
 
-                new_carrier = candidates[0]
-                await conn.execute(
-                    """
-                    UPDATE public.asset_assignments SET status = 'INACTIVE'
-                    WHERE asset_id = $1 AND carrier_id = $2 AND status = 'ACTIVE' AND NOT is_manual_override
-                    """,
-                    asset["id"], assignment["carrier_id"],
-                )
-                await conn.execute(
-                    """
-                    INSERT INTO public.asset_assignments (asset_id, carrier_id, status)
-                    VALUES ($1, $2, 'ACTIVE')
-                    ON CONFLICT (asset_id, carrier_id) DO UPDATE SET status = 'ACTIVE'
-                    WHERE NOT asset_assignments.is_manual_override
-                    """,
-                    asset["id"], new_carrier["id"],
-                )
-                await log_change(
-                    conn, actor=None, entity_type="ASSET", entity_id=asset["id"],
-                    action="pre_cierre_reasignar_empresa", field="carrier_id",
-                    old_value=assignment["business_name"], new_value=new_carrier["business_name"],
-                    source="pre_cierre_auto",
-                )
-                resolved_carrier_by_plate[plate] = new_carrier["id"]
-                auto_resolved.append({
-                    "type": "PATENTE_EMPRESA", "tractor_plate": plate,
-                    "old_carrier_name": assignment["business_name"], "new_carrier_name": new_carrier["business_name"],
-                    "message": (
-                        f"Se actualizó la empresa asociada a la patente {plate} de "
-                        f"'{assignment['business_name']}' a '{new_carrier['business_name']}'. "
-                        "Revisar que los documentos asociados (permiso de circulación, "
-                        "contrato de conductor) estén vigentes para la nueva empresa."
-                    ),
-                })
+@dataclass(frozen=True)
+class Conductor:
+    rut: str
+    es_canonico: bool
+    names: list[str]
+    driver_id: str | None
+    full_name: str | None
+    is_manual_override: bool
 
-            # ── Tipo A #2 — conductor: nombre distinto para el mismo RUT ────
-            # EL RUT SE CANONIZA ANTES DE BUSCARLO (2026-08-27). Acá vivía el
-            # bug que bloqueó el cierre del 25/08: se comparaba
-            # `upper(trim(tax_id))` contra el RUT crudo del TMS, y
-            # `public.drivers.tax_id` está siempre en forma canónica
-            # `NNNNNNNN-D` porque lo obliga un trigger y un CHECK.
-            #
-            # Medido contra producción el 27/08: de los viajes de agosto que
-            # traen RUT del TMS, **los 7 lo traen CON puntos, y los 7
-            # conductores existen al canonizar**. O sea CONDUCTOR_NO_REGISTRADO
-            # era 100% falso positivo — y como esta escalación hace `continue`,
-            # de paso mataba la corrección Tipo A del nombre, que es lo único
-            # que este bloque vino a hacer.
-            #
-            # La llave del GROUP BY es el canónico cuando existe, y el crudo
-            # cuando no: así dos formatos del mismo RUT colapsan en un caso, y
-            # dos RUT inválidos distintos no se mezclan en uno solo.
-            #
-            # La patente de más arriba tiene la MISMA forma (compara literal
-            # teniendo `public.canonical_plate` al lado) y NO se toca en este
-            # cambio: está medida y hoy no falla —817 de 828 viajes de agosto
-            # calzan igual literal que canónico, y los 11 restantes son 2
-            # patentes que de verdad no están en el directorio—. Además su
-            # llave se cruza con la de `client_rows` más abajo, así que
-            # canonizar una sola de las dos las desalinea. Queda dicho para que
-            # sea una decisión y no un olvido.
-            driver_rows = await conn.fetch(
-                """
-                SELECT COALESCE(public.canonical_rut(t.fleet->>'driver_rut_tms'),
-                                upper(trim(t.fleet->>'driver_rut_tms'))) AS rut,
-                       bool_or(public.canonical_rut(t.fleet->>'driver_rut_tms') IS NOT NULL) AS es_canonico,
-                       array_agg(t.fleet->>'driver_name_tms') AS names
-                FROM app.trips t
-                WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND t.fleet->>'driver_rut_tms' IS NOT NULL
-                  AND trim(t.fleet->>'driver_rut_tms') != ''
-                GROUP BY 1
-                """,
-                business_date,
-            )
-            for r in driver_rows:
-                rut = r["rut"]
-                if not r["es_canonico"]:
-                    # El TMS mandó algo que no es un RUT. Es una escalación
-                    # legítima y distinta de "no está en el directorio": no
-                    # sirve de nada buscarlo, y el coordinador necesita ver
-                    # exactamente lo que llegó para poder reclamarlo.
-                    escalations["CONDUCTOR_NO_REGISTRADO"].append({
-                        "driver_rut": rut,
-                        "reason": "El TMS informó un RUT que no es válido",
-                    })
-                    continue
-                driver = await conn.fetchrow(
-                    "SELECT id, full_name, is_manual_override FROM public.drivers WHERE tax_id = $1", rut,
-                )
-                tms_name = _single_value(r["names"])
-                if not driver:
-                    # El nombre del TMS viaja con la escalación (2026-08-27)
-                    # para que el panel del Cierre pueda ofrecer el alta ahí
-                    # mismo, con el nombre ya escrito. Sin él, la única salida
-                    # era un enlace a otro módulo: eso es el "círculo
-                    # bloqueante" que describe la minuta del 25/08.
-                    #
-                    # `_single_value` devuelve None si los viajes de ese RUT
-                    # traen nombres distintos: ahí no hay un nombre que
-                    # proponer, y proponer uno de los dos sería inventar.
-                    escalations["CONDUCTOR_NO_REGISTRADO"].append(
-                        {"driver_rut": rut, "driver_name_tms": tms_name}
-                    )
-                    continue
-                if not tms_name or driver["is_manual_override"]:
-                    continue
-                if _normalize(tms_name) == _normalize(driver["full_name"]):
-                    continue
-                await conn.execute(
-                    "UPDATE public.drivers SET full_name = $1 WHERE id = $2", tms_name.strip(), driver["id"],
-                )
-                await log_change(
-                    conn, actor=None, entity_type="DRIVER", entity_id=driver["id"],
-                    action="pre_cierre_actualizar_nombre", field="full_name",
-                    old_value=driver["full_name"], new_value=tms_name.strip(), source="pre_cierre_auto",
-                )
-                auto_resolved.append({
-                    "type": "CONDUCTOR_DATOS", "driver_rut": rut,
-                    "old_value": driver["full_name"], "new_value": tms_name.strip(),
-                    "message": f"Se actualizó el nombre del conductor {rut} de '{driver['full_name']}' a '{tms_name.strip()}'.",
-                })
 
-            # ── Tipo A #3 — cliente no listado en carrier_shippers ──────────
-            client_rows = await conn.fetch(
-                """
-                SELECT DISTINCT upper(trim(t.fleet->>'tractor_plate')) AS plate, t.client_name
-                FROM app.trips t
-                WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND t.fleet->>'tractor_plate' IS NOT NULL
-                  AND t.client_name IS NOT NULL
-                """,
-                business_date,
-            )
-            for r in client_rows:
-                carrier_id = resolved_carrier_by_plate.get(r["plate"])
-                if not carrier_id:
-                    continue
-                shipper = await conn.fetchrow(
-                    "SELECT id, name FROM public.shippers WHERE upper(trim(name)) = $1", _normalize(r["client_name"]),
-                )
-                if not shipper:
-                    continue
-                already_linked = await conn.fetchval(
-                    "SELECT 1 FROM public.carrier_shippers WHERE carrier_id = $1 AND shipper_id = $2 AND status = 'ACTIVE'",
-                    carrier_id, shipper["id"],
-                )
-                if already_linked:
-                    continue
-                carrier_name = await conn.fetchval("SELECT business_name FROM public.carriers WHERE id = $1", carrier_id)
-                await conn.execute(
-                    """
-                    INSERT INTO public.carrier_shippers (carrier_id, shipper_id, status)
-                    VALUES ($1, $2, 'ACTIVE')
-                    ON CONFLICT (carrier_id, shipper_id) DO UPDATE SET status = 'ACTIVE'
-                    WHERE NOT carrier_shippers.is_manual_override
-                    """,
-                    carrier_id, shipper["id"],
-                )
-                await log_change(
-                    conn, actor=None, entity_type="CARRIER", entity_id=carrier_id,
-                    action="pre_cierre_agregar_cliente", field="carrier_shippers",
-                    new_value=shipper["name"], source="pre_cierre_auto",
-                )
-                auto_resolved.append({
-                    "type": "CLIENTE_EMPRESA", "carrier_name": carrier_name, "client_name": shipper["name"],
-                    "message": f"Se agregó '{shipper['name']}' a la lista de clientes de '{carrier_name}'.",
-                })
+@dataclass(frozen=True)
+class ParCliente:
+    plate: str
+    client_name: str
 
-            # ── Tipo B — empresa en onboarding (post-correcciones Tipo A) ───
-            onboarding_rows = await conn.fetch(
-                """
-                SELECT DISTINCT c.id AS carrier_id, c.business_name
-                FROM app.trips t
-                JOIN public.assets a ON upper(trim(a.license_plate)) = upper(trim(t.fleet->>'tractor_plate'))
-                JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
-                JOIN public.carriers c ON c.id = aa.carrier_id
-                WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND c.operational_status != 'ACTIVE'
-                """,
-                business_date,
-            )
-            for r in onboarding_rows:
-                escalations["EMPRESA_ONBOARDING"].append(
-                    {"carrier_id": str(r["carrier_id"]), "carrier_name": r["business_name"]}
-                )
 
-            # ── Tipo B — tracto activo sin "Tipo de Operación WebCarga" ─────
-            # (Ronda 85, corrige la Ronda 80: el campo que decide Bloque 1/2
-            # del cierre es webcarga_operation_type_id, no
-            # fleet_service_type_id — viven en el TRACTO individual, no a
-            # nivel empresa; public.carrier_fleet_service_types se eliminó,
-            # nunca tuvo una fuente de ingesta real.)
-            #
-            # Trae la PATENTE, no solo la empresa: la accion es sobre un
-            # vehiculo puntual —abrirlo y clasificarlo—, y una empresa con
-            # cuatro tractos no dice cual. Antes decia solo el nombre de la
-            # empresa y mandaba a la ficha a buscarlo a ojo.
-            sin_tipo_rows = await conn.fetch(
-                """
-                SELECT DISTINCT c.id AS carrier_id, c.business_name, a.license_plate
-                FROM app.trips t
-                JOIN public.assets a ON upper(trim(a.license_plate)) = upper(trim(t.fleet->>'tractor_plate'))
-                JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
-                JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
-                WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
-                  AND a.webcarga_operation_type_id IS NULL
-                """,
-                business_date,
-            )
-            for r in sin_tipo_rows:
-                escalations["SIN_TIPO_OPERACION"].append(
-                    {
-                        "carrier_id": str(r["carrier_id"]),
-                        "carrier_name": r["business_name"],
-                        "tractor_plate": r["license_plate"],
-                    }
-                )
+@dataclass(frozen=True)
+class Senales:
+    patentes: list[Patente]
+    conductores: list[Conductor]
+    pares_cliente: list[ParCliente]
+    # clave = upper(trim(business_name)) → [(id, business_name)]
+    empresas_por_clave: dict[str, list[tuple[str, str]]]
+    # clave = upper(trim(name)) → (id, name); el primero, como el fetchrow de antes
+    clientes_por_clave: dict[str, tuple[str, str]]
+    vinculos_activos: set[tuple[str, str]]
+    nombres_empresa: dict[str, str]
 
-            # ── Tipo B — conductor con viaje y sin empresa: se PROPONE ──────
-            # El caso Gerson Ferrada de la minuta del 25/08, y el problema
-            # estructural detrás: el cierre por conductor recorre el PADRÓN
-            # (`driver_assignments`, quién figura) mientras el viaje resuelve el
-            # conductor por el HECHO (lo que reporta el TMS). Nada reconciliaba
-            # los dos, así que el cierre mostraba al conductor de papel como no
-            # asignado y al que efectivamente manejó no lo mostraba en absoluto.
-            #
-            # Al 27/08 son 8 conductores con 278 viajes en 60 días invisibles
-            # para la cuadratura.
-            #
-            # ESTO PROPONE, NO ESCRIBE, y las tres condiciones son el porqué:
-            #
-            #   1. `NOT EXISTS ... status = 'ACTIVE'` — sólo cuando el padrón
-            #      está EN SILENCIO. Si el conductor ya tiene empresa y el
-            #      tracto dice otra, eso es una contradicción y no se toca: una
-            #      inferencia llena un silencio, nunca contradice un dato que
-            #      alguien cargó a mano.
-            #   2. `HAVING count(DISTINCT ...) = 1` — sólo cuando todos sus
-            #      viajes de la ventana apuntan a la MISMA empresa. Dos
-            #      empresas distintas no son una propuesta, son una pregunta.
-            #      Mismo criterio que `_single_value` más arriba.
-            #   3. El vínculo lo escribe una persona desde el panel del Cierre.
-            #      Y como Certificación LEE `driver_assignments`, escribir ahí
-            #      ES la sincronización entre los dos módulos: no hace falta
-            #      ningún mecanismo aparte.
-            #
-            # NO entra a `ESCALACIONES_QUE_BLOQUEAN` (services/cierre_lineas.py): es
-            # una propuesta, y bloquear el cierre con ella cambiaría la
-            # operación diaria sin que nadie lo haya pedido.
-            sin_empresa_rows = await conn.fetch(
-                """
-                SELECT vfr.resolved_driver_id AS driver_id,
-                       d.full_name,
-                       min(vfr.resolved_carrier_id::text)::uuid AS carrier_id,
-                       min(c.business_name) AS carrier_name,
-                       count(*) AS viajes
-                FROM app.trips t
-                JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-                JOIN public.drivers d ON d.id = vfr.resolved_driver_id
-                                     AND d.operational_status = 'ACTIVE'
-                JOIN public.carriers c ON c.id = vfr.resolved_carrier_id
-                                      AND c.operational_status = 'ACTIVE'
-                WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
-                  AND NOT EXISTS (
-                        SELECT 1 FROM public.driver_assignments da
-                        WHERE da.driver_id = vfr.resolved_driver_id AND da.status = 'ACTIVE')
-                GROUP BY vfr.resolved_driver_id, d.full_name
-                HAVING count(DISTINCT vfr.resolved_carrier_id) = 1
-                """,
-                business_date,
-            )
-            for r in sin_empresa_rows:
-                escalations["CONDUCTOR_SIN_EMPRESA"].append({
-                    "driver_id": str(r["driver_id"]),
-                    "driver_name": r["full_name"],
-                    "carrier_id": str(r["carrier_id"]),
-                    "carrier_name": r["carrier_name"],
-                    "viajes": r["viajes"],
-                })
 
+@dataclass(frozen=True)
+class Reasignacion:
+    plate: str
+    asset_id: str
+    old_carrier_id: str
+    old_name: str
+    new_carrier_id: str
+    new_name: str
+
+
+@dataclass(frozen=True)
+class Renombre:
+    rut: str
+    driver_id: str
+    old_name: str
+    new_name: str
+
+
+@dataclass(frozen=True)
+class Vinculo:
+    carrier_id: str
+    carrier_name: str | None
+    shipper_id: str
+    shipper_name: str
+
+
+@dataclass
+class Clasificacion:
+    reasignaciones: list[Reasignacion] = field(default_factory=list)
+    renombres: list[Renombre] = field(default_factory=list)
+    vinculos: list[Vinculo] = field(default_factory=list)
+    carrier_por_patente: dict[str, str] = field(default_factory=dict)
+    escalations: dict[str, list[dict]] = field(default_factory=lambda: {k: [] for k in ESCALACIONES})
+
+
+def clasificar(s: Senales) -> Clasificacion:
+    """Las reglas de siempre (Tipo A corrige lo claro, Tipo B avisa), sin E/S."""
+    c = Clasificacion()
+
+    for p in s.patentes:
+        tms_carrier_name = _single_value(p.carrier_names)
+        if not p.asset_id:
+            c.escalations["PATENTE_NO_REGISTRADA"].append({
+                "tractor_plate": p.plate, "reason": "La patente no existe en public.assets",
+                "tms_carrier_name": tms_carrier_name,
+            })
+            continue
+        if not p.carrier_id:
+            c.escalations["PATENTE_NO_REGISTRADA"].append({
+                "tractor_plate": p.plate, "reason": "La patente existe pero no tiene empresa asignada",
+                "tms_carrier_name": tms_carrier_name,
+            })
+            continue
+        c.carrier_por_patente[p.plate] = p.carrier_id
+        tms_name = tms_carrier_name
+        if not tms_name or _looks_like_webcarga_itself(tms_name):
+            continue
+        if _normalize(tms_name) == _normalize(p.carrier_name):
+            continue
+        if p.is_manual_override:
+            continue
+        candidatos = s.empresas_por_clave.get(_normalize(tms_name), [])
+        if len(candidatos) != 1:
+            c.escalations["EMPRESA_NO_RECONOCIDA"].append({
+                "tractor_plate": p.plate, "tms_carrier_name": tms_name,
+                "directory_carrier_name": p.carrier_name, "directory_carrier_id": str(p.carrier_id),
+            })
+            continue
+        nuevo_id, nuevo_nombre = candidatos[0]
+        c.reasignaciones.append(Reasignacion(
+            plate=p.plate, asset_id=p.asset_id, old_carrier_id=p.carrier_id, old_name=p.carrier_name,
+            new_carrier_id=nuevo_id, new_name=nuevo_nombre,
+        ))
+        c.carrier_por_patente[p.plate] = nuevo_id
+
+    for d in s.conductores:
+        if not d.es_canonico:
+            c.escalations["CONDUCTOR_NO_REGISTRADO"].append(
+                {"driver_rut": d.rut, "reason": "El TMS informó un RUT que no es válido"})
+            continue
+        tms_name = _single_value(d.names)
+        if not d.driver_id:
+            c.escalations["CONDUCTOR_NO_REGISTRADO"].append({"driver_rut": d.rut, "driver_name_tms": tms_name})
+            continue
+        if not tms_name or d.is_manual_override:
+            continue
+        if _normalize(tms_name) == _normalize(d.full_name):
+            continue
+        c.renombres.append(Renombre(rut=d.rut, driver_id=d.driver_id, old_name=d.full_name,
+                                    new_name=tms_name.strip()))
+
+    vistos: set[tuple[str, str]] = set()
+    for par in s.pares_cliente:
+        carrier_id = c.carrier_por_patente.get(par.plate)
+        if not carrier_id:
+            continue
+        cliente = s.clientes_por_clave.get(_normalize(par.client_name))
+        if not cliente:
+            continue
+        shipper_id, shipper_name = cliente
+        clave = (carrier_id, shipper_id)
+        if clave in s.vinculos_activos or clave in vistos:
+            continue
+        vistos.add(clave)
+        nombre = s.nombres_empresa.get(carrier_id)
+        c.vinculos.append(Vinculo(carrier_id=carrier_id, carrier_name=nombre,
+                                  shipper_id=shipper_id, shipper_name=shipper_name))
+    return c
+
+
+_SQL_PATENTES = """
+WITH p AS (
+    SELECT upper(trim(t.fleet->>'tractor_plate')) AS plate,
+           array_agg(t.fleet->>'transporter_name_tms') AS carrier_names
+    FROM app.trips t
+    WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND t.fleet->>'tractor_plate' IS NOT NULL
+    GROUP BY 1
+)
+SELECT p.plate, p.carrier_names, a.id::text AS asset_id,
+       asg.carrier_id::text AS carrier_id, asg.business_name AS carrier_name,
+       COALESCE(asg.is_manual_override, false) AS is_manual_override
+FROM p
+LEFT JOIN LATERAL (
+    SELECT id FROM public.assets WHERE upper(trim(license_plate)) = p.plate LIMIT 1
+) a ON true
+LEFT JOIN LATERAL (
+    SELECT aa.carrier_id, c.business_name, aa.is_manual_override
+    FROM public.asset_assignments aa JOIN public.carriers c ON c.id = aa.carrier_id
+    WHERE aa.asset_id = a.id AND aa.status = 'ACTIVE' LIMIT 1
+) asg ON true
+"""
+
+# La llave del GROUP BY es el RUT canónico cuando existe, y el crudo cuando no
+# (27/08): dos formatos del mismo RUT colapsan en un caso.
+_SQL_CONDUCTORES = """
+WITH r AS (
+    SELECT COALESCE(public.canonical_rut(t.fleet->>'driver_rut_tms'),
+                    upper(trim(t.fleet->>'driver_rut_tms'))) AS rut,
+           bool_or(public.canonical_rut(t.fleet->>'driver_rut_tms') IS NOT NULL) AS es_canonico,
+           array_agg(t.fleet->>'driver_name_tms') AS names
+    FROM app.trips t
+    WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND t.fleet->>'driver_rut_tms' IS NOT NULL
+      AND trim(t.fleet->>'driver_rut_tms') != ''
+    GROUP BY 1
+)
+SELECT r.rut, r.es_canonico, r.names, d.id::text AS driver_id, d.full_name,
+       COALESCE(d.is_manual_override, false) AS is_manual_override
+FROM r
+LEFT JOIN LATERAL (
+    SELECT id, full_name, is_manual_override FROM public.drivers WHERE tax_id = r.rut LIMIT 1
+) d ON r.es_canonico
+"""
+
+_SQL_PARES_CLIENTE = """
+SELECT DISTINCT upper(trim(t.fleet->>'tractor_plate')) AS plate, t.client_name
+FROM app.trips t
+WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND t.fleet->>'tractor_plate' IS NOT NULL
+  AND t.client_name IS NOT NULL
+"""
+
+
+async def leer_senales(conn, fecha: _date) -> Senales:
+    """Todas las señales del día en un número fijo de consultas (antes, ~4 por fila)."""
+    patentes = [Patente(**dict(r)) for r in await conn.fetch(_SQL_PATENTES, fecha)]
+    conductores = [Conductor(**dict(r)) for r in await conn.fetch(_SQL_CONDUCTORES, fecha)]
+    pares = [ParCliente(**dict(r)) for r in await conn.fetch(_SQL_PARES_CLIENTE, fecha)]
+
+    claves_empresa = sorted({_normalize(n) for p in patentes if (n := _single_value(p.carrier_names))})
+    empresas: dict[str, list[tuple[str, str]]] = {}
+    for r in await conn.fetch(
+        "SELECT id::text AS id, business_name, upper(trim(business_name)) AS clave "
+        "FROM public.carriers WHERE upper(trim(business_name)) = ANY($1::text[]) ORDER BY id",
+        claves_empresa,
+    ):
+        empresas.setdefault(r["clave"], []).append((r["id"], r["business_name"]))
+
+    claves_cliente = sorted({_normalize(p.client_name) for p in pares})
+    clientes: dict[str, tuple[str, str]] = {}
+    for r in await conn.fetch(
+        "SELECT id::text AS id, name, upper(trim(name)) AS clave "
+        "FROM public.shippers WHERE upper(trim(name)) = ANY($1::text[]) ORDER BY id",
+        claves_cliente,
+    ):
+        clientes.setdefault(r["clave"], (r["id"], r["name"]))
+
+    ids_empresa = sorted({p.carrier_id for p in patentes if p.carrier_id}
+                         | {i for lista in empresas.values() for i, _ in lista})
+    vinculos = {(r["carrier_id"], r["shipper_id"]) for r in await conn.fetch(
+        "SELECT carrier_id::text AS carrier_id, shipper_id::text AS shipper_id FROM public.carrier_shippers "
+        "WHERE status = 'ACTIVE' AND carrier_id = ANY($1::uuid[])", ids_empresa)}
+    nombres = {r["id"]: r["business_name"] for r in await conn.fetch(
+        "SELECT id::text AS id, business_name FROM public.carriers WHERE id = ANY($1::uuid[])", ids_empresa)}
+
+    return Senales(patentes=patentes, conductores=conductores, pares_cliente=pares,
+                   empresas_por_clave=empresas, clientes_por_clave=clientes,
+                   vinculos_activos=vinculos, nombres_empresa=nombres)
+
+
+async def aplicar_correcciones(conn, fecha: _date) -> None:
+    """Tipo A, en lote. La llama `cierre_lineas.recalcular_en` dentro de su
+    transacción, con el período tomado y el origen declarado: estas escrituras
+    no vuelven a encolar el día."""
+    c = clasificar(await leer_senales(conn, fecha))
+
+    if c.reasignaciones:
+        activos = [r.asset_id for r in c.reasignaciones]
+        await conn.execute(
+            """
+            UPDATE public.asset_assignments aa SET status = 'INACTIVE'
+            FROM unnest($1::uuid[], $2::uuid[]) AS x(asset_id, carrier_id)
+            WHERE aa.asset_id = x.asset_id AND aa.carrier_id = x.carrier_id
+              AND aa.status = 'ACTIVE' AND NOT aa.is_manual_override
+            """,
+            activos, [r.old_carrier_id for r in c.reasignaciones],
+        )
+        await conn.execute(
+            """
+            INSERT INTO public.asset_assignments (asset_id, carrier_id, status)
+            SELECT x.asset_id, x.carrier_id, 'ACTIVE' FROM unnest($1::uuid[], $2::uuid[]) AS x(asset_id, carrier_id)
+            ON CONFLICT (asset_id, carrier_id) DO UPDATE SET status = 'ACTIVE'
+            WHERE NOT asset_assignments.is_manual_override
+            """,
+            activos, [r.new_carrier_id for r in c.reasignaciones],
+        )
+        await auditar_en_lote(conn, entity_type="ASSET", action="pre_cierre_reasignar_empresa",
+                              field="carrier_id", source=FUENTE,
+                              filas=[(r.asset_id, r.old_name, r.new_name) for r in c.reasignaciones])
+
+    if c.renombres:
+        await conn.execute(
+            "UPDATE public.drivers d SET full_name = x.nombre "
+            "FROM unnest($1::uuid[], $2::text[]) AS x(id, nombre) WHERE d.id = x.id",
+            [r.driver_id for r in c.renombres], [r.new_name for r in c.renombres],
+        )
+        await auditar_en_lote(conn, entity_type="DRIVER", action="pre_cierre_actualizar_nombre",
+                              field="full_name", source=FUENTE,
+                              filas=[(r.driver_id, r.old_name, r.new_name) for r in c.renombres])
+
+    if c.vinculos:
+        await conn.execute(
+            """
+            INSERT INTO public.carrier_shippers (carrier_id, shipper_id, status)
+            SELECT x.carrier_id, x.shipper_id, 'ACTIVE' FROM unnest($1::uuid[], $2::uuid[]) AS x(carrier_id, shipper_id)
+            ON CONFLICT (carrier_id, shipper_id) DO UPDATE SET status = 'ACTIVE'
+            WHERE NOT carrier_shippers.is_manual_override
+            """,
+            [v.carrier_id for v in c.vinculos], [v.shipper_id for v in c.vinculos],
+        )
+        await auditar_en_lote(conn, entity_type="CARRIER", action="pre_cierre_agregar_cliente",
+                              field="carrier_shippers", source=FUENTE,
+                              filas=[(v.carrier_id, None, v.shipper_name) for v in c.vinculos])
+
+
+_SQL_ONBOARDING = """
+SELECT DISTINCT c.id::text AS carrier_id, c.business_name AS carrier_name
+FROM app.trips t
+JOIN public.assets a ON upper(trim(a.license_plate)) = upper(trim(t.fleet->>'tractor_plate'))
+JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
+JOIN public.carriers c ON c.id = aa.carrier_id
+WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND c.operational_status != 'ACTIVE'
+"""
+
+# Trae la PATENTE: la acción es abrir ese tracto y clasificarlo.
+_SQL_SIN_TIPO = """
+SELECT DISTINCT c.id::text AS carrier_id, c.business_name AS carrier_name, a.license_plate AS tractor_plate
+FROM app.trips t
+JOIN public.assets a ON upper(trim(a.license_plate)) = upper(trim(t.fleet->>'tractor_plate'))
+JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
+JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
+WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND a.webcarga_operation_type_id IS NULL
+"""
+
+# PROPONE, no escribe (minuta 25/08): solo con el padrón en silencio y una sola
+# empresa en todos sus viajes. El vínculo lo escribe una persona desde el panel.
+_SQL_SIN_EMPRESA = """
+SELECT vfr.resolved_driver_id::text AS driver_id, d.full_name AS driver_name,
+       min(vfr.resolved_carrier_id::text) AS carrier_id, min(c.business_name) AS carrier_name,
+       count(*) AS viajes
+FROM app.trips t
+JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+JOIN public.drivers d ON d.id = vfr.resolved_driver_id AND d.operational_status = 'ACTIVE'
+JOIN public.carriers c ON c.id = vfr.resolved_carrier_id AND c.operational_status = 'ACTIVE'
+WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
+  AND NOT EXISTS (SELECT 1 FROM public.driver_assignments da
+                  WHERE da.driver_id = vfr.resolved_driver_id AND da.status = 'ACTIVE')
+GROUP BY vfr.resolved_driver_id, d.full_name
+HAVING count(DISTINCT vfr.resolved_carrier_id) = 1
+"""
+
+# Lo que el sistema corrigió solo, desde el día D (mismo patrón que
+# cierre_viajes.SQL_CON_MOTIVO): se lee de la bitácora, no se guarda aparte.
+_SQL_RESUELTAS = """
+SELECT a.action, a.old_value, a.new_value, ast.license_plate, d.tax_id, c.business_name
+FROM public.audit_log a
+LEFT JOIN public.assets ast ON a.entity_type = 'ASSET' AND ast.id = a.entity_id
+LEFT JOIN public.drivers d ON a.entity_type = 'DRIVER' AND d.id = a.entity_id
+LEFT JOIN public.carriers c ON a.entity_type = 'CARRIER' AND c.id = a.entity_id
+WHERE a.source = 'pre_cierre_auto'
+  AND (a.occurred_at AT TIME ZONE 'America/Santiago')::date >= $1
+ORDER BY a.occurred_at
+"""
+
+
+def _resuelta(r) -> dict:
+    viejo = json.loads(r["old_value"]) if r["old_value"] else None
+    nuevo = json.loads(r["new_value"]) if r["new_value"] else None
+    if r["action"] == "pre_cierre_reasignar_empresa":
+        return {"type": "PATENTE_EMPRESA", "tractor_plate": r["license_plate"],
+                "old_carrier_name": viejo, "new_carrier_name": nuevo,
+                "message": (f"Se actualizó la empresa asociada a la patente {r['license_plate']} de "
+                            f"'{viejo}' a '{nuevo}'. Revisar que los documentos asociados (permiso de "
+                            "circulación, contrato de conductor) estén vigentes para la nueva empresa.")}
+    if r["action"] == "pre_cierre_actualizar_nombre":
+        return {"type": "CONDUCTOR_DATOS", "driver_rut": r["tax_id"], "old_value": viejo, "new_value": nuevo,
+                "message": f"Se actualizó el nombre del conductor {r['tax_id']} de '{viejo}' a '{nuevo}'."}
+    return {"type": "CLIENTE_EMPRESA", "carrier_name": r["business_name"], "client_name": nuevo,
+            "message": f"Se agregó '{nuevo}' a la lista de clientes de '{r['business_name']}'."}
+
+
+async def avisos_del_dia(conn, fecha: _date) -> dict:
+    """Tipo B y lo resuelto solo, en lectura pura: no escribe nada."""
+    c = clasificar(await leer_senales(conn, fecha))
+    escalations = c.escalations
+    escalations["EMPRESA_ONBOARDING"] = [dict(r) for r in await conn.fetch(_SQL_ONBOARDING, fecha)]
+    escalations["SIN_TIPO_OPERACION"] = [dict(r) for r in await conn.fetch(_SQL_SIN_TIPO, fecha)]
+    escalations["CONDUCTOR_SIN_EMPRESA"] = [dict(r) for r in await conn.fetch(_SQL_SIN_EMPRESA, fecha)]
+    auto_resolved = [_resuelta(r) for r in await conn.fetch(_SQL_RESUELTAS, fecha)]
     return {"auto_resolved": auto_resolved, "escalations": escalations}

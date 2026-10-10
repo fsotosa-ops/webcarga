@@ -55,6 +55,33 @@ async def log_change(
     )
 
 
+async def auditar_en_lote(
+    conn: asyncpg.Connection,
+    *,
+    entity_type: str,
+    action: str,
+    field: str | None,
+    filas: list[tuple[UUID | str, object, object]],
+    source: str,
+) -> None:
+    """Las mismas filas que `log_change`, en una sola sentencia: (entity_id,
+    old_value, new_value) por cada cambio. Sin actor: es lo que escribe el
+    sistema (pre-cierre)."""
+    if not filas:
+        return
+    await conn.execute(
+        """
+        INSERT INTO public.audit_log (actor, entity_type, entity_id, action, field, old_value, new_value, source)
+        SELECT NULL, $1, x.entity_id, $2, $3, x.old_value, x.new_value, $4
+        FROM unnest($5::uuid[], $6::jsonb[], $7::jsonb[]) AS x(entity_id, old_value, new_value)
+        """,
+        entity_type, action, field, source,
+        [str(e) for e, _, _ in filas],
+        [None if o is None else json.dumps(o, default=str) for _, o, _ in filas],
+        [None if n is None else json.dumps(n, default=str) for _, _, n in filas],
+    )
+
+
 async def record_manual_edit(
     conn: asyncpg.Connection,
     *,
