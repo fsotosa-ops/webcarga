@@ -33,9 +33,17 @@ corregido dos veces en el chat (primero proponía arreglos puntuales y luego una
 - Suite backend 1345 verdes (+ catálogo ajeno; un error de la guarda de compliance_records fue un alta real de
   conductor a las 19:49, no fuga). Frontend 1569/1569, tsc y build limpios. Verificado en dev con Playwright.
 
+- `7677100d` **Ítem 13, "Sin conductor"**: el usuario corrigió el planteamiento ("no es el habitual"); la
+  transcripción aclara que es el FALTANTE DE DOTACIÓN ("todos los que te faltan conductor en los sin trabajar";
+  "Casilla" era Inversiones Casilla Spa). La Sección 4 suma `compute_fleet_driver_gap` (la definición de la
+  pestaña Dotación) en "Sin conductor", por código SIN_CONDUCTOR, en "Sin origen". Real: Casilla 3, Mendieta 1,
+  Doris Mercedes 1 = Dotación. No hizo falta mover la fusión al backend (se descartó esa spec).
+- `87dc7e7c` **"Ver viaje" desde el Cierre volvía al Monitor**: el Cierre abre el detalle con `?next=` (URL con
+  fecha y pestaña; la pestaña pasa a `?tab=`) y el detalle vuelve ahí (`lib/navegacion/viaje.ts`, reutiliza
+  `destinoSeguro`). Verificado en dev: Ver viaje → Cerrar detalle → `/closures?fecha=2026-10-09&tab=flota`.
+- Suites: backend 1347 verdes (+ catálogo ajeno); frontend 1579/1579, build limpio. Desplegado en dev.
+
 **Siguiente paso exacto:**
-- [ ] Ítem 13 (tractos sin conductor en "Sin trabajar"): spec para llevar la fusión tracto + conductor habitual
-  de `FlotaDelDiaSection.tsx` a un servicio del backend que consuman Flota del día y el reporte.
 - [ ] Decisiones del usuario: A) regla de 15 días; B) origen real vs habitual en Asignado; C) duplicados en días firmados.
 - [ ] Otras tablas del reporte siguen con overflow-hidden en teléfono (preexistente).
 
