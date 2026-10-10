@@ -26,7 +26,7 @@ Plan: `~/.claude/plans/snoopy-riding-giraffe.md`. Fuentes: minuta `monitor-app/b
 `equipment_closures`, `status_report`, `trips.py` ×4) excluían `source_system = 'sodimac'`, una regla de julio
 (*"no resuelve flota por la misma cadena"*). Hoy `v_trip_fleet_resolution` lee solo `trip_fleet_links` y los 29
 vínculos de Sodimac son de Operaciones, así que el viaje quedaba asignado (dbt, 09/10) y su tracto de Equipo
-Completo (PYST91, GBVC90, YN2499, DZYH10) seguía "No asignado" en Flota del día, el reporte y los disponibles.
+Completo (PYST91, GBVC90, YN2499) seguía "No asignado" en Flota del día, el reporte y los disponibles.
 Los manuales Iansa/HBC no eran parte del problema: sus días ya decían ASSIGNED.
 
 **Decisiones del usuario (10/10):**
@@ -41,7 +41,12 @@ Los manuales Iansa/HBC no eran parte del problema: sus días ya decían ASSIGNED
 (línea ASSIGNED + "Ver viaje"); mutación verificada: con la exclusión reinsertada fallan los dos.
 
 **Pendiente:**
-- [ ] Verificar en dev con Playwright: Cierre del 03/10 (abierto) › Flota del día › Equipo Completo › Asignados → DZYH10.
+- [x] Desplegado en dev (`84214441`, Deploy Monitor API verde, revisión 00191). Verificado con Playwright que el
+      Cierre carga y recalcula los días abiertos. **No hay un día ABIERTO con un Sodimac de Equipo Completo**: los 19
+      días afectados (03/09–09/10) están firmados y, por decisión del usuario, quedan así. Corrección: DZYH10 del
+      03/10 era Tractoreo con un viaje de QAnalytics (línea desactualizada), no efecto de este arreglo.
+- [ ] Ver en pantalla el primer día abierto con un Sodimac asignado (ej. 889434, Aceptada, planificado 12/10): su
+      tracto de Equipo Completo debe salir en "Asignados". Mientras tanto, lo cubre el test de integración.
 - [ ] Dato para Operaciones: el viaje Sodimac 878052 tiene vinculada la RAMPLA JF8307 como tracto; corregir el
       vínculo desde la app (no se agregó filtro: el roster solo toma tractocamiones).
 - [ ] Minuta 2.2 / ítem 6 "asignados, pendientes de cierre TMS" (Sodimac en Control de salida, para Facturación):
