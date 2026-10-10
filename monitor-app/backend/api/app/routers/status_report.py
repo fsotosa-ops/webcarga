@@ -156,7 +156,6 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
     """Una fila enriquecida por equipo activo — insumo único del que se
     derivan las 6 secciones (mismo patrón que fleet_daily_overview/
     equipment_closures: calcular una vez, derivar todo en Python)."""
-
     roster_rows = await pool.fetch(_ROSTER_SQL)
 
     trip_rows = await pool.fetch(_TODAY_TRIPS_SQL, business_date)
@@ -249,8 +248,8 @@ async def _build_driver_rows(pool, business_date: _date) -> list[dict]:
     reporte). con_carga queda fijo en False: es un campo "de compatibilidad"
     para que _cross_tab_by_motivo (que ya filtra internamente con
     `if r["con_carga"]: continue`) acepte todas las filas sin modificarla."""
-    # Ya recalculado por _build_asset_rows en el mismo request: las líneas de
-    # conductores y tractos se derivan juntas.
+    # Las líneas del día ya están calculadas (las mantiene el ejecutor de la
+    # cola, services/cola_del_cierre.py): este reporte solo las lee.
     roster_rows = await pool.fetch(_DRIVER_ROSTER_SQL)
 
     status_rows = await pool.fetch(_DRIVER_STATUS_SQL, business_date)

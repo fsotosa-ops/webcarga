@@ -283,7 +283,9 @@ function ClosuresCenterPageInner() {
       <AvisoPosteriorAlCierre
         cantidad={cierreQuery.data?.cierre?.posteriores_al_cierre ?? 0}
       />
-      <AvisoDeActualizacion pendienteDesde={pendiente} />
+      {cierreQuery.data && (
+        <AvisoDeActualizacion pendienteDesde={pendiente} calculadoA={cierreQuery.data.calculado_a ?? null} />
+      )}
 
       {/* Un solo lienzo: tab bar arriba, panel de contenido abajo (solo la
           tab activa se renderiza), "Confirmar cierre" fijo al pie. */}

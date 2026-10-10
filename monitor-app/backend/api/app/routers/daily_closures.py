@@ -3,9 +3,9 @@ backlog de 17 HU, 2026-07-21 — ver AGENTLOG.md, HU-01/02/03).
 
 Concepto tomado literal de la reunión del 20/07 con Pablo (CEO): "cuadrar
 la caja" — todo conductor activo debe quedar clasificado al cierre del día
-(asignado/no asignado con motivo/mismatch de flota), y el resultado queda
-guardado en app.daily_closures para que se pueda revisar el descuadre de
-días anteriores.
+(asignado/no asignado con motivo/mismatch de flota), y el día firmado queda
+congelado en app.closure_periods / app.closure_lines para que se pueda revisar
+el descuadre de días anteriores.
 
 Las líneas del día las calcula el ejecutor de la cola
 (services/cola_del_cierre.py) cuando cambia un dato de entrada; este GET solo

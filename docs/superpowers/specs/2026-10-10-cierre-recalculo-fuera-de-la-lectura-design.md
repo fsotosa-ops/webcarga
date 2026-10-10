@@ -77,7 +77,7 @@ industria. Sin código muerto al terminar.
                                                 │   FOR UPDATE SKIP LOCKED sobre el período
                                                 ▼
                      cierre_lineas.recalcular(día) por cada día encolado
-                     → borra la entrada solo si su versión no cambió mientras calculaba
+                     → borra exactamente las marcas que leyó
                                                 │
  GET daily-closures / equipment-closures / status-report ─► SELECT puro
                                                 └─► calculado_a y pendiente_desde del día
@@ -95,8 +95,8 @@ industria. Sin código muerto al terminar.
   transacciones que toman las filas en distinto orden se bloquean mutuamente (apareció un deadlock en la suite).
   Un `INSERT` sin conflicto no espera a nadie.
 - **Por qué todos los días abiertos y no "el día que afectó el cambio":** saber qué días ocupa un viaje es la
-  regla de `app.trips_del_dia`. Repetirla en el trigger sería escribirla dos veces. Los días abiertos son unos 5;
-  marcar de más cuesta un recálculo barato.
+  regla de `app.trips_del_dia`. Repetirla en el trigger sería escribirla dos veces. Al 10/10 son 14;
+  marcar de más cuesta un recálculo barato, y una línea que no cambia no se reescribe (§3.3).
 - **Por sentencia, con tabla de transición**, el patrón de `trg_trips_resolve_fleet_ins/upd`: un trigger por
   evento (`AFTER INSERT … REFERENCING NEW TABLE AS cambiadas`, `AFTER UPDATE … NEW TABLE AS cambiadas`,
   `AFTER DELETE … OLD TABLE AS cambiadas`), todos con el mismo nombre de tabla de transición, para que una sola
@@ -104,10 +104,11 @@ industria. Sin código muerto al terminar.
 - **Dos reglas para no marcar de más.** Sin ellas, el ejecutor se volvería a encolar solo para siempre:
   1. **Sentencia sin filas cambiadas → no marca.** Un trigger por sentencia se dispara aunque el `UPDATE` no
      toque ninguna fila. La función sale si `cambiadas` está vacía.
-  2. **Escritura del propio recálculo → no marca.** Las correcciones del pre-cierre (§4.1) escriben en
-     `asset_assignments` y `drivers`, que tienen trigger. `recalcular` declara su origen en la transacción
-     (`SET LOCAL app.origen_escritura = 'recalculo_cierre'`) y la función sale si lo encuentra. Es el
-     patrón estándar para evitar que un proceso se dispare a sí mismo: el recálculo ya está calculando ese día.
+  2. **El recálculo converge (revisión final, 10/10).** Las correcciones del pre-cierre escriben en
+     `asset_assignments` y `drivers`, que tienen trigger, y SÍ marcan: todos los días abiertos dependen del
+     directorio. La pasada siguiente no encuentra nada que corregir, no escribe y no marca. Una primera versión
+     exceptuaba al recálculo con una variable de sesión; dejaba desactualizados los otros días y se retiró
+     (migración 20261010180000).
 - **Dónde vive cada trigger:**
   - `app.trips` y `app.trip_stops`: en el `post_hook` de `models/app/trips.sql` y `models/app/trip_stops.sql`
     (Mage), con `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER`, igual que los existentes.
@@ -226,7 +227,7 @@ Contra la base real en transacción revertida (`conexion_revertida`, `PoolDeUnaC
 
 | Qué | Cómo |
 |---|---|
-| La marca | `marcar_cierre_pendiente()` encola los días abiertos y hoy, y nunca un firmado. Un test parametrizado por cada tabla de §3.1 de la migración: escribir en ella deja la entrada. Un `UPDATE` que no cambia filas no encola. Con `app.origen_escritura = 'recalculo_cierre'` no encola. Un recálculo con una corrección real deja la cola vacía (sin auto-reencolado). |
+| La marca | `marcar_cierre_pendiente()` encola los días abiertos y hoy, y nunca un firmado. Un test parametrizado por cada tabla de §3.1 de la migración: escribir en ella deja la entrada. Un `UPDATE` que no cambia filas no encola. Un recálculo con una corrección real marca los días abiertos y la pasada siguiente deja la cola vacía (converge). Recalcular sin cambios no reescribe líneas. |
 | Trigger de dbt | Guarda sobre el espejo de Mage (se salta sin espejo), patrón de `test_dbt_activo_y_asignado_una_definicion.py`: los `post_hook` de `trips.sql` y `trip_stops.sql` crean el trigger con `app.marcar_cierre_pendiente()`. |
 | Ejecutor | Una marca que llega durante el cálculo sobrevive. Un día bloqueado por otra conexión se salta (dos conexiones, ambas revertidas). Un día firmado sale de la cola sin calcular. Si un día falla, su entrada queda y el resto se procesa; la respuesta es 500. |
 | GET sin escrituras | Contadores de `pg_stat_xact_user_tables` (`n_tup_ins`, `n_tup_upd`, `n_tup_del`) antes y después del GET de un día con líneas: 0 en todas las tablas. |

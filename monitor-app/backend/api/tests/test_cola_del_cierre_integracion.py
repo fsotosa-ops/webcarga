@@ -48,14 +48,6 @@ async def test_un_update_que_no_toca_filas_no_encola(conexion_revertida):
     assert await _cola(conexion_revertida) == {}
 
 
-async def test_lo_que_escribe_el_recalculo_no_encola(conexion_revertida):
-    await _vaciar_cola(conexion_revertida)
-    await conexion_revertida.execute("SET LOCAL app.origen_escritura = 'recalculo_cierre'")
-    await conexion_revertida.execute(
-        "UPDATE public.carriers SET business_name = business_name WHERE ctid = (SELECT ctid FROM public.carriers LIMIT 1)")
-    assert await _cola(conexion_revertida) == {}
-
-
 async def test_un_dia_firmado_nunca_entra_y_uno_abierto_si(conexion_revertida):
     hoy = await conexion_revertida.fetchval("SELECT public.hoy_chile()")
     abierto, firmado = hoy - timedelta(days=3), hoy - timedelta(days=2)

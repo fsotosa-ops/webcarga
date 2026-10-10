@@ -1395,8 +1395,8 @@ export type DailyClosureStatus = {
   mismatch_count:   number
   pending_count:    number
   drivers:          DriverDayStatusRow[]
-  /** null con el día cerrado: un día firmado no vuelve a correr el pre-cierre,
-   *  que escribe en el directorio como efecto. */
+  /** null con el día cerrado: lo que el pre-cierre avisa ya no se puede corregir
+   *  sin reabrir el día. */
   pre_cierre:       PreCierreResult | null
   /** Spec 2026-10-10: cuándo se calcularon las líneas del día, y desde cuándo hay
    *  cambios esperando al ejecutor (null = al día). */

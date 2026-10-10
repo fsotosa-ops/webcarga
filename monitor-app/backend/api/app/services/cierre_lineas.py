@@ -173,6 +173,11 @@ ON CONFLICT (business_date, subject_type, subject_id) DO UPDATE SET
     resolved_by = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.closure_lines.resolved_by END,
     resolved_at = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.closure_lines.resolved_at END,
     reason_from_driver_id = CASE WHEN EXCLUDED.status = 'UNASSIGNED' THEN app.closure_lines.reason_from_driver_id END
+-- Una línea que no cambió no se reescribe (revisión final, 10/10): el ejecutor
+-- recalcula cada día abierto en cada ingesta, 24/7, y la base ya se saturó por
+-- disco. `computed_at` queda como la última vez que la línea CAMBIÓ.
+WHERE (app.closure_lines.status, app.closure_lines.requires_reason, app.closure_lines.home_location_id)
+      IS DISTINCT FROM (EXCLUDED.status, EXCLUDED.requires_reason, EXCLUDED.home_location_id)
 """
 
 
@@ -326,9 +331,9 @@ async def recalcular_en(conn, fecha: date) -> None:
     """Deriva las líneas del día. Quien llama ya tomó el período ABIERTO con
     `bloquear_periodo`, dentro de una transacción.
 
-    El origen declarado hace que las correcciones del pre-cierre (que escriben
-    en tablas con trigger de marca) no vuelvan a encolar el día."""
-    await conn.execute("SET LOCAL app.origen_escritura = 'recalculo_cierre'")
+    Si el pre-cierre corrige el directorio, esa escritura marca los días abiertos
+    como cualquier otra: todos dependen del directorio. Converge sola, porque la
+    pasada siguiente no encuentra nada que corregir y no escribe."""
     await aplicar_correcciones(conn, fecha)
     await conn.execute(_SQL_UPSERT_CONDUCTORES, fecha)
     await conn.execute(_SQL_UPSERT_TRACTOS, fecha)

@@ -302,57 +302,78 @@ async def leer_senales(conn, fecha: _date) -> Senales:
 
 async def aplicar_correcciones(conn, fecha: _date) -> None:
     """Tipo A, en lote. La llama `cierre_lineas.recalcular_en` dentro de su
-    transacción, con el período tomado y el origen declarado: estas escrituras
-    no vuelven a encolar el día."""
+    transacción, con el período tomado.
+
+    Cada corrección audita lo que la sentencia efectivamente escribió (RETURNING),
+    no lo que `clasificar` propuso: un override manual puede impedir una
+    escritura, y entonces no hay nada que auditar."""
     c = clasificar(await leer_senales(conn, fecha))
 
     if c.reasignaciones:
-        activos = [r.asset_id for r in c.reasignaciones]
-        await conn.execute(
+        por_activo = {r.asset_id: r for r in c.reasignaciones}
+        # Una sola empresa ACTIVA por tracto (idx_asset_assignments_one_active):
+        # primero se apaga la vieja, después se activa la nueva. Solo donde la
+        # fila (tracto, empresa nueva) no está fijada a mano: si lo está, el
+        # tracto conserva su empresa en vez de quedar sin ninguna.
+        apagados = [r["asset_id"] for r in await conn.fetch(
             """
             UPDATE public.asset_assignments aa SET status = 'INACTIVE'
-            FROM unnest($1::uuid[], $2::uuid[]) AS x(asset_id, carrier_id)
-            WHERE aa.asset_id = x.asset_id AND aa.carrier_id = x.carrier_id
+            FROM unnest($1::uuid[], $2::uuid[], $3::uuid[]) AS x(asset_id, viejo, nuevo)
+            WHERE aa.asset_id = x.asset_id AND aa.carrier_id = x.viejo
               AND aa.status = 'ACTIVE' AND NOT aa.is_manual_override
+              AND NOT EXISTS (
+                  SELECT 1 FROM public.asset_assignments fijada
+                  WHERE fijada.asset_id = x.asset_id AND fijada.carrier_id = x.nuevo
+                    AND fijada.is_manual_override)
+            RETURNING aa.asset_id::text AS asset_id
             """,
-            activos, [r.old_carrier_id for r in c.reasignaciones],
-        )
-        await conn.execute(
+            list(por_activo), [r.old_carrier_id for r in por_activo.values()],
+            [r.new_carrier_id for r in por_activo.values()],
+        )]
+        activados = [r["asset_id"] for r in await conn.fetch(
             """
             INSERT INTO public.asset_assignments (asset_id, carrier_id, status)
             SELECT x.asset_id, x.carrier_id, 'ACTIVE' FROM unnest($1::uuid[], $2::uuid[]) AS x(asset_id, carrier_id)
             ON CONFLICT (asset_id, carrier_id) DO UPDATE SET status = 'ACTIVE'
             WHERE NOT asset_assignments.is_manual_override
+            RETURNING asset_id::text AS asset_id
             """,
-            activos, [r.new_carrier_id for r in c.reasignaciones],
-        )
+            apagados, [por_activo[a].new_carrier_id for a in apagados],
+        )]
         await auditar_en_lote(conn, entity_type="ASSET", action="pre_cierre_reasignar_empresa",
                               field="carrier_id", source=FUENTE,
-                              filas=[(r.asset_id, r.old_name, r.new_name) for r in c.reasignaciones])
+                              filas=[(a, por_activo[a].old_name, por_activo[a].new_name) for a in activados])
 
     if c.renombres:
-        await conn.execute(
-            "UPDATE public.drivers d SET full_name = x.nombre "
-            "FROM unnest($1::uuid[], $2::text[]) AS x(id, nombre) WHERE d.id = x.id",
-            [r.driver_id for r in c.renombres], [r.new_name for r in c.renombres],
-        )
+        por_conductor = {r.driver_id: r for r in c.renombres}
+        renombrados = [r["id"] for r in await conn.fetch(
+            """
+            UPDATE public.drivers d SET full_name = x.nombre
+            FROM unnest($1::uuid[], $2::text[]) AS x(id, nombre)
+            WHERE d.id = x.id AND NOT d.is_manual_override AND d.full_name IS DISTINCT FROM x.nombre
+            RETURNING d.id::text AS id
+            """,
+            list(por_conductor), [r.new_name for r in por_conductor.values()],
+        )]
         await auditar_en_lote(conn, entity_type="DRIVER", action="pre_cierre_actualizar_nombre",
                               field="full_name", source=FUENTE,
-                              filas=[(r.driver_id, r.old_name, r.new_name) for r in c.renombres])
+                              filas=[(d, por_conductor[d].old_name, por_conductor[d].new_name) for d in renombrados])
 
     if c.vinculos:
-        await conn.execute(
+        por_par = {(v.carrier_id, v.shipper_id): v for v in c.vinculos}
+        vinculados = [(r["carrier_id"], r["shipper_id"]) for r in await conn.fetch(
             """
             INSERT INTO public.carrier_shippers (carrier_id, shipper_id, status)
             SELECT x.carrier_id, x.shipper_id, 'ACTIVE' FROM unnest($1::uuid[], $2::uuid[]) AS x(carrier_id, shipper_id)
             ON CONFLICT (carrier_id, shipper_id) DO UPDATE SET status = 'ACTIVE'
-            WHERE NOT carrier_shippers.is_manual_override
+            WHERE NOT carrier_shippers.is_manual_override AND carrier_shippers.status <> 'ACTIVE'
+            RETURNING carrier_id::text AS carrier_id, shipper_id::text AS shipper_id
             """,
-            [v.carrier_id for v in c.vinculos], [v.shipper_id for v in c.vinculos],
-        )
+            [c_ for c_, _ in por_par], [s_ for _, s_ in por_par],
+        )]
         await auditar_en_lote(conn, entity_type="CARRIER", action="pre_cierre_agregar_cliente",
                               field="carrier_shippers", source=FUENTE,
-                              filas=[(v.carrier_id, None, v.shipper_name) for v in c.vinculos])
+                              filas=[(par[0], None, por_par[par].shipper_name) for par in vinculados])
 
 
 _SQL_ONBOARDING = """

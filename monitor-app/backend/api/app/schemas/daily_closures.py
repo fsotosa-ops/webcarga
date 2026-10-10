@@ -1,5 +1,6 @@
-"""Pydantic schemas para app.driver_day_status/daily_closures (Fase 1 del
-plan de refinamiento del backlog de 17 HU, 2026-07-21 — ver AGENTLOG.md)."""
+"""Pydantic schemas de las líneas de conductores del cierre (app.closure_lines,
+subject_type DRIVER). Fase 1 del plan de refinamiento del backlog de 17 HU,
+2026-07-21 — ver AGENTLOG.md."""
 from datetime import date
 from typing import Optional
 
@@ -8,7 +9,7 @@ from pydantic import BaseModel, field_validator
 
 class DriverDayStatusPatchBody(BaseModel):
     """Captura el motivo de no asignación (HU-02) y su comentario — los únicos
-    campos editables a mano de app.driver_day_status, el resto se recalcula."""
+    campos editables a mano de la línea del conductor, el resto se recalcula."""
     unassigned_reason_id: Optional[str] = None
     """El motivo, ahora opcional: distingue "no mande la clave" de "quiero
     que quede vacia", igual que `comentario`.

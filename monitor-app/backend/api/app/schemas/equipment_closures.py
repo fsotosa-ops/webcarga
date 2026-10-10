@@ -1,5 +1,5 @@
-"""Pydantic schemas para app.equipment_day_status/equipment_closures
-(Fase 4, HU-03 — cierre por tracto/equipo, no por conductor)."""
+"""Pydantic schemas de las líneas de tractos del cierre (app.closure_lines,
+subject_type ASSET). Fase 4, HU-03 — cierre por tracto/equipo, no por conductor."""
 from datetime import date
 from typing import Optional
 

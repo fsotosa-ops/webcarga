@@ -617,30 +617,60 @@ async def test_una_marca_posterior_a_la_lectura_sobrevive(conexion_revertida):
     assert len(quedan) == 1 and quedan[0] not in leidas
 
 
-async def test_el_recalculo_no_se_reencola_aunque_corrija_el_directorio(conexion_revertida):
-    """Review Focus 5: las correcciones escriben en tablas con trigger de marca.
-    El escenario fuerza una corrección real (reasignar una patente) y comprueba
-    las dos cosas: que corrigió, y que el día no volvió a la cola."""
-    pool = PoolDeUnaConexion(conexion_revertida)
-    vieja = await conexion_revertida.fetchval(
+async def _escenario_con_correccion(conn):
+    """Un tracto cuya empresa del directorio no es la que informa el TMS: el
+    pre-cierre lo reasigna (una corrección real que escribe en asset_assignments)."""
+    vieja = await conn.fetchval(
         "INSERT INTO public.carriers (business_name, operational_status) VALUES ('ZZ-TEST Vieja', 'ACTIVE') RETURNING id")
-    nueva = await conexion_revertida.fetchval(
+    nueva = await conn.fetchval(
         "INSERT INTO public.carriers (business_name, operational_status) VALUES ('ZZ-TEST Nueva', 'ACTIVE') RETURNING id")
-    plate = f"ZZ{uuid.uuid4().hex[:4].upper()}"
-    asset = await conexion_revertida.fetchval(
+    plate = _patente()
+    asset = await conn.fetchval(
         "INSERT INTO public.assets (license_plate, asset_type, operational_status) "
         "VALUES ($1, 'TRACTOCAMION', 'ACTIVE') RETURNING id", plate)
-    await conexion_revertida.execute(
+    await conn.execute(
         "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')", asset, vieja)
-    await conexion_revertida.execute(
+    await conn.execute(
         "INSERT INTO app.trips (id, planning_date, client_name, source_system, source_system_trip_id, trip_status, "
         "is_active, is_assigned, fleet) VALUES ($1, $2, 'Walmart', 'qanalytics', $3, 'RUTA', true, true, $4::jsonb)",
         uuid.uuid4(), D, f"ZZ-{plate}", json.dumps({"tractor_plate": plate, "transporter_name_tms": "ZZ-TEST Nueva"}))
-    await conexion_revertida.execute("DELETE FROM app.closure_recompute_queue WHERE business_date = $1", D)
+    return asset, nueva
+
+
+async def test_una_correccion_del_recalculo_marca_los_dias_y_despues_converge(conexion_revertida):
+    """Review Focus 5 (revisión final 10/10). Lo que corrige el recálculo cambia
+    el directorio del que dependen TODOS los días abiertos: tiene que marcarlos
+    (antes una regla de origen lo impedía y los dejaba viejos). Y no se reencola
+    para siempre: la segunda pasada no encuentra nada que corregir, no escribe, y
+    no marca."""
+    conn = conexion_revertida
+    pool = PoolDeUnaConexion(conn)
+    asset, nueva = await _escenario_con_correccion(conn)
+    hoy = await conn.fetchval("SELECT public.hoy_chile()")
+    await conn.execute("DELETE FROM app.closure_recompute_queue")
 
     await cierre_lineas.recalcular(pool, D)
 
-    assert await conexion_revertida.fetchval(
+    assert await conn.fetchval(
         "SELECT carrier_id FROM public.asset_assignments WHERE asset_id = $1 AND status = 'ACTIVE'", asset) == nueva
-    assert await conexion_revertida.fetchval(
-        "SELECT count(*) FROM app.closure_recompute_queue WHERE business_date = $1", D) == 0
+    assert await conn.fetchval(
+        "SELECT count(*) FROM app.closure_recompute_queue WHERE business_date = $1", hoy) > 0
+
+    await conn.execute("DELETE FROM app.closure_recompute_queue")
+    await cierre_lineas.recalcular(pool, D)
+    assert await conn.fetchval("SELECT count(*) FROM app.closure_recompute_queue") == 0
+
+
+async def test_recalcular_sin_cambios_no_reescribe_las_lineas(conexion_revertida):
+    """Hallazgo 1 de la revisión final: el ejecutor recalcula cada día abierto en
+    cada ingesta, 24/7, en una base con historia de saturación de disco. Una
+    línea que no cambió no se vuelve a escribir."""
+    conn = conexion_revertida
+    pool = PoolDeUnaConexion(conn)
+    await _escenario(conn)
+    await cierre_lineas.recalcular(pool, D)
+    sql = ("SELECT coalesce(sum(n_tup_upd), 0) FROM pg_stat_xact_user_tables "
+           "WHERE schemaname = 'app' AND relname = 'closure_lines'")
+    antes = await conn.fetchval(sql)
+    await cierre_lineas.recalcular(pool, D)
+    assert await conn.fetchval(sql) == antes
