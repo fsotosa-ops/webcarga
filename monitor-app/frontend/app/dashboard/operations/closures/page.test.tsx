@@ -108,6 +108,19 @@ beforeEach(async () => {
 })
 
 describe('ClosuresCenterPage', () => {
+  it('un día reabierto sigue mostrando las firmas que tuvo', async () => {
+    // Revisión final: firmar, reabrir, firmar y reabrir otra vez deja el día
+    // abierto con dos firmas guardadas; el historial es justo lo que se quiere ver.
+    const { closuresApi } = await import('@/lib/api/closures')
+    const firma = { signed_at: '2026-08-04T23:00:00Z', override_count: 0, totals: { viajes: 3 }, captured_from: 'signing' as const }
+    vi.mocked(closuresApi.signatures).mockResolvedValue({
+      business_date: '2026-08-04',
+      signatures: [{ ...firma, version: 2, signed_by_name: 'Ana Pérez' }, { ...firma, version: 1, signed_by_name: 'Pablo' }],
+    })
+    renderPage()
+    expect(await screen.findByText(/firmado 2 veces/i)).toBeInTheDocument()
+  })
+
   it('muestra las 4 tabs, con "Flota del día" activa por defecto', () => {
     renderPage()
     const tabs = screen.getAllByRole('tab')

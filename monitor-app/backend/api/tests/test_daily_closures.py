@@ -22,7 +22,8 @@ def servicio_de_cierre(monkeypatch):
     darle a `periodo` un dia cerrado."""
     import app.routers.daily_closures as modulo
     stubs = {"periodo": AsyncMock(return_value=None), "frescura_del_dia": AsyncMock(return_value={"calculado_a": None, "pendiente_desde": None}),
-             "avisos_del_dia": AsyncMock(return_value={"auto_resolved": [], "escalations": {}})}
+             "avisos_del_dia": AsyncMock(return_value={"auto_resolved": [], "escalations": {}}),
+             "ajustes_posteriores": AsyncMock(return_value=[])}
     for nombre, stub in stubs.items():
         monkeypatch.setattr(modulo, nombre, stub)
     return stubs
@@ -280,13 +281,17 @@ def test_get_daily_closure_status_reports_closed_day(servicio_de_cierre):
         "frozen_totals": {"conductores": 1, "conductores_resueltos": 1, "viajes": 3},
         "reopened_by": None, "reopened_at": None, "reopen_note": None,
     }
-    pool.fetchval.return_value = 3
+    ajuste = {"trip_id": "t1", "tipo": "quitado", "source_system_trip_id": "M-1", "client_name": "Iansa",
+              "voided_at": "2026-07-22T12:00:00+00:00", "voided_by_name": "Ana", "void_reason": "Duplicado"}
+    servicio_de_cierre["ajustes_posteriores"].return_value = [ajuste]
     client = make_client(pool)
 
     res = client.get("/api/v1/daily-closures?fecha=2026-07-21")
 
     assert res.json()["closed"] is True
     assert res.json()["closure"]["total_drivers"] == 1
+    # Spec 2026-10-10 §4: en un día firmado, los ajustes posteriores viaje por viaje.
+    assert res.json()["cierre"] == {"total_trips_al_firmar": 3, "ajustes": [ajuste]}
 
 
 def test_get_daily_closure_status_invalid_fecha_422():

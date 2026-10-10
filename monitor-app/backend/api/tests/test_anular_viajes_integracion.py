@@ -8,7 +8,7 @@ endpoint real en un día que Operaciones nunca firma."""
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 
 import pytest
 from fastapi import HTTPException
@@ -184,3 +184,32 @@ async def test_anular_dos_veces_es_conflicto(conexion_revertida):
     with pytest.raises(HTTPException) as err:
         await anular_viajes(conn, [tid], "Otra vez", usuario)
     assert err.value.status_code == 409
+
+
+async def test_un_viaje_que_ocupo_un_dia_firmado_posterior_lo_anula_solo_quien_firma(conexion_revertida):
+    """Revisión final: un viaje manual planificado para un día abierto que, por sus
+    marcas, también ocupó el día siguiente (app.trips_del_dia), ya firmado. Anularlo
+    cambia lo que se lee de ese día firmado: exige closures.sign, como exigía el
+    borrado (miraba cada día firmado donde el viaje contaba)."""
+    conn = conexion_revertida
+    usuario = await _usuario_real(conn)
+    tid = await _viaje_manual(conn, usuario)
+    siguiente = date(2099, 1, 2)
+    await conn.execute(
+        "UPDATE app.trip_stops SET departure_date = $2 WHERE trip_id = $1::uuid",
+        tid, datetime(2099, 1, 2, 12, 0, tzinfo=timezone.utc))
+    assert await conn.fetchval("SELECT $2::uuid IN (SELECT trip_id FROM app.trips_del_dia($1))", siguiente, tid)
+    await conn.execute(
+        "INSERT INTO app.closure_periods (business_date, status, closed_by, closed_at) "
+        "VALUES ($1, 'CLOSED', $2::uuid, now()) "
+        "ON CONFLICT (business_date) DO UPDATE SET status = 'CLOSED', closed_by = $2::uuid, closed_at = now()",
+        siguiente, usuario["sub"])
+
+    detalle = await get_trip(tid, pool=PoolDeUnaConexion(conn), user=_sin_firmar(usuario))
+    assert detalle["can_void"] is False
+    assert "02/01" in detalle["void_blocked_reason"]
+    with pytest.raises(HTTPException) as err:
+        await anular_viajes(conn, [tid], "Duplicado", _sin_firmar(usuario))
+    assert err.value.status_code == 403
+
+    assert await anular_viajes(conn, [tid], "Duplicado", con_roles(usuario, "operations_operator")) == 1

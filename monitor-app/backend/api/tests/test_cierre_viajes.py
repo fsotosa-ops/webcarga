@@ -526,44 +526,39 @@ async def test_el_cierre_guarda_cuantos_viajes_tenia_el_dia(conexion_revertida):
     assert "total_trips" in {f["column_name"] for f in filas}
 
 
-async def test_un_dia_sin_firmar_no_reporta_delta(conexion_revertida):
-    """Nada que comparar todavia: `posteriores_al_cierre` tiene que ser 0, no
-    el total de viajes del dia."""
+async def test_un_dia_sin_firmar_no_reporta_ajustes(conexion_revertida):
+    """Nada que comparar todavía: sin firma no hay ajustes posteriores
+    (spec 2026-10-10 §4), ni un total de viajes firmado."""
     from app.routers.daily_closures import get_daily_closure_status
 
     resp = await get_daily_closure_status(
-        fecha="2026-08-18", pool=PoolDeUnaConexion(conexion_revertida), _=None)
-    assert resp["cierre"]["total_trips_al_firmar"] is None
-    assert resp["cierre"]["posteriores_al_cierre"] == 0
+        fecha="2099-01-05", pool=PoolDeUnaConexion(conexion_revertida), _=None)
+    assert resp["cierre"] == {"total_trips_al_firmar": None, "ajustes": []}
 
 
-async def test_los_viajes_posteriores_al_cierre_se_cuentan_como_delta(conexion_revertida):
+async def test_un_viaje_que_llega_despues_de_la_firma_es_un_ajuste(conexion_revertida):
     """El caso real: el sistema del cliente crea viajes con fecha retroactiva
-    ("los crean el dieciseis, pero con fechas del catorce"). El dia sigue
-    cerrado -la firma no se invalida-, pero el conteo posterior tiene que
-    reflejar cuantos viajes llegaron despues de la firma."""
+    ("los crean el dieciseis, pero con fechas del catorce"). El día sigue
+    cerrado -la firma no se invalida-, y el viaje que llegó después aparece
+    como ajuste posterior al cierre, viaje por viaje (spec 2026-10-10 §4)."""
     from app.routers.daily_closures import get_daily_closure_status
+    from app.services import cierre_lineas
+    from tests.conftest import con_roles, ADMIN_EQUIVALENTE
 
-    fecha_cierre = date(2099, 1, 1)
+    fecha_cierre = date(2099, 1, 6)
     await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True)
     await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True)
+    pool = PoolDeUnaConexion(conexion_revertida)
+    admin = con_roles(await _usuario_real(conexion_revertida), *ADMIN_EQUIVALENTE)
+    await cierre_lineas.cerrar(pool, fecha_cierre, override=True, override_note="prueba", user=admin)
 
-    # La firma vive en el período desde el 16/09 (app.closure_periods); las
-    # cifras al firmar, en `frozen_totals`.
-    firmante = await conexion_revertida.fetchval("SELECT id FROM public.profiles LIMIT 1")
-    await conexion_revertida.execute(
-        "INSERT INTO app.closure_periods (business_date, status, closed_by, closed_at, frozen_totals) "
-        "VALUES ($1, 'CLOSED', $2, now(), $3::jsonb)",
-        fecha_cierre, firmante, '{"viajes": 2}')
+    # Llega un viaje después de firmar (fecha retroactiva del TMS).
+    tardio = await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True)
 
-    # Llega un viaje despues de firmar (fecha retroactiva del TMS).
-    await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True)
-
-    resp = await get_daily_closure_status(
-        fecha=fecha_cierre.isoformat(), pool=PoolDeUnaConexion(conexion_revertida), _=None)
+    resp = await get_daily_closure_status(fecha=fecha_cierre.isoformat(), pool=pool, _=None)
 
     assert resp["cierre"]["total_trips_al_firmar"] == 2
-    assert resp["cierre"]["posteriores_al_cierre"] == 1
+    assert [(a["trip_id"], a["tipo"]) for a in resp["cierre"]["ajustes"]] == [(str(tardio), "agregado")]
 
 
 # ── Task 8 (plan 2026-08-18-cierre-paso-viajes): volver a LEER la

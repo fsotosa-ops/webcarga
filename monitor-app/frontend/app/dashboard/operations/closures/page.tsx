@@ -134,11 +134,11 @@ function ClosuresCenterPageInner() {
 
   const diaCerrado = cierreQuery.data?.closed ?? false
 
-  // Las veces que se firmó el día (spec 2026-10-10 §3): sólo si está firmado.
+  // Las veces que se firmó el día (spec 2026-10-10 §3). También en un día
+  // reabierto: lo firmado antes sigue guardado, y es justo lo que se quiere ver.
   const firmasQuery = useQuery({
     queryKey: ['closure-signatures', fecha],
     queryFn: () => closuresApi.signatures(fecha),
-    enabled: diaCerrado,
   })
 
   // Cuando el día queda al día, las otras dos consultas del mismo día también

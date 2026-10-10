@@ -7,11 +7,14 @@ excluyen, así que el Cierre, el reporte y los disponibles dejan de contarlo.
 Qué: sólo lo que la app creó (source_system = 'manual'). Un viaje del TMS vuelve en
 la próxima ingesta: anularlo sería mentir.
 
-Quién, según el día del viaje (planning_date):
-  - abierto: quien lo creó (app.trips_manual.created_by) o trips.void_any;
-  - firmado: closures.sign. El día NO se reabre: la firma es una copia inmutable
+Quién, según los días firmados que el viaje toca:
+  - ninguno: quien lo creó (app.trips_manual.created_by) o trips.void_any;
+  - alguno: closures.sign. Toca un día firmado si es su día (planning_date, el que
+    firma sus viajes) o si cuenta en él por sus marcas (app.trips_del_dia, la cota
+    de 45 días). El día NO se reabre: la firma es una copia inmutable
     (app.closure_signatures) y la anulación aparece como ajuste posterior al cierre.
-Revertir pide lo mismo.
+Revertir pide lo mismo. Un viaje anulado ya no está en trips_del_dia, así que al
+revertir sólo se ve su propio día.
 
 La regla que decide `can_void` en el listado es `_bloqueo`, la misma que aplica la
 escritura: la UI nunca ofrece algo que el backend va a rechazar.
@@ -29,19 +32,27 @@ from .audit import log_change
 MAXIMO_POR_LOTE = 200
 
 # Columnas que el listado y el detalle agregan a cada viaje para decidir sin otra
-# consulta. `dia_firmado` mira el día del viaje (planning_date), el mismo que firma
-# sus viajes (closure_signature_trips).
+# consulta. `dias_firmados` sólo se calcula para viajes manuales: son pocos, y así el
+# listado no paga un EXISTS por cada viaje del TMS.
 SQL_COLUMNAS_ANULABLE = """
     tm.created_by::text AS manual_created_by,
     t.voided_at, t.void_reason,
     void_by.full_name AS voided_by_name,
-    (void_cp.status IS NOT DISTINCT FROM 'CLOSED') AS dia_firmado
+    CASE WHEN t.source_system = 'manual' THEN ARRAY(
+        SELECT cp.business_date
+        FROM app.closure_periods cp
+        WHERE cp.status = 'CLOSED'
+          -- la misma cota de 45 días que usa app.trips_del_dia
+          AND cp.business_date BETWEEN t.planning_date AND t.planning_date + 45
+          AND (cp.business_date = t.planning_date
+               OR t.id IN (SELECT trip_id FROM app.trips_del_dia(cp.business_date)))
+        ORDER BY cp.business_date
+    ) END AS dias_firmados
 """
 
 SQL_JOIN_ANULABLE = """
     LEFT JOIN app.trips_manual tm ON tm.id = t.id
     LEFT JOIN public.profiles void_by ON void_by.id = t.voided_by
-    LEFT JOIN app.closure_periods void_cp ON void_cp.business_date = t.planning_date
 """
 
 
@@ -54,11 +65,12 @@ def _bloqueo(fila: dict, user: dict, *, revertir: bool) -> tuple[int, str] | Non
     if not revertir and fila.get("voided_at") is not None:
         return 409, "El viaje ya está anulado"
     permisos = user.get("permissions", ())
-    if fila.get("dia_firmado"):
+    firmados = fila.get("dias_firmados") or []
+    if firmados:
         if "closures.sign" in permisos:
             return None
-        dia = fila["planning_date"].strftime("%d/%m")
-        return 403, f"El cierre del {dia} está firmado: lo anula quien puede firmar el cierre"
+        dias = ", ".join(d.strftime("%d/%m") for d in firmados)
+        return 403, f"Toca el cierre firmado del {dias}: lo anula quien puede firmar el cierre"
     if "trips.void_any" not in permisos and fila.get("manual_created_by") != user.get("sub"):
         return 403, "Sólo quien creó el viaje o Administración puede anularlo"
     return None
@@ -73,7 +85,7 @@ def anotar_anulable(d: dict, user: dict) -> None:
     d["void_blocked_reason"] = None if anulado or bloqueo is None else bloqueo[1]
     d["can_revert_void"] = anulado and bloqueo is None
     d.pop("manual_created_by", None)
-    d.pop("dia_firmado", None)
+    d.pop("dias_firmados", None)
 
 
 async def _validar(conn, trip_ids: list[str], user: dict, *, revertir: bool) -> list[str]:
