@@ -16,6 +16,29 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-10 — Bugs del reporte de la minuta 09/10: DESPLEGADOS en dev
+
+Pedido del usuario: robusto, según la arquitectura de la app, sin parches ni objetos nuevos en la base. Diseño
+corregido dos veces en el chat (primero proponía arreglos puntuales y luego una vista nueva: los dos eran parches).
+
+- `6154660b` **Origen del viaje = su primera parada ORIGIN, una sola definición** (`services/origen_del_viaje.py`,
+  patrón de `TRACTOREO_ROSTER_CTE`). Cinco consultas elegían una cualquiera (17 viajes multiorigen de Sodimac);
+  guarda `test_origen_del_viaje_una_definicion.py`. La vista de vueltas conserva su versión (comentario cruzado).
+- `427b0281` **Vuelta por patente** (ítem 7): migración `20261010200000` (aplicada) sobre la única definición,
+  `v_driver_daily_trip_legs` (también la usa el filtro 2ª vuelta del Monitor). 30 días: 0 cambios de cifra.
+  Reporte y CSV con columna Patente.
+- `5aead9dc` **"Se retira sin carga"** (ítem 12): columnas por motivo del grupo trabajando_sin_asignacion en la
+  Sección 2, desde el catálogo, leyendo `category` de cierre_lineas; total = asignados. Verificado: 26/09 → 5.
+- `a82910e9` tablas de Asignado y Vueltas con scroll horizontal en teléfono (antes cortaban columnas).
+- Suite backend 1345 verdes (+ catálogo ajeno; un error de la guarda de compliance_records fue un alta real de
+  conductor a las 19:49, no fuga). Frontend 1569/1569, tsc y build limpios. Verificado en dev con Playwright.
+
+**Siguiente paso exacto:**
+- [ ] Ítem 13 (tractos sin conductor en "Sin trabajar"): spec para llevar la fusión tracto + conductor habitual
+  de `FlotaDelDiaSection.tsx` a un servicio del backend que consuman Flota del día y el reporte.
+- [ ] Decisiones del usuario: A) regla de 15 días; B) origen real vs habitual en Asignado; C) duplicados en días firmados.
+- [ ] Otras tablas del reporte siguen con overflow-hidden en teléfono (preexistente).
+
 ### 2026-10-10 — Minuta 09/10: estado verificado de cada ítem (código, base y app en dev)
 
 Fuente: `monitor-app/bugs/20261009/Minuta_Revision_01_02_08_09oct2026_para_Felipe.docx`. Verificado en código,
