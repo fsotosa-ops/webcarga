@@ -216,6 +216,16 @@ Administración de acceso:
    (estados, umbrales, temperaturas, reglas de alerta, taxonomías, catálogo de requisitos, tipos de cobertura) es
    solo de `admin`; con `*.configure` en los Supervisores, los 4 `editor` actuales ganan configurar sus áreas.
    Es la única ganancia de la migración.
+
+   **Ajustes posteriores, decididos por el usuario o en la revisión final (09/10):**
+   - Las 3 cuentas `viewer` (Lectura) reciben además Operador de Operaciones: *"los usuarios que ya existen
+     deberían tener acceso para hacer cierre de los viajes"*. Con eso las 12 firman el cierre.
+   - "Alertas de vencimiento" (`PATCH /config/alert-thresholds`) pasa de `operations.configure` a
+     `certification.configure`: son reglas de vencimiento de documentos (§4). Nadie pierde acceso hoy, porque
+     los `editor` y `admin` migrados tienen ambos Supervisores.
+   - Corregir la fecha de un documento ya aprobado exige `documents.review`; sobre uno por revisar sigue siendo
+     `documents.upload`.
+   - Confirmar "está bien así" en Configuración exige el permiso que edita esa sección, no `settings.manage`.
 2. **API + frontend** leyendo solo permisos (un despliegue). Sin guardias viejos.
 3. **Contract**: `DROP` de `profiles.role` y `admin_whitelist.role`. **Compuerta**: la API de `main`
    (`webcarga-monitor-api`, 01/08) usa la misma base y lee `profiles.role`; no se retira hasta desplegar `main`
