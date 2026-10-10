@@ -16,6 +16,29 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-10 — Spec "anulación con motivo y firma versionada" del Cierre (en revisión)
+
+- **Hecho:** diseño aprobado por secciones; spec en
+  `docs/superpowers/specs/2026-10-10-cierre-anulacion-y-firma-versionada-design.md` (`4a24075e`, en dev).
+  Issue [#13](https://github.com/fsotosa-ops/webcarga/issues/13) para "restaurar una firma anterior" (fuera de
+  alcance, YAGNI).
+- **Decisiones:**
+  - Eliminar pasa a **anular con motivo**, solo para viajes manuales. Columnas `voided_at`/`voided_by`/
+    `void_reason` en trips_manual y trips (patrón `unassigned_reason_id`: merge_exclude y rama manual en dbt).
+    `trips_del_dia` excluye los anulados. Permisos `trips.void`/`trips.void_any`, y `closures.sign` si el día
+    está firmado.
+  - **Firma inmutable versionada**: tablas `closure_signatures`, `closure_signature_lines` y
+    `closure_signature_trips`; un trigger rechaza UPDATE/DELETE; carga inicial como v1 con `captured_from='backfill'`.
+  - Los **ajustes posteriores** son una lista: diferencia entre el conjunto de viajes firmado y `trips_del_dia`.
+    Reemplaza la resta de totales, que escondía +1/−1.
+- **Siguiente paso exacto:**
+  - [ ] El usuario revisa la spec.
+  - [ ] Skill writing-plans: plan en `docs/superpowers/plans/`.
+  - [ ] Ejecución.
+  - [ ] Anular los 6 duplicados del 23/09 desde la app.
+- Sigue pendiente: verificar que la corrida de dbt posterior al rename de triggers (`trg_enqueue_closure_recompute_*`) salió
+  bien; decisión A (regla de 15 días).
+
 ### 2026-10-10 — Minuta 09/10, B y C
 
 - **B (decisión del usuario): la tabla "Asignado" va por el ORIGEN REAL del viaje** (`292c89ac`, desplegado). Los
