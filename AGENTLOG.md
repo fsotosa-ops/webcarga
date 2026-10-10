@@ -16,28 +16,36 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
-### 2026-10-10 — Spec "anulación con motivo y firma versionada" del Cierre (en revisión)
+### 2026-10-10 — Anulación con motivo y firma versionada del Cierre: DESPLEGADO en dev
 
-- **Hecho:** diseño aprobado por secciones; spec en
-  `docs/superpowers/specs/2026-10-10-cierre-anulacion-y-firma-versionada-design.md` (`4a24075e`, en dev).
-  Issue [#13](https://github.com/fsotosa-ops/webcarga/issues/13) para "restaurar una firma anterior" (fuera de
-  alcance, YAGNI).
+- **Hecho** (plan `docs/superpowers/plans/2026-10-10-cierre-anulacion-y-firma-versionada.md`, commits c82c936f..68f4b2bd, deploy 23:19 UTC verde):
+  - Producción:
+    - migración `anulacion_de_viajes`: columnas voided_* en trips_manual/trips y `trips_del_dia` sin anulados;
+    - migración `firma_versionada_del_cierre`: closure_signatures/_lines/_trips inmutables, con la versión 1 de 25 días (3.060 líneas, 917 viajes, 25/25 cuadrados);
+    - modelo dbt `trips` en Mage, con la rama manual y merge_exclude (corrida de 21:53 OK).
+  - Los 6 triggers `trg_enqueue_closure_recompute_*` verificados; queda cerrado el pendiente del rename.
+  - API: `anular_viajes.py` reemplaza el borrado físico. Rutas `POST /trips/void` y `/trips/void/revert`, `GET /closures/{fecha}/signatures` y `cierre.ajustes`. Permisos trips.void y trips.void_any.
+  - Front: diálogo Anular con motivo, Deshacer y aviso "Anulado"; lista de ajustes posteriores al cierre e historial de firmas.
+  - Revisión final (opus): 3 Important corregidos o descartados con evidencia; 9 minors diferidos (ver ledger `.superpowers/sdd/...`).
 - **Decisiones:**
-  - Eliminar pasa a **anular con motivo**, solo para viajes manuales. Columnas `voided_at`/`voided_by`/
-    `void_reason` en trips_manual y trips (patrón `unassigned_reason_id`: merge_exclude y rama manual en dbt).
-    `trips_del_dia` excluye los anulados. Permisos `trips.void`/`trips.void_any`, y `closures.sign` si el día
-    está firmado.
-  - **Firma inmutable versionada**: tablas `closure_signatures`, `closure_signature_lines` y
-    `closure_signature_trips`; un trigger rechaza UPDATE/DELETE; carga inicial como v1 con `captured_from='backfill'`.
-  - Los **ajustes posteriores** son una lista: diferencia entre el conjunto de viajes firmado y `trips_del_dia`.
-    Reemplaza la resta de totales, que escondía +1/−1.
+  - Los viajes del día de la firma son `planning_date = D` sin anular (25/25 exactos).
+  - Anular pide closures.sign si el viaje toca un día firmado: su planning_date, o cualquier día CLOSED donde cuenta (trips_del_dia, ±45 días).
+  - `cerrar` sigue escribiendo closed_by/closed_at/frozen_totals en closure_periods (lo exige el CHECK closure_periods_cerrado_tiene_firma). Los lectores leen la firma.
 - **Siguiente paso exacto:**
-  - [ ] El usuario revisa la spec.
-  - [ ] Skill writing-plans: plan en `docs/superpowers/plans/`.
-  - [ ] Ejecución.
-  - [ ] Anular los 6 duplicados del 23/09 desde la app.
-- Sigue pendiente: verificar que la corrida de dbt posterior al rename de triggers (`trg_enqueue_closure_recompute_*`) salió
-  bien; decisión A (regla de 15 días).
+  - [ ] Con confirmación del usuario, anular desde la app los 6 duplicados del 23/09 (038cd817, 4371e9c1, 26c2cea0, 7bb5a2fe, 9ec39f27, 9cfca7b6), con motivo "Duplicado". NO tocar 747ebcec ni e6151201. Luego verificar: 23/09 sigue CLOSED, 1 firma, 123 líneas, 6 ajustes.
+  - [ ] Verificación con Playwright en dev (Cierre 23/09; Monitor: anular desde el detalle y la barra).
+  - [ ] Minors diferidos (en una ronda aparte):
+    - carrera anular↔firmar;
+    - totals vs closure_signature_trips en dos sentencias;
+    - admin puro: can_void vs 403;
+    - un viaje anulado sigue editable;
+    - conteo-activos cuenta anulados;
+    - detalles de BarraDeSeleccion;
+    - fmtDT en ajustes e historial;
+    - tests: lote mezclado y revertir con firma.
+  - [ ] Contract, aparte y con respaldo: retirar las columnas de firma de closure_periods + su CHECK, y las 4 tablas viejas. Issue #13: restaurar una firma anterior.
+  - [ ] Test preexistente rojo: test_cargar_catalogo_webcarga::test_aplicar_crea_los_nuevos_apagados_y_sin_sembrar (dato real CERTIFICADO_DE_VIGENCIA_DE_LA_SOCIEDAD).
+  - Pendiente del usuario: decisión A (regla de 15 días).
 
 ### 2026-10-10 — Minuta 09/10, B y C
 
