@@ -30,9 +30,9 @@ function csvEscape(v: string | number | null | undefined): string {
 function exportReportCsv(report: StatusReport, fecha: string) {
   const lines: string[] = [`Reporte de Estatus del Día;${fecha}`, '']
 
-  lines.push('SECCIÓN 2 — Tractoreo asignado por empresa y origen habitual')
+  lines.push('SECCIÓN 2 — Tractoreo asignado por empresa y origen del viaje (sin carga: origen habitual)')
   const sinCarga = report.section2_tractoreo_asignado.motivos_sin_carga ?? []
-  lines.push(['Origen habitual', 'Empresa', 'RM', 'Z0', 'Región', 'Sin clasificar', 'Total', ...sinCarga].map(csvEscape).join(';'))
+  lines.push(['Origen', 'Empresa', 'RM', 'Z0', 'Región', 'Sin clasificar', 'Total', ...sinCarga].map(csvEscape).join(';'))
   for (const r of report.section2_tractoreo_asignado.por_empresa_y_cd) {
     lines.push([r.cd, r.carrier_name, r.RM, r.Z0, r['Región'], r['Sin clasificar'], r.total,
       ...sinCarga.map(m => r.sin_carga?.[m] ?? 0)].map(csvEscape).join(';'))
@@ -316,7 +316,11 @@ export function StatusReportSection({ fecha, shippers }: Props) {
 
           {tab === 'asignado' && (
             <div className="space-y-4">
-              <ZoneTable title="Por origen habitual" rows={data.section2_tractoreo_asignado.por_cd}
+              {/* Decisión B (minuta 09/10): "lo importante es de dónde salió realmente". */}
+              <p className="text-dato text-gray-500">
+                Asignados por el origen del viaje. Los que no cargaron, en su origen habitual.
+              </p>
+              <ZoneTable title="Por origen del viaje" rows={data.section2_tractoreo_asignado.por_cd}
                 motivosSinCarga={data.section2_tractoreo_asignado.motivos_sin_carga} />
               <ZoneTable title="Por empresa dentro de cada origen" rows={data.section2_tractoreo_asignado.por_empresa_y_cd} showCarrier
                 motivosSinCarga={data.section2_tractoreo_asignado.motivos_sin_carga} />
@@ -563,7 +567,7 @@ function ZoneTable({ title, rows, showCarrier, motivosSinCarga = [] }: {
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
-              <th className="text-left px-3 py-2">Origen habitual</th>
+              <th className="text-left px-3 py-2">Origen</th>
               {showCarrier && <th className="text-left px-3 py-2">Empresa</th>}
               {ZONE_COLS.map(c => <th key={c} className="text-right px-3 py-2">{c}</th>)}
               {motivosSinCarga.map(m => <th key={m} className="text-right px-3 py-2">{m}</th>)}

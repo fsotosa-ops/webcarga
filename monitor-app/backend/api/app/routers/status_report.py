@@ -342,15 +342,22 @@ def _cross_tab_by_zone(rows: list[dict], key_fn) -> list[dict]:
     return buckets
 
 
-def _section2_tractoreo_asignado(rows: list[dict], motivos_sin_carga: list[str]) -> dict:
-    """Agrupa por el CD BASE declarado, no por el origen del viaje (HU-28, ola 4).
+def _origen_de_la_fila(r: dict) -> str:
+    """El origen REAL del viaje para quien cargó (minuta 09/10, decisión B: "lo
+    importante es de dónde salió realmente"). Quien no cargó no salió a ningún
+    lado: va en su origen habitual declarado."""
+    origen = r["origin_cd"] if r["con_carga"] else r["home_cd"]
+    return origen or "Sin origen"
 
-    Tiene que ser el declarado para que cuadre con la Sección 7: ahí "enrolados"
-    incluye a quien no salió, que no tiene origen. Con dos claves distintas, el
-    "asignados" de una y el de la otra no darían el mismo número.
+
+def _section2_tractoreo_asignado(rows: list[dict], motivos_sin_carga: list[str]) -> dict:
+    """Asignados por el ORIGEN REAL del viaje (decisión B, 10/10). Antes iba por
+    el habitual para cuadrar por CD con la Sección 7; ahora las dos miden cosas
+    distintas a propósito —volumen por origen real, asistencia por el
+    declarado— y la diferencia se ve en "Cargaron en otro origen".
 
     `total` son los asignados. `sin_carga` cuenta aparte, por motivo, a los que
-    trabajaron sin asignación (minuta 09/10)."""
+    trabajaron sin asignación (minuta 09/10), en su origen habitual."""
     tractoreo = [r for r in rows if "TRACTOREO" in r["categories"]]
     sin_carga = [r for r in tractoreo if not r["con_carga"] and r["category"] == "TRABAJANDO_SIN_ASIGNACION"]
 
@@ -366,8 +373,8 @@ def _section2_tractoreo_asignado(rows: list[dict], motivos_sin_carga: list[str])
                 buckets[key_fn(r)]["sin_carga"][motivo] += 1
         return buckets
 
-    por_cd = tabla(lambda r: r["home_cd"] or "Sin origen")
-    por_empresa_y_cd = tabla(lambda r: (r["home_cd"] or "Sin origen", r["carrier_name"]))
+    por_cd = tabla(_origen_de_la_fila)
+    por_empresa_y_cd = tabla(lambda r: (_origen_de_la_fila(r), r["carrier_name"]))
     return {
         "motivos_sin_carga": motivos_sin_carga,
         "por_cd": [{"cd": k, **v} for k, v in sorted(por_cd.items())],

@@ -575,3 +575,20 @@ def test_sin_el_motivo_en_el_catalogo_no_inventa_la_columna():
     result = _section4_tractoreo_no_trabajando(
         [], ["Panne"], faltantes=[_faltante("Transportes Sur", 3, 1)], sin_conductor=None)
     assert result["por_cd"] == [] and result["por_empresa_y_cd"] == []
+
+
+# ── Minuta 09/10, decisión B: la tabla de asignados va por ORIGEN REAL ──────
+# Pablo: "lo importante es de dónde salió realmente". Los que no cargaron no
+# salieron a ningún lado: sus columnas "sin carga" quedan en el origen habitual.
+
+def test_seccion2_agrupa_los_asignados_por_el_origen_real_del_viaje():
+    rows = [
+        _row(asset_id="a1", home_cd="CD El Peñón", origin_cd="CD Puerto Santiago 1"),
+        _row(asset_id="a2", home_cd="CD El Peñón", origin_cd="CD El Peñón"),
+        _row(asset_id="a3", home_cd="CD El Peñón", origin_cd=None, con_carga=False,
+             category="TRABAJANDO_SIN_ASIGNACION", unassigned_reason_label="Se retira sin carga"),
+    ]
+    por_cd = {f["cd"]: f for f in _section2_tractoreo_asignado(rows, ["Se retira sin carga"])["por_cd"]}
+    assert por_cd["CD Puerto Santiago 1"]["total"] == 1
+    assert por_cd["CD El Peñón"]["total"] == 1
+    assert por_cd["CD El Peñón"]["sin_carga"] == {"Se retira sin carga": 1}

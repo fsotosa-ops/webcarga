@@ -88,6 +88,14 @@ describe('StatusReportSection', () => {
     expect(body.getByText('Transportes Sur')).toBeInTheDocument()
   })
 
+  it('la Sección 2 agrupa por el origen real del viaje y dice dónde quedan los que no cargaron (decisión B)', async () => {
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    fireEvent.click(body.getByRole('button', { name: '2. Asignado' }))
+    expect(await body.findByText('Por origen del viaje')).toBeInTheDocument()
+    expect(body.getByText(/Los que no cargaron, en su origen habitual/)).toBeInTheDocument()
+  })
+
   it('la Sección 2 muestra aparte a los que trabajaron sin asignación, por motivo (minuta 09/10)', async () => {
     const body = renderSection()
     await body.findByText('Total equipos activos')
