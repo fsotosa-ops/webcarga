@@ -151,7 +151,7 @@ def test_section4_por_conductor_cruza_por_motivo_y_arma_driver_detail():
         _driver_row(driver_id="d3", full_name="Luis Rojas", carrier_name="Otra Spa",
                     home_cd="CD El Peñón", unassigned_reason_label="A confirmar", operation_type="Tractoreo"),
     ]
-    result = _section4_tractoreo_no_trabajando(driver_rows, ["Panne", "A confirmar"])
+    result = _section4_tractoreo_no_trabajando(driver_rows, ["Panne", "A confirmar"], faltantes=[], sin_conductor=None)
 
     cd_row = next(r for r in result["por_cd"] if r["cd"] == "CD El Peñón")
     assert cd_row["Panne"] == 2
@@ -187,7 +187,7 @@ def test_section4_driver_detail_muestra_operation_type_del_tracto_habitual_no_de
     driver_rows = [
         _driver_row(driver_id="d1", carrier_name="Transportes Mixta", operation_type="Equipo Completo"),
     ]
-    result = _section4_tractoreo_no_trabajando(driver_rows, ["Panne", "A confirmar"])
+    result = _section4_tractoreo_no_trabajando(driver_rows, ["Panne", "A confirmar"], faltantes=[], sin_conductor=None)
     assert result["driver_detail"][0]["operation_type"] == "Equipo Completo"
 
 
@@ -199,7 +199,7 @@ def test_section4_driver_sin_cd_base_cae_en_sin_cd():
         _driver_row(driver_id="d1", home_cd=None, tractor_plate=None, operation_type=None,
                     unassigned_reason_label="A confirmar"),
     ]
-    result = _section4_tractoreo_no_trabajando(driver_rows, ["Panne", "A confirmar"])
+    result = _section4_tractoreo_no_trabajando(driver_rows, ["Panne", "A confirmar"], faltantes=[], sin_conductor=None)
 
     cd_row = next(r for r in result["por_cd"] if r["cd"] == "Sin origen")
     assert cd_row["A confirmar"] == 1
@@ -538,3 +538,40 @@ def test_un_origen_con_solo_tractos_sin_carga_igual_aparece():
     seccion = _section2_tractoreo_asignado(rows, MOTIVOS_SIN_CARGA)
     assert seccion["por_cd"] == [{"cd": "CD Quilicura", "RM": 0, "Z0": 0, "Región": 0, "Sin clasificar": 0,
                                   "total": 0, "sin_carga": {"Se retira sin carga": 0, "Esperando carga": 1}}]
+
+
+# ── Minuta 09/10, ítem 13: "Sin conductor" no marcaba nada ──────────────────
+# Pablo: "Todos los que te faltan conductor en los sin trabajar, tú deberías
+# tener aquí". Es el faltante de la dotación (tractos > conductores de la
+# empresa), que ya calcula services/fleet_driver_gap.py para la pestaña 8. La
+# columna contaba conductores con ese motivo, y un conductor no es "sin
+# conductor".
+
+def _faltante(carrier, n_tractos, n_conductores):
+    return {"carrier_id": carrier, "business_name": carrier, "n_tractos": n_tractos,
+            "n_conductores": n_conductores, "gap": n_tractos - n_conductores}
+
+
+def test_seccion4_suma_el_faltante_de_dotacion_en_sin_conductor():
+    driver_rows = [_driver_row(driver_id="d1", carrier_name="Transportes Sur", home_cd="CD El Peñón",
+                               unassigned_reason_label="Panne")]
+    result = _section4_tractoreo_no_trabajando(
+        driver_rows, ["Panne", "Sin conductor"],
+        faltantes=[_faltante("Transportes Sur", 3, 1), _faltante("Sobra Spa", 1, 2)],
+        sin_conductor="Sin conductor")
+
+    empresa = next(r for r in result["por_empresa_y_cd"] if r["carrier_name"] == "Transportes Sur"
+                   and r["cd"] == "Sin origen")
+    assert empresa["Sin conductor"] == 2 and empresa["total"] == 2
+    assert not any(r["carrier_name"] == "Sobra Spa" for r in result["por_empresa_y_cd"]), \
+        "una empresa con más conductores que tractos no tiene faltante"
+    sin_origen = next(r for r in result["por_cd"] if r["cd"] == "Sin origen")
+    assert sin_origen["Sin conductor"] == 2
+    peñon = next(r for r in result["por_cd"] if r["cd"] == "CD El Peñón")
+    assert peñon["Panne"] == 1 and peñon["total"] == 1
+
+
+def test_sin_el_motivo_en_el_catalogo_no_inventa_la_columna():
+    result = _section4_tractoreo_no_trabajando(
+        [], ["Panne"], faltantes=[_faltante("Transportes Sur", 3, 1)], sin_conductor=None)
+    assert result["por_cd"] == [] and result["por_empresa_y_cd"] == []

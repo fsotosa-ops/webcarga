@@ -49,6 +49,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
+from ..services.fleet_driver_gap import compute_fleet_driver_gap
 from ..services.origen_del_viaje import origen_del_viaje
 from ..services.cierre_lineas import (
     GRUPO_NO_TRABAJANDO, GRUPO_TRABAJANDO_SIN_ASIGNACION, LINEAS_CONDUCTORES, LINEAS_TRACTOS, frescura_del_dia,
@@ -394,6 +395,12 @@ def _section3_vueltas(rows: list[dict]) -> list[dict]:
 # la que había (y su copia en StatusReportSection.tsx) dejaba fuera 9 motivos
 # que sólo sumaban al total. $1 es el grupo; un motivo sin grupo se lee como
 # "no trabajando", igual que en cierre_lineas.
+# La etiqueta visible del motivo "Sin conductor", por su código estable
+# (migración 20260917000000): renombrarlo desde Configuración no rompe nada.
+_SQL_ETIQUETA_SIN_CONDUCTOR = (
+    "SELECT label FROM app.status_taxonomies WHERE domain = 'DRIVER_REASON' AND code = 'SIN_CONDUCTOR'"
+)
+
 _SQL_MOTIVOS_DEL_GRUPO = f"""
 SELECT label FROM app.status_taxonomies
 WHERE domain = 'DRIVER_REASON' AND active
@@ -431,12 +438,20 @@ def _cross_tab_by_motivo(rows: list[dict], key_fn, motivos: list[str]) -> dict:
     return buckets
 
 
-def _section4_tractoreo_no_trabajando(driver_rows: list[dict], motivos: list[str]) -> dict:
+def _section4_tractoreo_no_trabajando(
+    driver_rows: list[dict], motivos: list[str], *, faltantes: list[dict], sin_conductor: str | None,
+) -> dict:
     """Tarea 6 (plan 2.3): agrupada por CONDUCTOR — el caller (_build_driver_rows)
     ya acota a Tractoreo + UNASSIGNED por construcción, no se filtra de
     nuevo acá. `driver_detail` es la lista plana que permite ver el tipo de
     operación del tracto habitual de cada conductor (puede diferir del
-    roster, que se arma a nivel empresa)."""
+    roster, que se arma a nivel empresa).
+
+    Minuta 09/10, ítem 13: la columna "Sin conductor" (`sin_conductor`, la
+    etiqueta del motivo SIN_CONDUCTOR) suma el faltante de la dotación de cada
+    empresa: `faltantes` es compute_fleet_driver_gap, la misma definición de la
+    pestaña Dotación. Esos conductores no existen, así que no tienen origen
+    declarado: van en "Sin origen"."""
     # Por el CD BASE: son conductores que NO trabajaron, así que no hay origen
     # real que agrupar. Antes se les atribuía el de su viaje más reciente, de
     # cualquier fecha.
@@ -444,6 +459,14 @@ def _section4_tractoreo_no_trabajando(driver_rows: list[dict], motivos: list[str
     por_empresa_y_cd = _cross_tab_by_motivo(
         driver_rows, lambda r: (r["home_cd"] or "Sin origen", r["carrier_name"]), motivos,
     )
+    if sin_conductor in motivos:
+        for f in faltantes:
+            if f["gap"] <= 0:
+                continue
+            for tabla, clave in ((por_cd, "Sin origen"), (por_empresa_y_cd, ("Sin origen", f["business_name"]))):
+                b = tabla.setdefault(clave, {m: 0 for m in motivos} | {"total": 0})
+                b[sin_conductor] += f["gap"]
+                b["total"] += f["gap"]
     driver_detail = [
         {
             "driver_id": str(r["driver_id"]), "full_name": r["full_name"], "carrier_name": r["carrier_name"],
@@ -582,7 +605,10 @@ async def get_status_report(fecha: str, client: str | None = None, pool=Depends(
         "section1_resumen": _section1_resumen(rows),
         "section2_tractoreo_asignado": _section2_tractoreo_asignado(rows, motivos_sin_carga),
         "section3_vueltas": _section3_vueltas(rows),
-        "section4_tractoreo_no_trabajando": _section4_tractoreo_no_trabajando(driver_rows, motivos),
+        "section4_tractoreo_no_trabajando": _section4_tractoreo_no_trabajando(
+            driver_rows, motivos, faltantes=await compute_fleet_driver_gap(pool),
+            sin_conductor=await pool.fetchval(_SQL_ETIQUETA_SIN_CONDUCTOR),
+        ),
         "section_tractoreo_por_empresa": _section_tractoreo_por_empresa(rows),
         "section5_equipos_completos": _section5_equipos_completos(rows),
         "section6_resumen_general": _section6_resumen_general(rows),
