@@ -2384,7 +2384,7 @@ async def void_trips(body: TripVoidBody, pool=Depends(get_pool), user=Depends(re
     services/anular_viajes.py. Declarado antes de las rutas /{trip_id}."""
     async with pool.acquire() as conn:
         async with conn.transaction():
-            n = await anular_viajes(conn, [str(t) for t in body.trip_ids], body.reason, user)
+            n = await anular_viajes(conn, [str(t) for t in body.trip_ids], str(body.reason_id), body.note, user)
     return {"ok": True, "voided": n}
 
 

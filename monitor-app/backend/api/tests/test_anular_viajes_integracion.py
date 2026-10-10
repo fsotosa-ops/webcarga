@@ -53,9 +53,15 @@ async def _firmar_dia(conn, usuario) -> None:
         DIA, usuario["sub"])
 
 
+async def _motivo(conn, code: str = "DUPLICADO") -> str:
+    return str(await conn.fetchval(
+        "SELECT id FROM app.status_taxonomies WHERE domain = 'TRIP_VOID_REASON' AND code = $1", code))
+
+
 async def _anulado(conn, tid: str):
     return await conn.fetchrow(
-        "SELECT t.voided_at, t.voided_by::text, t.void_reason, m.voided_at AS m_voided_at, m.void_reason AS m_reason "
+        "SELECT t.voided_at, t.voided_by::text, t.void_reason_id::text, t.void_note, m.voided_at AS m_voided_at, "
+        "m.void_reason_id::text AS m_reason "
         "FROM app.trips t JOIN app.trips_manual m ON m.id = t.id WHERE t.id = $1::uuid", tid)
 
 
@@ -75,16 +81,17 @@ async def test_quien_lo_creo_lo_anula_con_motivo_y_queda_auditado(conexion_rever
     tid = await _viaje_manual(conn, usuario)
     assert (await get_trip(tid, pool=PoolDeUnaConexion(conn), user=usuario))["can_void"] is True
 
-    assert await anular_viajes(conn, [tid], "Duplicado", usuario) == 1
+    motivo = await _motivo(conn)
+    assert await anular_viajes(conn, [tid], motivo, None, usuario) == 1
 
     fila = await _anulado(conn, tid)
     assert fila["voided_at"] is not None and fila["m_voided_at"] is not None
-    assert (fila["voided_by"], fila["void_reason"], fila["m_reason"]) == (usuario["sub"], "Duplicado", "Duplicado")
+    assert (fila["voided_by"], fila["void_reason_id"], fila["m_reason"]) == (usuario["sub"], motivo, motivo)
     assert await conn.fetchval(
         "SELECT count(*) FROM public.audit_log WHERE entity_type='TRIP' AND entity_id=$1::uuid AND action='void'",
         tid) == 1
     detalle = await get_trip(tid, pool=PoolDeUnaConexion(conn), user=usuario)
-    assert (detalle["void_reason"], detalle["can_void"], detalle["can_revert_void"]) == ("Duplicado", False, True)
+    assert (detalle["void_reason_label"], detalle["can_void"], detalle["can_revert_void"]) == ("Duplicado", False, True)
     assert detalle["voided_by_name"] is not None
 
 
@@ -94,17 +101,17 @@ async def test_el_monitor_no_lista_los_anulados(conexion_revertida):
     tid = await _viaje_manual(conn, usuario)
     assert tid in await _listados(conn, usuario)
 
-    await anular_viajes(conn, [tid], "Duplicado", usuario)
+    await anular_viajes(conn, [tid], await _motivo(conn), None, usuario)
 
     assert tid not in await _listados(conn, usuario)
 
 
-async def test_sin_motivo_no_se_anula(conexion_revertida):
+async def test_sin_motivo_de_catalogo_no_se_anula(conexion_revertida):
     conn = conexion_revertida
     usuario = await _usuario_real(conn)
     tid = await _viaje_manual(conn, usuario)
     with pytest.raises(HTTPException) as err:
-        await anular_viajes(conn, [tid], "   ", usuario)
+        await anular_viajes(conn, [tid], "", None, usuario)
     assert err.value.status_code == 422
     assert (await _anulado(conn, tid))["voided_at"] is None
 
@@ -114,19 +121,19 @@ async def test_otro_operador_no_puede_y_void_any_si(conexion_revertida):
     usuario = await _usuario_real(conn)
     tid = await _viaje_manual(conn, usuario)
     with pytest.raises(HTTPException) as err:
-        await anular_viajes(conn, [tid], "Duplicado", _otro("operations_operator"))
+        await anular_viajes(conn, [tid], await _motivo(conn), None, _otro("operations_operator"))
     assert err.value.status_code == 403
 
     otro_perfil = str(await conn.fetchval("SELECT id FROM public.profiles WHERE id <> $1::uuid LIMIT 1", usuario["sub"]))
     admin = con_roles({"sub": otro_perfil, "email": "admin@webcarga.cl"}, *ADMIN_EQUIVALENTE)
-    assert await anular_viajes(conn, [tid], "Duplicado", admin) == 1
+    assert await anular_viajes(conn, [tid], await _motivo(conn), None, admin) == 1
 
 
 async def test_un_viaje_del_tms_no_se_anula(conexion_revertida):
     conn = conexion_revertida
     tms = str(await conn.fetchval("SELECT id FROM app.trips WHERE source_system <> 'manual' LIMIT 1"))
     with pytest.raises(HTTPException) as err:
-        await anular_viajes(conn, [tms], "Duplicado", _otro("owner"))
+        await anular_viajes(conn, [tms], await _motivo(conn), None, _otro("owner"))
     assert err.value.status_code == 409
 
 
@@ -138,11 +145,11 @@ async def test_en_dia_firmado_lo_anula_solo_quien_firma(conexion_revertida):
     await _firmar_dia(conn, usuario)
 
     with pytest.raises(HTTPException) as err:
-        await anular_viajes(conn, [tid], "Duplicado", _sin_firmar(usuario))
+        await anular_viajes(conn, [tid], await _motivo(conn), None, _sin_firmar(usuario))
     assert err.value.status_code == 403
     assert "firmado" in str(err.value.detail)
 
-    assert await anular_viajes(conn, [tid], "Duplicado", con_roles(usuario, "operations_operator")) == 1
+    assert await anular_viajes(conn, [tid], await _motivo(conn), None, con_roles(usuario, "operations_operator")) == 1
     assert await conn.fetchval("SELECT status FROM app.closure_periods WHERE business_date = $1", DIA) == "CLOSED"
 
 
@@ -150,7 +157,7 @@ async def test_revertir_en_dia_firmado_exige_firmar_y_vuelve_a_la_firma(conexion
     conn = conexion_revertida
     usuario = await _usuario_real(conn)
     tid = await _viaje_manual(conn, usuario)
-    await anular_viajes(conn, [tid], "Duplicado", usuario)
+    await anular_viajes(conn, [tid], await _motivo(conn), None, usuario)
     await _firmar_dia(conn, usuario)
 
     with pytest.raises(HTTPException) as err:
@@ -170,7 +177,7 @@ async def test_lote_mezclado_no_anula_ninguno(conexion_revertida):
     propio = await _viaje_manual(conn, usuario)
     inexistente = str(uuid.uuid4())
     with pytest.raises(HTTPException) as err:
-        await anular_viajes(conn, [propio, inexistente], "Duplicado", usuario)
+        await anular_viajes(conn, [propio, inexistente], await _motivo(conn), None, usuario)
     assert err.value.status_code == 404
     assert [e["trip_id"] for e in err.value.detail["errors"]] == [inexistente]
     assert (await _anulado(conn, propio))["voided_at"] is None
@@ -180,9 +187,9 @@ async def test_anular_dos_veces_es_conflicto(conexion_revertida):
     conn = conexion_revertida
     usuario = await _usuario_real(conn)
     tid = await _viaje_manual(conn, usuario)
-    await anular_viajes(conn, [tid], "Duplicado", usuario)
+    await anular_viajes(conn, [tid], await _motivo(conn), None, usuario)
     with pytest.raises(HTTPException) as err:
-        await anular_viajes(conn, [tid], "Otra vez", usuario)
+        await anular_viajes(conn, [tid], await _motivo(conn, "CARGADO_POR_ERROR"), None, usuario)
     assert err.value.status_code == 409
 
 
@@ -209,7 +216,70 @@ async def test_un_viaje_que_ocupo_un_dia_firmado_posterior_lo_anula_solo_quien_f
     assert detalle["can_void"] is False
     assert "02/01" in detalle["void_blocked_reason"]
     with pytest.raises(HTTPException) as err:
-        await anular_viajes(conn, [tid], "Duplicado", _sin_firmar(usuario))
+        await anular_viajes(conn, [tid], await _motivo(conn), None, _sin_firmar(usuario))
     assert err.value.status_code == 403
 
-    assert await anular_viajes(conn, [tid], "Duplicado", con_roles(usuario, "operations_operator")) == 1
+    assert await anular_viajes(conn, [tid], await _motivo(conn), None, con_roles(usuario, "operations_operator")) == 1
+
+
+async def test_motivo_de_otro_dominio_es_422(conexion_revertida):
+    conn = conexion_revertida
+    usuario = await _usuario_real(conn)
+    tid = await _viaje_manual(conn, usuario)
+    no_asignacion = str(await conn.fetchval(
+        "SELECT id FROM app.status_taxonomies WHERE domain = 'TRIP_UNASSIGNED_REASON' AND active LIMIT 1"))
+    with pytest.raises(HTTPException) as err:
+        await anular_viajes(conn, [tid], no_asignacion, None, usuario)
+    assert err.value.status_code == 422
+    assert (await _anulado(conn, tid))["voided_at"] is None
+
+
+async def test_otro_exige_nota_y_con_nota_anula(conexion_revertida):
+    conn = conexion_revertida
+    usuario = await _usuario_real(conn)
+    tid = await _viaje_manual(conn, usuario)
+    otro = await _motivo(conn, "OTRO")
+    with pytest.raises(HTTPException) as err:
+        await anular_viajes(conn, [tid], otro, "  ", usuario)
+    assert err.value.status_code == 422
+
+    assert await anular_viajes(conn, [tid], otro, "El cliente lo canceló por correo", usuario) == 1
+    detalle = await get_trip(tid, pool=PoolDeUnaConexion(conn), user=usuario)
+    assert (detalle["void_reason_label"], detalle["void_note"]) == ("Otro", "El cliente lo canceló por correo")
+
+
+async def test_otro_renombrado_sigue_exigiendo_nota(conexion_revertida):
+    conn = conexion_revertida
+    usuario = await _usuario_real(conn)
+    tid = await _viaje_manual(conn, usuario)
+    otro = await _motivo(conn, "OTRO")
+    await conn.execute("UPDATE app.status_taxonomies SET label = 'Otra razón' WHERE id = $1::uuid", otro)
+    with pytest.raises(HTTPException) as err:
+        await anular_viajes(conn, [tid], otro, None, usuario)
+    assert err.value.status_code == 422
+
+
+async def test_motivo_desactivado_se_sigue_leyendo_y_no_se_ofrece(conexion_revertida):
+    conn = conexion_revertida
+    usuario = await _usuario_real(conn)
+    tid = await _viaje_manual(conn, usuario)
+    motivo = await _motivo(conn, "CARGADO_POR_ERROR")
+    await anular_viajes(conn, [tid], motivo, None, usuario)
+    await conn.execute("UPDATE app.status_taxonomies SET active = false WHERE id = $1::uuid", motivo)
+
+    detalle = await get_trip(tid, pool=PoolDeUnaConexion(conn), user=usuario)
+    assert detalle["void_reason_label"] == "Cargado por error"
+    otro_viaje = await _viaje_manual(conn, usuario)
+    with pytest.raises(HTTPException) as err:
+        await anular_viajes(conn, [otro_viaje], motivo, None, usuario)
+    assert err.value.status_code == 422
+
+
+async def test_revertir_limpia_motivo_y_nota(conexion_revertida):
+    conn = conexion_revertida
+    usuario = await _usuario_real(conn)
+    tid = await _viaje_manual(conn, usuario)
+    await anular_viajes(conn, [tid], await _motivo(conn, "OTRO"), "nota", usuario)
+    await revertir_anulacion(conn, [tid], usuario)
+    fila = await _anulado(conn, tid)
+    assert (fila["voided_at"], fila["void_reason_id"], fila["void_note"]) == (None, None, None)

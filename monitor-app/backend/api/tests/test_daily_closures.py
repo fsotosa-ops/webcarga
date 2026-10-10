@@ -282,7 +282,7 @@ def test_get_daily_closure_status_reports_closed_day(servicio_de_cierre):
         "reopened_by": None, "reopened_at": None, "reopen_note": None,
     }
     ajuste = {"trip_id": "t1", "tipo": "quitado", "source_system_trip_id": "M-1", "client_name": "Iansa",
-              "voided_at": "2026-07-22T12:00:00+00:00", "voided_by_name": "Ana", "void_reason": "Duplicado"}
+              "voided_at": "2026-07-22T12:00:00+00:00", "voided_by_name": "Ana", "void_reason_label": "Duplicado", "void_note": None}
     servicio_de_cierre["ajustes_posteriores"].return_value = [ajuste]
     client = make_client(pool)
 

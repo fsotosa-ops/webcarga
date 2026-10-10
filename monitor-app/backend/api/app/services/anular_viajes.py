@@ -13,7 +13,13 @@ Quién, según los días firmados que el viaje toca:
     firma sus viajes) o si cuenta en él por sus marcas (app.trips_del_dia, la cota
     de 45 días). El día NO se reabre: la firma es una copia inmutable
     (app.closure_signatures) y la anulación aparece como ajuste posterior al cierre.
-Revertir pide lo mismo. Un viaje anulado ya no está en trips_del_dia, así que al
+Revertir pide lo mismo.
+
+Motivo: se elige del catálogo TRIP_VOID_REASON (app.status_taxonomies, editable en
+Configuración › Motivos de anulación); el comentario es opcional y pasa a obligatorio
+con code = 'OTRO'. La regla mira el código, no la etiqueta: renombrar "Otro" no la
+rompe. El detalle y los ajustes leen la etiqueta sin filtrar `active`, así un motivo
+desactivado se sigue viendo en los viajes que ya lo usaron. Un viaje anulado ya no está en trips_del_dia, así que al
 revertir sólo se ve su propio día.
 
 La regla que decide `can_void` en el listado es `_bloqueo`, la misma que aplica la
@@ -25,6 +31,7 @@ desde trips_manual (rama manual del modelo dbt), y el merge no toca estas column
 """
 from __future__ import annotations
 
+import asyncpg
 from fastapi import HTTPException
 
 from .audit import log_change
@@ -36,7 +43,7 @@ MAXIMO_POR_LOTE = 200
 # listado no paga un EXISTS por cada viaje del TMS.
 SQL_COLUMNAS_ANULABLE = """
     tm.created_by::text AS manual_created_by,
-    t.voided_at, t.void_reason,
+    t.voided_at, t.void_reason_id::text AS void_reason_id, void_rs.label AS void_reason_label, t.void_note,
     void_by.full_name AS voided_by_name,
     CASE WHEN t.source_system = 'manual' THEN ARRAY(
         SELECT cp.business_date
@@ -53,6 +60,7 @@ SQL_COLUMNAS_ANULABLE = """
 SQL_JOIN_ANULABLE = """
     LEFT JOIN app.trips_manual tm ON tm.id = t.id
     LEFT JOIN public.profiles void_by ON void_by.id = t.voided_by
+    LEFT JOIN app.status_taxonomies void_rs ON void_rs.id = t.void_reason_id
 """
 
 
@@ -123,36 +131,57 @@ async def _validar(conn, trip_ids: list[str], user: dict, *, revertir: bool) -> 
     return ids
 
 
-async def anular_viajes(conn, trip_ids: list[str], reason: str, user: dict) -> int:
+async def _motivo_valido(conn, reason_id: str | None, note: str | None) -> tuple[str, str, str | None]:
+    """(id, etiqueta, nota limpia) del motivo, o 422. El motivo es del catálogo
+    TRIP_VOID_REASON y está activo; la nota es obligatoria si su código es OTRO."""
+    if not reason_id:
+        raise HTTPException(422, "Elige un motivo de anulación")
+    try:
+        fila = await conn.fetchrow(
+            "SELECT id::text AS id, label, code FROM app.status_taxonomies "
+            "WHERE id = $1::uuid AND domain = 'TRIP_VOID_REASON' AND active",
+            reason_id,
+        )
+    except (asyncpg.DataError, ValueError):
+        fila = None
+    if fila is None:
+        raise HTTPException(422, "Motivo de anulación inválido")
+    nota = (note or "").strip() or None
+    if fila["code"] == "OTRO" and nota is None:
+        raise HTTPException(422, "Con «Otro» escribe un comentario que diga por qué")
+    return fila["id"], fila["label"], nota
+
+
+async def anular_viajes(conn, trip_ids: list[str], reason_id: str | None, note: str | None, user: dict) -> int:
     """Anula los viajes, todo o nada. Debe correr dentro de una transacción."""
-    motivo = (reason or "").strip()
-    if not motivo:
-        raise HTTPException(422, "Anular exige un motivo")
+    motivo_id, etiqueta, nota = await _motivo_valido(conn, reason_id, note)
     ids = await _validar(conn, trip_ids, user, revertir=False)
     for tabla in ("app.trips_manual", "app.trips"):
         await conn.execute(
-            f"UPDATE {tabla} SET voided_at = now(), voided_by = $2::uuid, void_reason = $3 "
-            "WHERE id = ANY($1::uuid[])",
-            ids, user["sub"], motivo,
+            f"UPDATE {tabla} SET voided_at = now(), voided_by = $2::uuid, "
+            "void_reason_id = $3::uuid, void_note = $4 WHERE id = ANY($1::uuid[])",
+            ids, user["sub"], motivo_id, nota,
         )
     for tid in ids:
-        await log_change(conn, actor=user["sub"], entity_type="TRIP", entity_id=tid,
-                         action="void", field="voided_at", new_value={"reason": motivo})
+        await log_change(conn, actor=user["sub"], entity_type="TRIP", entity_id=tid, action="void",
+                         field="voided_at", new_value={"reason_id": motivo_id, "reason": etiqueta, "note": nota})
     return len(ids)
 
 
 async def revertir_anulacion(conn, trip_ids: list[str], user: dict) -> int:
     """Devuelve los viajes al día, todo o nada. Debe correr dentro de una transacción."""
     ids = await _validar(conn, trip_ids, user, revertir=True)
-    anteriores = {r["id"]: r["void_reason"] for r in await conn.fetch(
-        "SELECT id::text, void_reason FROM app.trips WHERE id = ANY($1::uuid[])", ids)}
+    anteriores = {r["id"]: (r["motivo"], r["void_note"]) for r in await conn.fetch(
+        "SELECT t.id::text, r.label AS motivo, t.void_note FROM app.trips t "
+        "LEFT JOIN app.status_taxonomies r ON r.id = t.void_reason_id WHERE t.id = ANY($1::uuid[])", ids)}
     for tabla in ("app.trips_manual", "app.trips"):
         await conn.execute(
-            f"UPDATE {tabla} SET voided_at = NULL, voided_by = NULL, void_reason = NULL "
+            f"UPDATE {tabla} SET voided_at = NULL, voided_by = NULL, void_reason_id = NULL, void_note = NULL "
             "WHERE id = ANY($1::uuid[])",
             ids,
         )
     for tid in ids:
+        motivo, nota = anteriores.get(tid, (None, None))
         await log_change(conn, actor=user["sub"], entity_type="TRIP", entity_id=tid,
-                         action="void_revert", field="voided_at", old_value={"reason": anteriores.get(tid)})
+                         action="void_revert", field="voided_at", old_value={"reason": motivo, "note": nota})
     return len(ids)

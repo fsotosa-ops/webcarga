@@ -403,10 +403,11 @@ cambios AS (
     (SELECT trip_id, 'quitado' FROM firmados EXCEPT SELECT trip_id, 'quitado' FROM del_dia)
 )
 SELECT c.trip_id::text AS trip_id, c.tipo, t.source_system_trip_id, t.client_name,
-       t.voided_at, p.full_name AS voided_by_name, t.void_reason
+       t.voided_at, p.full_name AS voided_by_name, r.label AS void_reason_label, t.void_note
 FROM cambios c
 LEFT JOIN app.trips t ON t.id = c.trip_id
 LEFT JOIN public.profiles p ON p.id = t.voided_by
+LEFT JOIN app.status_taxonomies r ON r.id = t.void_reason_id
 WHERE EXISTS (SELECT 1 FROM firma)
 ORDER BY c.tipo, t.source_system_trip_id NULLS LAST
 """

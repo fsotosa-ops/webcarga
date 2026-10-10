@@ -29,6 +29,11 @@ async def _viaje_manual(conn, usuario) -> str:
     return str(viaje["id"])
 
 
+async def _motivo(conn, code: str = "DUPLICADO") -> str:
+    return str(await conn.fetchval(
+        "SELECT id FROM app.status_taxonomies WHERE domain = 'TRIP_VOID_REASON' AND code = $1", code))
+
+
 async def _firmas(conn):
     return await conn.fetch(
         "SELECT id, version, captured_from, totals FROM app.closure_signatures WHERE business_date = $1 ORDER BY version", D)
@@ -109,7 +114,7 @@ async def test_la_firma_no_cuenta_los_anulados(conexion_revertida):
     conn = conexion_revertida
     admin = con_roles(await _usuario_real(conn), *ADMIN_EQUIVALENTE)
     tid = await _viaje_manual(conn, admin)
-    await anular_viajes(conn, [tid], "Duplicado", admin)
+    await anular_viajes(conn, [tid], await _motivo(conn), None, admin)
 
     await cierre_lineas.cerrar(PoolDeUnaConexion(conn), D, override=True, override_note="prueba", user=admin)
 
@@ -127,6 +132,6 @@ async def test_la_pestana_viajes_del_cierre_no_lista_los_anulados(conexion_rever
     consulta = f"SELECT g.trip_id::text AS trip_id FROM (({SQL_GRUPOS_CIERRE}) UNION ALL ({SQL_CON_MOTIVO})) g"
     assert tid in {r["trip_id"] for r in await conn.fetch(consulta, D)}
 
-    await anular_viajes(conn, [tid], "Duplicado", admin)
+    await anular_viajes(conn, [tid], await _motivo(conn), None, admin)
 
     assert tid not in {r["trip_id"] for r in await conn.fetch(consulta, D)}

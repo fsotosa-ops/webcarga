@@ -57,10 +57,12 @@ TRIP_FIELD_PERMISSIONS: dict[str, Permission] = {
 
 
 class TripVoidBody(BaseModel):
-    """Viajes manuales a anular, con el motivo. UUID, no str: un id mal formado es
-    un 422 de validación, no un DataError de asyncpg convertido en 500."""
-    trip_ids: list[UUID]
-    reason: str
+    """Viajes manuales a anular, con el motivo del catálogo TRIP_VOID_REASON y un
+    comentario (obligatorio si el motivo es «Otro»). UUID, no str: un id mal formado
+    es un 422 de validación, no un DataError de asyncpg convertido en 500."""
+    trip_ids:  list[UUID]
+    reason_id: UUID
+    note:      str | None = None
 
 
 class TripVoidRevertBody(BaseModel):
