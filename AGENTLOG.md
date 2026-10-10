@@ -56,8 +56,11 @@ códigos generados; expand/contract con compuerta por la API de `main` (lee `pro
       Personas con chips + panel "Editar roles" (nivel por área, motivo de lo no otorgable, qué gana/pierde),
       pestaña Roles (sistema solo lectura, personalizados crear/editar/eliminar), invitación multi-rol.
       "Personas y accesos" se esconde sin users.manage. Verificado en dev escritorio y teléfono (solo lectura).
-- [ ] **Pendiente con confirmación del usuario** (escribe en producción): crear un rol personalizado de prueba,
-      asignarlo y borrarlo; el 409 de "último Propietario" está cubierto por el test de integración.
+- [x] Prueba con escritura en producción (autorizada): rol "Prueba RBAC" creado, asignado a demo, 409 al borrarlo
+      asignado, desasignado y borrado desde la pantalla. Base sin restos; auditoría completa. El 409 de "último
+      Propietario" queda cubierto por el test de integración (hay 2 Propietarios: probarlo en vivo lo quitaría).
+- [ ] **Siguiente:** revisión final de toda la rama (revisor fresco, modelo más capaz), incluido el hallazgo del
+      inventario; después Task 13 (contract) cuando la API de `main` se redespliegue o retire.
 - [ ] Hallazgo para la revisión final: `GET /config/inventario` exige settings.manage (Supervisores ven la portada
       sin conteos) y expone el conteo de personas sin users.manage.
 - [ ] Task 13: contract (DROP `profiles.role` / `admin_whitelist.role`) — compuerta: la API de `main`
