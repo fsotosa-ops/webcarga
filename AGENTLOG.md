@@ -32,11 +32,30 @@ interno; diseño aprobado por secciones. Correcciones hechas en la revisión: la
 (`app.closure_recompute_queue`) y no en `closure_periods` (evita bloquear la ingesta y un ciclo de bloqueos); el GET
 no escribe nunca; reglas contra el auto-reencolado (sentencia sin filas, `SET LOCAL app.origen_escritura`).
 
-**Spec:** `docs/superpowers/specs/2026-10-10-cierre-recalculo-fuera-de-la-lectura-design.md` (`33839636`).
+**Spec:** `docs/superpowers/specs/2026-10-10-cierre-recalculo-fuera-de-la-lectura-design.md` (`33839636`, actualizada).
+**Plan:** `docs/superpowers/plans/2026-10-10-cierre-recalculo-fuera-de-la-lectura.md`; ejecución native (ledger en
+`.superpowers/sdd/2026-10-10-cierre-recalculo-fuera-de-la-lectura/progress.md`, con todos los `Ruling:`).
+
+**Hecho y DESPLEGADO en dev (10/10, `3d74d8f5`):**
+- Migraciones en producción: `20261010120000` (cola, función de marca, 24 triggers en las tablas de la API) y
+  `20261010150000` (la cola pasa a **solo inserciones**: el upsert por día hacía esperar a toda transacción que
+  marcaba y provocó un deadlock en la suite). Triggers de `app.trips`/`app.trip_stops` en el `post_hook` de dbt
+  (Mage, verificados 14:39 UTC).
+- Pre-cierre por conjuntos (equivalencia exacta con el código viejo en 14/14 días); `cierre_lineas` con
+  `recalcular(marcas, saltar_si_ocupado)`, firma atómica, reabrir encola, sin proyección a las 4 tablas viejas;
+  ejecutor `services/cola_del_cierre.py`; endpoint `POST /api/v1/internal/closures/recompute` (OIDC de Cloud
+  Scheduler, solo dev); los tres GET escriben 0 filas; aviso "Actualizando…" en pantalla.
+- GCP (con confirmación del usuario): API de Cloud Scheduler, SA `cierre-scheduler`, job `cierre-recalculo-dev` cada 1 min.
+- Medido: Scheduler 200 desde 17:14 UTC; en caliente, servidor: daily-closures 1,16 s y equipment-closures 0,69 s
+  (antes, medianas de 5,5 s). La meta de 0,5 s no se alcanzó en daily-closures: el resto es su consulta de detalle
+  preexistente, no el recálculo.
+- Hallazgo ajeno: `trg_refresh_compliance_on_carriers_update` toma un ExclusiveLock sobre
+  `app.carrier_compliance_status`: dos ediciones de empresas cualquiera se serializan (diagnosticado con pg_blocking_pids).
 
 **Siguiente paso exacto:**
-- [ ] El usuario revisa la spec escrita.
-- [ ] Con la spec aprobada: plan con superpowers:writing-plans; después, elegir el modo de ejecución.
+- [ ] Revisión final de la rama (revisor fresco) y su pasada de correcciones.
+- [ ] 11/10: medianas de un día completo en logs de Cloud Run; luego contract (`20261011120000`: retirar las 4 tablas viejas).
+- [ ] Optimizar `_DETAIL_SQL` de daily-closures si se quiere llegar a 0,5 s (cambio aparte).
 - [ ] Después de este trabajo, la minuta del 09/10 (`monitor-app/bugs/20261009/`).
 - [ ] Fuera de la spec, cada uno por su lado: peso de la respuesta del Monitor, instancias mínimas (costo), plan de Supabase (WebCarga).
 
