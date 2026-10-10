@@ -15,22 +15,22 @@ día es una LÍNEA de conciliación. Este módulo es el único que las escribe:
                   quedaba medio firmado sin que nada lo dijera.
 - `reabrir`      — acto explícito, de admin y con nota.
 
-Transición (olas 2-3 del spec): las tablas viejas (driver_day_status,
-equipment_day_status, daily_closures, equipment_closures) se siguen escribiendo
-como PROYECCIÓN de las líneas, en la misma transacción. Nadie las lee; son la
-red para volver atrás hasta que se retiren (ola 5).
+Cuándo corre (spec 2026-10-10): los triggers trg_marcar_cierre_* encolan el día
+en app.closure_recompute_queue y el ejecutor (services/cola_del_cierre.py) llama
+a `recalcular`. Firmar recalcula en su propia transacción. Los GET solo leen.
 """
 from __future__ import annotations
 
 import json
 from datetime import date
+from enum import StrEnum
 
 from fastapi import HTTPException
 
 from .audit import log_change
 from .cierre_viajes import SQL_TOTAL_TRIPS_DEL_DIA
 from .driver_roster import TRACTOREO_ROSTER_CTE
-from .pre_cierre import run_pre_cierre
+from .pre_cierre import aplicar_correcciones, avisos_del_dia
 
 # ── Qué significa un motivo ──────────────────────────────────────────────────
 # Vive en el catálogo (status_taxonomies.group_id), no acá: migración
@@ -265,47 +265,27 @@ WHERE a.business_date = $1 AND a.subject_type = 'ASSET' AND a.subject_id = ANY($
   )
 """
 
-# ── Proyección a las tablas viejas (se retira en la ola 5) ───────────────────
-_SQL_PROYECTAR_CONDUCTORES = """
-INSERT INTO app.driver_day_status
-    (driver_id, business_date, status, unassigned_reason_id, resolved_by, resolved_at, computed_at, comentario)
-SELECT subject_id, business_date, status, reason_id, resolved_by, resolved_at, computed_at, comentario
-FROM app.closure_lines
-WHERE business_date = $1 AND subject_type = 'DRIVER' AND ($2::uuid[] IS NULL OR subject_id = ANY($2::uuid[]))
-ON CONFLICT (driver_id, business_date) DO UPDATE SET
-    status = EXCLUDED.status, unassigned_reason_id = EXCLUDED.unassigned_reason_id,
-    resolved_by = EXCLUDED.resolved_by, resolved_at = EXCLUDED.resolved_at,
-    computed_at = EXCLUDED.computed_at, comentario = EXCLUDED.comentario
-"""
+class Resultado(StrEnum):
+    RECALCULADO = "recalculado"
+    CERRADO = "cerrado"
+    OCUPADO = "ocupado"
 
-_SQL_PROYECTAR_TRACTOS = """
-INSERT INTO app.equipment_day_status
-    (asset_id, business_date, status, requires_motivo, unassigned_reason_id, resolved_by, resolved_at, computed_at, comentario)
-SELECT subject_id, business_date, status, requires_reason, reason_id, resolved_by, resolved_at, computed_at, comentario
-FROM app.closure_lines
-WHERE business_date = $1 AND subject_type = 'ASSET' AND ($2::uuid[] IS NULL OR subject_id = ANY($2::uuid[]))
-ON CONFLICT (asset_id, business_date) DO UPDATE SET
-    status = EXCLUDED.status, requires_motivo = EXCLUDED.requires_motivo,
-    unassigned_reason_id = EXCLUDED.unassigned_reason_id,
-    resolved_by = EXCLUDED.resolved_by, resolved_at = EXCLUDED.resolved_at,
-    computed_at = EXCLUDED.computed_at, comentario = EXCLUDED.comentario
+
+SQL_ENCOLAR = """
+INSERT INTO app.closure_recompute_queue (business_date) VALUES ($1)
+ON CONFLICT (business_date) DO UPDATE SET version = app.closure_recompute_queue.version + 1
 """
 
 
-async def _proyectar(conn, fecha: date, sujetos: list[str] | None = None) -> None:
-    await conn.execute(_SQL_PROYECTAR_CONDUCTORES, fecha, sujetos)
-    await conn.execute(_SQL_PROYECTAR_TRACTOS, fecha, sujetos)
-
-
-async def _bloquear_periodo(conn, fecha: date) -> str:
-    """Crea el período si no existe y lo toma con FOR UPDATE: dos personas
-    firmando o editando el mismo día se serializan acá."""
+async def bloquear_periodo(conn, fecha: date, *, saltar_si_ocupado: bool = False) -> str | None:
+    """Crea el período si no existe y lo toma con FOR UPDATE: firmar, poner un
+    motivo y recalcular el mismo día se serializan acá. Con `saltar_si_ocupado`
+    (el ejecutor) no espera: devuelve None si otro lo tiene."""
     await conn.execute(
         "INSERT INTO app.closure_periods (business_date) VALUES ($1) ON CONFLICT DO NOTHING", fecha,
     )
-    return await conn.fetchval(
-        "SELECT status FROM app.closure_periods WHERE business_date = $1 FOR UPDATE", fecha,
-    )
+    sql = "SELECT status FROM app.closure_periods WHERE business_date = $1 FOR UPDATE"
+    return await conn.fetchval(sql + (" SKIP LOCKED" if saltar_si_ocupado else ""), fecha)
 
 
 async def periodo(pool, fecha: date) -> dict | None:
@@ -330,29 +310,38 @@ async def periodo(pool, fecha: date) -> dict | None:
 
 # ── recalcular ───────────────────────────────────────────────────────────────
 
-async def recalcular(pool, fecha: date) -> dict | None:
-    """Deriva las líneas del día de sus viajes. Devuelve el resultado del
-    pre-cierre, o None si el día está cerrado — en ese caso no corre NADA,
-    tampoco el pre-cierre, que escribe en el directorio como efecto."""
-    if await pool.fetchval(
-        "SELECT status = 'CLOSED' FROM app.closure_periods WHERE business_date = $1", fecha,
-    ):
-        return None
+async def recalcular_en(conn, fecha: date) -> None:
+    """Deriva las líneas del día. Quien llama ya tomó el período ABIERTO con
+    `bloquear_periodo`, dentro de una transacción.
 
-    # HU-02: el pre-cierre corrige lo que puede antes de calcular MISMATCH.
-    pre_cierre = await run_pre_cierre(pool, fecha)
+    El origen declarado hace que las correcciones del pre-cierre (que escriben
+    en tablas con trigger de marca) no vuelvan a encolar el día."""
+    await conn.execute("SET LOCAL app.origen_escritura = 'recalculo_cierre'")
+    await aplicar_correcciones(conn, fecha)
+    await conn.execute(_SQL_UPSERT_CONDUCTORES, fecha)
+    await conn.execute(_SQL_UPSERT_TRACTOS, fecha)
+    await conn.execute(_SQL_HEREDAR_VIGENCIA, fecha)
+    await conn.execute(_SQL_SINCRONIZAR_TRACTOS, fecha)
 
+
+async def recalcular(pool, fecha: date, *, version: int | None = None,
+                     saltar_si_ocupado: bool = False) -> Resultado:
+    """Recalcula el día en su propia transacción. Con `version` (la que leyó el
+    ejecutor), saca el día de la cola solo si nadie volvió a marcarlo mientras
+    calculaba. Un día firmado no se recalcula: si estaba en la cola, sale."""
     async with pool.acquire() as conn:
         async with conn.transaction():
-            if await _bloquear_periodo(conn, fecha) == "CLOSED":
-                # Alguien firmó entre la lectura de arriba y el bloqueo.
-                return None
-            await conn.execute(_SQL_UPSERT_CONDUCTORES, fecha)
-            await conn.execute(_SQL_UPSERT_TRACTOS, fecha)
-            await conn.execute(_SQL_HEREDAR_VIGENCIA, fecha)
-            await conn.execute(_SQL_SINCRONIZAR_TRACTOS, fecha)
-            await _proyectar(conn, fecha)
-    return pre_cierre
+            estado = await bloquear_periodo(conn, fecha, saltar_si_ocupado=saltar_si_ocupado)
+            if estado is None:
+                return Resultado.OCUPADO
+            if estado == "OPEN":
+                await recalcular_en(conn, fecha)
+            if version is not None:
+                await conn.execute(
+                    "DELETE FROM app.closure_recompute_queue WHERE business_date = $1 AND version = $2",
+                    fecha, version,
+                )
+            return Resultado.RECALCULADO if estado == "OPEN" else Resultado.CERRADO
 
 
 # ── poner_motivo ─────────────────────────────────────────────────────────────
@@ -373,7 +362,7 @@ async def poner_motivo(
 
     async with pool.acquire() as conn:
         async with conn.transaction():
-            if await _bloquear_periodo(conn, fecha) == "CLOSED":
+            if await bloquear_periodo(conn, fecha) == "CLOSED":
                 raise HTTPException(409, "El día está cerrado. Para cambiarlo hay que reabrirlo.")
 
             filas = await conn.fetch(
@@ -449,7 +438,6 @@ async def poner_motivo(
             if pone_motivo or pone_vigencia:
                 await conn.execute(_SQL_SINCRONIZAR_TRACTOS, fecha)
 
-            await _proyectar(conn, fecha)
 
 
 # ── cerrar / reabrir ─────────────────────────────────────────────────────────
@@ -484,12 +472,14 @@ def pendientes_de_flota(pre_cierre: dict | None) -> list[dict]:
 
 
 async def cerrar(pool, fecha: date, *, override: bool, override_note: str | None, user: dict) -> dict:
-    pre_cierre = await recalcular(pool, fecha)
-
     async with pool.acquire() as conn:
         async with conn.transaction():
-            if await _bloquear_periodo(conn, fecha) == "CLOSED":
+            if await bloquear_periodo(conn, fecha) == "CLOSED":
                 raise HTTPException(409, {"message": "El día ya está cerrado", "ya_cerrado": True})
+            # La firma recalcula en SU transacción: nunca congela un estado viejo,
+            # aunque el día esté en la cola esperando al ejecutor.
+            await recalcular_en(conn, fecha)
+            avisos = await avisos_del_dia(conn, fecha)
 
             conductores_pendientes = [dict(r) for r in await conn.fetch(
                 """
@@ -516,9 +506,7 @@ async def cerrar(pool, fecha: date, *, override: bool, override_note: str | None
                 """,
                 fecha,
             )]
-            # Si el día ya se había recalculado cerrado por otro camino,
-            # `pre_cierre` es None y no hay escalaciones que evaluar.
-            sin_flota = pendientes_de_flota(pre_cierre)
+            sin_flota = pendientes_de_flota(avisos)
             forzados = len(conductores_pendientes) + len(tractos_pendientes) + len(sin_flota)
 
             if forzados and not override:
@@ -592,34 +580,7 @@ async def cerrar(pool, fecha: date, *, override: bool, override_note: str | None
                 override_note if forzados else None, json.dumps(totales),
             )
 
-            # Proyección a las cabeceras viejas, en la MISMA transacción.
-            await conn.execute(
-                """
-                INSERT INTO app.daily_closures
-                    (business_date, closed_by, closed_at, total_drivers, resolved_count, override_count, total_trips)
-                VALUES ($1, $2::uuid, $3, $4, $5, $6, $7)
-                ON CONFLICT (business_date) DO UPDATE SET
-                    closed_by = EXCLUDED.closed_by, closed_at = EXCLUDED.closed_at,
-                    total_drivers = EXCLUDED.total_drivers, resolved_count = EXCLUDED.resolved_count,
-                    override_count = EXCLUDED.override_count, total_trips = EXCLUDED.total_trips
-                """,
-                fecha, user["sub"], cerrado["closed_at"], totales["conductores"],
-                totales["conductores_resueltos"],
-                (len(conductores_pendientes) + len(sin_flota)) if override else 0, total_trips,
-            )
-            await conn.execute(
-                """
-                INSERT INTO app.equipment_closures
-                    (business_date, closed_by, closed_at, total_equipment, resolved_count, override_count)
-                VALUES ($1, $2::uuid, $3, $4, $5, $6)
-                ON CONFLICT (business_date) DO UPDATE SET
-                    closed_by = EXCLUDED.closed_by, closed_at = EXCLUDED.closed_at,
-                    total_equipment = EXCLUDED.total_equipment, resolved_count = EXCLUDED.resolved_count,
-                    override_count = EXCLUDED.override_count
-                """,
-                fecha, user["sub"], cerrado["closed_at"], totales["tractos"],
-                totales["tractos_resueltos"], len(tractos_pendientes) if override else 0,
-            )
+            await conn.execute("DELETE FROM app.closure_recompute_queue WHERE business_date = $1", fecha)
 
     return {
         "business_date": fecha.isoformat(),
@@ -637,7 +598,7 @@ async def reabrir(pool, fecha: date, *, nota: str | None, user: dict) -> dict:
 
     async with pool.acquire() as conn:
         async with conn.transaction():
-            if await _bloquear_periodo(conn, fecha) != "CLOSED":
+            if await bloquear_periodo(conn, fecha) != "CLOSED":
                 raise HTTPException(409, "El día no está cerrado")
             await conn.execute(
                 """
@@ -648,8 +609,8 @@ async def reabrir(pool, fecha: date, *, nota: str | None, user: dict) -> dict:
                 """,
                 fecha, user["sub"], nota.strip(),
             )
-            await conn.execute("DELETE FROM app.daily_closures WHERE business_date = $1", fecha)
-            await conn.execute("DELETE FROM app.equipment_closures WHERE business_date = $1", fecha)
+            # Reabrir es para corregir: el ejecutor lo recalcula sin que nadie abra la pantalla.
+            await conn.execute(SQL_ENCOLAR, fecha)
             await log_change(
                 conn, actor=user["sub"], entity_type="USER", entity_id=user["sub"],
                 action="cierre_reabierto", field="closure_period",

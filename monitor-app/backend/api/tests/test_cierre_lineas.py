@@ -17,6 +17,7 @@ recalcula, y cerrar es un solo acto.
 """
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import date, datetime, timedelta
 
@@ -24,6 +25,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.services import cierre_lineas
+from app.services.pre_cierre import avisos_del_dia
 from tests.conftest import PoolDeUnaConexion, _usuario_real, con_roles, ADMIN_EQUIVALENTE
 
 pytestmark = pytest.mark.integracion
@@ -488,7 +490,7 @@ async def test_un_dia_cerrado_no_se_recalcula_ni_se_edita(conexion_revertida):
     antes = (await _linea(conn, D, "DRIVER", esc["conductor"]))["computed_at"]
 
     await _viaje(conn, esc, D)
-    assert await cierre_lineas.recalcular(pool, D) is None
+    assert await cierre_lineas.recalcular(pool, D) is cierre_lineas.Resultado.CERRADO
 
     linea = await _linea(conn, D, "DRIVER", esc["conductor"])
     assert (linea["computed_at"], linea["status"]) == (antes, "UNASSIGNED")
@@ -497,7 +499,7 @@ async def test_un_dia_cerrado_no_se_recalcula_ni_se_edita(conexion_revertida):
     assert exc.value.status_code == 409
 
 
-async def test_cerrar_firma_los_dos_ejes_en_el_periodo_y_en_las_cabeceras_viejas(conexion_revertida):
+async def test_cerrar_firma_los_dos_ejes_en_el_periodo(conexion_revertida):
     conn = conexion_revertida
     await _escenario(conn)
     admin = con_roles(await _usuario_real(conn), *ADMIN_EQUIVALENTE)
@@ -505,8 +507,6 @@ async def test_cerrar_firma_los_dos_ejes_en_el_periodo_y_en_las_cabeceras_viejas
     await cierre_lineas.cerrar(PoolDeUnaConexion(conn), D, override=True, override_note="prueba", user=admin)
 
     assert await conn.fetchval("SELECT status FROM app.closure_periods WHERE business_date = $1", D) == "CLOSED"
-    assert await conn.fetchval("SELECT count(*) FROM app.daily_closures WHERE business_date = $1", D) == 1
-    assert await conn.fetchval("SELECT count(*) FROM app.equipment_closures WHERE business_date = $1", D) == 1
 
 
 async def test_reabrir_exige_nota_y_vuelve_a_recalcular(conexion_revertida):
@@ -529,22 +529,6 @@ async def test_reabrir_exige_nota_y_vuelve_a_recalcular(conexion_revertida):
     await cierre_lineas.recalcular(pool, D)
 
     assert (await _linea(conn, D, "DRIVER", esc["conductor"]))["category"] == "ASIGNADO"
-    assert await conn.fetchval("SELECT count(*) FROM app.daily_closures WHERE business_date = $1", D) == 0
-
-
-async def test_las_tablas_viejas_quedan_como_proyeccion_de_las_lineas(conexion_revertida):
-    conn = conexion_revertida
-    esc = await _escenario(conn)
-    user = await _usuario_real(conn)
-    await cierre_lineas.recalcular(PoolDeUnaConexion(conn), D)
-    panne = await _motivo(conn, "Panne")
-
-    await _poner(conn, D, "DRIVER", esc["conductor"], user, unassigned_reason_id=panne, comentario="nota")
-
-    vieja = await conn.fetchrow(
-        "SELECT unassigned_reason_id::text AS r, comentario FROM app.driver_day_status "
-        "WHERE driver_id = $1 AND business_date = $2", esc["conductor"], D)
-    assert (vieja["r"], vieja["comentario"]) == (panne, "nota")
 
 
 # ── patente sin empresa (punto 12, 01/10) ───────────────────────────────────
@@ -567,7 +551,7 @@ async def test_una_patente_sin_empresa_queda_en_pendientes_y_no_traba_el_dia(con
         """,
         trip_id, D, str(trip_id), datetime.combine(D, datetime.min.time()), patente)
 
-    pre = await cierre_lineas.run_pre_cierre(PoolDeUnaConexion(conn), D)
+    pre = await avisos_del_dia(conn, D)
 
     informada = [e for e in pre["escalations"]["PATENTE_NO_REGISTRADA"] if e["tractor_plate"] == patente]
     assert informada and informada[0]["tms_carrier_name"] == "TRANSPORTES ZZQX SPA"
@@ -585,3 +569,71 @@ def test_una_patente_sin_empresa_no_bloquea_el_cierre():
     """requirements-bug-12.md, RF-01 / CA-01 (01/10)."""
     assert "PATENTE_NO_REGISTRADA" not in cierre_lineas.ESCALACIONES_QUE_BLOQUEAN
 
+
+# ── la cola de recálculo (spec 2026-10-10) ──────────────────────────────────
+
+async def test_firmar_saca_el_dia_de_la_cola(conexion_revertida):
+    pool = PoolDeUnaConexion(conexion_revertida)
+    actor = await _usuario_real(conexion_revertida)
+    await conexion_revertida.execute(cierre_lineas.SQL_ENCOLAR, D)
+    await cierre_lineas.cerrar(pool, D, override=True, override_note="test", user=con_roles(actor, *ADMIN_EQUIVALENTE))
+    assert await conexion_revertida.fetchval(
+        "SELECT count(*) FROM app.closure_recompute_queue WHERE business_date = $1", D) == 0
+
+
+async def test_reabrir_deja_el_dia_encolado(conexion_revertida):
+    pool = PoolDeUnaConexion(conexion_revertida)
+    actor = await _usuario_real(conexion_revertida)
+    admin = con_roles(actor, *ADMIN_EQUIVALENTE)
+    await cierre_lineas.cerrar(pool, D, override=True, override_note="test", user=admin)
+    await cierre_lineas.reabrir(pool, D, nota="llegó una asignación tarde", user=admin)
+    assert await conexion_revertida.fetchval(
+        "SELECT count(*) FROM app.closure_recompute_queue WHERE business_date = $1", D) == 1
+
+
+async def test_recalcular_con_la_version_leida_desencola(conexion_revertida):
+    pool = PoolDeUnaConexion(conexion_revertida)
+    await conexion_revertida.execute(cierre_lineas.SQL_ENCOLAR, D)
+    v = await conexion_revertida.fetchval("SELECT version FROM app.closure_recompute_queue WHERE business_date = $1", D)
+    assert await cierre_lineas.recalcular(pool, D, version=v) is cierre_lineas.Resultado.RECALCULADO
+    assert await conexion_revertida.fetchval(
+        "SELECT count(*) FROM app.closure_recompute_queue WHERE business_date = $1", D) == 0
+
+
+async def test_una_marca_posterior_a_la_lectura_sobrevive(conexion_revertida):
+    pool = PoolDeUnaConexion(conexion_revertida)
+    await conexion_revertida.execute(cierre_lineas.SQL_ENCOLAR, D)
+    v = await conexion_revertida.fetchval("SELECT version FROM app.closure_recompute_queue WHERE business_date = $1", D)
+    await conexion_revertida.execute(cierre_lineas.SQL_ENCOLAR, D)   # llega otra marca
+    await cierre_lineas.recalcular(pool, D, version=v)
+    assert await conexion_revertida.fetchval(
+        "SELECT version FROM app.closure_recompute_queue WHERE business_date = $1", D) == v + 1
+
+
+async def test_el_recalculo_no_se_reencola_aunque_corrija_el_directorio(conexion_revertida):
+    """Review Focus 5: las correcciones escriben en tablas con trigger de marca.
+    El escenario fuerza una corrección real (reasignar una patente) y comprueba
+    las dos cosas: que corrigió, y que el día no volvió a la cola."""
+    pool = PoolDeUnaConexion(conexion_revertida)
+    vieja = await conexion_revertida.fetchval(
+        "INSERT INTO public.carriers (business_name, operational_status) VALUES ('ZZ-TEST Vieja', 'ACTIVE') RETURNING id")
+    nueva = await conexion_revertida.fetchval(
+        "INSERT INTO public.carriers (business_name, operational_status) VALUES ('ZZ-TEST Nueva', 'ACTIVE') RETURNING id")
+    plate = f"ZZ{uuid.uuid4().hex[:4].upper()}"
+    asset = await conexion_revertida.fetchval(
+        "INSERT INTO public.assets (license_plate, asset_type, operational_status) "
+        "VALUES ($1, 'TRACTOCAMION', 'ACTIVE') RETURNING id", plate)
+    await conexion_revertida.execute(
+        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')", asset, vieja)
+    await conexion_revertida.execute(
+        "INSERT INTO app.trips (id, planning_date, client_name, source_system, source_system_trip_id, trip_status, "
+        "is_active, is_assigned, fleet) VALUES ($1, $2, 'Walmart', 'qanalytics', $3, 'RUTA', true, true, $4::jsonb)",
+        uuid.uuid4(), D, f"ZZ-{plate}", json.dumps({"tractor_plate": plate, "transporter_name_tms": "ZZ-TEST Nueva"}))
+    await conexion_revertida.execute("DELETE FROM app.closure_recompute_queue WHERE business_date = $1", D)
+
+    await cierre_lineas.recalcular(pool, D)
+
+    assert await conexion_revertida.fetchval(
+        "SELECT carrier_id FROM public.asset_assignments WHERE asset_id = $1 AND status = 'ACTIVE'", asset) == nueva
+    assert await conexion_revertida.fetchval(
+        "SELECT count(*) FROM app.closure_recompute_queue WHERE business_date = $1", D) == 0
