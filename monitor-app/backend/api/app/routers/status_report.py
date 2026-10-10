@@ -2,8 +2,7 @@
 sobre el mismo modelo equipo-céntrico de las Fases 2-4 (Vista de Flota,
 Cierre del Día). Reusa:
   - la clasificación Tractoreo/Equipo Completo/Sin clasificar de Fase 1/2.
-  - el criterio "con carga hoy" (multi-día activo, excluye Sodimac) de
-    Fase 0.1/2/3/4.
+  - el criterio "con carga hoy": app.trips_del_dia(), el mismo del Cierre.
   - la resolución RM/Z0/Región por COMUNA DEL DESTINO (§7.6 de la HU) vía
     los mismos helpers de trips.py que ya resuelven esto para el Diario
     (_load_operation_type_buckets/_resolve_operation_type) — una sola
@@ -85,8 +84,8 @@ LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
 WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
 """
 
-# "Con carga hoy" — mismo criterio de Fase 0.1/2/3/4 (multi-día activo,
-# excluye Sodimac). Trae también planning_date (para "días en curso" de la
+# "Con carga hoy" — app.trips_del_dia(), el mismo criterio del Cierre, para
+# todos los TMS. Trae también planning_date (para "días en curso" de la
 # Sección 1) y el último destino (para clasificar RM/Z0/Región, §7.6).
 _TODAY_TRIPS_SQL = """
 SELECT
@@ -104,7 +103,6 @@ SELECT
 FROM app.trips t
 JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
 WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
-  AND t.source_system != 'sodimac'
   AND vfr.resolved_tractor_asset_id IS NOT NULL
 """
 

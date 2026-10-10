@@ -91,8 +91,6 @@ day_trips AS (
     FROM app.trips t
     JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
     WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
-      -- Sodimac no resuelve conductor ni tracto por la misma cadena.
-      AND t.source_system != 'sodimac'
 )
 SELECT
     r.driver_id AS subject_id,
@@ -131,7 +129,6 @@ today_trips AS (
     FROM app.trips t
     JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
     WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
-      AND t.source_system != 'sodimac'
       AND vfr.resolved_tractor_asset_id IS NOT NULL
 )
 SELECT

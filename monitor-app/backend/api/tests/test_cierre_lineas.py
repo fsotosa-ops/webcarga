@@ -585,8 +585,3 @@ def test_una_patente_sin_empresa_no_bloquea_el_cierre():
     """requirements-bug-12.md, RF-01 / CA-01 (01/10)."""
     assert "PATENTE_NO_REGISTRADA" not in cierre_lineas.ESCALACIONES_QUE_BLOQUEAN
 
-
-def test_sodimac_no_entra_al_estado_de_ningun_eje():
-    """Esa fuente no resuelve conductor ni tracto por la misma cadena."""
-    assert "t.source_system != 'sodimac'" in cierre_lineas.SQL_ESTADO_CONDUCTORES
-    assert "t.source_system != 'sodimac'" in cierre_lineas.SQL_ESTADO_TRACTOS

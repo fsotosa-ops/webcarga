@@ -142,7 +142,6 @@ LEFT JOIN LATERAL (
     LEFT JOIN app.trip_stops ts_o ON ts_o.trip_id = t.id AND ts_o.stop_type = 'ORIGIN'
     WHERE vfr.resolved_tractor_asset_id = eds.asset_id
       AND t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
-      AND t.source_system != 'sodimac'
     ORDER BY t.status_reported_at DESC NULLS LAST
     LIMIT 1
 ) today_trip ON true

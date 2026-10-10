@@ -442,17 +442,8 @@ def test_set_batch_reason_422_cuando_driver_ids_vacio():
 
 # ── POST /cuadratura/close ───────────────────────────────────────────────
 
-# ── FIX 2026-08-18: las 3 pantallas del Cierre no miraban el mismo universo.
-# daily_closures no excluía Sodimac mientras equipment_closures.py:69 y
-# status_report.py:107 sí lo hacen ("esa fuente no resuelve tracto por la
-# misma cadena"), así que el mismo día daba conteos distintos según dónde se
-# lo mirara. Medido sobre el 2026-08-14 antes de aplicarlo: el universo baja
-# de 63 a 49 viajes y ningún conductor cambia de estado (27 antes y
-# después). ──────────
-
-def test_detail_sql_excluye_sodimac_en_el_lateral_de_mismatch():
-    from app.routers.daily_closures import _DETAIL_SQL
-    assert "t.source_system != 'sodimac'" in _DETAIL_SQL
+# Las 3 pantallas del Cierre miran el mismo universo de viajes del día, para
+# todos los TMS: tests/test_viajes_del_dia_sin_exclusion_por_tms.py (10/10).
 
 
 # ── FIX 2026-08-18: el roster filtraba la empresa y el activo por

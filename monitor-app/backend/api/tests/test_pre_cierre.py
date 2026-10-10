@@ -468,15 +468,14 @@ async def test_las_seis_consultas_usan_el_criterio_multidia():
 
 @pytest.mark.asyncio
 async def test_no_excluye_sodimac_porque_esa_fuente_no_puede_aportar_señal():
-    """Contrapunto deliberado de daily_closures, que SÍ la excluye.
+    """Ninguna consulta de la app filtra los viajes del día por TMS (10/10,
+    tests/test_viajes_del_dia_sin_exclusion_por_tms.py).
 
-    Acá sería código muerto: las consultas exigen `tractor_plate` o
-    `driver_rut_tms`, y de los 54 viajes Sodimac de app.trips, 0 traen
-    patente y 0 traen RUT (verificado contra producción, 2026-08-18). El
-    scan de "conductor sin empresa" (2026-08-27) tampoco la alcanza: sale
-    de `v_trip_fleet_resolution`, que resuelve por patente o por RUT.
-    Si alguien agrega la exclusión "por consistencia", este test explica
-    por qué no hace falta."""
+    Acá nunca hizo falta: las consultas exigen `tractor_plate` o
+    `driver_rut_tms`, y un viaje de Sodimac no trae ninguno de los dos desde
+    el TMS (verificado contra producción, 2026-08-18). Lo que Operaciones
+    vincula a mano entra por `v_trip_fleet_resolution`, igual que en
+    cualquier otro TMS."""
     conn = AsyncMock()
     conn.fetch.side_effect = [[], [], [], [], [], []]
     pool = _pool_with(conn)

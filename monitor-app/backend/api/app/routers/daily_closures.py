@@ -117,7 +117,6 @@ LEFT JOIN LATERAL (
     JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
     WHERE vfr.resolved_driver_id = dds.driver_id
       AND t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
-      AND t.source_system != 'sodimac'  -- mismo criterio que equipment_closures.py:141
       AND (vfr.resolved_carrier_id IS NULL OR vfr.resolved_carrier_id IS DISTINCT FROM c.id)
     ORDER BY t.status_reported_at DESC NULLS LAST
     LIMIT 1
@@ -159,7 +158,6 @@ LEFT JOIN LATERAL (
     LEFT JOIN app.trip_stops ts3 ON ts3.trip_id = t3.id AND ts3.stop_type = 'ORIGIN'
     WHERE vfr3.resolved_driver_id = dds.driver_id
       AND t3.id IN (SELECT trip_id FROM app.trips_del_dia($1))
-      AND t3.source_system != 'sodimac'
     ORDER BY t3.status_reported_at DESC NULLS LAST
     LIMIT 1
 ) today_trip ON true

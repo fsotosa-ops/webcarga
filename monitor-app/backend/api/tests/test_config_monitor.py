@@ -129,7 +129,7 @@ def test_available_drivers_requires_fecha():
     assert res.status_code == 422
 
 
-def test_available_drivers_returns_rows_and_excludes_sodimac_in_query():
+def test_available_drivers_returns_rows_from_the_real_directory():
     # Fase 3 del hardening del Diario (2026-07-18): la query dejó de agrupar
     # por nombre de texto libre dentro de los viajes del día — ahora parte
     # del directorio real (conductor activo de empresa activa) y recién ahí
@@ -152,7 +152,6 @@ def test_available_drivers_returns_rows_and_excludes_sodimac_in_query():
     assert data[0]["carrier_id"] == "c1"
     assert data[0]["tractor_asset_id"] == "a1"
     query = pool.fetch.call_args.args[0]
-    assert "sodimac" in query                        # exclusión de la fuente sin flota
     assert "public.driver_assignments" in query       # directorio real, no texto libre
     assert "operational_status = 'ACTIVE'" in query    # solo conductores/empresas activas
     assert "public.vehicle_driver_assignments" in query  # vehículo estándar, no solo el de hoy
@@ -200,7 +199,6 @@ def test_available_assets_returns_rows_from_active_roster():
     assert body["items"][0]["tractor_plate"] == "ABCD12"
     query = pool.fetch.call_args_list[0].args[0]
     assert "public.asset_assignments" in query
-    assert "sodimac" in query
 
 
 def test_available_assets_today_trips_uses_shared_resolution_view():
@@ -349,14 +347,13 @@ def test_fleet_daily_overview_requires_fecha():
     assert res.status_code == 422
 
 
-def test_fleet_daily_overview_query_scopes_to_active_tractocamiones_excluding_sodimac():
+def test_fleet_daily_overview_query_scopes_to_active_tractocamiones():
     pool = AsyncMock()
     pool.fetch.return_value = []
     client = make_client(pool, router=trips_router)
     client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02")
     query = pool.fetch.call_args_list[0].args[0]
     assert "asset_type = 'TRACTOCAMION'" in query
-    assert "sodimac" in query
     # Desde el 16/09 el multi-día lo resuelve app.trips_del_dia() (tests/test_trips_del_dia.py).
     assert "app.trips_del_dia($1)" in query
 

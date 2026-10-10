@@ -1204,7 +1204,7 @@ async def get_trips_meta(pool=Depends(get_pool), _=Depends(require(Permission.OP
 # asset_assignments) y recién ahí cruza contra los viajes del día — mismo
 # patrón que ya usa Empresas para membresía activa/inactiva.
 # Declarado ANTES de /{trip_id} para que FastAPI no matchee "available-drivers"
-# como un id de viaje. Sodimac excluido: nunca reporta patente ni conductor.
+# como un id de viaje.
 
 @router.get("/available-drivers")
 async def available_drivers(
@@ -1261,7 +1261,6 @@ async def available_drivers(
             -- desde un día anterior y ya no cuenta un CANCELADO — antes un
             -- conductor con la ruta cancelada no aparecía como disponible.
             WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
-              AND t.source_system != 'sodimac'
               AND vfr.resolved_driver_id IS NOT NULL
             GROUP BY vfr.resolved_driver_id
         )
@@ -1365,7 +1364,6 @@ async def available_assets(
             -- available_drivers arriba: un equipo con viaje multi-día
             -- abierto desde un día anterior cuenta como ocupado.
             WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
-              AND t.source_system != 'sodimac'
               AND vfr.resolved_tractor_asset_id IS NOT NULL
             GROUP BY vfr.resolved_tractor_asset_id
         )
@@ -1420,7 +1418,6 @@ async def available_assets(
             -- 2 queries de arriba: un viaje multi-día abierto desde un día
             -- anterior sigue haciendo "ocupado" al equipo hoy.
             WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
-              AND t.source_system != 'sodimac'
               AND vfr.resolved_tractor_asset_id IS NOT NULL
               AND NOT (t.trip_status LIKE 'CERRADO%'
                        OR t.trip_status IN ('CANCELADO', 'Declinada', 'Removida'))
@@ -1472,9 +1469,9 @@ async def fleet_daily_overview(
     /available-assets: app.trips_del_dia(), que incluye el multi-día y excluye
     cancelados y declarados — un equipo que YA CERRÓ su viaje de hoy sigue contando como
     CON CARGA (criterio de aceptación #4 de la HU), porque no se exige
-    is_active, solo que exista el viaje de hoy. Excluye Sodimac, mismo
-    criterio heredado de /available-assets (esa fuente no resuelve
-    conductor/tracto por la misma cadena).
+    is_active, solo que exista el viaje de hoy. Vale para todos los TMS:
+    la flota del viaje sale de app.v_trip_fleet_resolution, también la que
+    Operaciones vincula a mano en un viaje de Sodimac.
 
     Filtros: `client` (lista separada por coma, nombre de shipper) matchea
     contra `public.carrier_shippers` — no contra el viaje de hoy — para que
@@ -1515,7 +1512,6 @@ async def fleet_daily_overview(
             FROM app.trips t
             JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
             WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
-              AND t.source_system != 'sodimac'
               AND vfr.resolved_tractor_asset_id IS NOT NULL
             ORDER BY vfr.resolved_tractor_asset_id, t.status_reported_at DESC NULLS LAST
         )

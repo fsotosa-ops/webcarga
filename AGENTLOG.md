@@ -16,6 +16,38 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-10 — Bug: Sodimac de Equipo Completo fuera de "Asignados" en el Cierre (ítem 4 de la minuta 09/10)
+
+Pedido: los casos corregidos ayer salieron de Rezago pero no aparecían en la sección de asignados para cerrarlos.
+Plan: `~/.claude/plans/snoopy-riding-giraffe.md`. Fuentes: minuta `monitor-app/bugs/20261009/` y Granola
+"Webcarga 2.0" (09/10).
+
+**Causa raíz (medida en producción, solo lectura):** diez consultas del día (`cierre_lineas` ×2, `daily_closures` ×2,
+`equipment_closures`, `status_report`, `trips.py` ×4) excluían `source_system = 'sodimac'`, una regla de julio
+(*"no resuelve flota por la misma cadena"*). Hoy `v_trip_fleet_resolution` lee solo `trip_fleet_links` y los 29
+vínculos de Sodimac son de Operaciones, así que el viaje quedaba asignado (dbt, 09/10) y su tracto de Equipo
+Completo (PYST91, GBVC90, YN2499, DZYH10) seguía "No asignado" en Flota del día, el reporte y los disponibles.
+Los manuales Iansa/HBC no eran parte del problema: sus días ya decían ASSIGNED.
+
+**Decisiones del usuario (10/10):**
+- *"No hagas queries, crud, endpoints, tablas ni columnas parches… sigue el patrón de la arquitectura"*: el arreglo
+  es SOLO borrar la exclusión; Sodimac pasa por la misma cadena que los demás TMS.
+- Días firmados (02/10, 06/10–09/10) quedan como están. Se mantiene `trips_del_dia` (ocupa el día de la
+  asignación y los días con reporte o marca real).
+
+**Hecho:** exclusión borrada en los 10 lugares + comentarios obsoletos. Tests que fijaban el defecto corregidos
+(`test_cierre_lineas`, `test_config_monitor` ×3, `test_daily_closures`, docstring de `test_pre_cierre`). Guarda
+`tests/test_viajes_del_dia_sin_exclusion_por_tms.py` e integración `tests/test_cierre_sodimac_integracion.py`
+(línea ASSIGNED + "Ver viaje"); mutación verificada: con la exclusión reinsertada fallan los dos.
+
+**Pendiente:**
+- [ ] Verificar en dev con Playwright: Cierre del 03/10 (abierto) › Flota del día › Equipo Completo › Asignados → DZYH10.
+- [ ] Dato para Operaciones: el viaje Sodimac 878052 tiene vinculada la RAMPLA JF8307 como tracto; corregir el
+      vínculo desde la app (no se agregó filtro: el roster solo toma tractocamiones).
+- [ ] Minuta 2.2 / ítem 6 "asignados, pendientes de cierre TMS" (Sodimac en Control de salida, para Facturación):
+      otra HU, por la ruta de spec, partiendo de `trip_statuses.group_id` (Fabián: tratar Control de salida como
+      "retornando" de Walmart), sin columnas nuevas.
+
 ### 2026-10-09 — Roles y permisos (RBAC NIST): plan completo (Tasks 1-13) en dev
 
 > **Cierre de sesión 2026-10-10 (~00:00 CL).** Todo comiteado y desplegado en dev (último `feat(marca)` de la barra
