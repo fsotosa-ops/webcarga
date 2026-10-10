@@ -13,6 +13,7 @@ require(...) de verdad.
 """
 from __future__ import annotations
 
+import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -109,10 +110,14 @@ def test_sin_contrasena_invita_por_correo_con_el_rol_pedido():
     assert res.json()["invitation_sent"] is True
     # La invitación (quién puede entrar y con qué roles) se escribe ANTES de
     # crear la cuenta: el alta en Auth dispara handle_new_user, que crea las
-    # asignaciones desde ahí. `role` es el de la escalera vieja (lo lee `main`).
+    # asignaciones desde ahí. Sin `role`: la escalera vieja se retiró (contract).
     invitacion = pool.execute.call_args_list[0]
     assert "admin_whitelist" in invitacion.args[0]
-    assert "ana@webcarga.com" in invitacion.args and ["reader"] in invitacion.args and "viewer" in invitacion.args
+    assert "ana@webcarga.com" in invitacion.args and ["reader"] in invitacion.args
+    assert "viewer" not in invitacion.args
+    # Ninguna escritura de la API toca la columna vieja (que el contract borra).
+    for c in pool.execute.call_args_list:
+        assert not re.search(r"\brole\b(?!_)", c.args[0]), c.args[0]
     email, opciones = sb.auth.admin.invite_user_by_email.call_args.args
     assert email == "ana@webcarga.com"
     assert opciones["data"]["full_name"] == "Ana"

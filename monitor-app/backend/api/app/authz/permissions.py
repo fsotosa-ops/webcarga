@@ -142,8 +142,10 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
     _rol("commercial_supervisor", "Supervisor Comercial", "Edita tarifas, ubicaciones y clientes.", P.COMMERCIAL_EDIT),
 )
 
-# Migración de los roles de la escalera vieja (spec §9). Nadie pierde; la única
-# ganancia aprobada es *.configure para los Supervisores (los editor actuales).
+# Registro histórico de la migración desde la escalera vieja (spec §9; la
+# columna profiles.role se borró en el contract, Task 13, con respaldo en
+# app.rbac_legacy_roles). Nadie perdió; la única ganancia aprobada fue
+# *.configure para los Supervisores (los editor de entonces).
 LEGACY_ROLE_MAP: dict[str, tuple[str, ...]] = {
     "owner": ("owner",),
     "admin": ("admin", "operations_supervisor", "certification_supervisor",
@@ -154,21 +156,3 @@ LEGACY_ROLE_MAP: dict[str, tuple[str, ...]] = {
     "viewer": ("reader",),
 }
 
-
-def legacy_role_for(role_codes: list[str]) -> str:
-    """Rol equivalente de la escalera vieja (transición; se borra en la Task 13).
-
-    Lo usan get_current_user (para los guardias viejos mientras las Tasks 5-8
-    migran las rutas, hasta la Task 11) y la invitación (profiles.role, que la
-    API de `main` todavía lee). Un rol de Operador de otra área no tenía
-    equivalente: se aproxima a `writer` (escribe algo sin ser editor)."""
-    codes = set(role_codes)
-    if "owner" in codes:
-        return "owner"
-    if "admin" in codes:
-        return "admin"
-    if any(c.endswith("_supervisor") for c in codes):
-        return "editor"
-    if any(c.endswith("_operator") and c != "commercial_operator" for c in codes):
-        return "writer"
-    return "viewer"

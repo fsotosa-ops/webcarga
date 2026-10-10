@@ -6,7 +6,6 @@ from typing import Optional
 from ..auth import get_supabase
 from ..authz import Permission, require
 from ..authz.effective import invalidate_access
-from ..authz.permissions import legacy_role_for
 from ..db import get_pool
 from ..services.access_admin import AccessError, actualizar_persona, assert_can_grant, retirar_persona
 
@@ -61,15 +60,13 @@ async def create_user(
 
     # La invitación primero: crear la cuenta en Auth dispara handle_new_user,
     # que toma los roles de admin_whitelist. Sin invitación, nadie entra.
-    # `role` (escalera vieja) sigue escribiéndose hasta el contract (lo lee la
-    # API de `main`).
     await pool.execute(
-        """INSERT INTO public.admin_whitelist (email, role, role_codes, invited_by, invited_at)
-           VALUES ($1, $2, $3::text[], $4::uuid, now())
+        """INSERT INTO public.admin_whitelist (email, role_codes, invited_by, invited_at)
+           VALUES ($1, $2::text[], $3::uuid, now())
            ON CONFLICT (email) DO UPDATE
-           SET role = EXCLUDED.role, role_codes = EXCLUDED.role_codes,
+           SET role_codes = EXCLUDED.role_codes,
                invited_by = EXCLUDED.invited_by, invited_at = now()""",
-        email, legacy_role_for(roles), roles, actor["sub"],
+        email, roles, actor["sub"],
     )
 
     # Sin contraseña: invitación por correo de Supabase (plantilla "Invite user"
@@ -101,8 +98,8 @@ async def create_user(
 
     user_id = str(creado.user.id)
     await pool.execute(
-        "UPDATE public.profiles SET role = $2, full_name = $3 WHERE id = $1",
-        user_id, legacy_role_for(roles), body.full_name,
+        "UPDATE public.profiles SET full_name = $2 WHERE id = $1",
+        user_id, body.full_name,
     )
     row = await pool.fetchrow(_PERFIL, user_id)
     return {**dict(row), "invitation_sent": invitation_sent}

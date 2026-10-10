@@ -5,7 +5,7 @@ Una sola definición: estos datos alimentan la migración, la sincronización al
 arrancar, los guardias de las rutas y el archivo de TypeScript del frontend.
 """
 from app.authz.permissions import (
-    LEGACY_ROLE_MAP, PERMISSION_META, READ_ALL, SYSTEM_ROLES, Permission, legacy_role_for,
+    LEGACY_ROLE_MAP, PERMISSION_META, READ_ALL, SYSTEM_ROLES, Permission,
 )
 
 CODIGOS = {r.code for r in SYSTEM_ROLES}
@@ -78,11 +78,12 @@ def test_mapa_de_roles_viejos():
         assert set(nuevos) <= CODIGOS
 
 
-def test_legacy_role_for_es_la_inversa_del_mapa():
-    for viejo, nuevos in LEGACY_ROLE_MAP.items():
-        assert legacy_role_for(list(nuevos)) == viejo
-    assert legacy_role_for(["certification_operator"]) == "writer"
-    assert legacy_role_for([]) == "viewer"
+def test_la_escalera_vieja_ya_no_se_escribe():
+    """Contract (Task 13): profiles.role y admin_whitelist.role se borran; nadie
+    traduce roles nuevos a la escalera vieja. LEGACY_ROLE_MAP queda como el
+    registro histórico de la migración."""
+    import app.authz.permissions as permisos
+    assert not hasattr(permisos, "legacy_role_for")
 
 
 def test_lo_que_hoy_es_solo_de_admin_queda_en_administracion():
