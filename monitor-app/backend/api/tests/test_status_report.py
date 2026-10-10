@@ -118,8 +118,12 @@ def test_section3_vueltas_solo_incluye_equipos_con_2_o_mas_viajes_hoy():
     ]
     result = _section3_vueltas(rows)
     assert len(result) == 2
-    assert {"carrier_name": "Transportes Sur", "cd_origen": "CD Lo Aguirre", "tipo_destino": "RM", "vueltas": 2} in result
-    assert {"carrier_name": "Otra Spa", "cd_origen": "CD Lo Aguirre", "tipo_destino": "RM", "vueltas": 3} in result
+    # La patente va en la fila (minuta 09/10, ítem 7): dos tractos de la misma
+    # empresa son dos filas distintas, no la empresa repetida.
+    assert {"tractor_plate": "ABCD12", "carrier_name": "Transportes Sur", "cd_origen": "CD Lo Aguirre",
+            "tipo_destino": "RM", "vueltas": 2} in result
+    assert {"tractor_plate": "ABCD12", "carrier_name": "Otra Spa", "cd_origen": "CD Lo Aguirre",
+            "tipo_destino": "RM", "vueltas": 3} in result
 
 
 # Tarea 6 (plan 2.3, minuta 2026-08-03): _section4_tractoreo_no_trabajando

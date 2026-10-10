@@ -1641,6 +1641,8 @@ export type CarrierUtilizationRow = {
 }
 
 export type VueltaRow = {
+  /** La vuelta es de la patente (minuta 09/10). */
+  tractor_plate: string
   carrier_name: string
   cd_origen:    string | null
   tipo_destino: string | null

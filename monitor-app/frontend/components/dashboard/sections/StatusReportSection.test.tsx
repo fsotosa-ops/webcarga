@@ -26,7 +26,7 @@ const REPORT: StatusReport = {
     por_empresa_y_cd: [{ cd: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', RM: 3, Z0: 1, "Región": 0, "Sin clasificar": 0, total: 4 }],
   },
   section3_vueltas: [
-    { carrier_name: 'Transportes Sur', cd_origen: 'CD Lo Aguirre', tipo_destino: 'RM', vueltas: 2 },
+    { tractor_plate: 'ABCD12', carrier_name: 'Transportes Sur', cd_origen: 'CD Lo Aguirre', tipo_destino: 'RM', vueltas: 2 },
   ],
   section4_tractoreo_no_trabajando: {
     por_cd: [{ cd: 'CD El Peñón', Panne: 2, "A confirmar": 1, total: 3 }],
@@ -93,6 +93,8 @@ describe('StatusReportSection', () => {
     fireEvent.click(body.getByRole('button', { name: '3. Vueltas' }))
     const row = (await body.findByText('Transportes Sur')).closest('tr')!
     expect(within(row).getByText('2')).toBeInTheDocument()
+    // La vuelta es de la patente (minuta 09/10): la fila dice cuál.
+    expect(within(row).getByText('ABCD12')).toBeInTheDocument()
   })
 
   it('cambia a la Sección 4 y muestra el cross-tab por motivo Y el detalle por conductor con tipo de operación', async () => {

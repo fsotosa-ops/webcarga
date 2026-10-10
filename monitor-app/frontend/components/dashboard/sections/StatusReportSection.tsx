@@ -38,9 +38,9 @@ function exportReportCsv(report: StatusReport, fecha: string) {
   lines.push('')
 
   lines.push('SECCIÓN 3 — Segundas y terceras vueltas')
-  lines.push(['Empresa', 'Origen del viaje', 'Tipo de destino', 'Vueltas'].map(csvEscape).join(';'))
+  lines.push(['Patente', 'Empresa', 'Origen del viaje', 'Tipo de destino', 'Vueltas'].map(csvEscape).join(';'))
   for (const v of report.section3_vueltas) {
-    lines.push([v.carrier_name, v.cd_origen, v.tipo_destino, v.vueltas].map(csvEscape).join(';'))
+    lines.push([v.tractor_plate, v.carrier_name, v.cd_origen, v.tipo_destino, v.vueltas].map(csvEscape).join(';'))
   }
   lines.push('')
 
@@ -324,6 +324,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
+                    <th className="text-left px-3 py-2">Patente</th>
                     <th className="text-left px-3 py-2">Empresa</th>
                     <th className="text-left px-3 py-2">Origen del viaje</th>
                     <th className="text-left px-3 py-2">Tipo de destino</th>
@@ -332,11 +333,12 @@ export function StatusReportSection({ fecha, shippers }: Props) {
                 </thead>
                 <tbody className="divide-y divide-border/60">
                   {data.section3_vueltas.length === 0 && (
-                    <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-300 italic">Ningún equipo con 2+ vueltas hoy</td></tr>
+                    <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-300 italic">Ningún equipo con 2+ vueltas hoy</td></tr>
                   )}
                   {data.section3_vueltas.map((v, i) => (
                     <tr key={i}>
-                      <td className="px-3 py-2 font-medium">{v.carrier_name}</td>
+                      <td className="px-3 py-2 font-mono font-medium">{v.tractor_plate}</td>
+                      <td className="px-3 py-2">{v.carrier_name}</td>
                       <td className="px-3 py-2 text-gray-500">{v.cd_origen ?? '—'}</td>
                       <td className="px-3 py-2 text-gray-500">{v.tipo_destino ?? '—'}</td>
                       <td className="px-3 py-2 text-right font-bold text-accent">{v.vueltas}</td>

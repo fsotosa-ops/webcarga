@@ -353,8 +353,12 @@ def _section2_tractoreo_asignado(rows: list[dict]) -> dict:
 
 
 def _section3_vueltas(rows: list[dict]) -> list[dict]:
+    """Una fila por PATENTE con 2+ vueltas: la vuelta es del tracto (minuta
+    09/10), así que dos tractos de una empresa son dos filas, no la empresa
+    repetida."""
     return [
         {
+            "tractor_plate": r["tractor_plate"],
             "carrier_name": r["carrier_name"], "cd_origen": r["origin_cd"],
             "tipo_destino": r["destination_zone"], "vueltas": r["vueltas"],
         }
