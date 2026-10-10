@@ -16,6 +16,29 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-10 — Minuta 09/10: estado verificado de cada ítem (código, base y app en dev)
+
+Fuente: `monitor-app/bugs/20261009/Minuta_Revision_01_02_08_09oct2026_para_Felipe.docx`. Verificado en código,
+en la base (solo lectura) y en la app desplegada (Playwright).
+
+- **Resueltos:** 3 (acceso solo por invitación, 09/10), 4 y 11 (Sodimac y manuales en el cierre y el reporte,
+  09-10/10), 17 (el "206585" es el 2065805, CERRADO e inactivo), viaje del 21/09 de Alianza (ya no activo),
+  Fortaleza (INACTIVE, 0 líneas en el cierre de hoy). 1 y 2 ya estaban hechos.
+- **16 (borrar duplicados):** la función existe (Monitor en curso/historial y detalle) pero 0 borrados desde el
+  01/10: los 8 manuales duplicados de "Carlos Perez" (8 de 12 manuales) están en días firmados 23-24/09 y el
+  servicio bloquea borrar en día firmado. Permiso: operador borra los suyos; admin/owner cualquiera (la minuta
+  pidió solo súper admin).
+- **Bugs:** 12 ("se retira sin carga" no aparece en el reporte), 13 (conductores sin tracto solo si su empresa
+  tiene tractoreo; tractos sin conductor habitual nunca), 5 (manual nuevo queda "activo, no asignado" hasta la
+  corrida de dbt; editar reinicia sus días; espejo con `except: pass`), 7 (vueltas ya por tracto pero la tabla no
+  muestra la patente; borde con conductor compartido), origen real sin `ORDER BY stop_order` (status_report).
+- **Decisiones del usuario pendientes:** A) regla de 15 días (hoy no existe; 7 días solo QAnalytics/Wingsuite;
+  `stale_trip_days` vacío); B) origen real vs habitual en la tabla de asignados (habitual a propósito por HU-28);
+  C) cómo borrar los duplicados en días firmados y quién puede borrar.
+- **Funciones nuevas:** 6, 8, 9 (sin fila de totales), 14, 15 (CSV, no xlsx), copiar/pegar, 20, 21 (sin enlaces a
+  fichas; no hay ficha de conductor ni equipo), 22 (sin buscador en Viajes), 23 (clientes de empresa solo
+  lectura), 24 ("Venta de camión" no existe; se crea en Configuración sin código), 25 (hecho para TMS).
+
 ### 2026-10-10 — Demoras del Cierre y del Monitor: spec "el recálculo sale de la lectura" (en revisión)
 
 Pedido: *"por qué hay delays al desplegar la vista del cierre y a veces el monitor"*. Medido (logs de Cloud Run de
