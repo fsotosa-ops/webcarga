@@ -16,6 +16,27 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-10 — Minuta 09/10, B y C
+
+- **B (decisión del usuario): la tabla "Asignado" va por el ORIGEN REAL del viaje** (`292c89ac`, desplegado). Los
+  que no cargaron, en su origen habitual; la Sección 7 sigue midiendo asistencia por el declarado. 2-5 de ~30
+  asignados por día salen de otro CD.
+- **C (duplicados de Carlos Pérez): NO resuelto, y una lección.** Recomendé reabrir el 23/09 con el flujo de la
+  app; el usuario autorizó hacerlo con su sesión y lo frenó tras la reapertura (*"es como mezclar peras con
+  manzanas"*): reabrir recalculó el día con datos y reglas de hoy (78 líneas reescritas, 123→127, 2 pendientes).
+  **Restaurado** (MCP, transacción ensayada con ROLLBACK): líneas desde la copia firmada de
+  driver_day_status/equipment_day_status (40/83, 55 asignadas, 0 pendientes, computed_at de la firma), origen
+  habitual inferido de los días firmados vecinos (3 líneas), período CLOSED con la firma original (Cristian
+  Castillo, 23/09 22:51 CL), cola vacía; auditado como `cierre_restaurado` (la reapertura sigue en audit_log).
+  Los 8 viajes siguen intactos. Memoria: feedback_no_reabrir_dia_firmado_para_corregir.
+- **Estándar acordado para corregir lo firmado:** ajuste/anulación posterior al cierre, sin reabrir (patrón
+  existente "N viajes posteriores al cierre"). Hoy `eliminar_viajes` bloquea días firmados y empuja a reabrir:
+  hay que cambiar esa regla por "anular con motivo como ajuste posterior".
+- **Permiso de borrar:** recomendación entregada (mantener operador = los suyos / admin = cualquiera; el control
+  lo da el cierre); pendiente que el usuario decida y si se diseña "anular con motivo".
+- **OJO contract:** las 4 tablas viejas del cierre fueron el único respaldo de lo firmado; NO retirarlas sin un
+  respaldo equivalente (p. ej. congelar las líneas al firmar).
+
 ### 2026-10-10 — Bugs del reporte de la minuta 09/10: DESPLEGADOS en dev
 
 Pedido del usuario: robusto, según la arquitectura de la app, sin parches ni objetos nuevos en la base. Diseño
