@@ -71,13 +71,13 @@ industria. Sin código muerto al terminar.
  la API escribe flota, directorio y vínculos ───┼─► triggers por sentencia ─► app.marcar_cierre_pendiente()
                                                 │        (una sola sentencia: encolar)
                                                 ▼
-                     app.closure_recompute_queue (business_date PK, requested_at)
+                     app.closure_recompute_queue (business_date PK, requested_at, version)
                                                 │
  Cloud Scheduler, cada 1 min ─► POST /api/v1/internal/closures/recompute
                                                 │   FOR UPDATE SKIP LOCKED sobre el período
                                                 ▼
                      cierre_lineas.recalcular(día) por cada día encolado
-                     → borra la entrada solo si requested_at no cambió mientras calculaba
+                     → borra la entrada solo si su versión no cambió mientras calculaba
                                                 │
  GET daily-closures / equipment-closures / status-report ─► SELECT puro
                                                 └─► calculado_a y pendiente_desde del día
@@ -88,7 +88,8 @@ industria. Sin código muerto al terminar.
 - **Una sola función**, `app.marcar_cierre_pendiente()` (`RETURNS trigger`, `FOR EACH STATEMENT`), usada por
   todos los triggers. Encola los **días abiertos de los últimos 45 días y hoy**:
   `INSERT INTO app.closure_recompute_queue (business_date) SELECT … ON CONFLICT (business_date) DO UPDATE SET
-  requested_at = now()`. Los días firmados nunca entran.
+  version = closure_recompute_queue.version + 1`. `requested_at` se fija al encolar y no cambia con las marcas
+  siguientes: dice **desde cuándo** está pendiente el día. Los días firmados nunca entran.
 - **Por qué todos los días abiertos y no "el día que afectó el cambio":** saber qué días ocupa un viaje es la
   regla de `app.trips_del_dia`. Repetirla en el trigger sería escribirla dos veces. Los días abiertos son unos 5;
   marcar de más cuesta un recálculo barato.
@@ -125,7 +126,7 @@ ejecutor solo toca un instante, al final (§3.3).
 
 ### 3.3 El ejecutor: `POST /api/v1/internal/closures/recompute`
 
-1. Lee la cola (`business_date, requested_at`) sin bloquearla, días más antiguos primero. Suma hoy (fecha de
+1. Lee la cola (`business_date, version`) sin bloquearla, días más antiguos primero. Suma hoy (fecha de
    Chile) si todavía no tiene ninguna línea, aunque no esté en la cola: así el día arranca calculado sin que
    nadie lo abra. Una vez que tiene líneas, hoy solo se recalcula cuando lo encola un cambio.
 2. Por cada día:
@@ -133,7 +134,11 @@ ejecutor solo toca un instante, al final (§3.3).
      salta, y queda para la próxima;
    - si el período está `CLOSED`, borra la entrada sin calcular;
    - si no, ejecuta `recalcular` y al final `DELETE FROM app.closure_recompute_queue WHERE business_date = $1
-     AND requested_at <= $leído`. Una marca que llegó durante el cálculo sobrevive y se procesa en la próxima corrida.
+     AND version = $leída`. Una marca que llegó durante el cálculo subió la versión, así que sobrevive y se
+     procesa en la próxima corrida. **Por qué versión y no hora:** una transacción de dbt que empezó antes de la
+     lectura y confirma después escribiría una hora anterior a la leída, y una comparación por hora la borraría
+     sin haber visto sus cambios. El contador no depende de relojes ni del orden de confirmación: el `UPDATE` de
+     la fila se serializa por su bloqueo.
 3. Corta a los 50 s; lo que queda pasa a la corrida siguiente.
 4. Responde 200 con el resumen, o 500 si algún día falló (después de intentar todos), para que el Scheduler lo
    registre como fallo.
