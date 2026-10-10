@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Lock, Check, Minus, ShieldCheck } from 'lucide-react'
 import { accessApi, type PermisoInfo, type RoleInfo } from '@/lib/api/access'
 import { useAcceso, usePermiso } from '@/lib/authz/PermisosProvider'
-import { TITULO_DE_AREA } from '@/lib/authz/roles'
+import { AREAS, TITULO_DE_AREA, codigoDe } from '@/lib/authz/roles'
 import { LoadState } from './shared'
 
 /** El código de un rol personalizado sale de su nombre, con el formato que
@@ -35,6 +35,18 @@ function ItemDeRol({ r, activo, onClick }: { r: RoleInfo; activo: boolean; onCli
       <span className="text-informativo tabular-nums" aria-label={`${r.assigned} personas`}>{r.assigned}</span>
     </button>
   )
+}
+
+/** Propietario y Administración primero, después cada área (Supervisor antes
+ *  que Operador) y al final los de lectura: el orden de la maqueta. */
+const ORDEN_DE_SISTEMA = [
+  'owner', 'admin',
+  ...AREAS.flatMap(a => [codigoDe(a.clave, 'supervisor'), codigoDe(a.clave, 'operator')]),
+  'reader', 'support',
+]
+function ordenDeSistema(code: string): number {
+  const i = ORDEN_DE_SISTEMA.indexOf(code)
+  return i === -1 ? ORDEN_DE_SISTEMA.length : i
 }
 
 type Modo = { tipo: 'ver' } | { tipo: 'crear' } | { tipo: 'editar'; rol: RoleInfo }
@@ -68,7 +80,7 @@ export function RolesTab() {
   if (loading && roles.length === 0) return <LoadState loading error={null} onRetry={() => load()} />
   if (error && roles.length === 0) return <LoadState loading={false} error={error} onRetry={() => load()} />
 
-  const deSistema = roles.filter(r => r.is_system)
+  const deSistema = roles.filter(r => r.is_system).sort((a, b) => ordenDeSistema(a.code) - ordenDeSistema(b.code))
   const personalizados = roles.filter(r => !r.is_system)
   const rol = roles.find(r => r.id === elegido) ?? null
   const item = (r: RoleInfo) => (
@@ -80,7 +92,7 @@ export function RolesTab() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-dato text-informativo">
-          Qué puede hacer cada rol. Los de sistema vienen con la app; los personalizados los crea Administración.
+          Los de sistema vienen con la app; los personalizados los crea Administración.
         </p>
         {puedeGestionar && (
           <button
@@ -181,7 +193,7 @@ function DetalleDeRol({ rol, catalogo, puedeGestionar, onEditar, onEliminado }: 
       )}
       {error && <p role="alert" className="text-dato text-status-incidente border border-border rounded-lg px-3 py-2">{error}</p>}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4">
+      <div className="grid grid-cols-1 2xl:grid-cols-2 gap-x-8 gap-y-4">
         {porArea(catalogo).map(([area, permisos]) => (
           <div key={area} className="space-y-1">
             <p className="text-etiqueta font-bold uppercase tracking-wide text-informativo">{TITULO_DE_AREA[area] ?? area}</p>
@@ -254,7 +266,7 @@ function FormularioDeRol({ catalogo, rol, onCancel, onSaved }: {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-5">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-8 gap-y-5">
         {porArea(catalogo).map(([area, lista]) => (
           <fieldset key={area} className="space-y-1">
             <legend className="text-etiqueta font-bold uppercase tracking-wide text-informativo mb-1">{TITULO_DE_AREA[area] ?? area}</legend>

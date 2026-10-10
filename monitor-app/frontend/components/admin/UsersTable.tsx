@@ -184,7 +184,7 @@ export default function UsersTable({ users: initial, currentUserId, roles, catal
           <table className="w-full text-sm" style={{ minWidth: 680 }}>
             <thead>
               <tr className="border-b border-border bg-gray-50/60">
-                {['Usuario', 'Rol', 'Estado', 'Último ingreso', ''].map(h => (
+                {['Persona', 'Roles', 'Estado', 'Acceso', ''].map(h => (
                   <th key={h} className="px-5 py-3 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wide">
                     {h}
                   </th>

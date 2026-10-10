@@ -80,3 +80,18 @@ describe('codigoDeRol', () => {
     expect(codigoDeRol('1 rol')).toBe('rol_1_rol')
   })
 })
+
+describe('orden de los roles de sistema', () => {
+  beforeEach(() => {
+    vi.mocked(accessApi.roles).mockReset().mockResolvedValue(ROLES)
+    vi.mocked(accessApi.permissions).mockReset().mockResolvedValue(CATALOGO)
+  })
+  it('Propietario y Administración primero, después las áreas, Lectura al final', async () => {
+    mostrar()
+    const lista = await screen.findByRole('navigation', { name: 'Roles' })
+    await within(lista).findByText('Lectura')
+    const nombres = within(lista).getAllByRole('button').map(b => b.textContent?.replace(/\d+$/, ''))
+    expect(nombres.slice(0, 4)).toEqual(['Propietario (Super admin)', 'Administración', 'Supervisor de Operaciones', 'Operador de Operaciones'])
+    expect(nombres.indexOf('Lectura')).toBeGreaterThan(nombres.indexOf('Operador de Seguros'))
+  })
+})
