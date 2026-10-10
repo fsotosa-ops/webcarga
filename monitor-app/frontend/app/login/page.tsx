@@ -3,6 +3,7 @@
 import LoginForm from '@/components/auth/LoginForm'
 import OAuthButtons from '@/components/auth/OAuthButtons'
 import Link from 'next/link'
+import LogoWebCarga from '@/components/brand/LogoWebCarga'
 
 export default function LoginPage() {
   return (
@@ -31,18 +32,8 @@ export default function LoginPage() {
 
         {/* Logo mark */}
         <div className="flex flex-col items-center mb-10">
-          <div className="relative mb-5">
-            <div className="absolute inset-0 rounded-2xl blur-xl opacity-40"
-              style={{ background: 'linear-gradient(135deg, #1cb9ec, #0e8db5)' }}
-            />
-            <div className="relative w-[52px] h-[52px] rounded-2xl flex items-center justify-center shadow-2xl"
-              style={{ background: 'linear-gradient(135deg, #1cb9ec 0%, #0e8db5 100%)' }}
-            >
-              <span className="text-white font-mulish font-bold text-xl tracking-tight">W</span>
-            </div>
-          </div>
-          <h1 className="font-mulish font-bold text-[22px] text-white tracking-tight leading-none">
-            WebCarga
+          <h1>
+            <LogoWebCarga forma="completo" alto={44} prioridad />
           </h1>
           <p className="text-white/35 text-xs mt-1.5 tracking-wider uppercase">
             Plataforma logística

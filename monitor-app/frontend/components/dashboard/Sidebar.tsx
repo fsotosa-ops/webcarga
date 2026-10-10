@@ -14,6 +14,7 @@ import { useQuery } from '@tanstack/react-query'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { puedeVerConfiguracion, type Acceso } from '@/lib/authz/acceso'
+import LogoWebCarga from '@/components/brand/LogoWebCarga'
 
 // "Operaciones" agrupa Monitor bajo un solo item expandible —
 // Empresas/Seguros no tienen esa profundidad todavía, se quedan planos.
@@ -273,12 +274,9 @@ export default function Sidebar({ acceso }: SidebarProps) {
             </button>
           ) : (
             <>
-              <div className="w-8 h-8 rounded-xl bg-accent flex items-center justify-center shrink-0 shadow-lg shadow-accent/30">
-                <span className="text-white font-mulish font-bold text-sm">W</span>
-              </div>
               <div className="flex-1 min-w-0">
-                <p className="text-white font-mulish font-bold text-[13px] leading-tight tracking-tight">WebCarga</p>
-                <p className="text-white/35 text-[10px] tracking-wide">Plataforma logística</p>
+                <LogoWebCarga forma="completo" alto={24} prioridad />
+                <p className="text-white/35 text-[10px] tracking-wide mt-1">Plataforma logística</p>
               </div>
               <button
                 onClick={toggle}

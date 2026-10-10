@@ -90,5 +90,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon\\.ico).*)'],
+  // Los archivos estáticos no pasan por el proxy: la pantalla de login también
+  // pide el logo y el ícono, y sin sesión el proxy los mandaría al login.
+  matcher: ['/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico)$).*)'],
 }

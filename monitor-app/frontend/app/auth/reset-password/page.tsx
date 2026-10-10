@@ -1,5 +1,6 @@
 import { Suspense } from 'react'
 import ResetPasswordForm from '@/components/auth/ResetPasswordForm'
+import LogoWebCarga from '@/components/brand/LogoWebCarga'
 
 export default function ResetPasswordPage() {
   return (
@@ -7,9 +8,7 @@ export default function ResetPasswordPage() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-lg p-8">
           <div className="flex flex-col items-center mb-6">
-            <div className="w-12 h-12 rounded-xl bg-sidebar flex items-center justify-center mb-3">
-              <span className="text-white font-mulish font-bold text-lg">W</span>
-            </div>
+            <LogoWebCarga forma="isotipo" alto={48} className="mb-3" />
             <h1 className="font-mulish font-bold text-xl text-text-primary">Nueva contraseña</h1>
             <p className="text-sm text-gray-400 mt-1">Elige una contraseña segura para tu cuenta</p>
           </div>

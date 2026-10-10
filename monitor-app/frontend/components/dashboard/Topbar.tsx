@@ -1,3 +1,5 @@
+import LogoWebCarga from '@/components/brand/LogoWebCarga'
+
 interface Props {
   /** Nombre ya resuelto por el layout. */
   displayName: string
@@ -19,9 +21,8 @@ export default function Topbar({ displayName, rol }: Props) {
     <header className="h-14 bg-white border-b border-border/70 flex items-center px-4 md:px-6 shrink-0 gap-3">
       {/* Mobile brand — visible only when sidebar is hidden */}
       <div className="md:hidden flex items-center gap-2 shrink-0">
-        <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center shadow">
-          <span className="text-white font-mulish font-bold text-xs">W</span>
-        </div>
+        {/* Fondo blanco: el isotipo azul; el logo completo es blanco. */}
+        <LogoWebCarga forma="isotipo" alto={28} />
         <span className="font-mulish font-bold text-sm text-text-primary">WebCarga</span>
       </div>
 
