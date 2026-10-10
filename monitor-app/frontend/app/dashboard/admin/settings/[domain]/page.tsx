@@ -94,7 +94,9 @@ function DominioInterior({ dominio }: { dominio: Dominio }) {
           se perdio al reescribirla. */}
       <div className="mt-5 flex gap-0 bg-white border border-border rounded-2xl
                       overflow-hidden min-h-[calc(100vh-14rem)]">
-        <div className="shrink-0 p-3 border-r border-border bg-gray-50/40">
+        {/* En teléfono la navegación entre dominios le quitaba la mitad del
+            ancho al contenido; ahí se vuelve con "‹ Configuración". */}
+        <div className="hidden md:block shrink-0 p-3 border-r border-border bg-gray-50/40">
           <NavDominios activo={dominio.clave} />
         </div>
 

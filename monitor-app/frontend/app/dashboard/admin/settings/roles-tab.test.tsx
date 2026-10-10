@@ -93,5 +93,7 @@ describe('orden de los roles de sistema', () => {
     const nombres = within(lista).getAllByRole('button').map(b => b.textContent?.replace(/\d+$/, ''))
     expect(nombres.slice(0, 4)).toEqual(['Propietario (Super admin)', 'Administración', 'Supervisor de Operaciones', 'Operador de Operaciones'])
     expect(nombres.indexOf('Lectura')).toBeGreaterThan(nombres.indexOf('Operador de Seguros'))
+    // Abre con el primero de la lista elegido.
+    expect(screen.getByRole('region', { name: 'Propietario (Super admin)' })).toBeInTheDocument()
   })
 })

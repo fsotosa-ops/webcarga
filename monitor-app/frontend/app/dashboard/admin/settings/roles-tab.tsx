@@ -70,7 +70,7 @@ export function RolesTab() {
       .then(([r, p]) => {
         setRoles(r)
         setCatalogo(p)
-        setElegido(actual => seleccionar ?? actual ?? r[0]?.id ?? null)
+        setElegido(actual => seleccionar ?? actual ?? [...r].sort((x, y) => ordenDeSistema(x.code) - ordenDeSistema(y.code))[0]?.id ?? null)
       })
       .catch(e => setError(e instanceof Error ? e.message : 'No se pudieron cargar los roles'))
       .finally(() => setLoading(false))
