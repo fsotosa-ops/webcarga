@@ -7,12 +7,15 @@ import { tripsApi, type TripListResponse } from '@/lib/api/trips'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import type { Trip } from '@/lib/types'
 import { TripDetailView } from '@/components/dashboard/TripDetailView'
+import { volverDesdeElViaje } from '@/lib/navegacion/viaje'
 
 export default function TripDetailStandalonePage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
+  // A dónde vuelve al cerrar: la pantalla que lo abrió (?next=), o el Monitor.
+  const volver = volverDesdeElViaje(searchParams.get('next'))
 
   const tripQuery = useQuery({ queryKey: ['trip', id], queryFn: () => tripsApi.get(id) })
   const metaQuery = useQuery({ queryKey: ['trips-meta'], queryFn: fetchTripsMeta, staleTime: 60 * 60 * 1000 })
@@ -37,10 +40,10 @@ export default function TripDetailStandalonePage() {
         <p className="text-sm text-gray-500">No se pudo cargar este viaje.</p>
         <button
           type="button"
-          onClick={() => router.push('/dashboard/operations/monitor')}
+          onClick={() => router.push(volver)}
           className="text-xs font-semibold text-accent hover:underline"
         >
-          Volver a Monitor
+          Volver
         </button>
       </div>
     )
@@ -51,7 +54,7 @@ export default function TripDetailStandalonePage() {
       <TripDetailView
         trip={tripQuery.data}
         onSaved={handleSaved}
-        onDismiss={() => router.push('/dashboard/operations/monitor')}
+        onDismiss={() => router.push(volver)}
         meta={metaQuery.data ?? null}
         focusNotes={searchParams.get('focus') === 'bitacora'}
       />

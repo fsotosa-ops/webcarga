@@ -22,6 +22,7 @@ import { PasoViajesSection } from '@/components/dashboard/sections/PasoViajesSec
 import { AvisoPosteriorAlCierre } from '@/components/dashboard/AvisoPosteriorAlCierre'
 import { AvisoDeActualizacion } from '@/components/dashboard/AvisoDeActualizacion'
 import { Estado } from '@/components/ui/Estado'
+import { urlDelViaje } from '@/lib/navegacion/viaje'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import type { PeriodoDeCierre, TripsMeta } from '@/lib/types'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
@@ -92,7 +93,20 @@ function ClosuresCenterPageInner() {
   const [reabrirOpen, setReabrirOpen] = useState(false)
   const [notaReabrir, setNotaReabrir] = useState('')
   const [reabriendo, setReabriendo] = useState(false)
-  const [tab, setTab] = useState<TabId>('flota')
+  // La pestaña vive en la URL (?tab=): así el detalle de un viaje abierto desde
+  // acá puede devolver a la misma pestaña (bug 10/10).
+  // Arranca de la URL y la mantiene al día con `replace` (sin entradas nuevas en
+  // el historial, así que la URL y la pestaña no se desincronizan).
+  const [tab, setTabState] = useState<TabId>(() => {
+    const deLaUrl = searchParams.get('tab')
+    return TABS.some(t => t.id === deLaUrl) ? (deLaUrl as TabId) : 'flota'
+  })
+  function setTab(next: TabId) {
+    setTabState(next)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('tab', next)
+    router.replace(`/dashboard/operations/closures?${params.toString()}`)
+  }
 
   // Las dos consultas que alimentan el cierre las dispara FlotaDelDiaSection;
   // acá sólo se observa su estado con las MISMAS queryKey — no se agrega una
@@ -248,7 +262,11 @@ function ClosuresCenterPageInner() {
   }
 
   function handleSelectTrip(tripId: string) {
-    router.push(`/dashboard/operations/monitor/trips/${tripId}`)
+    // Al cerrar el detalle, de vuelta a este cierre: misma fecha y pestaña.
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('fecha', fecha)
+    params.set('tab', tab)
+    router.push(urlDelViaje(tripId, `/dashboard/operations/closures?${params.toString()}`))
   }
 
   return (
