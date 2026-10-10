@@ -24,7 +24,7 @@ describe('clasificarRespuestaMe', () => {
 
 describe('destinoSinAcceso', () => {
   it('una caída va a "no disponible", sin cerrar la sesión', () => {
-    expect(destinoSinAcceso('no-disponible')).toBe('/auth/no-disponible')
+    expect(destinoSinAcceso('no-disponible')).toBe('/auth/unavailable')
   })
   it('las negaciones van a su motivo', () => {
     expect(destinoSinAcceso('sin-acceso')).toBe('/auth/access-denied?reason=not-invited')

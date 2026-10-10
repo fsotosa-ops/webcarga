@@ -1,3 +1,5 @@
+import { RUTA_AUTH_NO_DISPONIBLE } from '@/lib/supabase/sesion'
+
 export type EstadoDeAcceso = 'ok' | 'sin-acceso' | 'desactivada' | 'sin-sesion' | 'no-disponible'
 
 /** Qué significa la respuesta de GET /me. Solo un 403 niega el acceso; una
@@ -16,6 +18,6 @@ export function destinoSinAcceso(estado: Exclude<EstadoDeAcceso, 'ok'>): string 
     case 'sin-sesion':    return '/login'
     case 'desactivada':   return '/auth/access-denied?reason=deactivated'
     case 'sin-acceso':    return '/auth/access-denied?reason=not-invited'
-    case 'no-disponible': return '/auth/no-disponible'
+    case 'no-disponible': return RUTA_AUTH_NO_DISPONIBLE
   }
 }

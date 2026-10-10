@@ -35,4 +35,4 @@ export async function leerSesion(supabase: SupabaseClient): Promise<Sesion> {
 }
 
 /** A dónde va quien no tiene una sesión utilizable. */
-export const RUTA_AUTH_NO_DISPONIBLE = '/auth/no-disponible'
+export const RUTA_AUTH_NO_DISPONIBLE = '/auth/unavailable'
