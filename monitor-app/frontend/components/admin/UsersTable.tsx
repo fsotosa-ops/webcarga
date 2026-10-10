@@ -2,13 +2,15 @@
 
 import { useState, useTransition } from 'react'
 import CreateUserForm from './CreateUserForm'
+import EditarRolesPanel from './EditarRolesPanel'
+import RolChips from './RolChips'
 import type { Profile } from '@/lib/types'
-import { usePermiso } from '@/lib/authz/PermisosProvider'
-import type { RoleInfo } from '@/lib/api/roles'
+import { useAcceso, usePermiso } from '@/lib/authz/PermisosProvider'
+import type { PermisoInfo, RoleInfo } from '@/lib/api/access'
 import { usersApi } from '@/lib/api/users'
 import {
   UserPlus, Trash2, Search,
-  ShieldCheck, UserCheck, UserX, MoreHorizontal
+  ShieldCheck, UserCheck, UserX, MoreHorizontal, KeyRound,
 } from 'lucide-react'
 
 const METODO: Record<string, string> = { google: 'Google', azure: 'Microsoft', email: 'Email' }
@@ -28,6 +30,7 @@ interface Props {
   users:         Profile[]
   currentUserId: string
   roles:         RoleInfo[]
+  catalogo:      PermisoInfo[]
 }
 
 /** Administran: Propietario o Administración (RBAC). */
@@ -35,8 +38,10 @@ function administra(u: Profile): boolean {
   return (u.roles ?? []).some(r => r === 'owner' || r === 'admin')
 }
 
-export default function UsersTable({ users: initial, currentUserId, roles }: Props) {
+export default function UsersTable({ users: initial, currentUserId, roles, catalogo }: Props) {
   const puedeGestionar = usePermiso('users.manage')
+  const soyPropietario = useAcceso().roles.includes('owner')
+  const [editandoId,    setEditandoId]    = useState<string | null>(null)
   const [users,         setUsers]         = useState(initial)
   const [showCreate,    setShowCreate]    = useState(false)
   const [deletingId,    setDeletingId]    = useState<string | null>(null)
@@ -44,6 +49,8 @@ export default function UsersTable({ users: initial, currentUserId, roles }: Pro
   const [search,        setSearch]        = useState('')
   const [tab,           setTab]           = useState<FilterTab>('all')
   const [, startTransition]              = useTransition()
+
+  const editando = users.find(u => u.id === editandoId) ?? null
 
   function updateLocal(id: string, patch: Partial<Profile>) {
     setUsers(prev => prev.map(u => (u.id === id ? { ...u, ...patch } : u)))
@@ -102,8 +109,19 @@ export default function UsersTable({ users: initial, currentUserId, roles }: Pro
       {showCreate && (
         <CreateUserForm
           roles={roles}
+          catalogo={catalogo}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); window.location.reload() }}
+        />
+      )}
+
+      {editando && (
+        <EditarRolesPanel
+          persona={editando}
+          roles={roles}
+          catalogo={catalogo}
+          onClose={() => setEditandoId(null)}
+          onSaved={nuevos => { updateLocal(editando.id, { roles: nuevos }); setEditandoId(null) }}
         />
       )}
 
@@ -134,7 +152,7 @@ export default function UsersTable({ users: initial, currentUserId, roles }: Pro
               className="ml-auto flex items-center gap-2 px-4 py-2 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent/90 transition-colors shrink-0"
             >
               <UserPlus size={14} />
-              Crear usuario
+              Invitar persona
             </button>
           </div>
 
@@ -175,9 +193,10 @@ export default function UsersTable({ users: initial, currentUserId, roles }: Pro
             </thead>
             <tbody className="divide-y divide-border/60">
               {filtered.map(user => {
-                // Las reglas finas (Propietarios, último Propietario) las aplica la API.
-                const manageable = user.id !== currentUserId && puedeGestionar
-                const nombresDeRol = (user.roles ?? []).map(c => roles.find(r => r.code === c)?.name ?? c)
+                // A un Propietario solo lo toca otro Propietario; el resto de las
+                // reglas (último Propietario, escalada) las aplica la API.
+                const esPropietario = (user.roles ?? []).includes('owner')
+                const manageable = user.id !== currentUserId && puedeGestionar && (!esPropietario || soyPropietario)
                 const isMe       = user.id === currentUserId
                 const initStr    = initials(user.full_name, user.email)
 
@@ -202,15 +221,8 @@ export default function UsersTable({ users: initial, currentUserId, roles }: Pro
                       </div>
                     </td>
 
-                    {/* Roles (solo lectura hasta la pantalla de roles de la Task 12) */}
                     <td className="px-5 py-3.5">
-                      <div className="flex flex-wrap gap-1">
-                        {nombresDeRol.length ? nombresDeRol.map(n => (
-                          <span key={n} className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border border-border bg-bg-main text-text-primary">
-                            {n}
-                          </span>
-                        )) : <span className="text-[11px] text-informativo">Sin roles</span>}
-                      </div>
+                      <RolChips codes={user.roles ?? []} roles={roles} />
                     </td>
 
                     {/* Estado */}
@@ -230,7 +242,7 @@ export default function UsersTable({ users: initial, currentUserId, roles }: Pro
                       {user.last_sign_in_at ? fmtDate(user.last_sign_in_at) : 'Nunca'}
                       <span className="block text-informativo">
                         {(user.providers ?? []).map(p => METODO[p] ?? p).join(' · ') || '—'}
-                        {user.mfa ? ' · MFA' : ''}
+                        {user.mfa ? ' · 2 pasos' : ''}
                       </span>
                     </td>
 
@@ -239,14 +251,22 @@ export default function UsersTable({ users: initial, currentUserId, roles }: Pro
                       {manageable ? (
                         <div className="relative inline-block">
                           <button
+                            aria-label="Acciones"
                             onClick={() => setActionMenuId(actionMenuId === user.id ? null : user.id)}
-                            className="p-1.5 rounded-lg text-gray-300 hover:text-gray-600 hover:bg-gray-100 transition-colors opacity-0 group-hover:opacity-100"
+                            className="p-1.5 rounded-lg text-gray-300 hover:text-gray-600 hover:bg-gray-100 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
                           >
                             <MoreHorizontal size={16} />
                           </button>
 
                           {actionMenuId === user.id && (
                             <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-border rounded-xl shadow-xl p-1.5 w-48">
+                              <button
+                                onClick={() => { setActionMenuId(null); setEditandoId(user.id) }}
+                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left hover:bg-bg-main transition-colors"
+                              >
+                                <KeyRound size={13} className="text-accion" />
+                                <span>Editar roles</span>
+                              </button>
                               <button
                                 onClick={() => toggleActive(user)}
                                 className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left hover:bg-gray-50 transition-colors"

@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight } from 'lucide-react'
 import { BuscadorConfig } from './BuscadorConfig'
-import { DOMINIOS } from './dominios'
+import { DOMINIOS, puedeVerDominio } from './dominios'
+import { useAcceso } from '@/lib/authz/PermisosProvider'
 import { inventarioApi, type InventarioConfig } from '@/lib/api/config'
 
 /** La portada del modulo: una fila por dominio, con lo que ese dominio gobierna
@@ -26,6 +27,7 @@ import { inventarioApi, type InventarioConfig } from '@/lib/api/config'
  *
  *  Todo se deriva del registro: agregar un dominio no toca este archivo. */
 export function PortadaDominios() {
+  const { permissions } = useAcceso()
   // react-query, que es lo que el modulo ya usa.
   // La primera version resolvia esto con un useEffect a mano y dejaba `{}`
   // significando DOS cosas -- "cargo vacio" y "fallo" --, que es el defecto
@@ -47,7 +49,7 @@ export function PortadaDominios() {
       <div className="px-4 pt-4 pb-3 border-b border-border">
         <BuscadorConfig />
       </div>
-      {DOMINIOS.map((d, i) => {
+      {DOMINIOS.filter(d => puedeVerDominio(d, permissions)).map((d, i) => {
         const Icono   = d.icono
         const dominio = inv.data?.[d.clave]
         const pares   = dominio?.pares ?? []

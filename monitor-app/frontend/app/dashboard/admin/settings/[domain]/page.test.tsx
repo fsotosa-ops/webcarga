@@ -2,6 +2,9 @@ import { act, render, screen } from '@testing-library/react'
 import { Suspense } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+// Quien administra personas: ve todos los dominios (Personas y accesos exige users.manage).
+const acceso = vi.hoisted(() => ({ permissions: ['users.manage'] as string[] }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ useAcceso: () => acceso }))
 
 // Los paneles reales piden datos; acá sólo importa el marco del dominio.
 vi.mock('../estados-tabs', () => ({
@@ -27,6 +30,7 @@ vi.mock('../flota-tabs', () => ({
   MotivosNoAsignacionTab: () => <div>panel motivos no asignacion</div>,
 }))
 vi.mock('../usuarios-tab', () => ({ UsuariosTab: () => <div>panel usuarios</div> }))
+vi.mock('../roles-tab', () => ({ RolesTab: () => <div>panel roles</div> }))
 // El buscador es react-query y consulta la API; acá sólo importa el marco.
 vi.mock('../BuscadorConfig', () => ({ BuscadorConfig: () => <div>buscador</div> }))
 

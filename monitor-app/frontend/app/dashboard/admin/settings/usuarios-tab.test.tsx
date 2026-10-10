@@ -4,12 +4,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/lib/api/users', () => ({
   usersApi: { list: vi.fn(), patch: vi.fn() },
 }))
-vi.mock('@/lib/api/roles', () => ({
-  fetchRoles: vi.fn(),
+vi.mock('@/lib/api/access', () => ({
+  accessApi: { roles: vi.fn(), permissions: vi.fn() },
 }))
 
 import { usersApi } from '@/lib/api/users'
-import { fetchRoles } from '@/lib/api/roles'
+import { accessApi } from '@/lib/api/access'
 import { UsuariosTab } from './usuarios-tab'
 import { PermisosProvider } from '@/lib/authz/PermisosProvider'
 import type { Acceso } from '@/lib/authz/acceso'
@@ -32,7 +32,8 @@ const ROLES = [
 describe('UsuariosTab', () => {
   beforeEach(() => {
     vi.mocked(usersApi.list).mockResolvedValue(PROFILES as never)
-    vi.mocked(fetchRoles).mockResolvedValue(ROLES as never)
+    vi.mocked(accessApi.roles).mockResolvedValue(ROLES as never)
+    vi.mocked(accessApi.permissions).mockResolvedValue([])
   })
 
   // Es la mudanza de app/dashboard/admin/usuarios/page.tsx: mismos numeros,
@@ -40,7 +41,8 @@ describe('UsuariosTab', () => {
   it('pide los usuarios y los roles al cargar', async () => {
     mostrar()
     await waitFor(() => expect(usersApi.list).toHaveBeenCalled())
-    expect(fetchRoles).toHaveBeenCalled()
+    expect(accessApi.roles).toHaveBeenCalled()
+    expect(accessApi.permissions).toHaveBeenCalled()
   })
 
   it('muestra el total de usuarios calculado de la lista', async () => {

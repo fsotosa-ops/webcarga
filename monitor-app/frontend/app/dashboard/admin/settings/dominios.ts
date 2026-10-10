@@ -14,6 +14,8 @@ import {
   SubtiposVehiculoTab, TiposOperacionTab, MotivosConductorTab, MotivosNoAsignacionTab,
 } from './flota-tabs'
 import { UsuariosTab } from './usuarios-tab'
+import { RolesTab } from './roles-tab'
+import type { PermissionCode } from '@/lib/authz/permisos.generated'
 import { OrigenesTab } from './origenes'
 
 export interface Seccion {
@@ -36,6 +38,10 @@ export interface Dominio {
   secciones: Seccion[]
   /** Reservado, sin contenido todavia. Se dibuja apagado y no es visitable. */
   proximamente?: boolean
+  /** Si la API exige un permiso para LEER el dominio, sin él no se muestra:
+   *  una tarjeta que lleva a un 403 no orienta a nadie. Sin permiso declarado,
+   *  lo ve quien entra a Configuración (cada sección decide qué se edita). */
+  permiso?: PermissionCode
 }
 
 /** FUENTE DE VERDAD del modulo de Configuracion.
@@ -104,9 +110,12 @@ export const DOMINIOS: Dominio[] = [
     icono: Users,
     titulo: 'Personas y accesos',
     proposito: 'Quién entra y qué puede hacer',
+    permiso: 'users.manage',
     secciones: [
-      { clave: 'users', titulo: 'Usuarios',
-        proposito: 'Quién tiene cuenta y con qué rol', Panel: UsuariosTab },
+      { clave: 'users', titulo: 'Personas',
+        proposito: 'Quién tiene cuenta y con qué roles', Panel: UsuariosTab },
+      { clave: 'roles', titulo: 'Roles',
+        proposito: 'Qué puede hacer cada rol', Panel: RolesTab },
     ],
   },
   {
@@ -148,4 +157,8 @@ export const SECCION_DE_TAXONOMIA: Record<string, [dominio: string, seccion: str
   TRIP_UNASSIGNED_REASON:  ['operations', 'unassigned-reasons'],
   FLEET_SERVICE_TYPE:      ['fleet', 'subtypes'],
   WEBCARGA_OPERATION_TYPE: ['fleet', 'operation-types'],
+}
+
+export function puedeVerDominio(d: Dominio, permisos: readonly string[]): boolean {
+  return !d.permiso || permisos.includes(d.permiso)
 }

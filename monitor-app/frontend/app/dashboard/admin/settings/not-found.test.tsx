@@ -1,5 +1,8 @@
 import { render, screen } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import { vi, describe, it, expect } from 'vitest'
+// Quien administra personas: ve todos los dominios (Personas y accesos exige users.manage).
+const acceso = vi.hoisted(() => ({ permissions: ['users.manage'] as string[] }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ useAcceso: () => acceso }))
 
 import AreaNoEncontrada from './not-found'
 

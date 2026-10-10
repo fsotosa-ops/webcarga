@@ -2,6 +2,9 @@ import { readFile } from 'node:fs/promises'
 import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+// Quien administra personas: ve todos los dominios (Personas y accesos exige users.manage).
+const acceso = vi.hoisted(() => ({ permissions: ['users.manage'] as string[] }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ useAcceso: () => acceso }))
 
 vi.mock('@/lib/api/config', () => ({
   inventarioApi: { get: vi.fn() },

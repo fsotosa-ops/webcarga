@@ -1,14 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { DOMINIOS } from './dominios'
+import { DOMINIOS, puedeVerDominio } from './dominios'
+import { useAcceso } from '@/lib/authz/PermisosProvider'
 
 /** Los dominios, para saltar entre ellos sin pasar por la portada. La portada
  *  orienta; no es un peaje que se paga en cada visita. */
 export function NavDominios({ activo }: { activo: string }) {
+  const { permissions } = useAcceso()
   return (
     <nav aria-label="Áreas de configuración" className="flex flex-col gap-0.5 min-w-[170px]">
-      {DOMINIOS.filter(d => !d.proximamente).map(d => {
+      {DOMINIOS.filter(d => !d.proximamente && puedeVerDominio(d, permissions)).map(d => {
         const esActivo = d.clave === activo
         return (
           <Link

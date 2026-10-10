@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { DOMINIOS, dominioPorClave } from './dominios'
+import { DOMINIOS, dominioPorClave, puedeVerDominio } from './dominios'
 
 describe('registro de dominios', () => {
   it('las claves de dominio son unicas', () => {
@@ -53,7 +53,7 @@ describe('registro de dominios', () => {
         'tms-statuses', 'unassigned-reasons',
       ],
       fleet:    ['operation-types', 'subtypes'],
-      people:   ['users'],
+      people:   ['roles', 'users'],
       billing:  [],
     })
   })
@@ -64,5 +64,19 @@ describe('registro de dominios', () => {
   it('las claves de seccion no se repiten entre dominios', () => {
     const todas = DOMINIOS.flatMap(d => d.secciones.map(s => s.clave))
     expect(new Set(todas).size).toBe(todas.length)
+  })
+})
+
+describe('quién ve cada dominio', () => {
+  it('Personas y accesos solo con users.manage: la API no deja listar personas sin él', () => {
+    const personas = dominioPorClave('people')!
+    expect(puedeVerDominio(personas, ['operations.configure'])).toBe(false)
+    expect(puedeVerDominio(personas, ['users.manage'])).toBe(true)
+  })
+  it('Personas y accesos tiene las secciones Personas y Roles', () => {
+    expect(dominioPorClave('people')!.secciones.map(s => s.titulo)).toEqual(['Personas', 'Roles'])
+  })
+  it('un dominio sin permiso declarado lo ve quien entra a Configuración', () => {
+    expect(puedeVerDominio(dominioPorClave('operations')!, [])).toBe(true)
   })
 })

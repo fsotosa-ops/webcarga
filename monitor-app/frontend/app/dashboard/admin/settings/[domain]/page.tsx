@@ -6,7 +6,8 @@ import { notFound, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronLeft } from 'lucide-react'
 import { BuscadorConfig } from '../BuscadorConfig'
 import { NavDominios } from '../NavDominios'
-import { dominioPorClave, type Dominio } from '../dominios'
+import { dominioPorClave, puedeVerDominio, type Dominio } from '../dominios'
+import { useAcceso } from '@/lib/authz/PermisosProvider'
 
 /** `params` es una PROMESA desde Next 15; en un componente de cliente se
  *  desenvuelve con `use()`. Tipado como objeto plano, `params.dominio` daba
@@ -17,8 +18,10 @@ import { dominioPorClave, type Dominio } from '../dominios'
 export default function DominioPage({ params }: { params: Promise<{ domain: string }> }) {
   const { domain: clave } = use(params)
   const dominio = dominioPorClave(clave)
-  // Un dominio reservado no es visitable: no tiene nada que mostrar.
-  if (!dominio || dominio.proximamente) notFound()
+  const { permissions } = useAcceso()
+  // Un dominio reservado no es visitable: no tiene nada que mostrar. Uno que
+  // exige un permiso que la persona no tiene, tampoco (la API daría 403).
+  if (!dominio || dominio.proximamente || !puedeVerDominio(dominio, permissions)) notFound()
 
   // useSearchParams exige un limite de Suspense, igual que en /dashboard/compliance.
   return (

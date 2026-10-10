@@ -1,6 +1,9 @@
 import { readFile } from 'node:fs/promises'
 import { render, screen } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import { vi, describe, it, expect } from 'vitest'
+// Quien administra personas: ve todos los dominios (Personas y accesos exige users.manage).
+const acceso = vi.hoisted(() => ({ permissions: ['users.manage'] as string[] }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ useAcceso: () => acceso }))
 import { NavDominios } from './NavDominios'
 
 describe('NavDominios', () => {
@@ -43,5 +46,13 @@ describe('NavDominios', () => {
       expect(props, `un <Link> quedo sin prefetch={false}: ${props.trim().slice(0, 80)}`)
         .toContain('prefetch={false}')
     }
+  })
+
+  it('sin users.manage no ofrece Personas y accesos (la API daría 403)', () => {
+    acceso.permissions = ['operations.configure']
+    render(<NavDominios activo="operations" />)
+    expect(screen.queryByRole('link', { name: 'Personas y accesos' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Operaciones' })).toBeInTheDocument()
+    acceso.permissions = ['users.manage']
   })
 })

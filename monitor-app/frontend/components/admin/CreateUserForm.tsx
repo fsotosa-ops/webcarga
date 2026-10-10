@@ -4,12 +4,14 @@ import { useState, useTransition } from 'react'
 import { usersApi } from '@/lib/api/users'
 import { X, UserPlus, Eye, EyeOff, Copy, Check } from 'lucide-react'
 import PasswordStrength, { isPasswordValid } from '@/components/auth/PasswordStrength'
-import type { RoleInfo } from '@/lib/api/roles'
+import type { PermisoInfo, RoleInfo } from '@/lib/api/access'
 import { useAcceso } from '@/lib/authz/PermisosProvider'
 import { puedeOtorgar } from '@/lib/authz/acceso'
+import SelectorDeRoles from './SelectorDeRoles'
 
 interface Props {
   roles:     RoleInfo[]
+  catalogo:  PermisoInfo[]
   onCreated: () => void
   onClose:   () => void
 }
@@ -18,27 +20,31 @@ interface Props {
  *  administrador crea la cuenta... con credenciales se la manda"). Va además
  *  del correo de invitación, por si el correo no llega. */
 export function mensajeDeAcceso(p: {
-  nombre: string; email: string; rol: string; url: string; password?: string
+  nombre: string; email: string; roles: string[]; url: string; password?: string
 }): string {
-  const saludo = `Hola ${p.nombre}: te di acceso a WebCarga con el rol ${p.rol}.`
+  const lista = p.roles.length > 1
+    ? `los roles ${p.roles.slice(0, -1).join(', ')} y ${p.roles[p.roles.length - 1]}`
+    : `el rol ${p.roles[0] ?? ''}`
+  const saludo = `Hola ${p.nombre}: te di acceso a WebCarga con ${lista}.`
   return p.password
     ? `${saludo}\nEntra en ${p.url} con tu email ${p.email} y esta contraseña: ${p.password}`
     : `${saludo}\nEntra en ${p.url} con el botón de Google o Microsoft, usando la cuenta ${p.email}.`
 }
 
-export default function CreateUserForm({ roles, onCreated, onClose }: Props) {
+export default function CreateUserForm({ roles, catalogo, onCreated, onClose }: Props) {
   const acceso = useAcceso()
-  const availableRoles = roles.filter(r => puedeOtorgar(acceso, r))
+  // Parte con Lectura (ver todo sin editar) cuando quien invita puede darla.
+  const lectura = roles.find(r => r.code === 'reader')
   const [creado, setCreado] = useState<{ mensaje: string; invitationSent: boolean } | null>(null)
   const [copiado, setCopiado] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [selectedRole, setSelectedRole] = useState<string>(availableRoles[0]?.code ?? '')
+  const [elegidos, setElegidos] = useState<string[]>(lectura && puedeOtorgar(acceso, lectura) ? ['reader'] : [])
   const [oauthOnly, setOauthOnly] = useState(true)
   const [isPending, startTransition] = useTransition()
 
-  const canSubmit = selectedRole !== '' && (oauthOnly || isPasswordValid(password))
+  const canSubmit = elegidos.length > 0 && (oauthOnly || isPasswordValid(password))
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -56,14 +62,14 @@ export default function CreateUserForm({ roles, onCreated, onClose }: Props) {
         const res = await usersApi.create({
           email,
           full_name: nombre,
-          roles:     [selectedRole],
+          roles:     elegidos,
           ...(oauthOnly ? {} : { password }),
         })
         setCreado({
           invitationSent: res.invitation_sent,
           mensaje: mensajeDeAcceso({
             nombre, email,
-            rol: roles.find(r => r.code === selectedRole)?.name ?? selectedRole,
+            roles: elegidos.map(c => roles.find(r => r.code === c)?.name ?? c),
             url: `${window.location.origin}/login`,
             ...(oauthOnly ? {} : { password }),
           }),
@@ -76,7 +82,7 @@ export default function CreateUserForm({ roles, onCreated, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-5 border-b border-border sticky top-0 bg-white">
           <div className="flex items-center gap-2.5">
             <UserPlus size={18} className="text-accent" />
@@ -203,32 +209,8 @@ export default function CreateUserForm({ roles, onCreated, onClose }: Props) {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-text-primary mb-1.5">Rol</label>
-            <div className="space-y-2">
-              {availableRoles.map(r => (
-                <label
-                  key={r.code}
-                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                    selectedRole === r.code
-                      ? 'border-accent bg-accent/5'
-                      : 'border-border hover:border-gray-300'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="role_radio"
-                    value={r.code}
-                    checked={selectedRole === r.code}
-                    onChange={() => setSelectedRole(r.code)}
-                    className="mt-0.5 accent-accent"
-                  />
-                  <div>
-                    <span className="text-sm font-medium text-text-primary">{r.name}</span>
-                    <p className="text-xs text-gray-400 mt-0.5">{r.description}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
+            <p className="block text-sm font-medium text-text-primary mb-2">Roles</p>
+            <SelectorDeRoles roles={roles} catalogo={catalogo} value={elegidos} onChange={setElegidos} />
           </div>
 
           {oauthOnly && (
