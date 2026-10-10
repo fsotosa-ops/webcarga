@@ -52,8 +52,18 @@ no escribe nunca; reglas contra el auto-reencolado (sentencia sin filas, `SET LO
 - Hallazgo ajeno: `trg_refresh_compliance_on_carriers_update` toma un ExclusiveLock sobre
   `app.carrier_compliance_status`: dos ediciones de empresas cualquiera se serializan (diagnosticado con pg_blocking_pids).
 
+**Revisión final (revisor fresco, opus) y correcciones, DESPLEGADAS en dev (`57574606`, revisión 00193):** 0 críticos;
+5 importantes corregidos con test que falló primero: no reescribir líneas que no cambian (el ejecutor corre 24/7);
+la marca ya no exceptúa al recálculo (migración `20261010180000`, aplicada; converge solo); el pre-cierre audita lo
+que escribió (RETURNING) y un override ya no deja un tracto sin empresa; estado "Este día no tiene cierre
+calculado"; comentarios desactualizados (incluye Mage). 8 menores diferidos en el ledger.
+- Suite tras las correcciones: 1334 verdes, 4 rojos + 1 error. Además del catálogo (ajeno), 3 por statement
+  timeout / conexión cortada mientras corría la ingesta; aislados, 37/37.
+- Ejecutor en vivo antes de la corrección: 10-22 s por corrida, dos corridas por ingesta (dbt confirma trips y
+  trip_stops por separado). Medir después de la corrección.
+
 **Siguiente paso exacto:**
-- [ ] Revisión final de la rama (revisor fresco) y su pasada de correcciones.
+- [ ] Medir el ejecutor en la primera ingesta posterior a las 18:45 UTC (debería bajar mucho al no reescribir).
 - [ ] 11/10: medianas de un día completo en logs de Cloud Run; luego contract (`20261011120000`: retirar las 4 tablas viejas).
 - [ ] Optimizar `_DETAIL_SQL` de daily-closures si se quiere llegar a 0,5 s (cambio aparte).
 - [ ] Después de este trabajo, la minuta del 09/10 (`monitor-app/bugs/20261009/`).
