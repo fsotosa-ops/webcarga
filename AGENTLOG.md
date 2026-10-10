@@ -68,19 +68,16 @@ códigos generados; expand/contract con compuerta por la API de `main` (lee `pro
       `admin_whitelist.role`; respaldo en `app.rbac_legacy_roles` (24 filas); `is_admin()` sobre users.manage.
       Decisión del usuario: *"solo aplica dev de momento, no tomes en cuenta main"* — el stack de `main`
       (api/frontend prod, sin uso en 30 días, misma base) queda roto hasta desplegar `main`.
-- [ ] **Menores diferidos (decide el usuario)**, de la revisión final:
-      - PUT /users/{id}/roles acepta `[]` y responde 500 con un id inválido (debería 422/404).
-      - Códigos de roles personalizados sin prefijo reservado (posible choque con un rol de sistema futuro).
-      - GET /config/inventario exige settings.manage: Supervisores ven la portada sin conteos; expone el
-        conteo de personas sin users.manage.
-      - "Confirmar cierre" visible sin closures.sign (Lectura/Soporte); la API responde 403.
-      - toggleActive en UsersTable revierte en silencio ante 403/409.
-      - set_user_roles valida el conjunto completo: conservar un rol que el actor no podría dar también falla.
-      - Ventana chica de caché obsoleta (lectura antes del commit escrita después de invalidate_access).
-      - Huecos de test: caché tras cambio de roles; rol personalizado con solo permisos retirados (huérfanos
-        solo en el log).
-      - Lecturas no separadas por área (directory.read sirve pólizas y documentos; el Sidebar no esconde por
-        lectura) — solo importa para roles personalizados restringidos.
+- [x] Menores 1-7 de la revisión final (pedido del usuario), desplegados en dev:
+      "Confirmar cierre" solo con closures.sign (`54f33a74`); inventario de Configuración con reference.read y
+      conteo de personas solo con users.manage (`eb84865a`); activar/desactivar muestra el motivo (`bf25c191`);
+      PUT de roles exige uno, 422/404 en vez de 500 y valida solo lo que se agrega (`1991be5e`); roles
+      personalizados `custom_*` y sync que no los adopta (`9336f084`).
+- [x] Ruta en español corregida (feedback del usuario, "de nuevo estás usando rutas en español"):
+      `/auth/no-disponible` → `/auth/unavailable` (`3da942c3`) + `lib/rutas.test.ts`, que obliga a declarar cada
+      segmento de ruta en inglés (solo quedan las dos redirecciones viejas `configuracion` y `usuarios`).
+- [ ] Diferidos a propósito (el usuario eligió 1-7): ventana de hasta 60 s de permisos viejos en caché tras
+      cambiar roles; lecturas no separadas por área (solo importa con roles personalizados restringidos).
 - [ ] Para WebCarga (sin código): asignar a cada persona su área real, nombrar un segundo Propietario de
       WebCarga y pasar la cuenta de Sumadots a Soporte técnico.
 - [ ] Pendiente previo, independiente: probar invitación por correo y recuperación con f.soto.santibanez@gmail.com.
