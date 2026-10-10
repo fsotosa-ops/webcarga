@@ -16,6 +16,30 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-10 — Demoras del Cierre y del Monitor: spec "el recálculo sale de la lectura" (en revisión)
+
+Pedido: *"por qué hay delays al desplegar la vista del cierre y a veces el monitor"*. Medido (logs de Cloud Run de
+7 días + perfil en transacción revertida): Cierre con mediana de 5,5 s y Monitor de 3,8 s (máx. 199 s). Causa del
+Cierre: cada GET ejecuta `recalcular` completo (139 consultas, 124 del pre-cierre fila por fila), tres veces por
+sesión, y retiene conexiones del pool (5 por instancia); el 08/10 a las 17:26 CL cayó todo con 504. Monitor: caché
+fría en Supabase free (0,4 s en caliente, 2,2 s en frío) y 391 KB por 100 viajes. Arranques en frío: 167 de la
+API y 137 del frontend en 7 días. Código muerto: proyección a 4 tablas sin lectores y pre-cierre duplicado en
+`equipment-closures`.
+
+**Decisiones del usuario (10/10):** estándar de la industria, sin código muerto ni frankenstein; opción 2
+(trigger que marca el día, en el `post_hook` de dbt en Mage, autorizado); ejecutor Cloud Scheduler → endpoint
+interno; diseño aprobado por secciones. Correcciones hechas en la revisión: la marca va en una cola propia
+(`app.closure_recompute_queue`) y no en `closure_periods` (evita bloquear la ingesta y un ciclo de bloqueos); el GET
+no escribe nunca; reglas contra el auto-reencolado (sentencia sin filas, `SET LOCAL app.origen_escritura`).
+
+**Spec:** `docs/superpowers/specs/2026-10-10-cierre-recalculo-fuera-de-la-lectura-design.md` (`33839636`).
+
+**Siguiente paso exacto:**
+- [ ] El usuario revisa la spec escrita.
+- [ ] Con la spec aprobada: plan con superpowers:writing-plans; después, elegir el modo de ejecución.
+- [ ] Después de este trabajo, la minuta del 09/10 (`monitor-app/bugs/20261009/`).
+- [ ] Fuera de la spec, cada uno por su lado: peso de la respuesta del Monitor, instancias mínimas (costo), plan de Supabase (WebCarga).
+
 ### 2026-10-10 — Bug: Sodimac de Equipo Completo fuera de "Asignados" en el Cierre (ítem 4 de la minuta 09/10)
 
 Pedido: los casos corregidos ayer salieron de Rezago pero no aparecían en la sección de asignados para cerrarlos.
