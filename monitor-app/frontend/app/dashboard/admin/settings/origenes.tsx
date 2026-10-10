@@ -5,6 +5,7 @@ import { Plus, X } from 'lucide-react'
 import { locationsApi, shippersApi } from '@/lib/api/locations'
 import type { Location } from '@/lib/types'
 import { INPUT, LoadState, useConfigList, useRowFeedback } from './shared'
+import { usePuedeEditarSeccion } from './secciones'
 
 /** Los lugares de ORIGEN (HU-28).
  *
@@ -26,6 +27,9 @@ export function OrigenesTab() {
   const { items: cds, loading, error, reload } = useConfigList<Location>(traerCds)
   const { items: generadores } = useConfigList(traerGeneradores)
   const { errors, saving, run } = useRowFeedback()
+  // Marcar un origen es PATCH /locations (commercial.edit): sin ese permiso,
+  // la lista se ve sin acciones.
+  const puedeEditar = usePuedeEditarSeccion('origins')
 
   const [agregando, setAgregando] = useState(false)
   const [generadorId, setGeneradorId] = useState('')
@@ -88,14 +92,14 @@ export function OrigenesTab() {
                 <td className="px-3 py-2 font-medium text-text-primary">{cd.name}</td>
                 <td className="px-3 py-2 text-informativo">{nombreDeGenerador(cd.entity_id)}</td>
                 <td className="px-3 py-2 text-right">
-                  <button
+                  {puedeEditar && <button
                     type="button"
                     onClick={() => marcar(cd, false)}
                     disabled={saving === cd.id}
                     className="inline-flex items-center gap-1 text-[11px] text-informativo hover:text-status-incidente disabled:opacity-50"
                   >
                     <X size={12} /> Quitar
-                  </button>
+                  </button>}
                   {errors[cd.id] && (
                     <span className="ml-2 text-[11px] text-status-incidente">{errors[cd.id]}</span>
                   )}
@@ -106,7 +110,7 @@ export function OrigenesTab() {
         </table>
       )}
 
-      {!agregando ? (
+      {!puedeEditar ? null : !agregando ? (
         <button
           type="button"
           onClick={() => setAgregando(true)}

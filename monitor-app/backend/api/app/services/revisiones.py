@@ -19,6 +19,8 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException
 
+from ..authz.permissions import Permission
+
 
 @dataclass(frozen=True)
 class Revisable:
@@ -38,6 +40,10 @@ class Revisable:
     #: elementos tiene esta sección" se separan, y la portada terminaría
     #: contando algo distinto de lo que el buscador encuentra.
     sql: str
+    #: El permiso que edita la sección. Confirmar "está bien así" exige el
+    #: mismo: quien no puede cambiarla tampoco la da por revisada. La pantalla
+    #: declara el mismo en dominios.ts (test de sincronía en test_revisiones).
+    permiso: Permission
     #: El vocabulario de `app.status_taxonomies` que edita esta sección, si es
     #: una de ésas. Se declara porque `PATCH /config/taxonomies/{id}` no sabe
     #: en qué pantalla está parado quien edita: lo único que tiene es el
@@ -46,10 +52,13 @@ class Revisable:
 
 
 def _taxonomia(dominio: str, seccion: str, vocabulario: str) -> Revisable:
+    # Todo vocabulario de app.status_taxonomies se edita con PATCH /config/
+    # taxonomies, que exige operations.configure.
     return Revisable(
         dominio, seccion,
         "SELECT id::text AS id, label, label AS buscable, id::text AS abre "
         f"FROM app.status_taxonomies WHERE domain = '{vocabulario}' AND active",
+        Permission.OPERATIONS_CONFIGURE,
         vocabulario=vocabulario,
     )
 
@@ -64,28 +73,33 @@ REVISABLES: tuple[Revisable, ...] = (
               "SELECT id::text AS id, name AS label, "
               "name || ' ' || requirement_code AS buscable, "
               "requirement_code AS abre "
-              "FROM public.compliance_requirements"),
+              "FROM public.compliance_requirements",
+              Permission.CERTIFICATION_CONFIGURE),
     Revisable("certification", "expiry-alerts",
               "SELECT doc_type AS id, label, label || ' ' || doc_type AS buscable, "
-              "doc_type AS abre FROM app.alert_thresholds"),
+              "doc_type AS abre FROM app.alert_thresholds",
+              Permission.CERTIFICATION_CONFIGURE),
 
     Revisable("operations", "tms-statuses",
               "SELECT id, label, label || ' ' || id AS buscable, id AS abre "
-              "FROM app.trip_statuses WHERE active"),
+              "FROM app.trip_statuses WHERE active",
+              Permission.OPERATIONS_CONFIGURE),
     _taxonomia("operations", "operational-statuses", "OPERATIONAL_STATE"),
     _taxonomia("operations", "equipment-statuses", "EQUIPMENT_STATE"),
     _taxonomia("operations", "driver-reasons", "DRIVER_REASON"),
     _taxonomia("operations", "unassigned-reasons", "TRIP_UNASSIGNED_REASON"),
     Revisable("operations", "temperature-ranges",
               "SELECT cargo_type AS id, label, label || ' ' || cargo_type AS buscable, "
-              "cargo_type AS abre FROM app.temperature_ranges"),
+              "cargo_type AS abre FROM app.temperature_ranges",
+              Permission.OPERATIONS_CONFIGURE),
     # Los umbrales del monitor son UN formulario, no una lista: su elemento es
     # el formulario entero. Revisarlo es decir "estos siete números están
     # bien", que es exactamente la decisión que hoy no deja rastro.
     Revisable("operations", "alert-thresholds",
               "SELECT 'reglas' AS id, 'Umbrales de alerta' AS label, "
               "'Umbrales de alerta demora detencion sin reportar' AS buscable, "
-              "'reglas' AS abre"),
+              "'reglas' AS abre",
+              Permission.OPERATIONS_CONFIGURE),
 
     _taxonomia("fleet", "subtypes", "FLEET_SERVICE_TYPE"),
     _taxonomia("fleet", "operation-types", "WEBCARGA_OPERATION_TYPE"),

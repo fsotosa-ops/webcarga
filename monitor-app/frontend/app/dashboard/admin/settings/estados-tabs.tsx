@@ -9,6 +9,7 @@ import {
 } from './shared'
 import { CeldaDeRevision, useRevisiones } from './revision'
 import { SECCION_DE_TAXONOMIA } from './dominios'
+import { usePuedeEditarSeccion } from './secciones'
 
 function Badge({ label, bg, text }: { label: string; bg: string; text: string }) {
   return (
@@ -45,6 +46,8 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
   // podría olvidarse de pasar.
   const [dominioDeRevision, seccionDeRevision] = SECCION_DE_TAXONOMIA[domain]
   const revisiones = useRevisiones(dominioDeRevision, seccionDeRevision)
+  // Sin permiso, el vocabulario se ve pero no se edita (la API daría 403).
+  const puedeEditar = usePuedeEditarSeccion(seccionDeRevision)
   const fetcher = useCallback(() => taxonomiesApi.list(domain), [domain])
   const { items, setItems, loading, error, reload } = useConfigList<TaxonomyRow>(fetcher)
   const [drafts, setDrafts]     = useState<Record<string, Partial<TaxonomyRow>>>({})
@@ -136,7 +139,7 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
               Revisa Certificación · Condiciones.
             </p>
           )}
-          <div className="overflow-x-auto">
+          <fieldset disabled={!puedeEditar} className="overflow-x-auto min-w-0 border-0 p-0 m-0">
             <table className="w-full text-xs min-w-[640px]">
               <thead>
                 <tr className="text-[10px] font-bold text-gray-400 uppercase tracking-wide border-b border-border">
@@ -181,12 +184,14 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
                         </td>
                       )}
                       <td className="py-2 text-right whitespace-nowrap">
-                        <SaveRowButton dirty={isDirty(row)} saving={fb.saving === row.id}
-                          saved={!!fb.savedAt[row.id]} onClick={() => save(row)} />
-                        <button type="button" onClick={() => deactivate(row)} aria-label={`Desactivar ${row.label}`}
-                          className="ml-2 text-gray-300 hover:text-red-400 transition-colors align-middle">
-                          <Trash2 size={13} />
-                        </button>
+                        {puedeEditar && <>
+                          <SaveRowButton dirty={isDirty(row)} saving={fb.saving === row.id}
+                            saved={!!fb.savedAt[row.id]} onClick={() => save(row)} />
+                          <button type="button" onClick={() => deactivate(row)} aria-label={`Desactivar ${row.label}`}
+                            className="ml-2 text-gray-300 hover:text-red-400 transition-colors align-middle">
+                            <Trash2 size={13} />
+                          </button>
+                        </>}
                         {fb.errors[row.id] && <p className="text-[9px] text-red-500 mt-1">{fb.errors[row.id]}</p>}
                       </td>
                     </tr>
@@ -194,9 +199,9 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
                 })}
               </tbody>
             </table>
-          </div>
+          </fieldset>
 
-          {nuevo ? (
+          {!puedeEditar ? null : nuevo ? (
             <div className="border border-accent/30 bg-accent/[0.03] rounded-xl p-3 space-y-2.5">
               <div className="flex items-center gap-3 flex-wrap">
                 <input autoFocus value={nuevo.label} onChange={e => setNuevo({ ...nuevo, label: e.target.value })}

@@ -10,18 +10,24 @@ from ..auth import MFA_REQUERIDO, get_current_user
 from .permissions import PERMISSION_META, Permission
 
 
+def exigir(user: dict, *permissions: Permission) -> None:
+    """La misma regla que `require`, para cuando el permiso depende del cuerpo
+    del pedido (p. ej. la sección que se confirma). La ruta igual declara uno
+    base con `require`."""
+    faltan = [p for p in permissions if p.value not in user["permissions"]]
+    if faltan:
+        nombres = ", ".join(PERMISSION_META[p].description for p in faltan)
+        raise HTTPException(403, f"No tienes permiso para: {nombres}")
+    if any(PERMISSION_META[p].privileged for p in permissions) and user.get("aal") != "aal2":
+        raise HTTPException(403, MFA_REQUERIDO)
+
+
 def require(*permissions: Permission):
     if not permissions:
         raise ValueError("require() necesita al menos un permiso")
-    privilegiado = any(PERMISSION_META[p].privileged for p in permissions)
 
     async def _dep(user: dict = Depends(get_current_user)) -> dict:
-        faltan = [p for p in permissions if p.value not in user["permissions"]]
-        if faltan:
-            nombres = ", ".join(PERMISSION_META[p].description for p in faltan)
-            raise HTTPException(403, f"No tienes permiso para: {nombres}")
-        if privilegiado and user.get("aal") != "aal2":
-            raise HTTPException(403, MFA_REQUERIDO)
+        exigir(user, *permissions)
         return user
 
     _dep.required_permissions = tuple(permissions)  # lo lee la guarda de rutas (Task 8)

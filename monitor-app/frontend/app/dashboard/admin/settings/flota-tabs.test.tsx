@@ -1,6 +1,8 @@
 import { render as renderCrudo, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi } from 'vitest'
+// TaxonomyTab pregunta si puede editar; acá se prueba qué vocabulario pide.
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
 import { SubtiposVehiculoTab, TiposOperacionTab } from './flota-tabs'
 
 vi.mock('@/lib/api/config', () => ({

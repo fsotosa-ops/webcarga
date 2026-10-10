@@ -16,10 +16,12 @@ import {
 import { UsuariosTab } from './usuarios-tab'
 import { RolesTab } from './roles-tab'
 import type { PermissionCode } from '@/lib/authz/permisos.generated'
+import type { ClaveDeSeccion } from './secciones'
 import { OrigenesTab } from './origenes'
 
 export interface Seccion {
-  clave:     string
+  /** Tipada contra PERMISO_DE_SECCION: una sección sin permiso declarado no compila. */
+  clave:     ClaveDeSeccion
   titulo:    string
   /** Una linea que dice a que pregunta responde la seccion. */
   proposito: string
@@ -150,7 +152,7 @@ export const PARAM_DE_SECCION: Record<string, string> = {
  *  el mismo mapa que el backend tiene en `services/revisiones.py`; las dos
  *  copias tienen que decir lo mismo, y hay un test que las compara contra la
  *  base para que no se separen en silencio. */
-export const SECCION_DE_TAXONOMIA: Record<string, [dominio: string, seccion: string]> = {
+export const SECCION_DE_TAXONOMIA: Record<string, [dominio: string, seccion: ClaveDeSeccion]> = {
   OPERATIONAL_STATE:       ['operations', 'operational-statuses'],
   EQUIPMENT_STATE:         ['operations', 'equipment-statuses'],
   DRIVER_REASON:           ['operations', 'driver-reasons'],

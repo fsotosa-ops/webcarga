@@ -1,4 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+// Permisos simulados: por defecto todos (los tests de edición no cambian);
+// los de solo lectura los restringen (revisión final RBAC, hallazgo 3).
+const permisos = vi.hoisted(() => ({ dados: null as Set<string> | null }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({
+  usePermiso: (p: string) => permisos.dados === null || permisos.dados.has(p),
+}))
 import { render as renderCrudo, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TaxonomyTab } from './estados-tabs'
@@ -20,6 +26,7 @@ vi.mock('@/lib/api/config', () => ({
 }))
 
 beforeEach(() => {
+  permisos.dados = null
   vi.mocked(taxonomiesApi.list).mockReset()
   vi.mocked(taxonomiesApi.create).mockReset()
   vi.mocked(taxonomiesApi.deactivate).mockReset()
@@ -155,3 +162,17 @@ describe('TaxonomyTab — aviso al desactivar un valor en uso', () => {
     expect(await screen.findByText(/Certificación · Condiciones/)).toBeInTheDocument()
   })
 })
+
+describe('solo lectura (revisión final RBAC, hallazgo 3)', () => {
+  it('sin operations.configure el vocabulario se ve pero no se edita', async () => {
+    permisos.dados = new Set(['certification.configure'])
+    vi.mocked(taxonomiesApi.list).mockResolvedValue([
+      { id: 't1', domain: 'OPERATIONAL_STATE', label: 'En ruta', group: null, bg_color: null, text_color: null, active: true, sort_order: 1 },
+    ] as never)
+    render(<TaxonomyTab domain="OPERATIONAL_STATE" title="Estados" hint="x" newLabel="estado" />)
+    expect(await screen.findByDisplayValue('En ruta')).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /Nuevo estado/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Desactivar En ruta/ })).not.toBeInTheDocument()
+  })
+})
+

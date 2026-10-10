@@ -26,12 +26,12 @@ from tests.conftest import usuario
 USER = usuario("admin", "operations_supervisor", "certification_supervisor", "insurance_supervisor", "commercial_supervisor", sub="11111111-1111-1111-1111-111111111111")
 
 
-def cliente(pool):
+def cliente(pool, user=None):
     app = FastAPI()
     for r in (config_router, reviews_router, search_router, taxonomies_router):
         app.include_router(r, prefix="/api/v1")
     app.dependency_overrides[get_pool] = lambda: pool
-    app.dependency_overrides[get_current_user] = lambda: USER
+    app.dependency_overrides[get_current_user] = lambda: user or USER
     return TestClient(app)
 
 
@@ -155,6 +155,55 @@ def test_confirmar_registra_la_revision():
     assert res.status_code == 200
     assert res.json() == {"revisado": True}
     assert "app.config_reviews" in sql_ejecutado(pool)
+
+
+# Revisión final RBAC, hallazgo 3: "Está bien así" exigía settings.manage
+# (Administración + MFA) y lo veía quien edita la sección: un Supervisor sin
+# Administración recibía 403. Confirmar exige lo mismo que editar la sección.
+def test_confirmar_exige_el_permiso_que_edita_la_seccion():
+    sup_ops = usuario("operations_supervisor", aal="aal1")
+    res = cliente(AsyncMock(), sup_ops).post("/api/v1/config/reviews", json={
+        "domain": "operations", "section": "tms-statuses", "element_id": "x"})
+    assert res.status_code == 200
+    res = cliente(AsyncMock(), sup_ops).post("/api/v1/config/reviews", json={
+        "domain": "certification", "section": "conditions", "element_id": "r1"})
+    assert res.status_code == 403
+    assert "Configurar requisitos" in res.json()["detail"]
+
+
+def test_cada_seccion_revisable_declara_el_permiso_que_la_edita():
+    from app.authz import Permission
+    for r in REVISABLES:
+        assert isinstance(r.permiso, Permission), f"{r.dominio}/{r.seccion}"
+
+
+def test_los_umbrales_de_vencimiento_son_de_certificacion():
+    """Son reglas de vencimiento de documentos (spec: certification.configure);
+    estaban en operations.configure."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"doc_type": "LICENCIA", "label": "Licencia", "warning_days": 30, "error_days": 7}
+    cuerpo = {"warning_days": 30}
+    assert cliente(pool, usuario("operations_supervisor")).patch(
+        "/api/v1/config/alert-thresholds/LICENCIA", json=cuerpo).status_code == 403
+    assert cliente(pool, usuario("certification_supervisor")).patch(
+        "/api/v1/config/alert-thresholds/LICENCIA", json=cuerpo).status_code == 200
+
+
+def test_el_permiso_de_cada_seccion_dice_lo_mismo_en_python_y_en_typescript():
+    """La pantalla decide si deja editar con PERMISO_DE_SECCION (secciones.ts);
+    la API, con el permiso de REVISABLES. Si se separan, vuelve el botón que
+    responde 403."""
+    from pathlib import Path
+    import re
+
+    fuente = (
+        Path(__file__).resolve().parents[3] / "frontend" / "app" / "dashboard"
+        / "admin" / "settings" / "secciones.ts"
+    ).read_text(encoding="utf-8")
+    bloque = fuente.split("export const PERMISO_DE_SECCION")[1].split("}")[0]
+    en_typescript = dict(re.findall(r"'([\w-]+)':\s*'([\w.]+)'", bloque))
+    for r in REVISABLES:
+        assert en_typescript.get(r.seccion) == r.permiso.value, f"{r.dominio}/{r.seccion}"
 
 
 def test_confirmar_una_seccion_inventada_es_422():

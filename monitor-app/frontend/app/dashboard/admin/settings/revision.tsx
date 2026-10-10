@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Loader2 } from 'lucide-react'
 import { revisionesApi, type Revision } from '@/lib/api/config'
+import { usePuedeEditarSeccion, type ClaveDeSeccion } from './secciones'
 
 /** El id del chip "Sin revisar", compartido por las listas que lo ofrecen. */
 export const SIN_REVISAR = 'sin-revisar'
@@ -20,8 +21,10 @@ export const SIN_REVISAR = 'sin-revisar'
  *  El mecanismo es común a todas las secciones; lo único propio de cada una es
  *  qué elementos enumera, y eso lo declara el backend. Acá no hay ni un `if`
  *  por dominio: si alguna vez hace falta, el diseño se rompió. */
-export function useRevisiones(dominio: string, seccion: string) {
+export function useRevisiones(dominio: string, seccion: ClaveDeSeccion) {
   const qc = useQueryClient()
+  // Confirmar exige lo mismo que editar la sección (la API también).
+  const puedeConfirmar = usePuedeEditarSeccion(seccion)
   const clave = ['config-revisiones', dominio, seccion]
 
   const q = useQuery({
@@ -46,6 +49,7 @@ export function useRevisiones(dominio: string, seccion: string) {
   }, [q.data])
 
   return {
+    puedeConfirmar,
     /** Para llamar DESPUÉS de guardar. Guardar cuenta como revisar y lo
      *  registra el propio endpoint que guarda, del lado del servidor — pero la
      *  pantalla no se entera sola, y el click-through lo encontró: se guardaba
@@ -171,7 +175,7 @@ export function CeldaDeRevision({
   revisiones: ReturnType<typeof useRevisiones>
 }) {
   const revision = revisiones.revisionDe(id)
-  if (revision === undefined || revision) return <MarcaDeRevision revision={revision} />
+  if (revision === undefined || revision || !revisiones.puedeConfirmar) return <MarcaDeRevision revision={revision} />
   return (
     <button
       type="button"

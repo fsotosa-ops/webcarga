@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from ..auth import get_current_user
-from ..authz import Permission, require
+from ..authz import Permission, exigir, require
 from ..db import get_pool
 from ..services.revisiones import SQL_BUSQUEDA, exigir_seccion, registrar_revision
 
@@ -48,13 +48,15 @@ async def list_reviews(
 async def confirm_review(
     body: ConfirmacionBody,
     pool=Depends(get_pool),
-    usuario=Depends(require(Permission.SETTINGS_MANAGE)),
+    usuario=Depends(require(Permission.REFERENCE_READ)),
 ):
     """"Lo miré y está bien así".
 
     Es el único caso que no deja rastro solo: guardar un cambio ya cuenta como
-    revisar, y lo hace el propio endpoint que guarda."""
-    exigir_seccion(body.domain, body.section)
+    revisar, y lo hace el propio endpoint que guarda. Exige el mismo permiso
+    que editar la sección: depende del cuerpo, por eso va con `exigir`."""
+    seccion = exigir_seccion(body.domain, body.section)
+    exigir(usuario, seccion.permiso)
     await registrar_revision(pool, body.domain, body.section, body.element_id, usuario["sub"])
     return {"revisado": True}
 

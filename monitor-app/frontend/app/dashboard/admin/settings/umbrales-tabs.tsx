@@ -1,6 +1,7 @@
 'use client'
 
 import { CeldaDeRevision, BotonConfirmar, MarcaDeRevision, useRevisiones } from './revision'
+import { usePuedeEditarSeccion } from './secciones'
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, Trash2, Loader2, Check, BellRing } from 'lucide-react'
 import { configApi } from '@/lib/api/config'
@@ -11,6 +12,8 @@ import { INPUT, useConfigList, LoadState, useRowFeedback, SaveRowButton } from '
 
 export function AlertasVencimientoTab() {
   const revisiones = useRevisiones('certification', 'expiry-alerts')
+  // Sin permiso se ve pero no se edita (la API daría 403).
+  const puedeEditar = usePuedeEditarSeccion('expiry-alerts')
   const fetcher = useCallback(() => configApi.getAlertThresholds(), [])
   const { items, setItems, loading, error, reload } = useConfigList<AlertThresholdMeta>(fetcher)
   const [drafts, setDrafts] = useState<Record<string, Partial<AlertThresholdMeta>>>({})
@@ -42,6 +45,7 @@ export function AlertasVencimientoTab() {
       </p>
       <LoadState loading={loading} error={error} onRetry={reload} />
       {!loading && !error && (
+        <fieldset disabled={!puedeEditar} className="min-w-0 border-0 p-0 m-0">
         <table className="w-full text-xs max-w-2xl">
           <thead>
             <tr className="text-[10px] font-bold text-gray-400 uppercase tracking-wide border-b border-border">
@@ -72,8 +76,8 @@ export function AlertasVencimientoTab() {
                     <CeldaDeRevision id={row.doc_type} revisiones={revisiones} />
                   </td>
                   <td className="py-2.5 text-right">
-                    <SaveRowButton dirty={isDirty(row)} saving={fb.saving === row.doc_type}
-                      saved={!!fb.savedAt[row.doc_type]} onClick={() => save(row)} />
+                    {puedeEditar && <SaveRowButton dirty={isDirty(row)} saving={fb.saving === row.doc_type}
+                      saved={!!fb.savedAt[row.doc_type]} onClick={() => save(row)} />}
                     {fb.errors[row.doc_type] && <p className="text-[9px] text-red-500 mt-1">{fb.errors[row.doc_type]}</p>}
                   </td>
                 </tr>
@@ -81,6 +85,7 @@ export function AlertasVencimientoTab() {
             })}
           </tbody>
         </table>
+        </fieldset>
       )}
     </div>
   )
@@ -92,6 +97,7 @@ const EMPTY_RANGE = { cargo_type: '', label: '', min_c: 0, max_c: 5 }
 
 export function RangosTemperaturaTab() {
   const revisiones = useRevisiones('operations', 'temperature-ranges')
+  const puedeEditar = usePuedeEditarSeccion('temperature-ranges')
   const fetcher = useCallback(() => configApi.getTemperatureRanges(), [])
   const { items, setItems, loading, error, reload } = useConfigList<TemperatureRangeMeta>(fetcher)
   const [drafts, setDrafts]       = useState<Record<string, Partial<TemperatureRangeMeta>>>({})
@@ -151,6 +157,7 @@ export function RangosTemperaturaTab() {
       <LoadState loading={loading} error={error} onRetry={reload} />
       {!loading && !error && (
         <>
+          <fieldset disabled={!puedeEditar} className="min-w-0 border-0 p-0 m-0">
           <table className="w-full text-xs max-w-2xl">
             <thead>
               <tr className="text-[10px] font-bold text-gray-400 uppercase tracking-wide border-b border-border">
@@ -186,12 +193,14 @@ export function RangosTemperaturaTab() {
                       <CeldaDeRevision id={row.cargo_type} revisiones={revisiones} />
                     </td>
                     <td className="py-2.5 text-right whitespace-nowrap">
-                      <SaveRowButton dirty={isDirty(row)} saving={fb.saving === row.cargo_type}
-                        saved={!!fb.savedAt[row.cargo_type]} onClick={() => save(row)} />
-                      <button type="button" onClick={() => remove(row)} aria-label={`Eliminar rango de ${row.cargo_type}`}
-                        className="ml-2 text-gray-300 hover:text-red-400 transition-colors align-middle">
-                        <Trash2 size={13} />
-                      </button>
+                      {puedeEditar && <>
+                        <SaveRowButton dirty={isDirty(row)} saving={fb.saving === row.cargo_type}
+                          saved={!!fb.savedAt[row.cargo_type]} onClick={() => save(row)} />
+                        <button type="button" onClick={() => remove(row)} aria-label={`Eliminar rango de ${row.cargo_type}`}
+                          className="ml-2 text-gray-300 hover:text-red-400 transition-colors align-middle">
+                          <Trash2 size={13} />
+                        </button>
+                      </>}
                       {fb.errors[row.cargo_type] && <p className="text-[9px] text-red-500 mt-1">{fb.errors[row.cargo_type]}</p>}
                     </td>
                   </tr>
@@ -202,8 +211,9 @@ export function RangosTemperaturaTab() {
               )}
             </tbody>
           </table>
+          </fieldset>
 
-          {nuevo ? (
+          {!puedeEditar ? null : nuevo ? (
             <div className="border border-accent/30 bg-accent/[0.03] rounded-xl p-3 space-y-2.5 max-w-2xl">
               <div className="flex items-center gap-2 flex-wrap">
                 <input autoFocus value={nuevo.cargo_type}
@@ -268,6 +278,7 @@ export function AlertasMonitorTab() {
   // Los umbrales son UN formulario, no una lista: su elemento es el
   // formulario entero, y revisarlo es decir "estos siete números están bien".
   const revisiones = useRevisiones('operations', 'alert-thresholds')
+  const puedeEditar = usePuedeEditarSeccion('alert-thresholds')
   const revision = revisiones.revisionDe('reglas')
   const [rules, setRules]     = useState<MonitorAlertRules | null>(null)
   const [draft, setDraft]     = useState<Partial<MonitorAlertRules>>({})
@@ -316,7 +327,7 @@ export function AlertasMonitorTab() {
       <LoadState loading={loading} error={error} onRetry={load} />
       {!loading && !error && <MarcaDeRevision revision={revision} />}
       {!loading && !error && merged && (
-        <div className={`border rounded-xl divide-y divide-border/50 ${dirty ? 'border-accent/30 bg-accent/[0.02]' : 'border-border'}`}>
+        <fieldset disabled={!puedeEditar} className={`min-w-0 m-0 p-0 border rounded-xl divide-y divide-border/50 ${dirty ? 'border-accent/30 bg-accent/[0.02]' : 'border-border'}`}>
           {RULE_FIELDS.map(f => (
             <div key={f.key} className="flex items-center gap-4 px-4 py-3">
               <div className="flex-1 min-w-0">
@@ -339,10 +350,10 @@ export function AlertasMonitorTab() {
               </div>
             </div>
           ))}
-        </div>
+        </fieldset>
       )}
       {saveErr && <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{saveErr}</p>}
-      {!loading && !error && (
+      {!loading && !error && puedeEditar && (
         <div className="flex items-center gap-3">
           <button type="button" onClick={save} disabled={!dirty || saving}
             className="flex items-center gap-1.5 text-xs font-semibold text-white bg-accent hover:bg-accent/90 px-4 py-2 rounded-lg disabled:opacity-40 transition-colors">

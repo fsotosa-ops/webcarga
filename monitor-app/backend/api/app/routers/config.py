@@ -231,7 +231,8 @@ async def patch_alert_threshold(
     doc_type: str,
     body: AlertThresholdPatch,
     pool=Depends(get_pool),
-    usuario=Depends(require(Permission.OPERATIONS_CONFIGURE)),
+    # Reglas de vencimiento de documentos: Certificación (spec RBAC §4).
+    usuario=Depends(require(Permission.CERTIFICATION_CONFIGURE)),
 ):
     existing = await pool.fetchrow(
         "SELECT doc_type FROM app.alert_thresholds WHERE doc_type = $1", doc_type
