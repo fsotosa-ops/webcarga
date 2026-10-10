@@ -206,3 +206,14 @@ export function vigenciaDeLaFila(fila: {
   const texto = relativo ?? (vencido ? 'vencido' : null)
   return mes && texto ? `${mes} · ${texto}` : texto
 }
+
+/** Estados en que el documento ya fue aprobado. Correr su fecha es extender su
+ *  vigencia sin que nadie revise: lo hace quien revisa (documents.review).
+ *  Misma lista que ESTADOS_APROBADOS en el backend (schemas/compliance.py). */
+const ESTADOS_APROBADOS: ReadonlySet<string> = new Set(['APPROVED', 'APPROVED_MANUAL'])
+
+export function puedeCorregirVencimiento(
+  status: string, p: { puedeCargar: boolean; puedeRevisar: boolean },
+): boolean {
+  return p.puedeCargar && (!ESTADOS_APROBADOS.has(status) || p.puedeRevisar)
+}

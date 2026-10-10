@@ -4,7 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TransporterDocumentsPanel } from './TransporterDocumentsPanel'
 import { complianceApi } from '@/lib/api/compliance'
 
-vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
+const permisos = vi.hoisted(() => ({ revisar: true }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({
+  usePermiso: (p: string) => p !== 'documents.review' || permisos.revisar,
+}))
 import type { ComplianceRecord } from '@/lib/types'
 
 vi.mock('@/lib/api/compliance', () => ({
@@ -29,6 +32,7 @@ const RECORDS: ComplianceRecord[] = [
 ]
 
 beforeEach(() => {
+  permisos.revisar = true
   vi.mocked(complianceApi.listFiles).mockReset().mockResolvedValue([])
 })
 
@@ -144,3 +148,18 @@ describe('TransporterDocumentsPanel — corregir un documento mal cargado', () =
     expect(screen.queryByRole('button', { name: /reasignar/i })).not.toBeInTheDocument()
   })
 })
+
+// Revisión final RBAC, hallazgo 4: sobre un documento aprobado, la fecha la
+// corrige quien revisa; sobre uno rechazado, quien carga.
+describe('vencimiento según el estado', () => {
+  it('quien solo carga no corrige la fecha de un aprobado, sí la de uno rechazado', () => {
+    permisos.revisar = false
+    render(<TransporterDocumentsPanel records={RECORDS} />)
+    expect(screen.getAllByRole('button', { name: /(editar|agregar) vencimiento/i })).toHaveLength(1)
+  })
+  it('quien revisa corrige ambas', () => {
+    render(<TransporterDocumentsPanel records={RECORDS} />)
+    expect(screen.getAllByRole('button', { name: /(editar|agregar) vencimiento/i })).toHaveLength(2)
+  })
+})
+

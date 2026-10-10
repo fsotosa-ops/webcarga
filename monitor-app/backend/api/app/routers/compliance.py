@@ -36,7 +36,7 @@ FUNNEL_ACTIVE_STATUSES = (ACTIVE_OPERATIONAL_STATUS, "ONBOARDING")
 from ..schemas.compliance import (
     SolicitudBody,
     ReassignBody,
-    COMPLIANCE_RECORD_FIELD_PERMISSIONS,
+    COMPLIANCE_RECORD_FIELD_PERMISSIONS, ESTADOS_APROBADOS,
     ComplianceRecordPatchBody,
     ComplianceSummaryResponse,
     PendingComplianceListResponse,
@@ -1510,6 +1510,11 @@ async def patch_compliance_record(
             )
             if not current:
                 raise HTTPException(404, "Registro de cumplimiento no encontrado")
+            if (body.expiration_date is not None and current["status"] in ESTADOS_APROBADOS
+                    and Permission.DOCUMENTS_REVIEW.value not in user["permissions"]):
+                raise HTTPException(
+                    403, "Cambiar la fecha de un documento aprobado extiende su vigencia: "
+                         "lo hace quien revisa documentos.")
 
             touched = [f for f in ("status", "expiration_date") if getattr(body, f) is not None]
             if not touched:

@@ -28,9 +28,11 @@ vi.mock('@/lib/api/carriers', () => ({
 // empresa (directory.delete). Por defecto NO es admin: el default de un mock
 // de permisos tiene que ser el permiso más chico, o un test que se olvide de
 // declararlo pasa por la puerta más ancha sin decirlo.
-const permisos = vi.hoisted(() => ({ editor: true, admin: false }))
+// `revisar` (documents.review) se separa solo para los tests que lo apagan.
+const permisos = vi.hoisted(() => ({ editor: true, admin: false, revisar: true }))
 vi.mock('@/lib/authz/PermisosProvider', () => ({
-  usePermiso: (p: string) => (p === 'directory.delete' ? permisos.admin : permisos.editor),
+  usePermiso: (p: string) => (p === 'directory.delete' ? permisos.admin
+    : p === 'documents.review' ? permisos.editor && permisos.revisar : permisos.editor),
 }))
 
 import { useParams } from 'next/navigation'
@@ -142,6 +144,7 @@ beforeEach(() => {
   // los que corren después.
   permisos.editor = true
   permisos.admin = false
+  permisos.revisar = true
 })
 
 describe('FichaEmpresaPage', () => {
@@ -859,6 +862,28 @@ describe('FichaEmpresaPage', () => {
     expect(await screen.findByText('Licencia de Conducir')).toBeInTheDocument()
     expect(screen.getByText(/2026|04-09/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /editar vencimiento/i })).not.toBeInTheDocument()
+  })
+
+  // Revisión final RBAC, hallazgo 4: quien solo carga (Operador de
+  // Certificación) no corre la fecha de un documento ya aprobado.
+  it('quien solo carga no corrige la fecha de un documento aprobado', async () => {
+    permisos.revisar = false
+    montar([fila({
+      id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA', tiene_archivo: true,
+      document_name: 'Licencia de Conducir',
+      expiration_date: '2026-09-04', expiration_policy: 'REQUIRED',
+    })])
+    expect(await screen.findByText('Licencia de Conducir')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /editar vencimiento/i })).not.toBeInTheDocument()
+  })
+
+  it('quien revisa sí la corrige (control del anterior)', async () => {
+    montar([fila({
+      id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA', tiene_archivo: true,
+      document_name: 'Licencia de Conducir',
+      expiration_date: '2026-09-04', expiration_policy: 'REQUIRED',
+    })])
+    expect(await screen.findByRole('button', { name: /editar vencimiento/i })).toBeInTheDocument()
   })
 
   it('un viewer no ve el menú', async () => {

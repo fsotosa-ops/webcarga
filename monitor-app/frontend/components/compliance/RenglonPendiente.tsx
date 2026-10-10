@@ -11,6 +11,9 @@ import { PedirDatoDelDocumento } from './PedirDatoDelDocumento'
 interface Props {
   fila:        PendingComplianceRow
   puedeEditar: boolean
+  /** Corregir el vencimiento. Por defecto, lo mismo que `puedeEditar`; sobre
+   *  un documento ya aprobado exige además revisar (revisión final RBAC). */
+  puedeCorregirFecha?: boolean
   /** Sube el documento con lo que su tipo pide: vencimiento, emisión o
    *  período (HU-C1, entrega 2b). */
   onSubir:     (fila: PendingComplianceRow, archivo: File, datos?: DatosDelDocumento) => Promise<void>
@@ -70,7 +73,7 @@ function politicaDe(fila: PendingComplianceRow): PoliticaVencimiento {
  *  subía primero y clasificaba después, así que cada rechazo dejaba el
  *  archivo huérfano en la bandeja. */
 export function RenglonPendiente({
-  fila, puedeEditar, onSubir, onDeshacer, onVer, viendo, avisoVer, onFechaCorregida, onQuitarSolicitud,
+  fila, puedeEditar, puedeCorregirFecha = puedeEditar, onSubir, onDeshacer, onVer, viendo, avisoVer, onFechaCorregida, onQuitarSolicitud,
 }: Props) {
   const inputId = `archivo-${fila.id}`
   const fechaId = `vence-${fila.id}`
@@ -123,7 +126,7 @@ export function RenglonPendiente({
               recordId={fila.id}
               value={fila.expiration_date ?? null}
               required={fila.expiration_policy === 'REQUIRED'}
-              canEdit={puedeEditar}
+              canEdit={puedeCorregirFecha}
               onSaved={onFechaCorregida}
             />
           </span>

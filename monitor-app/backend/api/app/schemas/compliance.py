@@ -39,6 +39,11 @@ COMPLIANCE_RECORD_FIELD_PERMISSIONS: dict[str, Permission] = {
     "expiration_date": Permission.DOCUMENTS_UPLOAD,
 }
 
+# Sobre un documento ya aprobado, correr la fecha es extender su vigencia sin
+# que nadie revise: ahí la fecha deja de ser carga y exige documents.review
+# (revisión final RBAC, hallazgo 4).
+ESTADOS_APROBADOS: frozenset[str] = frozenset({"APPROVED", "APPROVED_MANUAL"})
+
 
 class ReassignBody(BaseModel):
     """Corrige un documento cargado en el lugar equivocado (HU-03).

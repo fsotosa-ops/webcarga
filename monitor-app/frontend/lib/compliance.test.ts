@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { COMPLIANCE_STATUS_CONFIG, evidenciaDeDocumento, expiryRelative, updatedRelative } from './compliance'
+import { COMPLIANCE_STATUS_CONFIG, evidenciaDeDocumento, expiryRelative, puedeCorregirVencimiento, updatedRelative } from './compliance'
 
 describe('expiryRelative', () => {
   it('returns null when there is no expiration date', () => {
@@ -176,5 +176,23 @@ describe('vigenciaDeLaFila', () => {
 
   it('lo que falta no dice nada: el renglón ya pide el archivo', () => {
     expect(vigenciaDeLaFila({ ...base, urgencia: 'FALTA' }, HOY)).toBeNull()
+  })
+})
+
+// Revisión final RBAC, hallazgo 4. Misma regla que la API
+// (ESTADOS_APROBADOS en schemas/compliance.py).
+describe('puedeCorregirVencimiento', () => {
+  const opera = { puedeCargar: true, puedeRevisar: false }
+  it('quien carga corrige la fecha de un documento por revisar', () => {
+    expect(puedeCorregirVencimiento('PENDING_REVIEW', opera)).toBe(true)
+    expect(puedeCorregirVencimiento('MISSING', opera)).toBe(true)
+  })
+  it('sobre uno aprobado, correrla es extender su vigencia: solo quien revisa', () => {
+    expect(puedeCorregirVencimiento('APPROVED', opera)).toBe(false)
+    expect(puedeCorregirVencimiento('APPROVED_MANUAL', opera)).toBe(false)
+    expect(puedeCorregirVencimiento('APPROVED', { puedeCargar: true, puedeRevisar: true })).toBe(true)
+  })
+  it('sin poder cargar, nunca', () => {
+    expect(puedeCorregirVencimiento('PENDING_REVIEW', { puedeCargar: false, puedeRevisar: true })).toBe(false)
   })
 })

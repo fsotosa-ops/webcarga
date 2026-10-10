@@ -10,7 +10,7 @@ import { tripsApi } from '@/lib/api/trips'
 import { carriersApi } from '@/lib/api/carriers'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
-import { camposQuePide, type DatosDelDocumento } from '@/lib/compliance'
+import { camposQuePide, puedeCorregirVencimiento, type DatosDelDocumento } from '@/lib/compliance'
 import { SolicitarDocumento } from '@/components/compliance/SolicitarDocumento'
 import { AccionesDeSujeto } from '@/components/compliance/AccionesDeSujeto'
 import { AvisoDeFila } from '@/components/compliance/AvisoDeFila'
@@ -427,7 +427,7 @@ function TarjetaDeSujeto({
               viendo={viendoId === f.id && previewFetching}
               avisoVer={viendoId === f.id ? avisoVer : null}
               onVer={f.tiene_archivo ? () => onVer(f) : undefined}
-              puedeEditar={canEdit}
+              puedeEditar={puedeCorregirVencimiento(f.status, { puedeCargar: canEdit, puedeRevisar })}
               onFechaCorregida={onFechaCorregida}
             />
           )
@@ -442,6 +442,7 @@ function TarjetaDeSujeto({
               key={f.id}
               fila={f}
               puedeEditar={canEdit}
+              puedeCorregirFecha={puedeCorregirVencimiento(f.status, { puedeCargar: canEdit, puedeRevisar })}
               onSubir={subir}
               onVer={f.tiene_archivo ? () => onVer(f) : undefined}
               onFechaCorregida={camposQuePide(f.expiration_policy ?? 'OPTIONAL').fecha !== 'no'

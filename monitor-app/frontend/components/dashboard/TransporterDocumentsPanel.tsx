@@ -6,7 +6,7 @@ import { complianceApi } from '@/lib/api/compliance'
 import type { ComplianceRecord, DocumentVersion } from '@/lib/types'
 import { ComplianceBadge } from './ComplianceBadge'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
-import { complianceAlertStatus, formatExpiry } from '@/lib/compliance'
+import { complianceAlertStatus, formatExpiry, puedeCorregirVencimiento } from '@/lib/compliance'
 import { ReassignDocument } from '@/components/compliance/ReassignDocument'
 import { ExpirationDateCell } from './ExpirationDateCell'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
@@ -22,6 +22,10 @@ function DocumentRow({ record, carrierId, onChanged }: {
   record: ComplianceRecord; carrierId?: string; onChanged?: () => void
 }) {
   const canEdit = usePermiso('documents.upload')
+  const puedeRevisar = usePermiso('documents.review')
+  // Sobre un documento aprobado, correr la fecha extiende su vigencia: la
+  // corrige quien revisa (misma regla que la API).
+  const puedeCorregirFecha = puedeCorregirVencimiento(record.status, { puedeCargar: canEdit, puedeRevisar })
   const [previewOpen, setPreviewOpen] = useState(false)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [versions, setVersions] = useState<DocumentVersion[] | null>(null)
@@ -66,7 +70,7 @@ function DocumentRow({ record, carrierId, onChanged }: {
             recordId={record.id}
             value={record.expiration_date ?? null}
             required={false}
-            canEdit={canEdit}
+            canEdit={puedeCorregirFecha}
             onSaved={() => onChanged?.()}
           />
           {record.expiration_date && <ComplianceBadge status={alert} compact />}
