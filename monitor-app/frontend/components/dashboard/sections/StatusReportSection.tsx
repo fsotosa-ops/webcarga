@@ -324,7 +324,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
           )}
 
           {tab === 'vueltas' && (
-            <div className="bg-white rounded-xl border border-border overflow-hidden">
+            <div className="bg-white rounded-xl border border-border overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
@@ -559,7 +559,7 @@ function ZoneTable({ title, rows, showCarrier, motivosSinCarga = [] }: {
   return (
     <div>
       <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">{title}</p>
-      <div className="bg-white rounded-xl border border-border overflow-hidden">
+      <div className="bg-white rounded-xl border border-border overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
