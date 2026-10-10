@@ -773,3 +773,12 @@ describe('TripDetailView — focusNotes (badge de bitácora, 2026-07-28)', () =>
     expect(scrollIntoViewMock).not.toHaveBeenCalled()
   })
 })
+
+describe('TripDetailView — anulación', () => {
+  it('un viaje anulado lo dice, con quién y el motivo', () => {
+    renderDetailView({ ...baseTrip, voided_at: '2026-10-10T20:00:00Z', voided_by_name: 'Ana Pérez', void_reason: 'Duplicado' })
+    expect(screen.getByText('Anulado')).toBeInTheDocument()
+    expect(screen.getByText(/duplicado/i)).toBeInTheDocument()
+    expect(screen.getByText(/ana pérez/i)).toBeInTheDocument()
+  })
+})

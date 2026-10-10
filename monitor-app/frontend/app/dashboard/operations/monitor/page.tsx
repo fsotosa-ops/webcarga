@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, X, ClipboardCheck, Truck } from 'lucide-react'
+import { Search, X, ClipboardCheck, Truck, Ban } from 'lucide-react'
 import { filterGroupsApi, type FilterGroup } from '@/lib/api/filterGroups'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { tripsApi, type TripListResponse } from '@/lib/api/trips'
@@ -29,7 +29,7 @@ import {
 import { usePinnedAlertSignals } from '@/hooks/usePinnedAlertSignals'
 import { AlertsPopover } from '@/components/dashboard/AlertsPopover'
 import { AsignarConductorPopover } from '@/components/dashboard/AsignarConductorPopover'
-import { useEliminarViajes } from '@/hooks/useEliminarViajes'
+import { useAnularViajes } from '@/hooks/useAnularViajes'
 import { BarraDeSeleccion } from '@/components/ui/BarraDeSeleccion'
 import { cuantos } from '@/lib/utils/cuantos'
 import { driversApi } from '@/lib/api/drivers'
@@ -240,9 +240,9 @@ export default function DiarioPage() {
     return result
   }, [trips, f.tab, f.activeSignals, f.fOperationType, tripsMeta?.temperature_ranges, alertRules, soloSinIdentificar])
 
-  // Eliminar viajes manuales, uno o varios (23/09). La selección vive sobre
-  // lo que se ve: un viaje que sale de la vista se desmarca solo.
-  const eliminacion = useEliminarViajes(visibleTrips)
+  // Anular viajes manuales con motivo, uno o varios (spec 2026-10-10). La
+  // selección vive sobre lo que se ve: un viaje que sale de la vista se desmarca solo.
+  const anulacion = useAnularViajes(visibleTrips)
 
   // PERSONAS, no viajes. 27 personas explican 208 viajes: contar viajes
   // exagera el trabajo por 7,7 y hace que la tarea parezca infinita.
@@ -615,32 +615,34 @@ export default function DiarioPage() {
                 />
               ) : (
                 <>
-                {/* Sólo si hay algo que esta persona pueda eliminar en la vista:
-                    los viajes manuales que creó (o todos, si es admin/owner). */}
-                {eliminacion.hayEliminables && (
+                {/* Sólo si hay algo que esta persona pueda anular en la vista:
+                    los viajes manuales que creó (o todos, con trips.void_any). */}
+                {anulacion.hayAnulables && (
                   <div className="mb-2 rounded-lg overflow-hidden border border-border bg-white">
                     <BarraDeSeleccion
-                      seleccionados={eliminacion.seleccion.ids.size}
-                      ayuda="marca los viajes manuales que quieras eliminar"
-                      onLimpiar={eliminacion.limpiar}
+                      seleccionados={anulacion.seleccion.ids.size}
+                      ayuda="marca los viajes manuales que quieras anular"
+                      onLimpiar={anulacion.limpiar}
                       destructiva={{
-                        etiqueta:     `Eliminar ${cuantos(eliminacion.seleccion.ids.size, 'viaje')}`,
-                        advertencia:  'Se eliminan definitivamente, con sus paradas y notas',
-                        confirmacion: `Sí, eliminar ${eliminacion.seleccion.ids.size}`,
-                        onConfirmar:  () => { void eliminacion.eliminarSeleccion() },
-                        ocupado:      eliminacion.ocupado,
+                        etiqueta:     `Anular ${cuantos(anulacion.seleccion.ids.size, 'viaje')}`,
+                        advertencia:  'Quedan anulados, con el motivo; no se borran',
+                        pideMotivo:   'Motivo',
+                        icono:        Ban,
+                        confirmacion: `Sí, anular ${anulacion.seleccion.ids.size}`,
+                        onConfirmar:  motivo => { void anulacion.anularSeleccion(motivo) },
+                        ocupado:      anulacion.ocupado,
                       }}
                     />
-                    {eliminacion.error && (
+                    {anulacion.error && (
                       <p role="alert" className="px-3 py-2 text-[11px] text-status-incidente bg-status-incidente/5 border-t border-status-incidente/20">
-                        {eliminacion.error}
+                        {anulacion.error}
                       </p>
                     )}
                   </div>
                 )}
                 <TripTable
                   trips={visibleTrips}
-                  seleccion={eliminacion.seleccion}
+                  seleccion={anulacion.seleccion}
                   selectedId={openTripId}
                   onSelect={trip => {
                     queryClient.setQueryData(['trip', trip.id], trip)

@@ -4,13 +4,14 @@ import { tripsApi } from '@/lib/api/trips'
 import { ApiError } from '@/lib/api/client'
 import type { Trip } from '@/lib/types'
 
-/** Tras eliminar, lo que puede haber cambiado: el listado, y el cierre de un
- *  día abierto (un viaje menos cuenta distinto). */
-export const CLAVES_AFECTADAS = [['trips'], ['cierre-viajes'], ['daily-closure'], ['equipment-closures']]
+/** Tras anular o revertir, lo que puede haber cambiado: el listado, el detalle
+ *  (la insignia "Anulado") y el cierre del día (un viaje menos cuenta distinto, y
+ *  en un día firmado aparece como ajuste). */
+export const CLAVES_AFECTADAS = [['trips'], ['trip'], ['cierre-viajes'], ['daily-closure'], ['equipment-closures']]
 
 /** El motivo por viaje, cuando el backend rechaza el lote entero. */
 export function mensajeDeRechazo(e: unknown): string {
-  if (!(e instanceof Error)) return 'No se pudo eliminar'
+  if (!(e instanceof Error)) return 'No se pudo anular'
   const errores = e instanceof ApiError
     ? (e.detail as { errors?: { error: string }[] } | undefined)?.errors
     : undefined
@@ -19,27 +20,27 @@ export function mensajeDeRechazo(e: unknown): string {
   return `${e.message}: ${motivos.join(' · ')}`
 }
 
-/** Selección y eliminación de viajes manuales del Monitor.
+/** Selección y anulación con motivo de viajes manuales del Monitor.
  *
- *  Sólo se pueden marcar viajes con `can_delete` (la regla la decide el
+ *  Sólo se pueden marcar viajes con `can_void` (la regla la decide el
  *  backend). Si un viaje marcado deja de estar a la vista —cambió el filtro o
- *  la página— se desmarca: eliminar algo que ya no se ve es justo el error
+ *  la página— se desmarca: anular algo que ya no se ve es justo el error
  *  que la barra existe para evitar. */
-export function useEliminarViajes(visibles: Trip[]) {
+export function useAnularViajes(visibles: Trip[]) {
   const queryClient = useQueryClient()
   const [ids, setIds] = useState<Set<string>>(new Set())
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const eliminables = useMemo(() => visibles.filter(t => t.can_delete).map(t => t.id), [visibles])
+  const anulables = useMemo(() => visibles.filter(t => t.can_void).map(t => t.id), [visibles])
 
   useEffect(() => {
-    const vigentes = new Set(eliminables)
+    const vigentes = new Set(anulables)
     setIds(prev => {
       const quedan = [...prev].filter(id => vigentes.has(id))
       return quedan.length === prev.size ? prev : new Set(quedan)
     })
-  }, [eliminables])
+  }, [anulables])
 
   function onToggle(id: string) {
     setIds(prev => {
@@ -51,14 +52,14 @@ export function useEliminarViajes(visibles: Trip[]) {
   }
 
   function onToggleAll() {
-    setIds(prev => (eliminables.every(id => prev.has(id)) ? new Set() : new Set(eliminables)))
+    setIds(prev => (anulables.every(id => prev.has(id)) ? new Set() : new Set(anulables)))
   }
 
-  async function eliminar(tripIds: string[]): Promise<boolean> {
+  async function anular(tripIds: string[], motivo: string): Promise<boolean> {
     setOcupado(true)
     setError(null)
     try {
-      await tripsApi.bulkRemove(tripIds)
+      await tripsApi.voidTrips(tripIds, motivo)
       setIds(prev => new Set([...prev].filter(id => !tripIds.includes(id))))
       await Promise.all(CLAVES_AFECTADAS.map(queryKey => queryClient.invalidateQueries({ queryKey })))
       return true
@@ -72,10 +73,10 @@ export function useEliminarViajes(visibles: Trip[]) {
 
   return {
     seleccion: { ids, onToggle, onToggleAll },
-    hayEliminables: eliminables.length > 0,
+    hayAnulables: anulables.length > 0,
     limpiar: () => setIds(new Set()),
-    eliminarSeleccion: () => eliminar([...ids]),
-    eliminar,
+    anularSeleccion: (motivo: string) => anular([...ids], motivo),
+    anular,
     ocupado,
     error,
     limpiarError: () => setError(null),

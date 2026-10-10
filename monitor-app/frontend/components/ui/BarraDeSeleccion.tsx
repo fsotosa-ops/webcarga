@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, type ReactNode } from 'react'
-import { Trash2, X } from 'lucide-react'
+import { Trash2, X, type LucideIcon } from 'lucide-react'
 
 interface AccionDestructiva {
   /** Texto del botón en reposo: "Descartar los 3", "Eliminar 1 viaje". */
@@ -10,7 +10,13 @@ interface AccionDestructiva {
   advertencia:  string
   /** Texto del botón que confirma: "Sí, descartar 3". */
   confirmacion: string
-  onConfirmar:  () => void
+  /** Si la acción exige un motivo: la etiqueta del campo. El botón de confirmar
+   *  queda deshabilitado mientras esté vacío, y `onConfirmar` recibe el texto. */
+  pideMotivo?:  string
+  onConfirmar:  (motivo: string) => void
+  /** Ícono del botón en reposo. Por defecto, la papelera (descartar, borrar);
+   *  anular no borra, y por eso pasa otro. */
+  icono?:       LucideIcon
   /** Mientras la acción corre: deshabilita y cambia el texto. */
   ocupado?:     boolean
 }
@@ -39,6 +45,8 @@ interface Props {
  *  prop, no un componente hermano. */
 export function BarraDeSeleccion({ seleccionados, ayuda, onLimpiar, destructiva, children }: Props) {
   const [confirmando, setConfirmando] = useState(false)
+  const [motivo, setMotivo] = useState('')
+  const IconoDestructiva = destructiva?.icono ?? Trash2
 
   if (!seleccionados) {
     return (
@@ -62,9 +70,21 @@ export function BarraDeSeleccion({ seleccionados, ayuda, onLimpiar, destructiva,
       {destructiva && (confirmando ? (
         <>
           <span className="text-[11px] text-amber-200">{destructiva.advertencia}</span>
+          {destructiva.pideMotivo && (
+            <label className="flex items-center gap-1.5 text-[11px] text-white/80">
+              {destructiva.pideMotivo}
+              <input
+                value={motivo}
+                onChange={e => setMotivo(e.target.value)}
+                className="rounded bg-white/10 px-2 py-1 text-[11px] text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/40"
+                autoFocus
+              />
+            </label>
+          )}
           <button
             type="button"
-            onClick={() => { setConfirmando(false); destructiva.onConfirmar() }}
+            disabled={destructiva.ocupado || (!!destructiva.pideMotivo && !motivo.trim())}
+            onClick={() => { setConfirmando(false); destructiva.onConfirmar(motivo.trim()); setMotivo('') }}
             className="text-[11px] font-bold bg-red-500 hover:bg-red-400 text-white rounded px-2 py-1 transition-colors focus:outline-none focus:ring-2 focus:ring-red-300"
           >
             {destructiva.confirmacion}
@@ -84,7 +104,7 @@ export function BarraDeSeleccion({ seleccionados, ayuda, onLimpiar, destructiva,
           onClick={() => setConfirmando(true)}
           className="flex items-center gap-1.5 text-[11px] font-semibold text-white/80 hover:text-white transition-colors cursor-pointer disabled:cursor-wait disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-white/40 rounded px-1"
         >
-          <Trash2 size={12} /> {destructiva.etiqueta}
+          <IconoDestructiva size={12} /> {destructiva.etiqueta}
         </button>
       ))}
 

@@ -142,12 +142,15 @@ export const tripsApi = {
       `/api/v1/trips/conteo-activos?entity_type=${entityType}&entity_id=${encodeURIComponent(entityId)}`,
     ),
 
-  /** Sólo viajes manuales; todo o nada. Ver services/eliminar_viajes.py. */
-  remove: (tripId: string) =>
-    apiFetch<{ ok: boolean; deleted: number }>(`/api/v1/trips/${tripId}`, { method: 'DELETE' }),
+  /** Sólo viajes manuales; todo o nada. Ver services/anular_viajes.py. */
+  voidTrips: (tripIds: string[], reason: string) =>
+    apiFetch<{ ok: boolean; voided: number }>(`/api/v1/trips/void`, {
+      method: 'POST',
+      body: JSON.stringify({ trip_ids: tripIds, reason }),
+    }),
 
-  bulkRemove: (tripIds: string[]) =>
-    apiFetch<{ ok: boolean; deleted: number }>(`/api/v1/trips/bulk-delete`, {
+  revertVoid: (tripIds: string[]) =>
+    apiFetch<{ ok: boolean; reverted: number }>(`/api/v1/trips/void/revert`, {
       method: 'POST',
       body: JSON.stringify({ trip_ids: tripIds }),
     }),

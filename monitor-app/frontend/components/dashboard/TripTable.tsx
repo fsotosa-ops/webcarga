@@ -196,9 +196,9 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
     }
   }, [trips])
 
-  const eliminables = trips.filter(t => t.can_delete)
-  const sel = seleccion && eliminables.length > 0 ? seleccion : null
-  const todosMarcados = !!sel && eliminables.every(t => sel.ids.has(t.id))
+  const anulables = trips.filter(t => t.can_void)
+  const sel = seleccion && anulables.length > 0 ? seleccion : null
+  const todosMarcados = !!sel && anulables.every(t => sel.ids.has(t.id))
 
   if (trips.length === 0) {
     return (
@@ -394,10 +394,10 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                             type="checkbox"
                             aria-label={`Seleccionar viaje ${trip.source_system_trip_id ?? trip.client_name ?? trip.id}`}
                             checked={sel.ids.has(trip.id)}
-                            disabled={!trip.can_delete}
-                            title={trip.can_delete ? undefined : (trip.delete_blocked_reason ?? undefined)}
+                            disabled={!trip.can_void}
+                            title={trip.can_void ? undefined : (trip.void_blocked_reason ?? undefined)}
                             onChange={() => {}}
-                            onClick={e => { e.stopPropagation(); if (trip.can_delete) sel.onToggle(trip.id) }}
+                            onClick={e => { e.stopPropagation(); if (trip.can_void) sel.onToggle(trip.id) }}
                             className="mt-0.5 shrink-0 cursor-pointer accent-accent disabled:cursor-not-allowed disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-accent/40 rounded-sm"
                           />
                         )}

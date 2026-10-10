@@ -417,12 +417,18 @@ export type TripStop = {
 export type Trip = {
   id:                     string
   source_system:          string
-  /** Si quien mira puede eliminar este viaje: manual, creado por él o por
-   *  admin/owner, y fuera de un día firmado. Lo decide el backend
-   *  (services/eliminar_viajes.py), la misma regla que aplica el borrado. */
-  can_delete?:            boolean
-  /** Por qué no, en español, cuando `can_delete` es false. */
-  delete_blocked_reason?: string | null
+  /** Si quien mira puede anular este viaje: manual, no anulado, y según su día
+   *  (abierto: creador o trips.void_any; firmado: closures.sign). Lo decide el
+   *  backend (services/anular_viajes.py), la misma regla que aplica la anulación. */
+  can_void?:            boolean
+  /** Por qué no, en español, cuando `can_void` es false. */
+  void_blocked_reason?: string | null
+  /** Si quien mira puede deshacer la anulación (misma regla). */
+  can_revert_void?:     boolean
+  /** Anulación con motivo (spec 2026-10-10): null si el viaje está vigente. */
+  voided_at?:           string | null
+  voided_by_name?:      string | null
+  void_reason?:         string | null
   /** Solo viajes manuales: TMS de origen declarado al registrarlo (null si no aplica) */
   origin_tms?:            string | null
   client_name:            string | null

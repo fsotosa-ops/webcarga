@@ -419,20 +419,20 @@ describe('el telefono vive bajo el conductor, no en su propia columna', () => {
   })
 })
 
-describe('TripTable — selección para eliminar', () => {
+describe('TripTable — selección para anular', () => {
   const base = { selectedId: null, onSelect: vi.fn(), onSelectFocusNotes: vi.fn(), meta: null, sortKey: null, sortDir: 'asc' as const, onSort: vi.fn() }
 
   it('sin viajes eliminables en la vista no ofrece casillas', () => {
     const seleccion = { ids: new Set<string>(), onToggle: vi.fn(), onToggleAll: vi.fn() }
-    render(<TripTable {...base} trips={[makeTrip('t1', { can_delete: false })]} seleccion={seleccion} />)
+    render(<TripTable {...base} trips={[makeTrip('t1', { can_void: false })]} seleccion={seleccion} />)
     expect(screen.queryByRole('checkbox')).toBeNull()
   })
 
-  it('la casilla de un viaje no eliminable está deshabilitada y dice por qué', () => {
+  it('la casilla de un viaje no anulable está deshabilitada y dice por qué', () => {
     const seleccion = { ids: new Set<string>(), onToggle: vi.fn(), onToggleAll: vi.fn() }
     render(<TripTable {...base} seleccion={seleccion} trips={[
-      makeTrip('t1', { source_system: 'manual', can_delete: true, source_system_trip_id: 'M-1' }),
-      makeTrip('t2', { can_delete: false, delete_blocked_reason: 'Sólo se pueden eliminar viajes creados manualmente en la app', source_system_trip_id: 'Q-2' }),
+      makeTrip('t1', { source_system: 'manual', can_void: true, source_system_trip_id: 'M-1' }),
+      makeTrip('t2', { can_void: false, void_blocked_reason: 'Sólo se pueden anular viajes creados manualmente en la app', source_system_trip_id: 'Q-2' }),
     ]} />)
 
     const bloqueada = screen.getByRole('checkbox', { name: /seleccionar viaje Q-2/i })
@@ -446,7 +446,7 @@ describe('TripTable — selección para eliminar', () => {
     const onSelect = vi.fn()
     const seleccion = { ids: new Set<string>(), onToggle: vi.fn(), onToggleAll: vi.fn() }
     render(<TripTable {...base} onSelect={onSelect} seleccion={seleccion}
-      trips={[makeTrip('t1', { source_system: 'manual', can_delete: true, source_system_trip_id: 'M-1' })]} />)
+      trips={[makeTrip('t1', { source_system: 'manual', can_void: true, source_system_trip_id: 'M-1' })]} />)
 
     fireEvent.click(screen.getByRole('checkbox', { name: /seleccionar viaje M-1/i }))
 

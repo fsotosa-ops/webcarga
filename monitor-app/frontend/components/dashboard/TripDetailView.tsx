@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { X, Copy, Check, Truck, User, Phone, Hash, MapPin } from 'lucide-react'
+import { X, Copy, Check, Truck, User, Phone, Hash, MapPin, Ban } from 'lucide-react'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { tripsApi } from '@/lib/api/trips'
 import { getLatestTemp, stopWasVisited, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
@@ -15,7 +15,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { AccordionSection } from './AccordionSection'
 import { GestionPanel } from './GestionPanel'
-import { EliminarViaje } from './EliminarViaje'
+import { AnularViaje } from './AnularViaje'
 
 interface Props {
   trip:        Trip
@@ -158,7 +158,8 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
         )}
 
         <span className="ml-auto" />
-        <EliminarViaje trip={trip} onEliminado={onDismiss} />
+        {/* Un viaje anulado sigue abierto en el detalle, con su insignia. */}
+        <AnularViaje trip={trip} />
         <button
           onClick={onDismiss}
           className="text-white/50 hover:text-white transition-colors shrink-0 p-1 rounded-lg hover:bg-white/10"
@@ -167,6 +168,18 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
           <X size={18} />
         </button>
       </div>
+
+      {trip.voided_at && (
+        <div role="status" className="flex items-center gap-2 border-b border-status-incidente/20 bg-status-incidente/5 px-4 py-2 md:px-6 text-dato text-text-primary shrink-0">
+          <Ban size={13} className="text-status-incidente shrink-0" />
+          <span>
+            <strong>Anulado</strong>
+            {trip.voided_by_name && <> por {trip.voided_by_name}</>}
+            {' · '}{fmtDT(trip.voided_at)}
+            {trip.void_reason && <> · Motivo: {trip.void_reason}</>}
+          </span>
+        </div>
+      )}
 
       {/* ── Hero — la historia del viaje ── */}
       <div data-testid="hero" className="px-4 py-3 md:px-6 border-b border-border bg-gray-50/80 shrink-0 space-y-2">
