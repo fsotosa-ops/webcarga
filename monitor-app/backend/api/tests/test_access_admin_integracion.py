@@ -99,3 +99,46 @@ async def test_no_se_desactiva_al_ultimo_propietario(conexion_revertida):
     with pytest.raises(AccessError) as err:
         await assert_can_manage_user(conn, usuario("admin", sub=a), b, deactivating=False)
     assert err.value.status == 403
+
+
+# ── Último Propietario en carrera (revisión final RBAC, hallazgo 2) ──────────
+# Dos Propietarios que se desactivan uno al otro a la vez: sin un candado que
+# dure hasta el UPDATE, los dos chequeos ven al otro activo y quedan cero. Todo
+# lo que toca Propietarios toma el mismo advisory lock transaccional.
+
+async def _candado_tomado(conn) -> bool:
+    from app.services.access_admin import LLAVE_PROPIETARIOS
+    return await conn.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid() "
+        "AND granted AND ((classid::bigint << 32) | objid::bigint) = $1)", LLAVE_PROPIETARIOS)
+
+
+async def test_gestionar_persona_toma_el_candado_de_propietarios(conexion_revertida):
+    from app.services.access_admin import assert_can_manage_user
+    conn = conexion_revertida
+    await sync_catalog(conn)
+    a, b = await _perfiles(conn, 2)
+    await assert_can_manage_user(conn, usuario("owner", sub=a), b, deactivating=False)
+    assert await _candado_tomado(conn)
+
+
+async def test_cambiar_roles_toma_el_candado_de_propietarios(conexion_revertida):
+    conn = conexion_revertida
+    await sync_catalog(conn)
+    a, b = await _perfiles(conn, 2)
+    await set_user_roles(conn, usuario("owner", sub=a), b, ["reader"])
+    assert await _candado_tomado(conn)
+
+
+async def test_retirar_al_penultimo_propietario_lo_desactiva_y_el_ultimo_queda_protegido(conexion_revertida):
+    from app.services.access_admin import retirar_persona
+    conn = conexion_revertida
+    await sync_catalog(conn)
+    a, b = await _perfiles(conn, 2)
+    await _solo_propietario(conn, a)
+    await conn.execute("INSERT INTO app.user_roles (user_id, role_id) SELECT $1, id FROM app.roles WHERE code='owner'", b)
+    await retirar_persona(conn, usuario("owner", sub=a), b)
+    assert await conn.fetchval("SELECT active FROM public.profiles WHERE id = $1", b) is False
+    with pytest.raises(AccessError) as err:
+        await retirar_persona(conn, usuario("owner", sub=b), a)
+    assert err.value.status == 409

@@ -29,6 +29,21 @@ async def _permisos_de_roles(conn, codes: list[str]) -> tuple[set[str], bool, li
     return {f["permission_code"] for f in filas if f["permission_code"]}, any(f["grants_all"] for f in filas), faltan
 
 
+# Todo lo que puede dejar a la organización sin Propietarios (quitar el rol,
+# desactivar, borrar) toma este candado DENTRO de su transacción: dos
+# Propietarios que se desactivan uno al otro a la vez se serializan, y el
+# segundo ve al primero ya inactivo. Un FOR UPDATE sobre las filas no alcanza:
+# desactivar cambia profiles, no user_roles (revisión final RBAC, hallazgo 2).
+LLAVE_PROPIETARIOS = 8_202_611  # vecina de la de sync_catalog (8_202_610)
+
+
+async def _bloquear_propietarios(conn) -> None:
+    if not conn.is_in_transaction():
+        raise RuntimeError("La regla del último Propietario exige una transacción: "
+                           "el chequeo y la escritura van juntos")
+    await conn.execute("SELECT pg_advisory_xact_lock($1)", LLAVE_PROPIETARIOS)
+
+
 async def _propietarios_activos(conn) -> list[str]:
     return [str(r["user_id"]) for r in await conn.fetch(
         """SELECT ur.user_id FROM app.user_roles ur
@@ -60,7 +75,9 @@ async def _roles_de(conn, user_id: str) -> list[str]:
 
 async def assert_can_manage_user(conn, actor: dict, user_id: str, *, deactivating: bool) -> None:
     """Desactivar, borrar o editar a una persona: un no-Propietario no toca a
-    un Propietario, y nunca se queda la organización sin Propietarios activos."""
+    un Propietario, y nunca se queda la organización sin Propietarios activos.
+    Va dentro de la transacción que escribe el cambio (ver LLAVE_PROPIETARIOS)."""
+    await _bloquear_propietarios(conn)
     roles = await _roles_de(conn, user_id)
     if "owner" in roles and not _es_propietario(actor):
         raise AccessError(403, "No puedes modificar a un Propietario")
@@ -69,8 +86,31 @@ async def assert_can_manage_user(conn, actor: dict, user_id: str, *, deactivatin
             raise AccessError(409, "Debe quedar al menos un Propietario")
 
 
+async def actualizar_persona(conn, actor: dict, user_id: str, *, active: bool | None,
+                             full_name: str | None) -> None:
+    """Activar/desactivar o renombrar a una persona: el chequeo y el UPDATE en
+    la misma transacción, bajo el candado de Propietarios."""
+    async with conn.transaction():
+        await assert_can_manage_user(conn, actor, user_id, deactivating=active is False)
+        await conn.execute(
+            "UPDATE public.profiles SET active = COALESCE($2, active), full_name = COALESCE($3, full_name) WHERE id = $1",
+            user_id, active, full_name)
+    await invalidate_access(user_id)
+
+
+async def retirar_persona(conn, actor: dict, user_id: str) -> None:
+    """Primer paso de borrar a alguien: se desactiva en la misma transacción
+    que el chequeo, así un borrado concurrente ya lo ve inactivo. Borrar la
+    cuenta en Supabase Auth va después, fuera de la base."""
+    async with conn.transaction():
+        await assert_can_manage_user(conn, actor, user_id, deactivating=True)
+        await conn.execute("UPDATE public.profiles SET active = false WHERE id = $1", user_id)
+    await invalidate_access(user_id)
+
+
 async def set_user_roles(conn, actor: dict, user_id: str, role_codes: list[str]) -> list[str]:
     async with conn.transaction():
+        await _bloquear_propietarios(conn)
         nuevos = sorted(set(role_codes))
         perms, todo, faltan = await _permisos_de_roles(conn, nuevos)
         if faltan:

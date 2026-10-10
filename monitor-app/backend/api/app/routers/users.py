@@ -8,7 +8,7 @@ from ..authz import Permission, require
 from ..authz.effective import invalidate_access
 from ..authz.permissions import legacy_role_for
 from ..db import get_pool
-from ..services.access_admin import AccessError, assert_can_grant, assert_can_manage_user
+from ..services.access_admin import AccessError, actualizar_persona, assert_can_grant, retirar_persona
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -122,7 +122,7 @@ async def delete_user(
         raise HTTPException(404, "Usuario no encontrado")
     async with pool.acquire() as conn:
         try:
-            await assert_can_manage_user(conn, actor, user_id, deactivating=True)
+            await retirar_persona(conn, actor, user_id)
         except AccessError as e:
             raise _http(e)
 
@@ -168,22 +168,12 @@ async def patch_user(
         raise HTTPException(403, "No puedes editar tu propia cuenta desde aquí")
     if not await pool.fetchval("SELECT 1 FROM public.profiles WHERE id = $1", user_id):
         raise HTTPException(404, "Usuario no encontrado")
+    if body.active is None and body.full_name is None:
+        raise HTTPException(422, "Ningún campo enviado")
     async with pool.acquire() as conn:
         try:
-            await assert_can_manage_user(conn, actor, user_id, deactivating=body.active is False)
+            await actualizar_persona(conn, actor, user_id, active=body.active, full_name=body.full_name)
         except AccessError as e:
             raise _http(e)
-
-    sets: list[str] = []
-    vals: list      = [user_id]
-    for field, value in (("active", body.active), ("full_name", body.full_name)):
-        if value is not None:
-            vals.append(value)
-            sets.append(f"{field} = ${len(vals)}")
-    if not sets:
-        raise HTTPException(422, "Ningún campo enviado")
-
-    await pool.execute(f"UPDATE public.profiles SET {', '.join(sets)} WHERE id = $1", *vals)
-    await invalidate_access(user_id)
     row = await pool.fetchrow(_PERFIL, user_id)
     return dict(row)

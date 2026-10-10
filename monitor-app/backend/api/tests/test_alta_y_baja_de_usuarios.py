@@ -34,9 +34,10 @@ VIEWER = usuario("reader", sub="v-1")
 def reglas_permiten():
     """El servicio de acceso, simulado: por defecto permite."""
     with patch("app.routers.users.assert_can_grant", AsyncMock()) as dar, \
-         patch("app.routers.users.assert_can_manage_user", AsyncMock()) as gestionar, \
+         patch("app.routers.users.retirar_persona", AsyncMock()) as retirar, \
+         patch("app.routers.users.actualizar_persona", AsyncMock()) as actualizar, \
          patch("app.routers.users.invalidate_access", AsyncMock()):
-        yield {"dar": dar, "gestionar": gestionar}
+        yield {"dar": dar, "retirar": retirar, "actualizar": actualizar}
 
 
 def _cliente(user, pool=None, supabase=None):
@@ -155,7 +156,7 @@ def test_nadie_se_borra_a_si_mismo():
 
 
 def test_las_reglas_del_propietario_frenan_la_baja(reglas_permiten):
-    reglas_permiten["gestionar"].side_effect = AccessError(409, "Debe quedar al menos un Propietario")
+    reglas_permiten["retirar"].side_effect = AccessError(409, "Debe quedar al menos un Propietario")
     sb, pool = MagicMock(), AsyncMock()
     pool.fetchrow.return_value = {"email": "duena@webcarga.com"}
     res = _cliente(ADMIN, pool=pool, supabase=sb).delete("/api/v1/users/o-1")
@@ -170,13 +171,19 @@ def test_desactivar_pasa_por_las_reglas_del_propietario(reglas_permiten):
                                   "active": False, "created_at": None}
     res = _cliente(ADMIN, pool=pool).patch("/api/v1/users/u-1", json={"active": False})
     assert res.status_code == 200
-    assert reglas_permiten["gestionar"].call_args.kwargs == {"deactivating": True}
+    # El chequeo y el UPDATE van juntos en el servicio (candado de Propietarios).
+    assert reglas_permiten["actualizar"].call_args.kwargs == {"active": False, "full_name": None}
 
 
-def test_un_admin_borra_y_retira_la_invitacion():
+def test_un_admin_borra_y_retira_la_invitacion(reglas_permiten):
     sb, pool = MagicMock(), AsyncMock()
     pool.fetchrow.return_value = {"email": "ana@webcarga.com"}
+    orden = []
+    reglas_permiten["retirar"].side_effect = lambda *a, **k: orden.append("desactiva")
+    sb.auth.admin.delete_user.side_effect = lambda *a: orden.append("borra en Auth")
     res = _cliente(ADMIN, pool=pool, supabase=sb).delete("/api/v1/users/u-1")
     assert res.status_code == 204
     sb.auth.admin.delete_user.assert_called_once_with("u-1")
+    # Primero se desactiva bajo el candado; recién después se borra en Auth.
+    assert orden == ["desactiva", "borra en Auth"]
     assert any("DELETE FROM public.admin_whitelist" in c.args[0] for c in pool.execute.call_args_list)
