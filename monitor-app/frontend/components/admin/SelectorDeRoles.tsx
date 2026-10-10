@@ -12,6 +12,9 @@ interface Props {
   catalogo: PermisoInfo[]
   value:    string[]
   onChange: (codes: string[]) => void
+  /** Los roles que la persona ya tenía. Quitarlos o conservarlos no es
+   *  escalar: solo se valida lo que se agrega (misma regla que la API). */
+  originales?: string[]
 }
 
 const NIVELES: { nivel: Nivel; titulo: string }[] = [
@@ -57,10 +60,10 @@ function Casilla({ r, porQue, marcado, onToggle }: {
  *  Por área se elige un nivel —el Supervisor ya incluye al Operador—; los
  *  roles de toda la app y los personalizados son casillas. Lo que quien edita
  *  no puede dar se ve deshabilitado, con el motivo: la regla es la de la API. */
-export default function SelectorDeRoles({ roles, catalogo, value, onChange }: Props) {
+export default function SelectorDeRoles({ roles, catalogo, value, onChange, originales = [] }: Props) {
   const acceso = useAcceso()
   const porCodigo = new Map(roles.map(r => [r.code, r]))
-  const motivo = (r: RoleInfo) => motivoNoOtorgable(acceso, r, catalogo)
+  const motivo = (r: RoleInfo) => originales.includes(r.code) ? null : motivoNoOtorgable(acceso, r, catalogo)
 
   const generales = ROLES_GENERALES.map(c => porCodigo.get(c)).filter((r): r is RoleInfo => !!r)
   const personalizados = roles.filter(r => !r.is_system)

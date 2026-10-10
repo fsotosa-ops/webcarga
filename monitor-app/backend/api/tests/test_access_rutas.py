@@ -37,3 +37,16 @@ def test_crear_rol_exige_aal2():
     res = _cliente(usuario("admin", aal="aal1")).post("/api/v1/roles", json={
         "code": "custom_x", "name": "X", "permissions": ["operations.read"]})
     assert res.status_code == 403 and "dos pasos" in res.json()["detail"]
+
+
+# Menores 4 y 5 de la revisión final RBAC.
+def test_poner_roles_exige_al_menos_uno():
+    """Sin roles la persona no entra: para quitarle el acceso, se desactiva."""
+    res = _cliente(usuario("admin")).put(
+        "/api/v1/users/11111111-1111-1111-1111-111111111111/roles", json={"roles": []})
+    assert res.status_code == 422
+
+
+def test_poner_roles_con_un_id_mal_formado_es_422_y_no_500():
+    res = _cliente(usuario("admin")).put("/api/v1/users/no-es-un-uuid/roles", json={"roles": ["reader"]})
+    assert res.status_code == 422

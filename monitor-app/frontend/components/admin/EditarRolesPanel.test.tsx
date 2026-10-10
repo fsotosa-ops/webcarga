@@ -57,4 +57,17 @@ describe('EditarRolesPanel', () => {
     expect(screen.getByRole('checkbox', { name: /Soporte técnico/ })).toBeChecked()
     expect(onClose).not.toHaveBeenCalled()
   })
+
+  // Menor 7: conservar o quitar un rol que el actor no podría dar no es
+  // escalar; agregarlo sí.
+  it('un rol que ya tiene se puede quitar aunque quien edita no pueda darlo', () => {
+    mostrar(['reader', 'auditor'])
+    const auditor = screen.getByRole('checkbox', { name: /Auditor de cierres/ })
+    expect(auditor).toBeChecked()
+    expect(auditor).toBeEnabled()
+    fireEvent.click(auditor)
+    expect(auditor).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Guardar roles' })).toBeEnabled()
+  })
 })
+

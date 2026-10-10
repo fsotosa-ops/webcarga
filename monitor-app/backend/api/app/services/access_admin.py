@@ -111,13 +111,18 @@ async def retirar_persona(conn, actor: dict, user_id: str) -> None:
 async def set_user_roles(conn, actor: dict, user_id: str, role_codes: list[str]) -> list[str]:
     async with conn.transaction():
         await _bloquear_propietarios(conn)
+        if not await conn.fetchval("SELECT 1 FROM public.profiles WHERE id = $1::uuid", user_id):
+            raise AccessError(404, "Persona no encontrada")
         nuevos = sorted(set(role_codes))
-        perms, todo, faltan = await _permisos_de_roles(conn, nuevos)
+        _, _, faltan = await _permisos_de_roles(conn, nuevos)
         if faltan:
             raise AccessError(422, f"Roles inexistentes: {', '.join(faltan)}")
         actuales = sorted(r["code"] for r in await conn.fetch(
             "SELECT r.code FROM app.user_roles ur JOIN app.roles r ON r.id = ur.role_id WHERE ur.user_id = $1",
             user_id))
+        # Escalar es DAR un permiso que no se tiene: se validan los roles que se
+        # agregan, no los que la persona ya tenía (revisión final RBAC, menor 7).
+        perms, todo, _ = await _permisos_de_roles(conn, sorted(set(nuevos) - set(actuales)))
         propietario = _es_propietario(actor)
         if ("owner" in actuales) != ("owner" in nuevos) and not propietario:
             raise AccessError(403, "Solo un Propietario puede dar o quitar el rol Propietario")

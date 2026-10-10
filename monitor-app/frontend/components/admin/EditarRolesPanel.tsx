@@ -62,7 +62,7 @@ export default function EditarRolesPanel({ persona, roles, catalogo, onSaved, on
         </header>
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
-          <SelectorDeRoles roles={roles} catalogo={catalogo} value={elegidos} onChange={setElegidos} />
+          <SelectorDeRoles roles={roles} catalogo={catalogo} value={elegidos} onChange={setElegidos} originales={originales} />
         </div>
 
         <footer className="px-5 py-4 border-t border-border bg-bg-main space-y-3">

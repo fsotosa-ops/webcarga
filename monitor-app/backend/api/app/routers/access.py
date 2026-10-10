@@ -1,5 +1,7 @@
 # app/routers/access.py
 """Acceso: mis permisos, el catálogo, roles y asignaciones (spec RBAC §6)."""
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
@@ -61,7 +63,9 @@ class RolePatch(BaseModel):
 
 
 class UserRolesIn(BaseModel):
-    roles: list[str]
+    # Al menos uno: sin roles la persona no entra; para quitarle el acceso,
+    # se desactiva (PATCH /users/{id}).
+    roles: list[str] = Field(min_length=1)
 
 
 @router.post("/roles", status_code=201)
@@ -93,10 +97,10 @@ async def remove_role(role_id: str, pool=Depends(get_pool), actor=Depends(requir
 
 
 @router.put("/users/{user_id}/roles")
-async def put_user_roles(user_id: str, body: UserRolesIn, pool=Depends(get_pool),
+async def put_user_roles(user_id: UUID, body: UserRolesIn, pool=Depends(get_pool),
                          actor=Depends(require(Permission.USERS_MANAGE))):
     async with pool.acquire() as conn:
         try:
-            return {"roles": await set_user_roles(conn, actor, user_id, body.roles)}
+            return {"roles": await set_user_roles(conn, actor, str(user_id), body.roles)}
         except AccessError as e:
             raise _http(e)

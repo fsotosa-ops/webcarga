@@ -31,6 +31,9 @@ async def test_admin_no_escala(conexion_revertida):
     conn = conexion_revertida
     await sync_catalog(conn)
     a, b = await _perfiles(conn, 2)
+    # El sujeto lo arma el test: con datos reales, b ya podía tener el rol, y
+    # conservarlo no es escalar (menor 7).
+    await set_user_roles(conn, usuario("owner", sub=a), b, ["reader"])
     with pytest.raises(AccessError) as err:
         await set_user_roles(conn, usuario("admin", sub=a), b, ["operations_supervisor"])
     assert err.value.status == 403
@@ -142,3 +145,28 @@ async def test_retirar_al_penultimo_propietario_lo_desactiva_y_el_ultimo_queda_p
     with pytest.raises(AccessError) as err:
         await retirar_persona(conn, usuario("owner", sub=b), a)
     assert err.value.status == 409
+
+
+# Menores 5 y 7 de la revisión final RBAC.
+async def test_poner_roles_a_alguien_que_no_existe_es_404(conexion_revertida):
+    import uuid
+    conn = conexion_revertida
+    await sync_catalog(conn)
+    with pytest.raises(AccessError) as err:
+        await set_user_roles(conn, usuario("owner"), str(uuid.uuid4()), ["reader"])
+    assert err.value.status == 404
+
+
+async def test_conservar_un_rol_que_el_actor_no_podria_dar_no_es_escalar(conexion_revertida):
+    """Administración no tiene documents.review: no puede DAR Supervisor de
+    Certificación, pero sí cambiarle otro rol a quien ya lo tiene."""
+    conn = conexion_revertida
+    await sync_catalog(conn)
+    a, b = await _perfiles(conn, 2)
+    await set_user_roles(conn, usuario("owner", sub=a), b, ["certification_supervisor"])
+    admin = usuario("admin", sub=a)
+    assert await set_user_roles(conn, admin, b, ["certification_supervisor", "reader"]) == \
+        ["certification_supervisor", "reader"]
+    with pytest.raises(AccessError) as err:
+        await set_user_roles(conn, admin, b, ["certification_supervisor", "reader", "insurance_supervisor"])
+    assert err.value.status == 403
