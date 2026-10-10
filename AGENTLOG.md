@@ -50,9 +50,16 @@ códigos generados; expand/contract con compuerta por la API de `main` (lee `pro
 - [x] Task 11 (`4c7d89f0`, push a dev, ambos deploys verdes): fuera require_writer/editor/admin y la clave `role`.
       Verificado: 401 sin token; las 12 personas con exactamente los roles de LEGACY_ROLE_MAP; Playwright como
       Propietario (Monitor, Personas y accesos, Cierre).
-- [ ] **Task 12 (siguiente):** pantallas de Personas y Roles. **Maquetas PRIMERO** (compuerta: aprobación del
-      usuario), después RolChips, roles-tab, accessApi, CreateUserForm multi-rol, editar roles de alguien existente.
-      Hoy (transitorio) los roles se ven en solo lectura; cambiar el rol de alguien exige borrarlo e invitarlo.
+- [x] Fuera de plan (pedido 09/10): las 3 cuentas Lectura recibieron Operador de Operaciones → 12/12 firman el cierre.
+- [x] Task 12 (`c90bc78b`, `b6dfd265`, `4aee2157`, desplegada en dev): maqueta aprobada
+      (HU `monitor-app/docs/user-stories/20261009/01-hu-personas-y-roles.md`, artifact MVuS9YJgf673jLyR86jYcu).
+      Personas con chips + panel "Editar roles" (nivel por área, motivo de lo no otorgable, qué gana/pierde),
+      pestaña Roles (sistema solo lectura, personalizados crear/editar/eliminar), invitación multi-rol.
+      "Personas y accesos" se esconde sin users.manage. Verificado en dev escritorio y teléfono (solo lectura).
+- [ ] **Pendiente con confirmación del usuario** (escribe en producción): crear un rol personalizado de prueba,
+      asignarlo y borrarlo; el 409 de "último Propietario" está cubierto por el test de integración.
+- [ ] Hallazgo para la revisión final: `GET /config/inventario` exige settings.manage (Supervisores ven la portada
+      sin conteos) y expone el conteo de personas sin users.manage.
 - [ ] Task 13: contract (DROP `profiles.role` / `admin_whitelist.role`) — compuerta: la API de `main`
       (`webcarga-monitor-api`) redesplegada o retirada, porque todavía lee `profiles.role`.
 - [ ] Revisión final de toda la rama (revisor fresco, modelo más capaz) → finishing-a-development-branch.
