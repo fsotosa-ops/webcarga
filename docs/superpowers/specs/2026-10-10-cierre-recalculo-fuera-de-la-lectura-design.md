@@ -71,7 +71,7 @@ industria. Sin código muerto al terminar.
  la API escribe flota, directorio y vínculos ───┼─► triggers por sentencia ─► app.marcar_cierre_pendiente()
                                                 │        (una sola sentencia: encolar)
                                                 ▼
-                     app.closure_recompute_queue (business_date PK, requested_at, version)
+                     app.closure_recompute_queue (id, business_date, requested_at) — solo inserciones
                                                 │
  Cloud Scheduler, cada 1 min ─► POST /api/v1/internal/closures/recompute
                                                 │   FOR UPDATE SKIP LOCKED sobre el período
@@ -87,9 +87,13 @@ industria. Sin código muerto al terminar.
 
 - **Una sola función**, `app.marcar_cierre_pendiente()` (`RETURNS trigger`, `FOR EACH STATEMENT`), usada por
   todos los triggers. Encola los **días abiertos de los últimos 45 días y hoy**:
-  `INSERT INTO app.closure_recompute_queue (business_date) SELECT … ON CONFLICT (business_date) DO UPDATE SET
-  version = closure_recompute_queue.version + 1`. `requested_at` se fija al encolar y no cambia con las marcas
-  siguientes: dice **desde cuándo** está pendiente el día. Los días firmados nunca entran.
+  `INSERT INTO app.closure_recompute_queue (business_date) SELECT …`, **una fila por marca**, sin `ON CONFLICT`.
+  La marca más antigua de un día dice **desde cuándo** está pendiente. Los días firmados nunca entran.
+- **Solo inserciones (corrección del 10/10, migración 20261010150000).** La primera versión hacía un upsert por
+  día con un contador de versión. Un `INSERT … ON CONFLICT DO UPDATE` sobre la misma fila hace esperar a toda
+  transacción que marca hasta que la primera termine: dbt retiene esa fila durante toda su transacción, y dos
+  transacciones que toman las filas en distinto orden se bloquean mutuamente (apareció un deadlock en la suite).
+  Un `INSERT` sin conflicto no espera a nadie.
 - **Por qué todos los días abiertos y no "el día que afectó el cambio":** saber qué días ocupa un viaje es la
   regla de `app.trips_del_dia`. Repetirla en el trigger sería escribirla dos veces. Los días abiertos son unos 5;
   marcar de más cuesta un recálculo barato.
@@ -121,25 +125,24 @@ se serializan hoy. Si el trigger escribiera la marca en esa fila:
 - quedaría un ciclo de bloqueo posible: el recálculo corrige `asset_assignments` mientras una edición de la API
   retiene esa fila y su trigger espera el período. Postgres lo resolvería abortando una de las dos.
 
-La cola separa la marca del bloqueo del período. El trigger hace un `INSERT … ON CONFLICT` sobre una fila que el
-ejecutor solo toca un instante, al final (§3.3).
+La cola separa la marca del bloqueo del período, y al ser de solo inserciones tampoco hay bloqueos entre quienes
+marcan (§3.1).
 
 ### 3.3 El ejecutor: `POST /api/v1/internal/closures/recompute`
 
-1. Lee la cola (`business_date, version`) sin bloquearla, días más antiguos primero. Suma hoy (fecha de
+1. Lee las marcas de cada día (`business_date`, lista de `id`) sin bloquearlas, días más antiguos primero. Suma hoy (fecha de
    Chile) si todavía no tiene ninguna línea, aunque no esté en la cola: así el día arranca calculado sin que
    nadie lo abra. Una vez que tiene líneas, hoy solo se recalcula cuando lo encola un cambio.
 2. Por cada día:
    - toma el período con `FOR UPDATE SKIP LOCKED`; si otro proceso lo tiene (una firma, otra corrida), lo
      salta, y queda para la próxima;
-   - si el período está `CLOSED`, borra la entrada sin calcular;
-   - si no, ejecuta `recalcular` y al final `DELETE FROM app.closure_recompute_queue WHERE business_date = $1
-     AND version = $leída`. Una marca que llegó durante el cálculo subió la versión, así que sobrevive y se
-     procesa en la próxima corrida. **Por qué versión y no hora:** una transacción de dbt que empezó antes de la
-     lectura y confirma después escribiría una hora anterior a la leída, y una comparación por hora la borraría
-     sin haber visto sus cambios. El contador no depende de relojes ni del orden de confirmación: el `UPDATE` de
-     la fila se serializa por su bloqueo.
-3. Corta a los 50 s; lo que queda pasa a la corrida siguiente.
+   - si el período está `CLOSED`, borra sus marcas sin calcular;
+   - si no, ejecuta `recalcular` y al final `DELETE FROM app.closure_recompute_queue WHERE id = ANY($leídas)`.
+     Una marca que llegó durante el cálculo no está entre las leídas, así que sobrevive y se procesa en la
+     próxima corrida. **Por qué ids y no hora:** una transacción de dbt que empezó antes de la lectura y confirma
+     después escribiría una hora anterior a la leída, y una comparación por hora la borraría sin haber visto sus
+     cambios. Borrar exactamente lo leído no depende de relojes ni del orden de confirmación.
+3. Corta a los 45 s (el servicio tiene `--timeout=60`); lo que queda pasa a la corrida siguiente.
 4. Responde 200 con el resumen, o 500 si algún día falló (después de intentar todos), para que el Scheduler lo
    registre como fallo.
 
@@ -160,7 +163,7 @@ configurada (`settings`, desde el workflow de deploy). La ruta entra a `EXCEPCIO
 - `daily-closures`, `equipment-closures` y `status-report` dejan de llamar a `recalcular`. Se borran los dos
   `_recompute`.
 - Las respuestas suman `calculado_a` (el `computed_at` más reciente de las líneas del día) y `pendiente_desde`
-  (`requested_at` de la cola, o `null`).
+  (la marca más antigua del día, `min(requested_at)`, o `null`).
 - **Día sin líneas todavía.** Hoy siempre las tiene: la función encola hoy en cada escritura, y el ejecutor
   además procesa hoy si todavía no tiene líneas (§3.3), así que cada día recibe su primer cálculo. Un día sin
   líneas ni entrada en la cola solo puede ser anterior a la puesta en marcha: el GET responde con las listas

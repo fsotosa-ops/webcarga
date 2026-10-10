@@ -271,10 +271,9 @@ class Resultado(StrEnum):
     OCUPADO = "ocupado"
 
 
-SQL_ENCOLAR = """
-INSERT INTO app.closure_recompute_queue (business_date) VALUES ($1)
-ON CONFLICT (business_date) DO UPDATE SET version = app.closure_recompute_queue.version + 1
-"""
+# Una marca más para el día: la cola es de solo inserciones (migración
+# 20261010150000), así que marcar nunca espera a otra transacción.
+SQL_ENCOLAR = "INSERT INTO app.closure_recompute_queue (business_date) VALUES ($1)"
 
 
 async def bloquear_periodo(conn, fecha: date, *, saltar_si_ocupado: bool = False) -> str | None:
@@ -286,6 +285,19 @@ async def bloquear_periodo(conn, fecha: date, *, saltar_si_ocupado: bool = False
     )
     sql = "SELECT status FROM app.closure_periods WHERE business_date = $1 FOR UPDATE"
     return await conn.fetchval(sql + (" SKIP LOCKED" if saltar_si_ocupado else ""), fecha)
+
+
+async def frescura_del_dia(pool, fecha: date) -> dict:
+    """Cuándo se calcularon las líneas del día y desde cuándo hay cambios
+    pendientes (null = al día). Lo leen las tres pantallas del Cierre."""
+    fila = await pool.fetchrow(
+        """
+        SELECT (SELECT max(computed_at) FROM app.closure_lines WHERE business_date = $1) AS calculado_a,
+               (SELECT min(requested_at) FROM app.closure_recompute_queue WHERE business_date = $1) AS pendiente_desde
+        """,
+        fecha,
+    )
+    return dict(fila)
 
 
 async def periodo(pool, fecha: date) -> dict | None:
@@ -324,11 +336,12 @@ async def recalcular_en(conn, fecha: date) -> None:
     await conn.execute(_SQL_SINCRONIZAR_TRACTOS, fecha)
 
 
-async def recalcular(pool, fecha: date, *, version: int | None = None,
+async def recalcular(pool, fecha: date, *, marcas: list[int] | None = None,
                      saltar_si_ocupado: bool = False) -> Resultado:
-    """Recalcula el día en su propia transacción. Con `version` (la que leyó el
-    ejecutor), saca el día de la cola solo si nadie volvió a marcarlo mientras
-    calculaba. Un día firmado no se recalcula: si estaba en la cola, sale."""
+    """Recalcula el día en su propia transacción. Con `marcas` (los ids que leyó
+    el ejecutor) borra exactamente esas: una marca que llegó mientras calculaba
+    sobrevive para la corrida siguiente. Un día firmado no se recalcula: sus
+    marcas se borran igual."""
     async with pool.acquire() as conn:
         async with conn.transaction():
             estado = await bloquear_periodo(conn, fecha, saltar_si_ocupado=saltar_si_ocupado)
@@ -336,10 +349,9 @@ async def recalcular(pool, fecha: date, *, version: int | None = None,
                 return Resultado.OCUPADO
             if estado == "OPEN":
                 await recalcular_en(conn, fecha)
-            if version is not None:
+            if marcas:
                 await conn.execute(
-                    "DELETE FROM app.closure_recompute_queue WHERE business_date = $1 AND version = $2",
-                    fecha, version,
+                    "DELETE FROM app.closure_recompute_queue WHERE id = ANY($1::bigint[])", marcas,
                 )
             return Resultado.RECALCULADO if estado == "OPEN" else Resultado.CERRADO
 

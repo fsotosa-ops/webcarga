@@ -38,6 +38,11 @@ Query + Vitest, Cloud Run + Cloud Scheduler (GCP `webcarga-dev-493220`, `us-cent
 - Backend: `cd monitor-app/backend/api && venv/bin/python -m pytest …`. Frontend: `cd monitor-app/frontend && npx vitest run …`.
 - Commits que terminan con `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`.
 
+> **Corrección durante la ejecución (10/10):** la cola pasó a ser de **solo inserciones** (migración
+> `20261010150000_cola_de_recalculo_solo_inserciones.sql`): `id` identity, una fila por marca, sin `version`.
+> `recalcular(..., marcas: list[int])` borra por id las marcas leídas; `pendiente_desde = min(requested_at)`.
+> Donde los bloques de código de abajo dicen `version`, rige esto. Motivo y evidencia en el ledger (Task 4).
+
 ## Review Focus
 
 1. **Medianoche en Chile (21:00–24:00 UTC):** la marca, la siembra y el "hoy" del ejecutor usan

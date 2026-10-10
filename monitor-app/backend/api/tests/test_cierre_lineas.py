@@ -588,26 +588,33 @@ async def test_reabrir_deja_el_dia_encolado(conexion_revertida):
     await cierre_lineas.cerrar(pool, D, override=True, override_note="test", user=admin)
     await cierre_lineas.reabrir(pool, D, nota="llegó una asignación tarde", user=admin)
     assert await conexion_revertida.fetchval(
-        "SELECT count(*) FROM app.closure_recompute_queue WHERE business_date = $1", D) == 1
+        "SELECT count(*) FROM app.closure_recompute_queue WHERE business_date = $1", D) >= 1
 
 
-async def test_recalcular_con_la_version_leida_desencola(conexion_revertida):
+async def _marcas(conn, dia):
+    return [r["id"] for r in await conn.fetch(
+        "SELECT id FROM app.closure_recompute_queue WHERE business_date = $1 ORDER BY id", dia)]
+
+
+async def test_recalcular_borra_las_marcas_que_leyo(conexion_revertida):
     pool = PoolDeUnaConexion(conexion_revertida)
+    await conexion_revertida.execute("DELETE FROM app.closure_recompute_queue WHERE business_date = $1", D)
     await conexion_revertida.execute(cierre_lineas.SQL_ENCOLAR, D)
-    v = await conexion_revertida.fetchval("SELECT version FROM app.closure_recompute_queue WHERE business_date = $1", D)
-    assert await cierre_lineas.recalcular(pool, D, version=v) is cierre_lineas.Resultado.RECALCULADO
+    marcas = await _marcas(conexion_revertida, D)
+    assert await cierre_lineas.recalcular(pool, D, marcas=marcas) is cierre_lineas.Resultado.RECALCULADO
     assert await conexion_revertida.fetchval(
         "SELECT count(*) FROM app.closure_recompute_queue WHERE business_date = $1", D) == 0
 
 
 async def test_una_marca_posterior_a_la_lectura_sobrevive(conexion_revertida):
     pool = PoolDeUnaConexion(conexion_revertida)
+    await conexion_revertida.execute("DELETE FROM app.closure_recompute_queue WHERE business_date = $1", D)
     await conexion_revertida.execute(cierre_lineas.SQL_ENCOLAR, D)
-    v = await conexion_revertida.fetchval("SELECT version FROM app.closure_recompute_queue WHERE business_date = $1", D)
+    leidas = await _marcas(conexion_revertida, D)
     await conexion_revertida.execute(cierre_lineas.SQL_ENCOLAR, D)   # llega otra marca
-    await cierre_lineas.recalcular(pool, D, version=v)
-    assert await conexion_revertida.fetchval(
-        "SELECT version FROM app.closure_recompute_queue WHERE business_date = $1", D) == v + 1
+    await cierre_lineas.recalcular(pool, D, marcas=leidas)
+    quedan = await _marcas(conexion_revertida, D)
+    assert len(quedan) == 1 and quedan[0] not in leidas
 
 
 async def test_el_recalculo_no_se_reencola_aunque_corrija_el_directorio(conexion_revertida):
