@@ -1,7 +1,7 @@
 """El ejecutor de la cola del Cierre (spec 2026-10-10, §3.3).
 
 Lo llama Cloud Scheduler cada minuto vía POST /api/v1/internal/closures/recompute.
-Recorre los días marcados por los triggers trg_marcar_cierre_* y recalcula cada
+Recorre los días marcados por los triggers trg_enqueue_closure_recompute_* y recalcula cada
 uno; al terminar borra exactamente las marcas que leyó, así que una marca que
 llegó mientras tanto queda para la próxima corrida. Un día que falla no detiene
 a los demás."""

@@ -19,6 +19,9 @@ def test_el_post_hook_crea_los_tres_triggers_de_marca(modelo):
         pytest.skip("espejo de Mage no sincronizado en esta máquina")
     texto = ruta.read_text()
     for evento, tabla in (("ins", "NEW"), ("upd", "NEW"), ("del", "OLD")):
-        assert f"DROP TRIGGER IF EXISTS trg_marcar_cierre_{evento} ON {{{{ this }}}}" in texto
-        assert (f"REFERENCING {tabla} TABLE AS cambiadas FOR EACH STATEMENT "
-                "EXECUTE FUNCTION app.marcar_cierre_pendiente()") in texto
+        assert f"DROP TRIGGER IF EXISTS trg_enqueue_closure_recompute_{evento} ON {{{{ this }}}}" in texto
+        assert (f"REFERENCING {tabla} TABLE AS changed FOR EACH STATEMENT "
+                "EXECUTE FUNCTION app.enqueue_closure_recompute()") in texto
+    # Los nombres viejos, en español, se retiran (estándar de la base: inglés,
+    # verbo + objeto, como trg_trips_resolve_fleet_*).
+    assert "CREATE TRIGGER trg_marcar_cierre" not in texto

@@ -15,7 +15,7 @@ día es una LÍNEA de conciliación. Este módulo es el único que las escribe:
                   quedaba medio firmado sin que nada lo dijera.
 - `reabrir`      — acto explícito, de admin y con nota.
 
-Cuándo corre (spec 2026-10-10): los triggers trg_marcar_cierre_* encolan el día
+Cuándo corre (spec 2026-10-10): los triggers trg_enqueue_closure_recompute_* encolan el día
 en app.closure_recompute_queue y el ejecutor (services/cola_del_cierre.py) llama
 a `recalcular`. Firmar recalcula en su propia transacción. Los GET solo leen.
 """

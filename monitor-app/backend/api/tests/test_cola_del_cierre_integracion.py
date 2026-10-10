@@ -83,7 +83,7 @@ async def test_cada_marca_agrega_una_fila_y_la_primera_dice_desde_cuando(conexio
 async def test_la_marca_usa_el_dia_de_chile(conexion_revertida):
     """Review Focus 1: entre las 21:00 y las 24:00 de Chile, CURRENT_DATE ya es mañana."""
     fuente = await conexion_revertida.fetchval(
-        "SELECT prosrc FROM pg_proc WHERE proname = 'marcar_cierre_pendiente'")
+        "SELECT prosrc FROM pg_proc WHERE proname = 'enqueue_closure_recompute'")
     assert "hoy_chile()" in fuente
     assert "current_date" not in fuente.lower()
 
@@ -112,3 +112,13 @@ async def test_dos_escrituras_que_marcan_no_se_esperan(conexion_revertida):
     finally:
         await tx.rollback()
         await otra.close()
+
+
+async def test_los_triggers_siguen_el_estandar_de_nombres_de_la_base(conexion_revertida):
+    """Inglés, verbo + objeto, como trg_trips_resolve_fleet_* y protect_manual_overrides."""
+    nombres = {r["tgname"] for r in await conexion_revertida.fetch(
+        "SELECT DISTINCT tgname FROM pg_trigger WHERE tgname LIKE 'trg_%closure%' OR tgname LIKE 'trg_marcar%'")}
+    assert nombres == {"trg_enqueue_closure_recompute_ins", "trg_enqueue_closure_recompute_upd",
+                       "trg_enqueue_closure_recompute_del"}
+    assert await conexion_revertida.fetchval(
+        "SELECT count(*) FROM pg_proc WHERE proname = 'marcar_cierre_pendiente'") == 0

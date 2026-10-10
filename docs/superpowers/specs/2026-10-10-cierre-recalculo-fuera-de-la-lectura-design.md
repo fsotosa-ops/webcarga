@@ -2,6 +2,8 @@
 
 Fecha: 2026-10-10 · Estado: diseño aprobado por secciones (10/10), spec en revisión · Rama: `dev`
 
+> **Nombres (10/10, migración 20261010220000):** la función y los triggers se llaman `app.enqueue_closure_recompute()` y `trg_enqueue_closure_recompute_{ins,upd,del}`, con la tabla de transición `changed` (estándar de la base: inglés, verbo + objeto). Donde este documento dice `marcar_cierre_pendiente`, `trg_marcar_cierre_*` o `cambiadas`, rige esto.
+
 ## 1. Contexto y objetivo
 
 El Cierre y, a veces, el Monitor tardan en desplegarse. Medido el 10/10 (logs de Cloud Run de 7 días en dev y
