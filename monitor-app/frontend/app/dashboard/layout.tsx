@@ -6,6 +6,7 @@ import Topbar from '@/components/dashboard/Topbar'
 import { Providers } from './providers'
 import { tienePrivilegios } from '@/lib/authz/acceso'
 import { obtenerAccesoServidor } from '@/lib/authz/servidor'
+import { destinoSinAcceso } from '@/lib/authz/respuestaMe'
 import { PermisosProvider } from '@/lib/authz/PermisosProvider'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -19,9 +20,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // rol. Solo por invitación (seguridad, 09/10): sin roles no hay acceso. A
   // /auth/access-denied y no a /login: con la sesión todavía abierta, /login la
   // devolvía acá (bucle).
-  const acceso = await obtenerAccesoServidor()
-  if (acceso === 'deactivated') redirect('/auth/access-denied?reason=deactivated')
-  if (!acceso) redirect('/auth/access-denied?reason=not-invited')
+  // Solo un 403 de la API niega el acceso: una caída va a "no disponible" sin
+  // cerrar la sesión (revisión final RBAC).
+  const resultado = await obtenerAccesoServidor()
+  if (resultado.estado !== 'ok') redirect(destinoSinAcceso(resultado.estado))
+  const acceso = resultado.acceso
 
   // Verificación en dos pasos (seguridad, 09/10). Si la cuenta la tiene, la
   // sesión tiene que haberla pasado. Si algún permiso es privilegiado
