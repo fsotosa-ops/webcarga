@@ -32,8 +32,10 @@
   - Anular pide closures.sign si el viaje toca un día firmado: su planning_date, o cualquier día CLOSED donde cuenta (trips_del_dia, ±45 días).
   - `cerrar` sigue escribiendo closed_by/closed_at/frozen_totals en closure_periods (lo exige el CHECK closure_periods_cerrado_tiene_firma). Los lectores leen la firma.
 - **Siguiente paso exacto:**
-  - [ ] Con confirmación del usuario, anular desde la app los 6 duplicados del 23/09 (038cd817, 4371e9c1, 26c2cea0, 7bb5a2fe, 9ec39f27, 9cfca7b6), con motivo "Duplicado". NO tocar 747ebcec ni e6151201. Luego verificar: 23/09 sigue CLOSED, 1 firma, 123 líneas, 6 ajustes.
-  - [ ] Verificación con Playwright en dev (Cierre 23/09; Monitor: anular desde el detalle y la barra).
+  - [x] 6 duplicados del 23/09 anulados desde la app (con confirmación del usuario, sesión de Felipe, 23:21 UTC), motivo "Duplicado". Verificado:
+    - el 23/09 sigue CLOSED, con el mismo firmante, 1 firma, 123 líneas (55 asignadas), cola vacía y 6 auditorías `void`;
+    - el Cierre muestra 12 ajustes: los 6 anulados más 6 viajes de Walmart que llegaron después de la firma. La resta vieja daba 0 (44 − 6 = 38 = firmados) y los escondía.
+  - [ ] Probar en dev la barra de selección del Monitor (motivo e ícono). El detalle ya quedó probado con estas 6 anulaciones.
   - [ ] Minors diferidos (en una ronda aparte):
     - carrera anular↔firmar;
     - totals vs closure_signature_trips en dos sentencias;
