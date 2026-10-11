@@ -16,6 +16,39 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Cierre › Viajes en tres pestañas, filtro de cliente coherente y URL en inglés — en dev
+
+- **Qué se hizo:** spec `docs/superpowers/specs/2026-10-11-cierre-viajes-por-estado-y-filtro-de-cliente-design.md` y plan del mismo nombre, ejecutado inline con revisión final (opus).
+  - **Viajes:** de 7 secciones a 3 pestañas: Por resolver · En seguimiento · Resueltos.
+    - Cómo se presenta cada grupo lo define un solo archivo, `lib/cierre/gruposDeViajes.ts`: un grupo nuevo sin clasificar no compila.
+    - Columna "Por qué está aquí"; chips por camino; "hace N días"; "N viajes" en una patente repetida; orden fijo.
+    - Los abandonados por el TMS ahora se declaran con motivo.
+    - La pestaña inicial se congela con los primeros datos.
+    - El lote solo actúa sobre lo que sigue por resolver.
+    - Todo es de solo lectura mientras no se sabe si el día está firmado.
+  - **URL del Cierre en inglés:** `?date=…&tab=fleet|trips|pending|report&trips=to_resolve|tracking|resolved`, en un solo módulo, `lib/navegacion/cierre.ts`. Los enlaces viejos (`?fecha=`, `?tab=viajes`) se leen y se reescriben.
+  - **Filtro de cliente del reporte:**
+    - Las opciones son solo los clientes del día, con la cantidad del tipo a la vista (la misma de las tarjetas). Antes sumaba los dos tipos: Walmart 10/10 = 31 + 4 = 35, y la tarjeta decía 31.
+    - Una sola regla de pertenencia en el backend, `_clientes_de_la_fila`: con carga, el cliente del viaje; sin carga, los clientes de su empresa en `carrier_shippers`. Aplica a equipos, conductores y faltante de dotación.
+    - La API devuelve `clients` (con `by_operation_type`) y `fleet_driver_gap` ya filtrado; Dotación, PDF y Excel leen ese.
+    - Mientras carga ya no se muestra el reporte del filtro anterior.
+- **Verificado en dev:**
+  - 10/10 › Viajes: 1 por resolver, 8 en seguimiento; PYST91 "2 viajes"; 878052 "hace 11 días"; el enlace viejo se reescribe.
+  - 07/10 › Reporte: opciones Walmart (32) · Iansa (2) · Sodimac (1); con Iansa, Equipo Completo baja a 3 equipos.
+  - 10/10: el filtro y la tarjeta dicen lo mismo.
+- **Pendientes menores** (revisión final):
+  - `_clientes_del_dia` agrupa por texto exacto (nombres crudos del TMS fuera del directorio).
+  - `PESTANA_VIEJA` acepta claves del prototipo (`?tab=constructor`): usar `Object.hasOwn`.
+  - `CLAVES_VIEJAS` incluye `viajes`, que nunca existió.
+  - Las pestañas no tienen `aria-controls` ni navegación con flechas (igual que la barra de la página): falta una primitiva de pestañas compartida.
+  - `text-[10px]` en el contador de pestañas.
+- **Deuda anotada:** los `?fecha=` de la API del backend (8 endpoints) siguen en español; cambiarlos exige coordinar backend y frontend.
+- **Siguiente paso exacto:**
+  - [ ] Que Pablo revise en dev Viajes (3 pestañas) y el filtro de cliente.
+  - [ ] Spec del reporte por período (mes, trimestre, año, rango): falta que el usuario defina si el mes solo se ve y exporta o también se firma.
+  - [ ] Ítem 5, decisión A (15 días), ítems 21 y 23, y lo que falta del 20.
+  - [ ] Detalle del viaje (en pausa).
+
 ### 2026-10-11 — Reporte de estatus por tipo (minuta 09/10, ítems 8 y 14) — en dev
 
 - **Qué se hizo:** spec `docs/superpowers/specs/2026-10-11-reporte-de-estatus-por-tipo-design.md` y plan `docs/superpowers/plans/2026-10-11-reporte-de-estatus-por-tipo.md`, ejecutado inline (commits `3f6c2345` a los fixes del cierre).
