@@ -48,6 +48,12 @@
      alguien toca esa pantalla. Lo que cambia hoy es que el código nuevo tiene
      a dónde ir. */
   --informativo: #6b7280;
+
+  /* "Atención · falta algo, no urge" (spec §3.2): la señal que no tenía token,
+     así que "por vencer" se pintaba con ámbar crudo en cada pantalla
+     (PendingDocsBadge, InsuranceAlertBadge…). Ese ámbar se migra cuando se toca
+     esa pantalla; el código nuevo usa este. */
+  --warning: #b45309;
 }
 
 @theme inline {
@@ -65,6 +71,7 @@
   --color-accion: var(--accion);
   --color-resuelto: var(--resuelto);
   --color-informativo: var(--informativo);
+  --color-warning: var(--warning);
   --font-sans: var(--font-roboto), system-ui, sans-serif;
   --font-mulish: var(--font-mulish), system-ui, sans-serif;
 

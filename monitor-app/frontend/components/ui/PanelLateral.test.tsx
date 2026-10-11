@@ -137,4 +137,22 @@ describe('PanelLateral', () => {
     expect(disparador).toHaveFocus()
     disparador.remove()
   })
+
+  it('sin fondo oscuro no es modal: no tapa la pantalla de atrás y un clic afuera lo cierra', () => {
+    const onCerrar = vi.fn()
+    render(
+      <>
+        <button>afuera</button>
+        <PanelLateral titulo="Conductor" onCerrar={onCerrar} pie={null} overlay="none">
+          <p>cuerpo</p>
+        </PanelLateral>
+      </>,
+    )
+    const dialog = screen.getByRole('dialog', { name: 'Conductor' })
+    expect(dialog).not.toHaveAttribute('aria-modal')
+    expect(document.querySelector('[data-testid="panel-overlay"]')).toBeNull()
+    fireEvent.mouseDown(screen.getByText('afuera'))
+    expect(onCerrar).toHaveBeenCalled()
+  })
 })
+

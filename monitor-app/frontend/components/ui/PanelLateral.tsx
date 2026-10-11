@@ -11,12 +11,16 @@ import { X } from 'lucide-react'
  *  los mismos que ya usa TransporterSlideOver. Un `z-[9999]` suelto convierte
  *  el apilado en algo que se descubre a los golpes. */
 export function PanelLateral({
-  titulo, onCerrar, pie, children,
+  titulo, onCerrar, pie, children, overlay = 'dim',
 }: {
   titulo:   ReactNode
   onCerrar: () => void
   pie:      ReactNode
   children: ReactNode
+  /** `dim`: fondo oscuro y modal (editar algo). `none`: una vista rápida que deja
+   *  ver y usar la pantalla de atrás, como el peek de Linear; no es modal, y un
+   *  clic afuera la cierra. */
+  overlay?: 'dim' | 'none'
 }) {
   const panel = useRef<HTMLDivElement>(null)
   const anterior = useRef<HTMLElement | null>(null)
@@ -39,6 +43,16 @@ export function PanelLateral({
     document.addEventListener('keydown', alTeclear)
     return () => document.removeEventListener('keydown', alTeclear)
   }, [onCerrar])
+
+  // Sin fondo no hay nada que reciba el clic de afuera: se escucha en el documento.
+  useEffect(() => {
+    if (overlay !== 'none') return
+    const alClic = (e: MouseEvent) => {
+      if (panel.current && !panel.current.contains(e.target as Node)) onCerrar()
+    }
+    document.addEventListener('mousedown', alClic)
+    return () => document.removeEventListener('mousedown', alClic)
+  }, [overlay, onCerrar])
 
   // `aria-modal="true"` es una PROMESA: le dice al lector de pantalla que el
   // resto de la pagina no existe mientras esto esta abierto. Sin atrapar el
@@ -73,16 +87,19 @@ export function PanelLateral({
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 z-40" onClick={onCerrar} aria-hidden="true" />
+      {overlay === 'dim' && (
+        <div data-testid="panel-overlay" className="fixed inset-0 bg-black/50 z-40" onClick={onCerrar} aria-hidden="true" />
+      )}
       <div
         ref={panel}
         role="dialog"
-        aria-modal="true"
+        aria-modal={overlay === 'dim' ? 'true' : undefined}
         aria-label={typeof titulo === 'string' ? titulo : undefined}
         tabIndex={-1}
         onKeyDown={atraparTab}
-        className="fixed right-0 top-0 z-50 h-full w-full max-w-md bg-white shadow-xl
-                   flex flex-col focus-visible:outline-none"
+        className={`fixed right-0 top-0 z-50 h-full w-full bg-white shadow-xl flex flex-col focus-visible:outline-none ${
+          overlay === 'dim' ? 'max-w-md' : 'md:w-[420px] md:border-l md:border-border'
+        }`}
       >
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
           <div className="font-mulish font-bold text-sm text-text-primary min-w-0 truncate">{titulo}</div>
