@@ -52,7 +52,8 @@ describe('PendingHoldersPanel', () => {
       fila({ id: 'b', subject_name: 'Díaz Lagos, Pedro', missing_validity_data: true }),
       fila({ id: 'c', subject_name: 'Soto Muñoz, Carla', document_state: 'EXPIRING', urgencia: 'POR_VENCER',
              due_on: new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10) }),
-      fila({ id: 'd', subject_name: 'Vera Castro, Miguel', document_state: 'MISSING', urgencia: 'FALTA', tiene_archivo: false }),
+      fila({ id: 'd', subject_name: 'Vera Castro, Miguel', document_state: 'MISSING', urgencia: 'FALTA', tiene_archivo: false,
+             entered_on: new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10) }),
     ] })
     montar({ state: 'all' })
     const enFila = async (id: string) => within(await screen.findByTestId(`renglon-${id}`))
@@ -62,11 +63,38 @@ describe('PendingHoldersPanel', () => {
     expect((await enFila('b')).getByText('Completar')).toBeInTheDocument()
     expect((await enFila('c')).getByText(/^Vence en 10 días · \d\d\/\d\d$/)).toBeInTheDocument()
     expect((await enFila('c')).getByText('Subir la nueva')).toBeInTheDocument()
+    expect((await enFila('b')).getByText('El archivo está cargado; sin la fecha no vale')).toBeInTheDocument()
     expect((await enFila('d')).getByText('Falta')).toBeInTheDocument()
+    expect((await enFila('d')).getByText(/^Ingresó hace (9|10|11) días$/)).toBeInTheDocument()
     expect((await enFila('d')).getByText('Subir')).toBeInTheDocument()
     // Quien debe y de qué empresa.
     expect((await enFila('a')).getByText('Rojas Pérez, Andrés')).toBeInTheDocument()
     expect((await enFila('a')).getByText(/Transportes Cordillera SpA/)).toBeInTheDocument()
+  })
+
+  it('las columnas dicen qué es cada cosa: Empresa/Estado, o Conductor/Empresa/Estado', async () => {
+    vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 1, rows: [fila()] })
+    montar()
+    await screen.findByText('Transportes Cordillera SpA')
+    expect(screen.getByText('Empresa')).toBeInTheDocument()
+    expect(screen.getByText('Estado', { selector: 'span' })).toBeInTheDocument()
+    expect(screen.queryByText('Conductor')).not.toBeInTheDocument()
+  })
+
+  it('para un documento de conductor, la columna Conductor va antes que Empresa', async () => {
+    vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 1, rows: [
+      fila({ entity_type: 'DRIVER', category: 'CHOFER', subject_name: 'Rojas Pérez, Andrés' })] })
+    montar({ selected: { ...F30, label: 'Licencia de Conducir', target_entity: 'DRIVER' } })
+    await screen.findByText('Rojas Pérez, Andrés')
+    const conductor = screen.getByText('Conductor'), empresa = screen.getByText('Empresa')
+    expect(conductor.compareDocumentPosition(empresa) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('el encabezado dice el período que se exige y cuándo vence, si la regla lo define', async () => {
+    vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 0, rows: [] })
+    montar({ selected: { ...F30,
+      vigencia: { frequency_months: 1, cutoff_day: 18, period_offset_months: 1, warning_days: 5 } as never } })
+    expect(screen.getByText(/^Mensual · tope día 18 · período [a-z]+ · vence el 18\/\d\d$/)).toBeInTheDocument()
   })
 
   it('"Todos" pide los tres estados pendientes, nunca los documentos al día', async () => {
@@ -139,8 +167,9 @@ describe('PendingHoldersPanel', () => {
       .mockResolvedValue({ total: 1, rows: [fila({ ...SIN_DATO, id: 'p2', carrier_name: 'Transportes Andes Ltda' })] })
     vi.mocked(complianceApi.uploadFile).mockResolvedValue({ status: 'APPROVED_MANUAL' } as never)
     const qc = nuevoQc()
-    // El resumen tal como vuelve del servidor después de guardar.
-    qc.setQueryData(clavesCertificacion.resumenPendientes('requirement'), { rows: [{ ...F30, overdue: 8 }] })
+    // El resumen tal como vuelve del servidor después de guardar. 5, no 9−1:
+    // así el aviso prueba que lee el resumen y no resta a mano.
+    qc.setQueryData(clavesCertificacion.resumenPendientes('requirement'), { rows: [{ ...F30, overdue: 5 }] })
     const invalidar = vi.spyOn(qc, 'invalidateQueries')
     montar({ selected: { ...F30, overdue: 9 } }, qc)
 
@@ -154,7 +183,9 @@ describe('PendingHoldersPanel', () => {
     for (const raiz of [['compliance-pending'], ['compliance-pending-summary'], ['compliance-summary'], ['entity-summary']]) {
       expect(invalidar).toHaveBeenCalledWith({ queryKey: raiz })
     }
-    expect(screen.getByRole('status')).toHaveTextContent('F30-1 de Transportes Cordillera SpA guardado · quedan 8 vencidos')
+    expect(screen.getByRole('status')).toHaveTextContent('F30-1 de Transportes Cordillera SpA guardado · quedan 5 vencidos')
+    // Sólo informa: no ofrece un deshacer que no existe.
+    expect(screen.queryByRole('button', { name: /deshacer/i })).not.toBeInTheDocument()
   })
 
   it('si una subida falla, el error queda en su fila y las demás siguen', async () => {

@@ -61,3 +61,9 @@ export function formatRelativeTime(iso: string | null | undefined): string {
   const diffDay = Math.floor(diffHour / 24)
   return `hace ${diffDay} d`
 }
+
+/** Hoy en Chile (`YYYY-MM-DD`). `toISOString()` da el día UTC, que desde las
+ *  21:00 (20:00 en verano) ya es mañana. Mismo criterio que `public.hoy_chile()`. */
+export function hoyEnChile(ahora: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(ahora)
+}

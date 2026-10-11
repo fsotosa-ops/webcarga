@@ -4,9 +4,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { PendingSummaryRow } from '@/lib/types'
 
 // La URL se mueve por test (mismo patrón que Sidebar.test.tsx).
-const nav = vi.hoisted(() => ({ qs: '', replace: vi.fn() }))
+const nav = vi.hoisted(() => ({ qs: '', replace: vi.fn(), push: vi.fn() }))
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: nav.replace }),
+  useRouter: () => ({ replace: nav.replace, push: nav.push }),
   useSearchParams: () => new URLSearchParams(nav.qs),
   usePathname: () => '/dashboard/compliance/pending',
 }))
@@ -37,8 +37,10 @@ function montar() {
   )
 }
 
-/** La URL que se escribió en el último `router.replace`, como parámetros. */
-const ultimaUrl = () => new URLSearchParams(String(nav.replace.mock.lastCall?.[0]).split('?')[1] ?? '')
+/** La URL que se escribió en el último `router.push` o `router.replace`, como parámetros. */
+const params = (call?: unknown[]) => new URLSearchParams(String(call?.[0]).split('?')[1] ?? '')
+const ultimoPush = () => params(nav.push.mock.lastCall)
+const ultimoReplace = () => params(nav.replace.mock.lastCall)
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -139,9 +141,11 @@ describe('Pendientes — la URL', () => {
     vi.mocked(complianceApi.pendingSummary).mockResolvedValue({ rows: [F30, LIC] })
     montar()
     fireEvent.click(await screen.findByRole('option', { name: /Licencia de Conducir/ }))
-    expect(nav.replace).toHaveBeenCalledWith(expect.stringMatching(/^\/dashboard\/compliance\/pending\?/), { scroll: false })
-    expect(ultimaUrl().get('doc')).toBe('LIC')
-    expect(ultimaUrl().get('state')).toBe('expiring')
+    // push: elegir entra al historial, así "Volver" del navegador vuelve al anterior.
+    expect(nav.push).toHaveBeenCalledWith(expect.stringMatching(/^\/dashboard\/compliance\/pending\?/), { scroll: false })
+    expect(nav.replace).not.toHaveBeenCalled()
+    expect(ultimoPush().get('doc')).toBe('LIC')
+    expect(ultimoPush().get('state')).toBe('expiring')
   })
 
   it('cambiar el filtro escribe state', async () => {
@@ -150,8 +154,10 @@ describe('Pendientes — la URL', () => {
     montar()
     await screen.findByRole('option', { name: /F30-1/ })
     fireEvent.click(within(screen.getByRole('group', { name: 'Estado' })).getByRole('button', { name: /Por vencer/ }))
-    expect(ultimaUrl().get('state')).toBe('expiring')
-    expect(ultimaUrl().get('doc')).toBe('F30_1')
+    // replace: recorrer filtros no llena el historial.
+    expect(nav.push).not.toHaveBeenCalled()
+    expect(ultimoReplace().get('state')).toBe('expiring')
+    expect(ultimoReplace().get('doc')).toBe('F30_1')
   })
 
   it('pasar a "Empresa" escribe by=carrier y suelta el documento elegido', async () => {
@@ -160,9 +166,9 @@ describe('Pendientes — la URL', () => {
     montar()
     await screen.findByRole('option', { name: /F30-1/ })
     fireEvent.click(within(screen.getByRole('group', { name: 'Ver por' })).getByRole('button', { name: 'Empresa' }))
-    expect(ultimaUrl().get('by')).toBe('carrier')
-    expect(ultimaUrl().get('doc')).toBeNull()
-    expect(ultimaUrl().get('state')).toBe('missing')
+    expect(ultimoPush().get('by')).toBe('carrier')
+    expect(ultimoPush().get('doc')).toBeNull()
+    expect(ultimoPush().get('state')).toBe('missing')
   })
 
   it('by=carrier&carrier=<id>: resumen por empresa y lo que debe esa empresa', async () => {
@@ -180,8 +186,8 @@ describe('Pendientes — la URL', () => {
     vi.mocked(complianceApi.pendingSummary).mockResolvedValue({ rows: [CORDILLERA, ANDES] })
     montar()
     fireEvent.click(await screen.findByRole('option', { name: /Transportes Andes Ltda/ }))
-    expect(ultimaUrl().get('carrier')).toBe('c2')
-    expect(ultimaUrl().get('by')).toBe('carrier')
+    expect(ultimoPush().get('carrier')).toBe('c2')
+    expect(ultimoPush().get('by')).toBe('carrier')
   })
 
   it('en el teléfono, la flecha de volver suelta lo elegido', async () => {
@@ -189,6 +195,6 @@ describe('Pendientes — la URL', () => {
     vi.mocked(complianceApi.pendingSummary).mockResolvedValue({ rows: [F30, LIC] })
     montar()
     fireEvent.click(await screen.findByRole('button', { name: 'Volver a la lista' }))
-    expect(ultimaUrl().get('doc')).toBeNull()
+    expect(ultimoPush().get('doc')).toBeNull()
   })
 })

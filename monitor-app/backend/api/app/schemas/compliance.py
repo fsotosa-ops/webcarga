@@ -104,6 +104,9 @@ class PendingComplianceRow(BaseModel):
     # Mismos valores con el nombre nuevo (spec §4.1); los viejos siguen por compatibilidad.
     due_on: Optional[date] = None
     missing_validity_data: bool = False
+    # Desde cuándo está quien lo debe: inicio de su asignación vigente
+    # (conductor/equipo) o alta de la empresa. Pendientes: "Ingresó hace N días".
+    entered_on: Optional[date] = None
     issue_date: Optional[date] = None
     period_start: Optional[date] = None
     # Existe porque alguien lo solicitó (exigible_on = ON_REQUEST).

@@ -732,3 +732,50 @@ async def test_el_match_no_propone_a_quien_esta_fuera_de_alcance(conexion_revert
         pool=PoolDeUnaConexion(conn), _=None)
 
     assert [f["status"] for f in res["files"]] == ["matched", "unmatched"]
+
+
+# ── entered_on: desde cuándo está quien debe (spec §5.2, "Falta · Ingresó hace N días") ──
+
+async def test_entered_on_de_un_conductor_es_el_inicio_de_su_asignacion_vigente(conexion_revertida):
+    conn = conexion_revertida
+    empresa = await _empresa(conn)
+    conductor = await _conductor(conn, empresa)  # asignación ACTIVE desde hoy - 400
+    # Una asignación anterior, ya cerrada, no es "cuándo ingresó" hoy.
+    otra = await _empresa(conn)
+    await conn.execute(
+        "INSERT INTO public.driver_assignments (driver_id, carrier_id, status, start_date, end_date) "
+        "VALUES ($1, $2, 'INACTIVE', public.hoy_chile() - 900, public.hoy_chile() - 500)", conductor, otra)
+    req = await _requisito(conn, entidad="DRIVER")
+    await _registro(conn, req, "DRIVER", conductor)
+
+    res = await _listar(conn, requirement_code=await _codigo(conn, req), state="missing")
+
+    assert [r["entered_on"] for r in res["rows"]] == [await _hoy(conn) - timedelta(days=400)]
+
+
+async def test_entered_on_de_un_equipo_es_el_inicio_de_su_asignacion_vigente(conexion_revertida):
+    conn = conexion_revertida
+    empresa = await _empresa(conn)
+    equipo = await _equipo(conn, empresa)
+    await conn.execute(
+        "UPDATE public.asset_assignments SET start_date = public.hoy_chile() - 10 WHERE asset_id = $1", equipo)
+    req = await _requisito(conn, entidad="ASSET")
+    await _registro(conn, req, "ASSET", equipo)
+
+    res = await _listar(conn, requirement_code=await _codigo(conn, req), state="missing")
+
+    assert [r["entered_on"] for r in res["rows"]] == [await _hoy(conn) - timedelta(days=10)]
+
+
+async def test_entered_on_de_una_empresa_es_su_alta_en_hora_de_chile(conexion_revertida):
+    conn = conexion_revertida
+    empresa = await _empresa(conn)
+    # 02:30 UTC del día 20 son las 23:30 (o 22:30) del 19 en Chile.
+    await conn.execute(
+        "UPDATE public.carriers SET created_at = '2026-09-20 02:30:00+00' WHERE id = $1", empresa)
+    req = await _requisito(conn, entidad="CARRIER")
+    await _registro(conn, req, "CARRIER", empresa)
+
+    res = await _listar(conn, requirement_code=await _codigo(conn, req), state="missing")
+
+    assert [r["entered_on"] for r in res["rows"]] == [date(2026, 9, 19)]

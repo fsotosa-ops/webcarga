@@ -141,6 +141,32 @@ def aviso_desde_sql(alias: str = "cr") -> str:
     )
 
 
+def _ingreso(tabla: str, col: str, alias: str) -> str:
+    """Cuándo ingresó un conductor o un equipo: el `start_date` de su
+    asignación ACTIVE (NULL sin una). Una sola definición: la usan
+    MONTH_AFTER_START (`exigible_sql`, `exigible_desde_sql`) y `ingreso_sql`."""
+    return (f"(SELECT vg_da.start_date FROM public.{tabla} vg_da "
+            f"WHERE vg_da.{col} = {alias}.entity_id AND vg_da.status = 'ACTIVE')")
+
+
+def _ingreso_del_conductor(alias: str) -> str:
+    return _ingreso("driver_assignments", "driver_id", alias)
+
+
+def ingreso_sql(alias: str = "cr") -> str:
+    """Desde cuándo está quien debe el documento (Pendientes: "Falta · Ingresó
+    hace N días"). Conductor y equipo: el inicio de su asignación vigente, la
+    misma fecha que usa MONTH_AFTER_START. Empresa: su alta (`created_at`),
+    como día de Chile — la base corre en UTC."""
+    return (
+        f"(CASE {alias}.entity_type "
+        f"WHEN 'DRIVER' THEN {_ingreso_del_conductor(alias)} "
+        f"WHEN 'ASSET' THEN {_ingreso('asset_assignments', 'asset_id', alias)} "
+        f"WHEN 'CARRIER' THEN (SELECT (vg_ic.created_at AT TIME ZONE 'America/Santiago')::date "
+        f"FROM public.carriers vg_ic WHERE vg_ic.id = {alias}.entity_id) END)"
+    )
+
+
 def exigible_sql(alias: str = "cr") -> str:
     """Si ya se le exige (exigible_on).
       ON_ENTITY_START / ON_REQUEST  siempre (a ON_REQUEST lo filtra la siembra)
@@ -150,9 +176,7 @@ def exigible_sql(alias: str = "cr") -> str:
       ON_ENTITY_END      el conductor ya no tiene asignacion ACTIVE y tuvo alguna"""
     return (
         f"(CASE WHEN {_es(alias, 'exigible_on', 'MONTH_AFTER_START')} THEN COALESCE("
-        f"(SELECT {hoy_sql()} >= (date_trunc('month', vg_da.start_date) + interval '1 month')::date "
-        f"FROM public.driver_assignments vg_da "
-        f"WHERE vg_da.driver_id = {alias}.entity_id AND vg_da.status = 'ACTIVE'), true) "
+        f"{hoy_sql()} >= (date_trunc('month', {_ingreso_del_conductor(alias)}) + interval '1 month')::date, true) "
         f"WHEN {_es(alias, 'exigible_on', 'ON_ENTITY_END')} THEN "
         f"NOT EXISTS (SELECT 1 FROM public.driver_assignments vg_da "
         f"WHERE vg_da.driver_id = {alias}.entity_id AND vg_da.status = 'ACTIVE') "
@@ -169,9 +193,7 @@ def exigible_desde_sql(alias: str = "cr") -> str:
     fecha que anunciar (depende de que el conductor se vaya)."""
     return (
         f"(CASE WHEN {_es(alias, 'exigible_on', 'MONTH_AFTER_START')} THEN "
-        f"(SELECT (date_trunc('month', vg_da.start_date) + interval '1 month')::date "
-        f"FROM public.driver_assignments vg_da "
-        f"WHERE vg_da.driver_id = {alias}.entity_id AND vg_da.status = 'ACTIVE') END)"
+        f"(date_trunc('month', {_ingreso_del_conductor(alias)}) + interval '1 month')::date END)"
     )
 
 

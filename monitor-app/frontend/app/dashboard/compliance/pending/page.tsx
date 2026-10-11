@@ -42,13 +42,16 @@ function Pending() {
     : rows.find(r => r.key === params.get('carrier'))
   const elegido = desdeUrl ?? rows[0] ?? null
 
-  function cambiar(next: Record<string, string | null>) {
+  /** Elegir (doc, carrier, by) entra al historial: "Volver" del navegador
+   *  —o el gesto del teléfono— vuelve a lo anterior. El filtro (`state`) lo
+   *  reemplaza: recorrer filtros no son pasos que haya que deshacer. */
+  function cambiar(next: Record<string, string | null>, modo: 'push' | 'replace' = 'push') {
     const qs = new URLSearchParams(params.toString())
     for (const [k, v] of Object.entries(next)) {
       if (v === null) qs.delete(k)
       else qs.set(k, v)
     }
-    router.replace(`${pathname}?${qs}`, { scroll: false })
+    router[modo](`${pathname}?${qs}`, { scroll: false })
   }
 
   function elegir(key: string) {
@@ -87,7 +90,7 @@ function Pending() {
               groupBy={groupBy}
               selected={elegido}
               state={state}
-              onStateChange={s => cambiar({ state: s })}
+              onStateChange={s => cambiar({ state: s }, 'replace')}
               canUpload={canUpload}
               onBack={() => cambiar({ doc: null, carrier: null })}
             />

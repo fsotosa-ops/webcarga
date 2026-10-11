@@ -4,12 +4,14 @@ import { Check, Loader2, X } from 'lucide-react'
 
 interface Props {
   mensaje:      string
-  onDeshacer:   () => void
+  /** Sin él, el aviso sólo informa: no promete una vuelta atrás que no existe. */
+  onDeshacer?:  () => void
   onCerrar:     () => void
   deshaciendo?: boolean
 }
 
-/** El aviso de que una operación en lote se aplicó, con su deshacer.
+/** El aviso de que una operación se aplicó, con su deshacer si lo hay.
+ *  Lo usan la Bandeja (asignar en lote) y Pendientes (guardado).
  *
  *  No se desvanece a los tres segundos a propósito: una asignación de 200
  *  archivos se revisa con calma, y un aviso que huye convierte el deshacer
@@ -23,7 +25,7 @@ export function TriageUndoNotice({ mensaje, onDeshacer, onCerrar, deshaciendo }:
     >
       <Check size={14} className="text-accent shrink-0" />
       <span className="text-xs flex-1 min-w-0">{mensaje}</span>
-      <button
+      {onDeshacer && <button
         type="button"
         onClick={onDeshacer}
         disabled={deshaciendo}
@@ -32,7 +34,7 @@ export function TriageUndoNotice({ mensaje, onDeshacer, onCerrar, deshaciendo }:
         {deshaciendo
           ? <><Loader2 size={11} className="motion-safe:animate-spin" /> Deshaciendo…</>
           : 'Deshacer'}
-      </button>
+      </button>}
       <button
         type="button" onClick={onCerrar} aria-label="Cerrar aviso"
         className="text-white/60 hover:text-white transition-colors cursor-pointer shrink-0"

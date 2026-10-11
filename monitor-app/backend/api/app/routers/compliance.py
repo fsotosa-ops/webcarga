@@ -72,6 +72,7 @@ from ..services.vencimientos import (
     MISSING_STATE,
     document_state_sql,
     in_scope_sql,
+    ingreso_sql,
     PENDING_STATES,
     exigible_desde_sql,
     exigible_sql,
@@ -492,7 +493,9 @@ pending AS (
            req.expiration_policy,
            -- La definición única (services/vencimientos.py, spec 2026-10-11).
            {document_state_sql('cr')} AS document_state,
-           {in_scope_sql('cr')} AS in_scope
+           {in_scope_sql('cr')} AS in_scope,
+           -- Desde cuándo está quien lo debe ("Falta · Ingresó hace N días").
+           {ingreso_sql('cr')} AS entered_on
     FROM public.compliance_records cr
     JOIN public.compliance_requirements req ON req.id = cr.requirement_id
     WHERE cr.is_current = true
@@ -607,6 +610,7 @@ SELECT
     COALESCE(r.vence_calculado = '-infinity', false) AS falta_dato_de_vigencia,
     NULLIF(r.vence_calculado, '-infinity') AS due_on,
     COALESCE(r.vence_calculado = '-infinity', false) AS missing_validity_data,
+    r.entered_on,
     r.issue_date, r.period_start, r.a_pedido,
     c.id::text AS carrier_id, c.business_name AS carrier_name, c.tax_id AS carrier_tax_id,
     COALESCE(cot.operation_types, ARRAY[]::text[]) AS carrier_operation_types,
@@ -858,6 +862,7 @@ async def list_pending_compliance_records(
             "falta_dato_de_vigencia": r["falta_dato_de_vigencia"],
             "due_on": r["due_on"],
             "missing_validity_data": r["missing_validity_data"],
+            "entered_on": r["entered_on"],
             "issue_date": r["issue_date"],
             "period_start": r["period_start"],
             "a_pedido": r["a_pedido"],

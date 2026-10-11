@@ -2,16 +2,17 @@
 
 import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Check, X } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
 import { RenglonPendiente } from '@/components/compliance/RenglonPendiente'
+import { TriageUndoNotice } from '@/components/compliance/TriageUndoNotice'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { StatusChip } from '@/components/ui/StatusChip'
 import { Estado } from '@/components/ui/Estado'
 import { resumenDeVigencia, vigenciaDe } from '@/lib/vigencia'
-import { pendingRowStatus } from '@/lib/pending'
+import { pendingPeriodLine, pendingRowStatus } from '@/lib/pending'
 import type { DatosDelDocumento } from '@/lib/compliance'
 import type {
   EntityType, PendingComplianceRow, PendingFilter, PendingGroupBy, PendingSummaryResponse, PendingSummaryRow,
@@ -75,20 +76,34 @@ export function PendingHoldersPanel({ groupBy, selected, state, onStateChange, c
   const regla = groupBy === 'requirement' && selected.expiration_policy
     ? resumenDeVigencia(vigenciaDe({ expiration_policy: selected.expiration_policy, vigencia: selected.vigencia }))
     : null
+  // "período septiembre · vence el 18/10", si la regla define período.
+  const periodo = groupBy === 'requirement' ? pendingPeriodLine(selected) : null
+  // Columnas de la vista por documento: quién lo debe y, si no es la empresa
+  // misma, de qué empresa (maqueta: Empresa/Estado; Conductor/Empresa/Estado).
+  const sujeto = selected.target_entity === 'DRIVER' ? 'Conductor'
+    : selected.target_entity === 'ASSET' ? 'Equipo' : null
 
   function renglon(f: PendingComplianceRow) {
     const estado = pendingRowStatus(f)
-    const titulo: ReactNode = groupBy === 'requirement'
-      ? <>{f.subject_name ?? f.carrier_name}<span className="text-informativo">
-          {f.subject_name ? ` · ${f.carrier_name}` : f.carrier_operation_types.length ? ` · ${f.carrier_operation_types.join(' · ')}` : ''}
-        </span></>
-      : <>{f.document_name}{f.subject_name && <span className="text-informativo"> · {f.subject_name}</span>}</>
+    const titulo: ReactNode = groupBy === 'carrier'
+      ? <>{f.document_name}{f.subject_name && <span className="text-informativo"> · {f.subject_name}</span>}</>
+      : f.subject_name
+        // Dos columnas desde md; en el teléfono, en la misma línea.
+        ? <span className="flex min-w-0 md:grid md:grid-cols-2 md:gap-3">
+            <span className="truncate">{f.subject_name}</span>
+            <span className="truncate text-informativo"><span className="md:hidden">{' · '}</span>{f.carrier_name}</span>
+          </span>
+        : <>{f.carrier_name}{f.carrier_operation_types.length > 0 &&
+            <span className="text-informativo"> · {f.carrier_operation_types.join(' · ')}</span>}</>
     return (
       <RenglonPendiente
         key={f.id}
         fila={f}
         title={titulo}
-        status={<StatusChip tone={estado.tone}>{estado.label}</StatusChip>}
+        status={<span className="flex flex-col items-start gap-0.5">
+          <StatusChip tone={estado.tone}>{estado.label}</StatusChip>
+          {estado.detail && <span className="text-etiqueta text-informativo">{estado.detail}</span>}
+        </span>}
         actionLabel={estado.action}
         puedeEditar={canUpload}
         onSubir={subir}
@@ -110,7 +125,9 @@ export function PendingHoldersPanel({ groupBy, selected, state, onStateChange, c
           )}
           <span className="truncate">{selected.label}</span>
         </h2>
-        {regla && <span className="text-etiqueta text-informativo">{regla}</span>}
+        {(regla || periodo) && (
+          <span className="text-etiqueta text-informativo">{[regla, periodo].filter(Boolean).join(' · ')}</span>
+        )}
         <span className="md:ml-auto">
           <SegmentedControl<PendingFilter>
             label="Estado"
@@ -128,16 +145,7 @@ export function PendingHoldersPanel({ groupBy, selected, state, onStateChange, c
 
       {canUpload && groupBy === 'requirement' && <BulkUploadReview requirement={selected} />}
 
-      {aviso && (
-        <div role="status" className="mb-2 flex items-center gap-2 rounded-md bg-text-primary px-3 py-2 text-white">
-          <Check size={14} className="shrink-0 text-accent" aria-hidden="true" />
-          <span className="min-w-0 flex-1 text-etiqueta">{aviso}</span>
-          <button type="button" onClick={() => setAviso(null)} aria-label="Cerrar aviso"
-                  className="shrink-0 opacity-70 hover:opacity-100">
-            <X size={14} aria-hidden="true" />
-          </button>
-        </div>
-      )}
+      {aviso && <div className="mb-2"><TriageUndoNotice mensaje={aviso} onCerrar={() => setAviso(null)} /></div>}
 
       {lista.isPending && <PendingSkeleton />}
 
@@ -164,7 +172,17 @@ export function PendingHoldersPanel({ groupBy, selected, state, onStateChange, c
       )}
 
       {lista.isSuccess && filas.length > 0 && groupBy === 'requirement' && (
-        <div className="overflow-hidden rounded-md border border-border">{filas.map(renglon)}</div>
+        <div className="overflow-hidden rounded-md border border-border">
+          <div aria-hidden="true"
+               className="hidden items-center gap-3 border-b border-border bg-bg-main px-3 py-1.5 text-etiqueta font-semibold text-informativo md:flex">
+            {sujeto
+              ? <span className="grid flex-1 grid-cols-2 gap-3"><span>{sujeto}</span><span>Empresa</span></span>
+              : <span className="flex-1">Empresa</span>}
+            <span className="w-52">Estado</span>
+            {canUpload && <span className="min-w-28" />}
+          </div>
+          {filas.map(renglon)}
+        </div>
       )}
 
       {lista.isSuccess && filas.length > 0 && groupBy === 'carrier' && (

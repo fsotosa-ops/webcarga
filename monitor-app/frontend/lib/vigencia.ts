@@ -81,6 +81,21 @@ export function faltaDeVigencia(v: Vigencia): string | null {
   return null
 }
 
+/** El período que una regla por período (CALENDAR_PERIOD) exige hoy: su
+ *  primer día, el día en que se pide y hasta cuándo sirve. `null` si la regla
+ *  no es por período o le falta un parámetro. Una sola aritmética: la usan el
+ *  ejemplo de Configuración y el encabezado de Pendientes. */
+export function periodoQueSeExige(v: Vigencia, hoy: Date): { periodo: Date; sePide: Date; sirveHasta: Date } | null {
+  if (v.politica !== 'CALENDAR_PERIOD' || faltaDeVigencia(v)) return null
+  const offset = v.period_offset_months!, dia = v.cutoff_day!, cada = v.frequency_months!
+  const gracia = v.grace_days ?? 0
+  const inicioDelMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
+  const periodo = sumarMeses(inicioDelMes, -offset)
+  const sePide = corte(sumarMeses(periodo, offset), dia)
+  const sirveHasta = sumarDias(corte(sumarMeses(periodo, offset + cada), dia), gracia)
+  return { periodo, sePide, sirveHasta }
+}
+
 /** La regla escrita con fechas, contada desde `hoy`. Si a la regla le falta un
  *  parámetro, dice cuál en vez de inventar una fecha. */
 export function ejemploDeVigencia(v: Vigencia, hoy: Date): string {
@@ -111,12 +126,7 @@ export function ejemploDeVigencia(v: Vigencia, hoy: Date): string {
     }
     case 'CALENDAR_PERIOD': {
       // `faltaDeVigencia` ya comprobó que los cuatro parámetros están.
-      const offset = v.period_offset_months!, dia = v.cutoff_day!, cada = v.frequency_months!
-      // El período que se exige hoy, y el mes en que se pide.
-      const inicioDelMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1)
-      const periodo = sumarMeses(inicioDelMes, -offset)
-      const sePide = corte(sumarMeses(periodo, offset), dia)
-      const sirveHasta = sumarDias(corte(sumarMeses(periodo, offset + cada), dia), gracia)
+      const { periodo, sePide, sirveHasta } = periodoQueSeExige(v, hoy)!
       const vencidaDesde = sumarDias(sePide, gracia + 1)
       const mes = MESES[periodo.getMonth()]
       return `Así queda: el de ${mes} se pide el ${corta(sePide)} y sirve hasta el `

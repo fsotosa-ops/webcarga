@@ -120,18 +120,22 @@ export function RenglonPendiente({
       className={`border-b border-border last:border-b-0 px-3 py-2 min-h-10 transition-colors ${fondo}`}
     >
       <div className="flex items-center gap-3">
-        <span className="flex-1 min-w-0 truncate text-dato text-text-primary">
-          {title ?? fila.document_name}
-        </span>
-
-        {status && estado.tipo === 'reposo' && <span className="shrink-0">{status}</span>}
-
-        {!status && motivo && estado.tipo === 'reposo' && (
-          <span className={`shrink-0 text-etiqueta ${
-            fila.urgencia === 'AL_DIA' || fila.urgencia === 'NO_EXIGIBLE' ? 'text-informativo' : 'text-espera'}`}>
-            {motivo}
+        {/* En el teléfono el estado va debajo del nombre (maqueta de
+            Pendientes, 390 px); desde md, en la misma línea, como siempre. */}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5 md:flex-row md:items-center md:gap-3">
+          <span className="min-w-0 truncate text-dato text-text-primary md:flex-1">
+            {title ?? fila.document_name}
           </span>
-        )}
+
+          {status && estado.tipo === 'reposo' && <span className="shrink-0 md:w-52">{status}</span>}
+
+          {!status && motivo && estado.tipo === 'reposo' && (
+            <span className={`shrink-0 text-etiqueta ${
+              fila.urgencia === 'AL_DIA' || fila.urgencia === 'NO_EXIGIBLE' ? 'text-informativo' : 'text-espera'}`}>
+              {motivo}
+            </span>
+          )}
+        </div>
 
         {onFechaCorregida && estado.tipo === 'reposo' && (
           <span className="shrink-0 tabular-nums">
@@ -198,7 +202,7 @@ export function RenglonPendiente({
           <label
             htmlFor={inputId}
             className={`shrink-0 inline-flex items-center gap-1.5 text-etiqueta text-accion font-semibold cursor-pointer transition-opacity hover:opacity-70 ${
-              actionLabel ? 'rounded-md border border-dashed border-accion/45 px-2 py-0.5' : ''}`}
+              actionLabel ? 'justify-center rounded-md border border-dashed border-accion/45 px-2 py-0.5 md:min-w-28' : ''}`}
           >
             <Upload size={12} aria-hidden="true" />
             {estado.tipo === 'recibiendo' ? 'Suelta para cargar aquí' : actionLabel ?? 'Arrastra aquí o elige un archivo'}

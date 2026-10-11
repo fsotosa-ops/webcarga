@@ -12,6 +12,13 @@ describe('TriageUndoNotice', () => {
     expect(screen.getByRole('button', { name: /deshacer/i })).toBeInTheDocument()
   })
 
+  it('sin onDeshacer sólo informa: no ofrece una vuelta atrás que no existe', () => {
+    render(<TriageUndoNotice mensaje="F30-1 de Transportes Andes guardado" onCerrar={vi.fn()} />)
+    expect(screen.getByRole('status')).toHaveTextContent('F30-1 de Transportes Andes guardado')
+    expect(screen.queryByRole('button', { name: /deshacer/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cerrar aviso' })).toBeInTheDocument()
+  })
+
   it('deshacer avisa al padre', () => {
     const onDeshacer = vi.fn()
     render(<TriageUndoNotice {...base} onDeshacer={onDeshacer} />)

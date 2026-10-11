@@ -880,6 +880,9 @@ export type PendingComplianceRow = {
   due_on?:                    string | null
   /** Cargado pero sin la emisión o el período que su tipo necesita. */
   missing_validity_data?:     boolean
+  /** Desde cuándo está quien lo debe: inicio de su asignación vigente
+   *  (conductor/equipo) o alta de la empresa. Pendientes: "Ingresó hace N días". */
+  entered_on?:                string | null
   /** Qué exige su requisito. El renglón lo necesita para pedir la fecha
    *  ANTES de subir; sin él pregunta siempre o no pregunta nunca, y no
    *  preguntar nunca es un 422 con el archivo ya subido. */
