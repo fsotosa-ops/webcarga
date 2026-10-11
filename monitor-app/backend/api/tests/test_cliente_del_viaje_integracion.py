@@ -107,3 +107,34 @@ async def test_renombrar_el_cliente_no_cambia_el_id_canonico_del_viaje_manual(co
     fila = await conexion_revertida.fetchrow(
         "SELECT client_name, shipper_id::text FROM app.trips_manual WHERE id = $1", trip_id)
     assert (fila["client_name"], fila["shipper_id"]) == ("walmart", walmart)
+
+
+async def test_el_csv_marca_todas_las_filas_con_cliente_fuera_del_directorio(conexion_revertida):
+    """Revisión final, Importante 2: el CSV se valida entero antes de escribir, y
+    cada fila con un cliente que no está en el directorio queda marcada (no solo
+    la primera que falla al guardar)."""
+    from datetime import date
+
+    from fastapi import HTTPException
+
+    from app.routers.trips import TripCreateBody, bulk_create_trips
+    from tests.conftest import PoolDeUnaConexion, _usuario_real
+
+    usuario = await _usuario_real(conexion_revertida)
+    filas = [
+        TripCreateBody(planning_date=date(2099, 1, 6), client_name="WALMART", source_system_trip_id="ZZ-CSV-1"),
+        TripCreateBody(planning_date=date(2099, 1, 6), client_name="No Existe SpA", source_system_trip_id="ZZ-CSV-2"),
+        TripCreateBody(planning_date=date(2099, 1, 6), client_name="Tampoco Existe", source_system_trip_id="ZZ-CSV-3"),
+    ]
+    with pytest.raises(HTTPException) as e:
+        await bulk_create_trips(filas, pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
+    assert e.value.status_code == 422
+    assert e.value.detail["errors"] == [
+        {"row": 2, "error": "El cliente «No Existe SpA» no está en el directorio"},
+        {"row": 3, "error": "El cliente «Tampoco Existe» no está en el directorio"},
+    ]
+
+
+def test_la_plantilla_csv_exige_el_cliente():
+    from app.routers.trips import _CSV_COLUMNS
+    assert next(c for c in _CSV_COLUMNS if c["field"] == "client_name")["required"] is True

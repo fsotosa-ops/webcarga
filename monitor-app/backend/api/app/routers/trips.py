@@ -992,7 +992,7 @@ _CSV_COLUMNS = [
     {"field": "planning_date",    "csv_key": "fecha_planificacion", "label": "Fecha planificación", "required": True,  "type": "date",       "example": "2026-05-29"},
     {"field": "source_system_trip_id", "csv_key": "id_origen",     "label": "ID en sistema origen", "required": False, "type": "text",       "example": "VJE-001"},
     {"field": "origin_tms",       "csv_key": "tms_origen",          "label": "TMS de origen",       "required": False, "type": "tms_source", "example": "qanalytics"},
-    {"field": "client_name",      "csv_key": "cliente",             "label": "Cliente",             "required": False, "type": "text",       "example": "Walmart"},
+    {"field": "client_name",      "csv_key": "cliente",             "label": "Cliente",             "required": True,  "type": "text",       "example": "Walmart"},
     {"field": "tractor_plate",    "csv_key": "patente_tracto",      "label": "Patente tracto",      "required": False, "type": "text",       "example": "BGVS12"},
     {"field": "trailer_plate",    "csv_key": "patente_rampla",      "label": "Patente rampla",      "required": False, "type": "text",       "example": ""},
     {"field": "driver_name",      "csv_key": "conductor",           "label": "Conductor",           "required": False, "type": "text",       "example": "Juan Pérez"},
@@ -1657,6 +1657,22 @@ _STOP_NULL_KEYS = [
 ]
 
 
+async def _preparar_cliente(conn, body: TripCreateBody) -> TripCreateBody:
+    """El cliente del alta, resuelto contra el directorio (spec 2026-10-11): el
+    id del cliente, y el texto que entra al id canónico del viaje. Una sola
+    definición para el alta individual y la validación del CSV.
+
+    Un viaje de un TMS integrado guarda el cliente como lo escribe ese TMS: así
+    su id calza con el que el TMS va a reportar, aunque el cliente se haya
+    renombrado en el directorio (revisión final, Importante 1)."""
+    shipper_id, nombre_cliente = await resolver_cliente(
+        conn, shipper_id=body.shipper_id, client_name=body.client_name)
+    if body.origin_tms in MAPPED_TMS_IDS:
+        nombre_cliente = await texto_del_cliente_en_el_tms(
+            conn, source_system=body.origin_tms, shipper_id=shipper_id) or nombre_cliente
+    return body.model_copy(update={"client_name": nombre_cliente, "shipper_id": shipper_id})
+
+
 def _manual_trip_id(body: TripCreateBody) -> str:
     """Id del viaje manual. Si el origen es un TMS mapeado y hay id externo +
     cliente, usa la MISMA fórmula canónica del pipeline
@@ -1836,18 +1852,7 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
     full-refresh de dbt vía la rama UNION del modelo) + espejo inmediato en
     app.trips (visibilidad sin esperar al pipeline). Mismo id en ambas."""
     _validate_create_body(body, valid_statuses)
-
-    # El cliente se resuelve contra el directorio antes de calcular el id: el
-    # nombre del directorio es el que entra al id canónico del viaje.
-    shipper_id, nombre_cliente = await resolver_cliente(
-        conn, shipper_id=body.shipper_id, client_name=body.client_name)
-    # Un viaje de un TMS integrado guarda el cliente como lo escribe ese TMS: es
-    # el texto del id canónico, y así calza cuando el TMS lo reporte aunque el
-    # cliente se haya renombrado en el directorio (revisión final, Importante 1).
-    if body.origin_tms in MAPPED_TMS_IDS:
-        nombre_cliente = await texto_del_cliente_en_el_tms(
-            conn, source_system=body.origin_tms, shipper_id=shipper_id) or nombre_cliente
-    body = body.model_copy(update={"client_name": nombre_cliente, "shipper_id": shipper_id})
+    body = await _preparar_cliente(conn, body)
 
     trip_id = _manual_trip_id(body)
 
@@ -2007,23 +2012,28 @@ async def bulk_create_trips(
 
     valid_statuses = await _valid_status_ids(pool)
 
-    # Validar TODAS las filas antes de tocar la base — errores con índice de fila
+    # Validar TODAS las filas antes de tocar la base — errores con índice de fila.
+    # El cliente también: cada fila con uno fuera del directorio queda marcada, y
+    # el id se calcula con el cliente ya resuelto (el mismo que usará el alta).
     errors: list[dict] = []
     seen_ids: dict[str, int] = {}
-    for i, trip in enumerate(body):
-        try:
-            _validate_create_body(trip, valid_statuses)
-        except HTTPException as e:
-            errors.append({"row": i + 1, "error": str(e.detail)})
-            continue
+    preparadas: list[tuple[int, TripCreateBody]] = []  # (nº de fila, fila con cliente resuelto)
+    async with pool.acquire() as conn:
+        for i, trip in enumerate(body):
+            try:
+                _validate_create_body(trip, valid_statuses)
+                preparadas.append((i + 1, await _preparar_cliente(conn, trip)))
+            except HTTPException as e:
+                errors.append({"row": i + 1, "error": str(e.detail)})
+    for fila, trip in preparadas:
         tid = _manual_trip_id(trip)
         if tid in seen_ids:
             errors.append({
-                "row": i + 1,
+                "row": fila,
                 "error": f"Duplicado dentro del archivo (misma fila que la #{seen_ids[tid]})",
             })
         else:
-            seen_ids[tid] = i + 1
+            seen_ids[tid] = fila
     if errors:
         raise HTTPException(422, {"message": "Filas con errores — no se importó nada", "errors": errors})
 

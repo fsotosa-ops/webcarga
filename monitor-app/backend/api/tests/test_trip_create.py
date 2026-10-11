@@ -201,8 +201,8 @@ def test_bulk_reports_row_errors_before_inserting():
     pool = make_pool()
     client = make_client(pool)
     res = client.post("/api/v1/trips/bulk", json=[
-        {"planning_date": "2026-07-06", "current_status": "ASIGNADO"},
-        {"planning_date": "2026-07-06", "current_status": "NO-EXISTE"},
+        {"planning_date": "2026-07-06", "client_name": "walmart", "current_status": "ASIGNADO"},
+        {"planning_date": "2026-07-06", "client_name": "walmart", "current_status": "NO-EXISTE"},
     ])
     assert res.status_code == 422
     errors = res.json()["detail"]["errors"]
