@@ -2,6 +2,7 @@
 routers/compliance.py). Status y valores tomados del CHECK constraint real
 de la tabla (init_compliance_engine.sql)."""
 from datetime import date
+from uuid import UUID
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -267,7 +268,7 @@ PENDING_MATCH_MAX_FILES = 200
 class PendingMatchBody(BaseModel):
     """Los NOMBRES de los archivos arrastrados sobre un documento. Todavía no
     se sube nada: esto solo propone a quién va cada uno."""
-    requirement_id: str
+    requirement_id: UUID
     file_names: list[str] = Field(..., min_length=1)
 
 

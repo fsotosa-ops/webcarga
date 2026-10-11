@@ -698,16 +698,24 @@ async def test_dos_archivos_para_el_mismo_dueno_quedan_por_elegir(conexion_rever
     assert all(f["record_id"] is None for f in res["files"])
 
 
-async def test_un_rut_no_canonico_en_la_base_no_rompe_el_match(conexion_revertida):
-    """Ruling 2: el tax_id llega canónico al matcher; uno inválido no se ofrece."""
+async def test_el_match_reconoce_un_rut_guardado_con_puntos(conexion_revertida):
+    """Ruling 2: la base puede tener el RUT crudo ('12.345.678-5'); el matcher lo
+    recibe canónico, así que el archivo con '12345678-5' sí lo encuentra."""
     conn = conexion_revertida
     req = await _requisito(conn, entidad="CARRIER")
-    empresa = await _empresa(conn)  # tax_id sintético, no es un RUT
-    await _registro(conn, req, "CARRIER", empresa)
+    empresa = await _empresa(conn)
+    canonico = await _con_rut(conn, empresa)
+    cuerpo, dv = canonico.split("-")
+    crudo = f"{int(cuerpo):,}".replace(",", ".") + "-" + dv
+    # Escritura cruda: sin pasar por canonical_rut (si la columna lo rechaza, el test lo dirá).
+    await conn.execute("UPDATE public.carriers SET tax_id = $2 WHERE id = $1", empresa, crudo)
+    registro = await _registro(conn, req, "CARRIER", empresa)
+
     res = await match_pending_files(
-        PendingMatchBody(requirement_id=req, file_names=["12345678-5.pdf"]),
+        PendingMatchBody(requirement_id=req, file_names=[f"F30-1 {canonico}.pdf"]),
         pool=PoolDeUnaConexion(conn), _=None)
-    assert res["files"][0]["status"] == "unmatched"
+
+    assert (res["files"][0]["status"], res["files"][0]["record_id"]) == ("matched", registro)
 
 
 async def test_el_match_no_propone_a_quien_esta_fuera_de_alcance(conexion_revertida):

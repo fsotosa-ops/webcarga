@@ -1894,3 +1894,10 @@ def test_pending_match_rechaza_mas_de_200_archivos():
               "file_names": [f"{i}.pdf" for i in range(201)]})
     assert res.status_code == 422
     assert "Máximo 200 archivos" in res.json()["detail"]
+
+
+def test_pending_match_rechaza_un_requirement_id_que_no_es_uuid():
+    res = make_client(AsyncMock()).post(
+        "/api/v1/compliance-records/pending/match",
+        json={"requirement_id": "no-es-uuid", "file_names": ["a.pdf"]})
+    assert res.status_code == 422
