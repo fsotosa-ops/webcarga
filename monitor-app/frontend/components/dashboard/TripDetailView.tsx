@@ -248,12 +248,12 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
               <StopTimeline stops={stops} />
 
               <div className="overflow-x-auto mt-3 -mx-4 md:-mx-6">
-                <div className="min-w-[860px] px-4 md:px-6">
+                <div className="min-w-[960px] px-4 md:px-6">
                   {/* Encabezado claro, como las tablas del Cierre: el negro pesaba más que el dato. */}
                   <table className="w-full text-dato border border-border rounded-lg overflow-hidden">
                     <thead>
                       <tr className="bg-bg-main text-etiqueta font-semibold text-informativo uppercase tracking-wide">
-                        <th className="px-3 py-2 text-left sticky left-0 bg-bg-main z-10 min-w-[120px]">Local</th>
+                        <th className="px-3 py-2 text-left sticky left-0 bg-bg-main z-10 min-w-[220px]">Local</th>
                         <th className="px-3 py-2 text-left min-w-[82px]">Plan.</th>
                         <th className="px-3 py-2 text-left min-w-[82px]">GPS Llegada</th>
                         <th className="px-3 py-2 text-left min-w-[82px]">GPS Salida</th>
