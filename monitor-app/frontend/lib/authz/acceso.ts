@@ -11,6 +11,11 @@ export type Acceso = {
   aal: 'aal1' | 'aal2' | null
 }
 
+/** Cómo se nombra a quien está conectado: su nombre o, sin él, la parte local
+ *  del correo. Una sola definición para la barra lateral y la del teléfono. */
+export function getDisplayName(acceso: Pick<Acceso, 'full_name' | 'email'>): string {
+  return acceso.full_name?.trim() || acceso.email.split('@')[0] || 'Usuario'
+}
 
 const CONFIGURAN: PermissionCode[] = [
   'users.manage', 'roles.manage', 'settings.manage',

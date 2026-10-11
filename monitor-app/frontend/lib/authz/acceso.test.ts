@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { puedeVerConfiguracion, tienePrivilegios, type Acceso } from './acceso'
+import { getDisplayName, puedeVerConfiguracion, tienePrivilegios, type Acceso } from './acceso'
 
 const base: Acceso = { id: 'u', email: 'a@b.c', full_name: null, roles: [], role_names: [], permissions: [], aal: 'aal1' }
 
@@ -20,5 +20,15 @@ describe('tienePrivilegios', () => {
   it('administrar exige verificación en dos pasos; operar no', () => {
     expect(tienePrivilegios({ ...base, permissions: ['users.manage'] })).toBe(true)
     expect(tienePrivilegios({ ...base, permissions: ['closures.sign', 'operations.configure'] })).toBe(false)
+  })
+})
+
+describe('getDisplayName', () => {
+  it('usa el nombre de la persona', () => {
+    expect(getDisplayName({ ...base, full_name: 'Cristian Castillo' })).toBe('Cristian Castillo')
+  })
+  it('sin nombre (o en blanco), la parte local del correo', () => {
+    expect(getDisplayName({ ...base, email: 'ccastillo@webcarga.cl' })).toBe('ccastillo')
+    expect(getDisplayName({ ...base, full_name: '  ', email: 'ccastillo@webcarga.cl' })).toBe('ccastillo')
   })
 })

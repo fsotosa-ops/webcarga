@@ -4,7 +4,7 @@ import { leerSesion, RUTA_AUTH_NO_DISPONIBLE } from '@/lib/supabase/sesion'
 import Sidebar from '@/components/dashboard/Sidebar'
 import Topbar from '@/components/dashboard/Topbar'
 import { Providers } from './providers'
-import { tienePrivilegios } from '@/lib/authz/acceso'
+import { getDisplayName, tienePrivilegios } from '@/lib/authz/acceso'
 import { obtenerAccesoServidor } from '@/lib/authz/servidor'
 import { destinoSinAcceso } from '@/lib/authz/respuestaMe'
 import { PermisosProvider } from '@/lib/authz/PermisosProvider'
@@ -14,7 +14,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const sesion = await leerSesion(supabase)
   if (sesion.estado === 'auth-no-disponible') redirect(RUTA_AUTH_NO_DISPONIBLE)
   if (sesion.estado === 'sin-sesion') redirect('/login')
-  const user = { id: sesion.userId, email: sesion.email }
 
   // Los permisos vienen de la API (GET /me, RBAC): ninguna pantalla decide por
   // rol. Solo por invitación (seguridad, 09/10): sin roles no hay acceso. A
@@ -34,14 +33,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (nivel?.nextLevel === 'aal2' && nivel.currentLevel !== 'aal2') redirect('/auth/mfa/verify')
   if (tienePrivilegios(acceso) && nivel?.nextLevel !== 'aal2') redirect('/auth/mfa/setup')
 
-  const displayName = acceso.full_name ?? user.email?.split('@')[0] ?? 'Usuario'
-
   return (
     <Providers>
       <div className="flex h-screen overflow-hidden">
         <Sidebar acceso={acceso} />
         <div className="flex flex-col flex-1 overflow-hidden min-w-0">
-          <Topbar displayName={displayName} rol={acceso.role_names[0] ?? null} />
+          <Topbar displayName={getDisplayName(acceso)} roleName={acceso.role_names[0] ?? null} />
           {/* pb-16 md:pb-0: space for mobile bottom nav */}
           <main className="flex-1 overflow-y-auto bg-bg-main pb-16 md:pb-0">
             <PermisosProvider acceso={acceso}>{children}</PermisosProvider>

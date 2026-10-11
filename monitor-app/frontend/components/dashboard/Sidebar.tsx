@@ -6,15 +6,16 @@ import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
-  Truck, Users, LogOut, BookUser, KeyRound,
+  Truck, Users, LogOut, BookUser,
   ChevronLeft, ChevronDown, Shield, Settings, Receipt, BadgeCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
-import { puedeVerConfiguracion, type Acceso } from '@/lib/authz/acceso'
+import { getDisplayName, puedeVerConfiguracion, type Acceso } from '@/lib/authz/acceso'
 import LogoWebCarga from '@/components/brand/LogoWebCarga'
+import SidebarAccount from './SidebarAccount'
 
 // "Operaciones" agrupa Monitor bajo un solo item expandible —
 // Empresas/Seguros no tienen esa profundidad todavía, se quedan planos.
@@ -242,10 +243,6 @@ export default function Sidebar({ acceso }: SidebarProps) {
     return next
   })
 
-  const clasePie = `w-full group flex items-center rounded-xl text-[13px] text-white/35 hover:bg-white/6 hover:text-white/65 transition-all duration-150 ${
-    collapsed ? 'justify-center h-10 w-10 mx-auto' : 'gap-3 px-3 py-2.5'
-  }`
-
   async function signOut() {
     await supabase.auth.signOut()
     router.push('/login')
@@ -364,27 +361,12 @@ export default function Sidebar({ acceso }: SidebarProps) {
           )}
         </nav>
 
-        {/* ── Footer: cuenta y salida ── */}
-        <div className="px-2.5 pb-3 border-t border-white/8 pt-2">
-          {/* Cambiar la contraseña con la sesión abierta (seguridad, 09/10).
-              Misma pantalla que la recuperación por correo. */}
-          <Link
-            href="/auth/reset-password"
-            title={collapsed ? 'Cambiar contraseña' : undefined}
-            className={clasePie}
-          >
-            <KeyRound size={15} className="shrink-0" />
-            {!collapsed && <span>Cambiar contraseña</span>}
-          </Link>
-          <button
-            onClick={signOut}
-            title={collapsed ? 'Cerrar sesión' : undefined}
-            className={clasePie}
-          >
-            <LogOut size={15} className="shrink-0" />
-            {!collapsed && <span>Cerrar sesión</span>}
-          </button>
-        </div>
+        <SidebarAccount
+          displayName={getDisplayName(acceso)}
+          roleName={acceso.role_names[0] ?? null}
+          collapsed={collapsed}
+          onSignOut={signOut}
+        />
       </aside>
 
       {/* ── Mobile bottom nav ─────────────────────────────────── */}

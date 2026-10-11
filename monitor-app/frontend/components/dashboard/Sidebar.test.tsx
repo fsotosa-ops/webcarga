@@ -22,10 +22,10 @@ vi.mock('@/lib/api/documentIngest', () => ({
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import Sidebar from './Sidebar'
 
-function setup() {
+function setup(fullName: string | null = null) {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <Sidebar acceso={{ id: 'u', email: 'a@b.c', full_name: null, roles: ['admin'], role_names: ['Administración'],
+      <Sidebar acceso={{ id: 'u', email: 'a@b.c', full_name: fullName, roles: ['admin'], role_names: ['Administración'],
                          permissions: ['users.manage', 'operations.read'], aal: 'aal2' }} />
     </QueryClientProvider>,
   )
@@ -204,3 +204,32 @@ describe('barra contraída', () => {
   })
 })
 
+
+// Quién está conectado vive al pie de la barra, junto a sus acciones de cuenta,
+// y no en una barra superior aparte (pedido del usuario, 11/10).
+describe('cuenta al pie de la barra', () => {
+  beforeEach(() => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+  })
+
+  it('expandida, muestra el nombre, el rol y las acciones de cuenta', async () => {
+    setup('Cristian Castillo')
+    const aside = (await screen.findByRole('img', { name: 'Cristian Castillo, Administración' })).closest('aside')!
+    expect(within(aside).getByText('CC')).toBeInTheDocument()
+    expect(within(aside).getByText('Cristian Castillo')).toBeInTheDocument()
+    expect(within(aside).getByText('Administración', { selector: 'p.text-xs' })).toBeInTheDocument()
+    expect(within(aside).getByRole('link', { name: 'Cambiar contraseña' })).toHaveAttribute('href', '/auth/reset-password')
+    expect(within(aside).getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument()
+  })
+
+  it('contraída, deja solo las iniciales y nombra cada acción', async () => {
+    localStorage.setItem('sidebar-collapsed', 'true')
+    setup('Cristian Castillo')
+    const avatar = await screen.findByRole('img', { name: 'Cristian Castillo, Administración' })
+    const aside = avatar.closest('aside')!
+    expect(within(aside).queryByText('Cristian Castillo')).not.toBeInTheDocument()
+    expect(within(aside).getByRole('link', { name: 'Cambiar contraseña' })).toBeInTheDocument()
+    expect(within(aside).getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument()
+    localStorage.removeItem('sidebar-collapsed')
+  })
+})

@@ -1,46 +1,45 @@
 import LogoWebCarga from '@/components/brand/LogoWebCarga'
+import { getInitials } from '@/lib/utils/avatar'
 
-interface Props {
+interface TopbarProps {
   /** Nombre ya resuelto por el layout. */
   displayName: string
   /** Nombre del rol principal (GET /me). */
-  rol?: string | null
+  roleName:    string | null
 }
 
-/** Recibe los datos del layout en vez de volver a pedirlos.
+/** Barra superior, solo en el teléfono: ahí no hay barra lateral, así que la
+ *  marca y quién está conectado van arriba. En escritorio la cuenta vive al pie
+ *  de la barra lateral (`SidebarAccount`) y esta franja no se dibuja, para
+ *  devolverle el alto al contenido (pedido del usuario, 11/10).
  *
- *  Antes llamaba a `getUser()` y consultaba `profiles` por su cuenta, y el
- *  layout que lo envuelve hacía exactamente lo mismo: dos llamadas a la API de
- *  Auth por cada render del dashboard. Con el prefetch de Next.js sobre una
- *  lista larga eso son cientos de llamadas por minuto y Supabase responde 429
- *  ("Many requests") — medido: 104 llamadas a /user en un solo minuto. */
-export default function Topbar({ displayName, rol }: Props) {
-  const initials = displayName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
-
+ *  Recibe los datos del layout en vez de volver a pedirlos. Antes llamaba a
+ *  `getUser()` y consultaba `profiles` por su cuenta, y el layout que lo
+ *  envuelve hacía exactamente lo mismo: dos llamadas a la API de Auth por cada
+ *  render del dashboard. Con el prefetch de Next.js sobre una lista larga eso
+ *  son cientos de llamadas por minuto y Supabase responde 429 ("Many
+ *  requests") — medido: 104 llamadas a /user en un solo minuto. */
+export default function Topbar({ displayName, roleName }: TopbarProps) {
   return (
-    <header className="h-14 bg-white border-b border-border/70 flex items-center px-4 md:px-6 shrink-0 gap-3">
-      {/* Mobile brand — visible only when sidebar is hidden */}
-      <div className="md:hidden flex items-center gap-2 shrink-0">
+    <header className="md:hidden h-14 bg-white border-b border-border/70 flex items-center px-4 shrink-0 gap-3">
+      <div className="flex items-center gap-2 shrink-0">
         {/* Fondo blanco: el isotipo azul; el logo completo es blanco. */}
         <LogoWebCarga forma="isotipo" alto={28} />
         <span className="font-mulish font-bold text-sm text-text-primary">WebCarga</span>
       </div>
 
-      {/* Spacer on desktop (breadcrumb placeholder) */}
-      <div className="hidden md:block flex-1" />
-
-      <div className="flex items-center gap-2.5 ml-auto">
-        <div className="flex items-center gap-2">
-          <div
-            className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-semibold"
-            style={{ background: 'linear-gradient(135deg, #1cb9ec 0%, #0e8db5 100%)' }}
-          >
-            {initials}
-          </div>
-          <div className="hidden sm:block">
-            <p className="text-sm font-medium text-text-primary leading-tight">{displayName}</p>
-            <p className="text-xs text-gray-400">{rol ?? ''}</p>
-          </div>
+      <div className="flex items-center gap-2 ml-auto min-w-0">
+        <div
+          role="img"
+          aria-label={roleName ? `${displayName}, ${roleName}` : displayName}
+          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-semibold"
+          style={{ background: 'linear-gradient(135deg, #1cb9ec 0%, #0e8db5 100%)' }}
+        >
+          {getInitials(displayName)}
+        </div>
+        <div className="hidden sm:block min-w-0" aria-hidden="true">
+          <p className="text-sm font-medium text-text-primary leading-tight truncate">{displayName}</p>
+          {roleName && <p className="text-xs text-gray-400 truncate">{roleName}</p>}
         </div>
       </div>
     </header>
