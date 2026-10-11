@@ -10,6 +10,7 @@ import type { Trip, TripNote, TripNoteAttachment, TripNoteType } from '@/lib/typ
 import { useTripNotes, useAddTripNote, usePinTripNote, useResolveTripNote } from '@/hooks/useTripNotes'
 import { formatRelativeTime, fmtDT } from '@/lib/utils/datetime'
 import { StatusChip, type StatusTone } from '@/components/ui/StatusChip'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 
 const NOTE_TYPES: { id: Exclude<TripNoteType, 'sistema'>; label: string; Icon: typeof Phone; tone: StatusTone }[] = [
   { id: 'observacion', label: 'Observación', Icon: StickyNote,    tone: 'neutral'  },
@@ -17,42 +18,6 @@ const NOTE_TYPES: { id: Exclude<TripNoteType, 'sistema'>; label: string; Icon: t
   { id: 'whatsapp',    label: 'WhatsApp',    Icon: MessageCircle, tone: 'resolved' },
   { id: 'incidente',   label: 'Incidente',   Icon: AlertTriangle, tone: 'urgent'   },
 ]
-
-/** Un control segmentado: opciones del mismo grupo, una sola marcada (o
- *  ninguna, en el filtro). Lo usan el tipo de la nota, el filtro del feed y
- *  Feed/Documentos — antes eran tres juegos de pastillas de 9 px distintos. */
-function SegmentedControl<T extends string>({
-  label, options, value, onChange,
-}: {
-  label:    string
-  options:  { id: T; label: string; Icon: typeof Phone; badge?: string }[]
-  value:    T | null
-  onChange: (id: T) => void
-}) {
-  return (
-    <div role="group" aria-label={label} className="inline-flex w-fit max-w-full flex-wrap overflow-hidden rounded-md border border-border bg-white">
-      {options.map(o => {
-        const on = value === o.id
-        return (
-          <button
-            key={o.id}
-            type="button"
-            onClick={() => onChange(o.id)}
-            title={o.label}
-            aria-pressed={on}
-            className={`flex items-center gap-1.5 border-r border-border px-2.5 py-1 text-etiqueta transition-colors last:border-r-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40 ${
-              on ? 'bg-accion/10 font-semibold text-accion' : 'text-informativo hover:text-text-primary'
-            }`}
-          >
-            <o.Icon size={12} aria-hidden />
-            {o.label}
-            {o.badge && <span className="tabular-nums">{o.badge}</span>}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
 
 // Espejo de ALLOWED_ATTACHMENT_MIMES del backend (routers/trips.py)
 const ACCEPTED_FILES = '.pdf,image/png,image/jpeg,image/webp,image/heic,image/heif,.doc,.docx,.xls,.xlsx'
