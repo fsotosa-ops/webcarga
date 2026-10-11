@@ -337,9 +337,9 @@ FROM app.closure_lines l
 WHERE l.business_date = $1
 """
 
-_SQL_COPIAR_VIAJES = f"""
+_SQL_COPIAR_VIAJES = """
 INSERT INTO app.closure_signature_trips (signature_id, trip_id)
-SELECT $2, v.id FROM ({SQL_VIAJES_DEL_DIA}) v
+SELECT $1, v FROM unnest($2::uuid[]) AS v
 """
 
 
@@ -675,7 +675,11 @@ async def cerrar(pool, fecha: date, *, override: bool, override_note: str | None
                 """,
                 fecha,
             )
-            total_trips = await conn.fetchval(f"SELECT count(*) FROM ({SQL_VIAJES_DEL_DIA}) v", fecha)
+            # Una sola lectura de los viajes del día: el total firmado y los viajes
+            # copiados salen del mismo conjunto. Con dos sentencias, un viaje que
+            # llegara (o se anulara) entre ambas dejaba `viajes` distinto de la copia.
+            viajes_firmados = [r["id"] for r in await conn.fetch(SQL_VIAJES_DEL_DIA, fecha)]
+            total_trips = len(viajes_firmados)
             totales = {
                 "conductores": conteos["conductores"],
                 "conductores_resueltos": conteos["conductores"] - len(conductores_pendientes),
@@ -703,7 +707,7 @@ async def cerrar(pool, fecha: date, *, override: bool, override_note: str | None
             # UNIQUE (business_date, version) lo respalda.
             firma = await conn.fetchrow(_SQL_FIRMAR, *firma_args)
             await conn.execute(_SQL_COPIAR_LINEAS, fecha, firma["id"])
-            await conn.execute(_SQL_COPIAR_VIAJES, fecha, firma["id"])
+            await conn.execute(_SQL_COPIAR_VIAJES, firma["id"], viajes_firmados)
 
             await conn.execute("DELETE FROM app.closure_recompute_queue WHERE business_date = $1", fecha)
 

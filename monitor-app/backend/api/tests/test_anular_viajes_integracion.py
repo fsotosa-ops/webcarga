@@ -13,9 +13,14 @@ from datetime import date, datetime, timezone
 import pytest
 from fastapi import HTTPException
 
-from app.routers.trips import TripCreateBody, TripStopCreate, create_trip, get_trip, list_trips
+from app.routers.trips import (
+    TripCreateBody, TripStopCreate, assign_fleet_link, conteo_de_viajes_activos, create_trip, get_trip, list_trips,
+    patch_trip,
+)
+from app.schemas.trip import TripPatch, TripVoidBody
+from pydantic import ValidationError
 from app.services.anular_viajes import anular_viajes, revertir_anulacion
-from tests.conftest import PoolDeUnaConexion, _usuario_real, con_roles, ADMIN_EQUIVALENTE
+from tests.conftest import PoolDeUnaConexion, _usuario_real, con_roles, usuario as usuario_de, ADMIN_EQUIVALENTE
 
 pytestmark = pytest.mark.integracion
 
@@ -283,3 +288,110 @@ async def test_revertir_limpia_motivo_y_nota(conexion_revertida):
     await revertir_anulacion(conn, [tid], usuario)
     fila = await _anulado(conn, tid)
     assert (fila["voided_at"], fila["void_reason_id"], fila["void_note"]) == (None, None, None)
+
+
+# ── Pendientes de las revisiones finales (10/10) ──────────────────────────────
+
+async def test_anular_bloquea_los_periodos_que_mira(conexion_revertida):
+    """Carrera anular↔firmar: `FOR UPDATE OF t` no bloquea closure_periods, así que
+    un `cerrar` concurrente podía firmar el día entre la lectura de la regla y la
+    escritura. La anulación toma FOR SHARE sobre los períodos que mira; `cerrar`
+    los toma FOR UPDATE (bloquear_periodo), así que se esperan."""
+    conn = conexion_revertida
+    usuario = await _usuario_real(conn)
+    tid = await _viaje_manual(conn, usuario)
+    await anular_viajes(conn, [tid], await _motivo(conn), None, usuario)
+    assert await conn.fetchval(
+        "SELECT count(*) FROM pg_locks l JOIN pg_class c ON c.oid = l.relation "
+        "WHERE l.pid = pg_backend_pid() AND c.relname = 'closure_periods' AND l.mode = 'RowShareLock'") == 1
+
+
+async def test_sin_trips_void_no_se_ofrece_anular(conexion_revertida):
+    """can_void coincide con la ruta, que exige trips.void: un rol con
+    closures.sign pero sin trips.void no ve un botón que lo lleve a un 403."""
+    conn = conexion_revertida
+    usuario = await _usuario_real(conn)
+    tid = await _viaje_manual(conn, usuario)
+    solo_firma = {**usuario, "permissions": frozenset({"operations.read", "closures.sign"})}
+    detalle = await get_trip(tid, pool=PoolDeUnaConexion(conn), user=solo_firma)
+    assert detalle["can_void"] is False
+
+
+async def test_administracion_pura_puede_anular(conexion_revertida):
+    """El rol admin trae trips.void_any; trips.void va con él (la ruta lo exige)."""
+    conn = conexion_revertida
+    creador = await _usuario_real(conn)
+    tid = await _viaje_manual(conn, creador)
+    otro_perfil = str(await conn.fetchval("SELECT id FROM public.profiles WHERE id <> $1::uuid LIMIT 1", creador["sub"]))
+    admin = usuario_de("admin", sub=otro_perfil)
+    assert "trips.void" in admin["permissions"]
+    assert (await get_trip(tid, pool=PoolDeUnaConexion(conn), user=admin))["can_void"] is True
+
+
+async def test_un_viaje_anulado_no_se_edita(conexion_revertida):
+    """Un anulado es de solo lectura: se deshace la anulación para editarlo."""
+    conn = conexion_revertida
+    usuario = con_roles(await _usuario_real(conn), *ADMIN_EQUIVALENTE)
+    tid = await _viaje_manual(conn, usuario)
+    await anular_viajes(conn, [tid], await _motivo(conn), None, usuario)
+    with pytest.raises(HTTPException) as err:
+        await patch_trip(tid, TripPatch(notes="x"), pool=PoolDeUnaConexion(conn), user=usuario)
+    assert err.value.status_code == 409
+    with pytest.raises(HTTPException) as err:
+        await assign_fleet_link(tid, {"driver_name_raw": "X"}, pool=PoolDeUnaConexion(conn), user=usuario)
+    assert err.value.status_code == 409
+
+
+async def test_conteo_de_activos_no_cuenta_anulados(conexion_revertida):
+    conn = conexion_revertida
+    usuario = await _usuario_real(conn)
+    conductor = await conn.fetchval(
+        "INSERT INTO public.drivers (full_name, operational_status) VALUES ('ZZ-TEST Conteo', 'ACTIVE') RETURNING id")
+    tid = await _viaje_manual(conn, usuario)
+    await conn.execute("UPDATE app.trips SET is_active = true WHERE id = $1::uuid", tid)
+    await conn.execute(
+        "INSERT INTO app.trip_fleet_links (trip_id, driver_id, link_source) VALUES ($1::uuid, $2, 'manual') "
+        "ON CONFLICT (trip_id) DO UPDATE SET driver_id = EXCLUDED.driver_id", tid, conductor)
+    conteo = lambda: conteo_de_viajes_activos(entity_type="DRIVER", entity_id=str(conductor), pool=PoolDeUnaConexion(conn))
+    assert (await conteo())["activos"] == 1
+
+    await anular_viajes(conn, [tid], await _motivo(conn), None, usuario)
+
+    assert (await conteo())["activos"] == 0
+
+
+async def test_lote_con_un_viaje_de_dia_firmado_no_anula_ninguno(conexion_revertida):
+    """Foco 2 de la revisión: propio en día abierto + uno de día firmado, sin closures.sign."""
+    conn = conexion_revertida
+    usuario = await _usuario_real(conn)
+    firmado = await _viaje_manual(conn, usuario)
+    await _firmar_dia(conn, usuario)
+    abierto = str((await create_trip(
+        TripCreateBody(planning_date="2099-01-07", client_name=f"TEST-{uuid.uuid4().hex[:8]}",
+                       driver_name="CONDUCTOR DE PRUEBA",
+                       stops=[TripStopCreate(local="SAN BERNARDO", stop_type="ORIGIN"), TripStopCreate(local="IANSA")]),
+        pool=PoolDeUnaConexion(conn), user=usuario))["id"])
+    with pytest.raises(HTTPException) as err:
+        await anular_viajes(conn, [abierto, firmado], await _motivo(conn), None, _sin_firmar(usuario))
+    assert err.value.status_code == 403
+    assert [e["trip_id"] for e in err.value.detail["errors"]] == [firmado]
+    assert (await _anulado(conn, abierto))["voided_at"] is None
+
+
+async def test_un_anulado_que_el_tms_reporto_despues_se_puede_revertir(conexion_revertida):
+    """Si el TMS reporta el viaje (mismo id md5), deja de ser manual; la anulación
+    quedó (merge_exclude_columns) y no se podía deshacer."""
+    conn = conexion_revertida
+    usuario = await _usuario_real(conn)
+    tid = await _viaje_manual(conn, usuario)
+    await anular_viajes(conn, [tid], await _motivo(conn), None, usuario)
+    await conn.execute("UPDATE app.trips SET source_system = 'qanalytics' WHERE id = $1::uuid", tid)
+
+    assert (await get_trip(tid, pool=PoolDeUnaConexion(conn), user=usuario))["can_revert_void"] is True
+    assert await revertir_anulacion(conn, [tid], usuario) == 1
+
+
+def test_el_comentario_tiene_largo_maximo():
+    with pytest.raises(ValidationError):
+        TripVoidBody(trip_ids=[uuid.uuid4()], reason_id=uuid.uuid4(), note="x" * 501)
+

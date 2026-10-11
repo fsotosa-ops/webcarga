@@ -168,7 +168,7 @@ def test_patch_rechaza_un_motivo_del_catalogo_de_conductores():
     Medido antes de arreglarlo: 0 viajes tenian motivo escrito, asi que el
     arreglo llego antes que el dato sucio."""
     pool = make_pool()
-    pool.fetchval.side_effect = ["trip-1", None]  # existe el viaje; el motivo no es del dominio
+    pool.fetchval.side_effect = [None, "trip-1", None]  # existe el viaje; el motivo no es del dominio
     client = make_client(pool)
 
     res = client.patch("/api/v1/trips/trip-1", json={"unassigned_reason_id": "motivo-de-conductor"})
@@ -179,7 +179,7 @@ def test_patch_rechaza_un_motivo_del_catalogo_de_conductores():
 
 def test_patch_acepta_un_motivo_del_catalogo_del_viaje():
     pool = make_pool()
-    pool.fetchval.side_effect = ["trip-1", 1]  # existe el viaje; el motivo SI es del dominio
+    pool.fetchval.side_effect = [None, "trip-1", 1]  # existe el viaje; el motivo SI es del dominio
     client = make_client(pool)
 
     res = client.patch("/api/v1/trips/trip-1", json={"unassigned_reason_id": "motivo-de-viaje"})

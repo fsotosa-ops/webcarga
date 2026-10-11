@@ -34,7 +34,7 @@ from __future__ import annotations
 import asyncpg
 from fastapi import HTTPException
 
-from .audit import log_change
+from .audit import auditar_en_lote
 
 MAXIMO_POR_LOTE = 200
 
@@ -45,7 +45,9 @@ SQL_COLUMNAS_ANULABLE = """
     tm.created_by::text AS manual_created_by,
     t.voided_at, t.void_reason_id::text AS void_reason_id, void_rs.label AS void_reason_label, t.void_note,
     void_by.full_name AS voided_by_name,
-    CASE WHEN t.source_system = 'manual' THEN ARRAY(
+    -- También para un anulado que el TMS reportó después (dejó de ser manual):
+    -- deshacer esa anulación sigue mirando sus días firmados.
+    CASE WHEN t.source_system = 'manual' OR t.voided_at IS NOT NULL THEN ARRAY(
         SELECT cp.business_date
         FROM app.closure_periods cp
         WHERE cp.status = 'CLOSED'
@@ -66,13 +68,18 @@ SQL_JOIN_ANULABLE = """
 
 def _bloqueo(fila: dict, user: dict, *, revertir: bool) -> tuple[int, str] | None:
     """(status HTTP, motivo en español) si `user` NO puede anular (o revertir) el viaje."""
-    if fila.get("source_system") != "manual":
+    permisos = user.get("permissions", ())
+    # La ruta exige trips.void: sin él, `can_void` no puede ofrecer lo que la ruta rechaza.
+    if "trips.void" not in permisos:
+        return 403, "No tienes permiso para anular viajes"
+    # Un anulado que el TMS reportó después (mismo id md5) dejó de ser manual, pero su
+    # anulación quedó (merge_exclude_columns): se puede deshacer, no volver a anular.
+    if fila.get("source_system") != "manual" and not (revertir and fila.get("voided_at") is not None):
         return 409, "Sólo se pueden anular viajes creados manualmente en la app"
     if revertir and fila.get("voided_at") is None:
         return 409, "El viaje no está anulado"
     if not revertir and fila.get("voided_at") is not None:
         return 409, "El viaje ya está anulado"
-    permisos = user.get("permissions", ())
     firmados = fila.get("dias_firmados") or []
     if firmados:
         if "closures.sign" in permisos:
@@ -102,7 +109,22 @@ async def _validar(conn, trip_ids: list[str], user: dict, *, revertir: bool) -> 
         raise HTTPException(422, "Selecciona al menos un viaje")
     if len(ids) > MAXIMO_POR_LOTE:
         raise HTTPException(422, f"Máximo {MAXIMO_POR_LOTE} viajes por anulación")
-    # FOR UPDATE: que nadie edite ni firme el día de estos viajes mientras se decide.
+    # Los períodos que la regla mira (su día y los 45 siguientes), FOR SHARE: `cerrar`
+    # los toma FOR UPDATE (bloquear_periodo), así que una firma concurrente espera a
+    # que esta anulación termine, y al revés. Sin esto, el día podía firmarse entre la
+    # lectura de la regla y la escritura.
+    await conn.execute(
+        """
+        SELECT 1 FROM app.closure_periods cp
+        WHERE cp.business_date BETWEEN
+              (SELECT min(planning_date) FROM app.trips WHERE id = ANY($1::uuid[]))
+          AND (SELECT max(planning_date) FROM app.trips WHERE id = ANY($1::uuid[])) + 45
+        ORDER BY cp.business_date
+        FOR SHARE
+        """,
+        ids,
+    )
+    # FOR UPDATE: que nadie edite estos viajes mientras se decide.
     filas = await conn.fetch(
         f"""
         SELECT t.id::text AS id, t.source_system, t.planning_date, {SQL_COLUMNAS_ANULABLE}
@@ -162,9 +184,10 @@ async def anular_viajes(conn, trip_ids: list[str], reason_id: str | None, note: 
             "void_reason_id = $3::uuid, void_note = $4 WHERE id = ANY($1::uuid[])",
             ids, user["sub"], motivo_id, nota,
         )
-    for tid in ids:
-        await log_change(conn, actor=user["sub"], entity_type="TRIP", entity_id=tid, action="void",
-                         field="voided_at", new_value={"reason_id": motivo_id, "reason": etiqueta, "note": nota})
+    await auditar_en_lote(
+        conn, actor=user["sub"], entity_type="TRIP", action="void", field="voided_at", source="api",
+        filas=[(tid, None, {"reason_id": motivo_id, "reason": etiqueta, "note": nota}) for tid in ids],
+    )
     return len(ids)
 
 
@@ -180,8 +203,20 @@ async def revertir_anulacion(conn, trip_ids: list[str], user: dict) -> int:
             "WHERE id = ANY($1::uuid[])",
             ids,
         )
-    for tid in ids:
-        motivo, nota = anteriores.get(tid, (None, None))
-        await log_change(conn, actor=user["sub"], entity_type="TRIP", entity_id=tid,
-                         action="void_revert", field="voided_at", old_value={"reason": motivo, "note": nota})
+    await auditar_en_lote(
+        conn, actor=user["sub"], entity_type="TRIP", action="void_revert", field="voided_at", source="api",
+        filas=[(tid, dict(zip(("reason", "note"), anteriores.get(tid, (None, None)))), None) for tid in ids],
+    )
     return len(ids)
+
+
+async def exigir_vigentes(db, trip_ids) -> None:
+    """409 si alguno de los viajes está anulado. Un anulado es de solo lectura: para
+    editarlo se deshace la anulación (spec 2026-10-10, revisión final). `db` es un
+    pool o una conexión; `is True` porque un mock que devuelve otra cosa no es un sí."""
+    anulado = await db.fetchval(
+        "SELECT bool_or(voided_at IS NOT NULL) FROM app.trips WHERE id = ANY($1::uuid[])",
+        [str(t) for t in trip_ids],
+    )
+    if anulado is True:
+        raise HTTPException(409, "El viaje está anulado: deshaz la anulación para editarlo")

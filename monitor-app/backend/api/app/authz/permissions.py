@@ -121,9 +121,10 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
                "Dueño funcional de WebCarga: puede todo y nombra a otros Propietarios.",
                frozenset(), grants_all=True),
     # CLOSURES_OVERRIDE y TRIPS_VOID_ANY: hoy solo admin (chequeos que viven en
-    # services/cierre_lineas.py y services/anular_viajes.py).
+    # services/cierre_lineas.py y services/anular_viajes.py). TRIPS_VOID va con
+    # TRIPS_VOID_ANY: la ruta de anular exige trips.void.
     _rol("admin", "Administración", "Gestiona personas, roles y la configuración general.",
-         P.USERS_MANAGE, P.ROLES_MANAGE, P.SETTINGS_MANAGE, P.CLOSURES_OVERRIDE, P.TRIPS_VOID_ANY),
+         P.USERS_MANAGE, P.ROLES_MANAGE, P.SETTINGS_MANAGE, P.CLOSURES_OVERRIDE, P.TRIPS_VOID, P.TRIPS_VOID_ANY),
     _rol("support", "Soporte técnico (proveedor)", "Lee para diagnosticar; no ejecuta acciones de negocio."),
     _rol("reader", "Lectura", "Ve todas las áreas sin editar."),
     _rol("operations_operator", "Operador de Operaciones",

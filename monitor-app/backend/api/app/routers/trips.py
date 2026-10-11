@@ -19,7 +19,7 @@ from ..schemas.trip import (
 )
 from ..services.audit import log_change
 from ..services.anular_viajes import (
-    SQL_COLUMNAS_ANULABLE, SQL_JOIN_ANULABLE, anotar_anulable, anular_viajes, revertir_anulacion,
+    SQL_COLUMNAS_ANULABLE, SQL_JOIN_ANULABLE, anotar_anulable, anular_viajes, exigir_vigentes, revertir_anulacion,
 )
 from ..services.cierre_lineas import ultima_firma
 from ..services.cierre_viajes import SQL_CON_MOTIVO, SQL_GRUPOS_CIERRE
@@ -2079,6 +2079,7 @@ async def assign_driver_bulk(
     """
     if not body.trip_ids:
         raise HTTPException(422, "Indica al menos un viaje")
+    await exigir_vigentes(pool, body.trip_ids)
 
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -2279,7 +2280,7 @@ async def conteo_de_viajes_activos(
                max(t.planning_date) AS ultimo
         FROM app.trips t
         JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-        WHERE t.is_active AND {condicion}
+        WHERE t.is_active AND t.voided_at IS NULL AND {condicion}
         """,
         entity_id,
     )
@@ -2410,6 +2411,7 @@ async def bulk_close_trips(
     path param genérico o quedaría absorbido como trip_id="bulk-close"."""
     if not body.trip_ids:
         raise HTTPException(422, "trip_ids no puede estar vacío")
+    await exigir_vigentes(pool, body.trip_ids)
     if not body.unassigned_reason_id:
         raise HTTPException(422, "Indica el motivo por el que no se tomó la carga")
 
@@ -2512,6 +2514,7 @@ async def bulk_reopen_trips(
     Declarado ANTES de PATCH /{trip_id}, mismo motivo que /bulk-close."""
     if not body.trip_ids:
         raise HTTPException(422, "trip_ids no puede estar vacío")
+    await exigir_vigentes(pool, body.trip_ids)
     ids = list(dict.fromkeys(body.trip_ids))
 
     async with pool.acquire() as conn:
@@ -2616,6 +2619,8 @@ async def patch_trip(
     pool=Depends(get_pool),
     user=Depends(require(Permission.TRIPS_EDIT_BASIC)),
 ):
+    # Un anulado es de solo lectura (services/anular_viajes.py).
+    await exigir_vigentes(pool, [trip_id])
     source_system = await pool.fetchval("SELECT source_system FROM app.trips WHERE id = $1", trip_id)
     if source_system is None:
         raise HTTPException(404, "Viaje no encontrado")
@@ -2815,6 +2820,8 @@ async def patch_trip_stop(
     # SQL de verdad, así que pasó desapercibido). Encontrado al verificar
     # que este mismo endpoint sirve para editar Carga Inicio/Fin de la
     # parada ORIGIN (Fase 1, unificación de origen como parada 0).
+    # Un anulado es de solo lectura (services/anular_viajes.py).
+    await exigir_vigentes(pool, [trip_id])
     exists = await pool.fetchval("SELECT stop_id FROM app.trip_stops WHERE stop_id = $1 AND trip_id = $2", stop_id, trip_id)
     if not exists:
         raise HTTPException(404, "Parada no encontrada")
@@ -2849,6 +2856,8 @@ async def assign_fleet_link(
     user=Depends(require(Permission.TRIPS_EDIT_SENSITIVE)),
 ):
     """Create or replace a manual fleet link for a trip."""
+    # Un anulado es de solo lectura (services/anular_viajes.py).
+    await exigir_vigentes(pool, [trip_id])
     exists = await pool.fetchval("SELECT id FROM app.trips WHERE id = $1", trip_id)
     if not exists:
         raise HTTPException(404, "Viaje no encontrado")
@@ -2907,6 +2916,8 @@ async def remove_fleet_link(
     pool=Depends(get_pool),
     user=Depends(require(Permission.TRIPS_EDIT_SENSITIVE)),
 ):
+    # Un anulado es de solo lectura (services/anular_viajes.py).
+    await exigir_vigentes(pool, [trip_id])
     """Remove the manual fleet link from a trip."""
     # FIX 2026-07-18: mismo motivo que assign_fleet_link — buscar por trip_id,
     # no por trips.fleet_link_id (huérfano tras cualquier --full-refresh).
@@ -2935,6 +2946,8 @@ async def reset_field(
              "is_active", "is_working", "is_assigned", "is_first_leg"}
     if field not in VALID:
         raise HTTPException(422, f"Campo no restaurable: {field}")
+    # Un anulado es de solo lectura (services/anular_viajes.py).
+    await exigir_vigentes(pool, [trip_id])
     await pool.execute(
         """
         UPDATE app.trips

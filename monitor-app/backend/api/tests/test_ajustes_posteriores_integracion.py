@@ -11,7 +11,7 @@ import pytest
 
 from app.routers.trips import TripCreateBody, TripStopCreate, create_trip
 from app.services import cierre_lineas
-from app.services.anular_viajes import anular_viajes
+from app.services.anular_viajes import anular_viajes, revertir_anulacion
 from tests.conftest import PoolDeUnaConexion, _usuario_real, con_roles, ADMIN_EQUIVALENTE
 
 pytestmark = pytest.mark.integracion
@@ -85,3 +85,33 @@ async def test_get_daily_closures_devuelve_la_lista(conexion_revertida):
     respuesta = await get_daily_closure_status(fecha=D.isoformat(), pool=pool, _=admin)
     assert "posteriores_al_cierre" not in respuesta["cierre"]
     assert [a["trip_id"] for a in respuesta["cierre"]["ajustes"]] == [entra]
+
+
+async def test_deshacer_una_anulacion_posterior_vuelve_a_lo_firmado(conexion_revertida):
+    """Firmado con el viaje, anulado después (quitado) y revertido: ya no hay ajuste."""
+    conn = conexion_revertida
+    pool = PoolDeUnaConexion(conn)
+    admin = con_roles(await _usuario_real(conn), *ADMIN_EQUIVALENTE)
+    tid = await _viaje_manual(conn, admin)
+    await cierre_lineas.cerrar(pool, D, override=True, override_note="prueba", user=admin)
+    await anular_viajes(conn, [tid], await _motivo(conn), None, admin)
+    assert [a["tipo"] for a in await cierre_lineas.ajustes_posteriores(pool, D)] == ["quitado"]
+
+    await revertir_anulacion(conn, [tid], admin)
+
+    assert await cierre_lineas.ajustes_posteriores(pool, D) == []
+
+
+async def test_deshacer_una_anulacion_anterior_a_la_firma_es_un_agregado(conexion_revertida):
+    """Anulado antes de firmar (no está en la firma) y revertido después: entra como agregado."""
+    conn = conexion_revertida
+    pool = PoolDeUnaConexion(conn)
+    admin = con_roles(await _usuario_real(conn), *ADMIN_EQUIVALENTE)
+    tid = await _viaje_manual(conn, admin)
+    await anular_viajes(conn, [tid], await _motivo(conn), None, admin)
+    await cierre_lineas.cerrar(pool, D, override=True, override_note="prueba", user=admin)
+
+    await revertir_anulacion(conn, [tid], admin)
+
+    assert [(a["trip_id"], a["tipo"]) for a in await cierre_lineas.ajustes_posteriores(pool, D)] == [(tid, "agregado")]
+

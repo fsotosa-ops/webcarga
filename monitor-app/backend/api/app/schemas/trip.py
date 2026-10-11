@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from ..authz.permissions import Permission
 from typing import Optional
 
@@ -62,7 +62,7 @@ class TripVoidBody(BaseModel):
     es un 422 de validación, no un DataError de asyncpg convertido en 500."""
     trip_ids:  list[UUID]
     reason_id: UUID
-    note:      str | None = None
+    note:      str | None = Field(default=None, max_length=500)
 
 
 class TripVoidRevertBody(BaseModel):

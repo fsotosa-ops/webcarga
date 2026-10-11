@@ -19,15 +19,14 @@ async def test_el_catalogo_tiene_los_cuatro_motivos_iniciales(conexion_revertida
 
 
 async def test_todo_viaje_anulado_tiene_motivo_de_catalogo(conexion_revertida):
-    """Los 6 duplicados del 23/09 quedan con DUPLICADO, en las dos tablas."""
+    """Ningún anulado queda sin motivo de catálogo, en ninguna de las dos tablas. (La carga
+    del 10/10 dejó los 6 duplicados del 23/09 con DUPLICADO; contarlos acá ataba el test
+    a datos reales que Operaciones puede cambiar.)"""
     for tabla in ("app.trips", "app.trips_manual"):
         sin_motivo = await conexion_revertida.fetchval(
             f"SELECT count(*) FROM {tabla} t LEFT JOIN app.status_taxonomies r ON r.id = t.void_reason_id "
             "WHERE t.voided_at IS NOT NULL AND (r.domain IS DISTINCT FROM 'TRIP_VOID_REASON')")
         assert sin_motivo == 0, tabla
-    assert await conexion_revertida.fetchval(
-        "SELECT count(*) FROM app.trips t JOIN app.status_taxonomies r ON r.id = t.void_reason_id "
-        "WHERE t.planning_date = '2026-09-23' AND r.code = 'DUPLICADO'") == 6
 
 
 async def test_la_columna_de_texto_libre_ya_no_existe(conexion_revertida):
