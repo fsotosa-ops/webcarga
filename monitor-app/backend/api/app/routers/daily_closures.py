@@ -70,23 +70,13 @@ SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name
        -- también para quien no trabajó. `today_trip_origin` de acá arriba es
        -- otra cosa —de dónde salió la carga de hoy— y van por separado.
        dds.home_location_id::text AS home_cd_id,
-       hcd.name                   AS home_cd_name,
-       -- Las operaciones habilitadas de su empresa. Es lo que hace que una fila
-       -- SIN carga siga apareciendo bajo su operación; misma fuente que ya usa
-       -- el filtro por cliente de /trips/fleet-daily-overview.
-       COALESCE(carrier_shippers.names, ARRAY[]::text[]) AS carrier_shipper_names
+       hcd.name                   AS home_cd_name
 FROM {LINEAS_CONDUCTORES} dds
 JOIN active_roster ar ON ar.driver_id = dds.driver_id
 JOIN public.drivers d ON d.id = dds.driver_id
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = da.carrier_id
 LEFT JOIN public.locations hcd ON hcd.id = dds.home_location_id
-LEFT JOIN LATERAL (
-    SELECT array_agg(DISTINCT sh2.name ORDER BY sh2.name) AS names
-    FROM public.carrier_shippers cs
-    JOIN public.shippers sh2 ON sh2.id = cs.shipper_id AND sh2.status = 'ACTIVE'
-    WHERE cs.carrier_id = c.id AND cs.status = 'ACTIVE'
-) carrier_shippers ON true
 LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
 -- Fase 1.5 (2026-07-21): cliente(s) que el conductor sirvió ese día — el
 -- denominador común de los 3 reportes manuales hoy armados a mano
@@ -182,12 +172,6 @@ JOIN public.drivers d ON d.id = dds.driver_id
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = da.carrier_id
 LEFT JOIN public.locations hcd ON hcd.id = dds.home_location_id
-LEFT JOIN LATERAL (
-    SELECT array_agg(DISTINCT sh2.name ORDER BY sh2.name) AS names
-    FROM public.carrier_shippers cs
-    JOIN public.shippers sh2 ON sh2.id = cs.shipper_id AND sh2.status = 'ACTIVE'
-    WHERE cs.carrier_id = c.id AND cs.status = 'ACTIVE'
-) carrier_shippers ON true
 LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
 LEFT JOIN LATERAL (
     SELECT array_agg(DISTINCT {nombre_del_cliente('t', 'sh')}) AS client_names

@@ -255,7 +255,6 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     origin?: string | null    // de dónde salió la carga HOY (el hecho del TMS)
     cd?: string | null        // Origen habitual DECLARADO: de quién es la asistencia
     cliente?: string | null   // generador de carga: quien pone la carga, no quien la mueve
-    clienteEsHabilitado?: boolean  // true = operaciones de la empresa, no el cliente de un viaje
     comentario?: string | null
     driverPendingDocsCritical?: boolean | null
     suggestedReasonId?: string | null
@@ -286,13 +285,9 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     tripCode: d.today_trip_code,
     origin: d.today_trip_origin,
     cd: d.home_cd_name,
-    // Sin viaje no hay cliente real, pero sí se sabe a qué operaciones
-    // está habilitada su empresa. Se muestran distinto para no hacerlas
-    // pasar por un hecho del día.
-    cliente: d.client_names.length
-      ? d.client_names.join(', ')
-      : (d.carrier_shipper_names?.length ? d.carrier_shipper_names.join(' · ') : null),
-    clienteEsHabilitado: d.client_names.length === 0,
+    // El cliente es un dato del viaje: sin viaje, no hay (decisión del usuario
+    // 11/10). Antes mostraba los clientes habilitados de su empresa.
+    cliente: d.client_names.length ? d.client_names.join(', ') : null,
     comentario: d.comentario,
     driverPendingDocsCritical: d.driver_pending_docs_critical,
     suggestedReasonId: d.suggested_reason_id,
@@ -328,9 +323,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     tripCode: e.today_trip_code,
     origin: e.today_trip_origin,
     cd: e.home_cd_name,
-    cliente: e.today_trip_client
-      ?? (e.carrier_shipper_names?.length ? e.carrier_shipper_names.join(' · ') : null),
-    clienteEsHabilitado: !e.today_trip_client,
+    cliente: e.today_trip_client,
     comentario: e.comentario,
     reasonFromDriverName: e.reason_from_driver_name,
   })
@@ -665,14 +658,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                     poner una raya como en las columnas que sí pueden ir vacías. */}
                 <td className="px-3 py-2 text-informativo">{r.cd ?? 'Sin origen'}</td>
                 <td className="px-3 py-2 text-informativo">{r.origin ?? '—'}</td>
-                <td className="px-3 py-2 text-informativo">
-                  {/* Sin viaje, lo que se muestra son las operaciones a las que
-                      su empresa está habilitada — no un hecho del día. Va en
-                      cursiva para que no se lea como el cliente de un viaje. */}
-                  {r.cliente
-                    ? <span className={r.clienteEsHabilitado ? 'italic' : ''}>{r.cliente}</span>
-                    : '—'}
-                </td>
+                <td className="px-3 py-2 text-informativo">{r.cliente ?? '—'}</td>
                 <td className="px-3 py-2">
                   <span className={`text-etiqueta font-semibold px-2 py-0.5 rounded-full border ${r.statusCls}`}>
                     {r.statusLabel}

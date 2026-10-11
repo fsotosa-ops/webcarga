@@ -35,8 +35,15 @@ muestran la cuenta. Tests: integración `test_los_clientes_del_filtro_son_los_de
 - "Muestra los dos generadores": sale solo en filas SIN viaje (o en la fila fusionada conductor+tracto, cuando
   los dos están sin carga). Muestra las operaciones habilitadas de la empresa (`carrier_shipper_names`). Una fila
   con viaje muestra el cliente de ese viaje (`today_trip_client`).
-- [ ] **Decisión pendiente del usuario:** en filas sin viaje, ¿se sigue mostrando "habilitado para…" o se deja la
-  celda vacía (como se decidió con el CD: "solo el origen real del viaje", y luego "Mantenlo")?
+- **Decisión del usuario (11/10): A — "el cliente es del viaje; estás mezclando cosas".** Aplicada:
+  - Cierre › Flota: la columna Cliente solo se llena con el viaje; sin viaje, "—". `carrier_shipper_names` sale
+    de `daily_closures` y `equipment_closures` (y su LATERAL, que en `_REPORT_SQL` estaba muerto).
+  - Reporte: `_clientes_de_la_fila` = solo el cliente del viaje; lo sin carga, los conductores que no trabajaron
+    y el faltante de dotación no son de ningún cliente (se ven con "Todos los clientes"). Con un cliente elegido,
+    "No trabajaron" y "Dotación" dicen "Lo que no tuvo viaje no es de ningún cliente…". Sale
+    `_SQL_CLIENTES_POR_EMPRESA`.
+  - NO tocado: Centro de Flota (`/trips/fleet-daily-overview`) sigue filtrando por empresa habilitada, porque su
+    pregunta es "a quién se le puede ofrecer este camión", no qué pasó.
 
 **Pendiente aparte:** la falla de la suite `test_get_del_cierre_no_escribe_integracion::…[<lambda>2]` no está
 investigada (corrió con código previo a los arreglos de la revisión final).

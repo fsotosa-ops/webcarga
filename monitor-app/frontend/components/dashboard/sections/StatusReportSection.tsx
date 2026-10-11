@@ -223,7 +223,11 @@ export function StatusReportSection({ fecha }: Props) {
           ))}
         </div>
 
-        {seccion === 'dotacion' ? (
+        {clienteElegido && (seccion === 'no_trabajaron' || seccion === 'dotacion') ? (
+          // El cliente es un dato del viaje (decisión del usuario 11/10): lo que
+          // no tuvo viaje no es de ningún cliente, y "no hay" sería falso.
+          <Vacio>Lo que no tuvo viaje no es de ningún cliente. Elige «Todos los clientes» para verlo.</Vacio>
+        ) : seccion === 'dotacion' ? (
           faltante && faltante.length === 0
           ? <Vacio>No hay empresas con desbalance de dotación</Vacio>
           : <FleetDriverGapCard rows={faltante} />

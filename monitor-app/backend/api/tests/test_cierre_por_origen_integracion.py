@@ -154,14 +154,13 @@ async def test_el_detalle_devuelve_el_cd_y_las_operaciones_habilitadas(conexion_
     mio = next(f for f in conductores if f["driver_id"] == esc["conductor"])
     assert mio["home_cd_id"] == str(cd)
     assert mio["home_cd_name"].endswith("CD EL PEÑON")
-    # La fila NO tiene viaje ese día, y aun así dice bajo qué operación cuenta.
-    # Eso es lo que pidió la línea 9 del documento de Operaciones.
+    # La fila NO tiene viaje ese día: no tiene cliente, aunque su empresa esté
+    # habilitada para uno (decisión del usuario 11/10: el cliente es del viaje).
     assert mio["today_trip_origin"] is None
-    nombre_real = await conexion_revertida.fetchval(
-        "SELECT name FROM public.shippers WHERE id = $1", shipper)
-    assert list(mio["carrier_shipper_names"]) == [nombre_real]
+    assert "carrier_shipper_names" not in mio.keys()
 
     tractos = await conexion_revertida.fetch(_DETAIL_TRACTOS_SQL, D)
     suyo = next(f for f in tractos if f["asset_id"] == esc["tractor"])
     assert suyo["home_cd_id"] == str(cd)
-    assert list(suyo["carrier_shipper_names"]) == [nombre_real]
+    assert suyo["today_trip_client"] is None
+    assert "carrier_shipper_names" not in suyo.keys()

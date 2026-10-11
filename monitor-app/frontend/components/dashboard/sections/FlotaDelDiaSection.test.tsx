@@ -48,7 +48,7 @@ function driverRow(overrides: Partial<DailyClosureStatus['drivers'][number]> = {
     status: 'UNASSIGNED' as const, unassigned_reason_id: null, unassigned_reason_label: null,
     resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null,
     suggested_reason_id: null, trip_id: null, today_trip_id: null, today_trip_code: null, today_trip_origin: null, comentario: null, last_known_tractor_plate: null, last_known_operation_type: null,
-    home_cd_id: null, home_cd_name: null, carrier_shipper_names: [] as string[],
+    home_cd_id: null, home_cd_name: null,
     valid_until: null,
     ...overrides,
   }
@@ -63,7 +63,7 @@ function equipmentRow(overrides: Partial<EquipmentDayStatusRow> = {}): Equipment
     resolved_by: null, resolved_at: null, driver_id: null, driver_name: null,
     trip_id: null, trip_driver_id: null, trip_driver_name: null,
     today_trip_code: null, today_trip_origin: null, today_trip_client: null, comentario: null,
-    home_cd_id: null, home_cd_name: null, carrier_shipper_names: [],
+    home_cd_id: null, home_cd_name: null,
     valid_until: null, category: 'SIN_RESOLVER',
     ...overrides,
   }
@@ -955,22 +955,22 @@ describe('FlotaDelDiaSection', () => {
     expect(screen.getByLabelText('CD EL PEÑON')).toBeInTheDocument()
   })
 
-  it('una fila sin carga muestra las operaciones habilitadas de su empresa', async () => {
+  it('una fila sin viaje no tiene cliente, aunque su empresa opere para varios', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
       drivers: [driverRow({
-        driver_id: 'dx', full_name: 'Ana Soto', status: 'UNASSIGNED',
-        client_names: [], carrier_shipper_names: ['IANSA', 'Sodimac'],
-      })],
+        driver_id: 'dx', full_name: 'Ana Soto', status: 'UNASSIGNED', client_names: [],
+        carrier_shipper_names: ['IANSA', 'Sodimac'],
+      } as never)],
     })
     renderSection()
     await screen.findByText('Ana Soto')
 
-    // Es lo que pidió la línea 9 del documento: un equipo parado sigue
-    // apareciendo bajo la operación a la que se lo puede ofrecer.
+    // El cliente es un dato del viaje (decisión del usuario 11/10): antes la
+    // fila decía "IANSA · Sodimac", los clientes de su empresa.
     const fila = screen.getByText('Ana Soto').closest('tr')!
-    expect(within(fila).getByText('IANSA · Sodimac')).toBeInTheDocument()
+    expect(within(fila).queryByText(/IANSA|Sodimac/)).toBeNull()
   })
 
   it('al filtrar por un origen, los tiles muestran la asistencia de ESE origen', async () => {

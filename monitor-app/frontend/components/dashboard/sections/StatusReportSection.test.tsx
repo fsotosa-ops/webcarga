@@ -308,11 +308,26 @@ describe('StatusReportSection', () => {
     expect(body.getByRole('button', { name: /Descargar Excel/ })).toBeDisabled()
   })
 
-  it('Dotación muestra el faltante del reporte, con el mismo filtro de cliente', async () => {
+  it('Dotación muestra el faltante del reporte', async () => {
     const body = renderSection()
     await abrir(body, 'Dotación')
     expect(await body.findByText('Solo Iansa Spa')).toBeInTheDocument()
     expect(body.queryByText('Transportes Sur')).toBeNull()
+  })
+
+  it('con un cliente elegido, No trabajaron y Dotación dicen que eso no es de ningún cliente', async () => {
+    // El cliente es un dato del viaje (decisión del usuario 11/10): lo que no
+    // tuvo viaje se ve solo con "Todos los clientes".
+    const body = renderSection()
+    await body.findByText('Equipos activos')
+    fireEvent.change(body.getByRole('combobox', { name: 'Filtrar por cliente' }), { target: { value: 's1' } })
+    await body.findByText('Equipos activos')
+    const aviso = 'Lo que no tuvo viaje no es de ningún cliente. Elige «Todos los clientes» para verlo.'
+    fireEvent.click(body.getByRole('button', { name: 'No trabajaron' }))
+    expect(await body.findByText(aviso)).toBeInTheDocument()
+    fireEvent.click(body.getByRole('button', { name: 'Dotación' }))
+    expect(body.getByText(aviso)).toBeInTheDocument()
+    expect(body.queryByText('Solo Iansa Spa')).toBeNull()
   })
 
   it('Dotación sin desbalance lo dice, en vez de quedar en blanco', async () => {

@@ -1322,9 +1322,6 @@ export type DriverDayStatusRow = {
    *  significados es la clase de bug que este proyecto ya vio cinco veces. */
   home_cd_id:                  string | null
   home_cd_name:                string | null
-  /** Las operaciones habilitadas de su empresa (public.carrier_shippers). Lo
-   *  que hace que una fila SIN carga siga apareciendo bajo su operación. */
-  carrier_shipper_names:       string[]
 }
 
 export type DailyClosureInfo = {
@@ -1489,9 +1486,8 @@ export type DailyClosureReportRow = Omit<
   // solo _DETAIL_SQL (GET /daily-closures) los expone.
   | 'last_known_tractor_plate' | 'last_known_operation_type' | 'today_trip_id'
   | 'today_trip_code' | 'today_trip_origin' | 'comentario' | 'valid_until'
-  // home_cd_name SÍ viaja en _REPORT_SQL (el pivot puede cortar por CD); el id
-  // y las operaciones habilitadas, no.
-  | 'home_cd_id' | 'carrier_shipper_names'
+  // home_cd_name SÍ viaja en _REPORT_SQL (el pivot puede cortar por CD); el id, no.
+  | 'home_cd_id'
 > & {
   business_date: string
 }
@@ -1551,7 +1547,6 @@ export type EquipmentDayStatusRow = {
    *  origen de su viaje más reciente de cualquier fecha. */
   home_cd_id:              string | null
   home_cd_name:            string | null
-  carrier_shipper_names:   string[]
   comentario:              string | null
 }
 

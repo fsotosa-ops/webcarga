@@ -29,7 +29,8 @@ Decisiones:
   - Cada equipo tiene un solo tipo de operación (`code` de su taxonomía): cuenta
     en Tractoreo o en Equipo Completo, nunca en los dos. Los sin tipo no entran.
   - El filtro de cliente aplica una sola regla a todas las cifras (_clientes_de_la_fila):
-    con carga, el cliente del viaje; sin carga, los clientes de su empresa en el directorio.
+    el cliente es un dato del viaje. Lo que no tuvo viaje (no trabajó, faltante de
+    dotación) no es de ningún cliente: se ve solo con "Todos los clientes".
   - El cliente se muestra con el nombre del directorio (public.shippers), no
     con el texto crudo del TMS, igual que el resto del Cierre.
 """
@@ -298,36 +299,25 @@ async def _build_driver_rows(pool, business_date: _date) -> list[dict]:
     return [r for r in rows if r["category"] in ("NO_TRABAJANDO", "SIN_RESOLVER")]
 
 
-# Los clientes de cada empresa en el directorio, por id.
-_SQL_CLIENTES_POR_EMPRESA = """
-SELECT cs.carrier_id, array_agg(DISTINCT sh.id::text) AS clients
-FROM public.carrier_shippers cs
-JOIN public.shippers sh ON sh.id = cs.shipper_id AND sh.status = 'ACTIVE'
-WHERE cs.status = 'ACTIVE'
-GROUP BY cs.carrier_id
-"""
-
-
-def _clientes_de_la_fila(fila: dict, clientes_por_empresa: dict) -> list[str]:
-    """A qué clientes pertenece una fila del reporte (spec 2026-10-11). Es la
-    única regla de pertenencia, y la usan por igual equipos, conductores y
-    faltante de dotación:
-      - con carga: al cliente de su viaje del día;
-      - sin carga, o sin noción de carga (conductor que no trabajó, faltante de
-        dotación): a cada cliente de su empresa en el directorio.
-    Así, con "Walmart" elegido, el reporte habla de la flota que trabaja para
-    Walmart, haya cargado o no.
+def _clientes_de_la_fila(fila: dict) -> list[str]:
+    """A qué cliente pertenece una fila del reporte. Es la única regla de
+    pertenencia, y la usan por igual equipos, conductores y faltante de dotación:
+    el cliente es un dato del VIAJE. Con carga, el cliente de su viaje del día;
+    sin carga (o sin noción de carga: conductor que no trabajó, faltante de
+    dotación), ninguno. Antes se les atribuían los clientes habilitados de su
+    empresa, y con "Sodimac" elegido salían camiones parados que nunca tuvieron
+    un viaje de Sodimac (decisión del usuario 11/10: "estás mezclando cosas").
     Todo por id del directorio: un viaje sin cliente vinculado no pertenece a
     ninguno (cuenta solo en "Todos los clientes")."""
-    if fila.get("con_carga"):
-        return [fila["shipper_id"]] if fila.get("shipper_id") else []
-    return list(clientes_por_empresa.get(fila["carrier_id"], []))
+    if fila.get("con_carga") and fila.get("shipper_id"):
+        return [fila["shipper_id"]]
+    return []
 
 
-def _filter_by_client(rows: list[dict], shipper_id: str | None, clientes_por_empresa: dict) -> list[dict]:
+def _filter_by_client(rows: list[dict], shipper_id: str | None) -> list[dict]:
     if not shipper_id:
         return rows
-    return [r for r in rows if shipper_id in _clientes_de_la_fila(r, clientes_por_empresa)]
+    return [r for r in rows if shipper_id in _clientes_de_la_fila(r)]
 
 
 def _clientes_del_dia(rows: list[dict]) -> list[dict]:
@@ -577,13 +567,12 @@ async def get_status_report(fecha: str, shipper_id: UUID | None = None, pool=Dep
     business_date = _parse_business_date(fecha)
     # UUID en la firma: un id mal formado es 422; de acá en adelante, texto.
     shipper_id = str(shipper_id) if shipper_id else None
-    clientes_por_empresa = {r["carrier_id"]: list(r["clients"]) for r in await pool.fetch(_SQL_CLIENTES_POR_EMPRESA)}
     all_rows = await _build_asset_rows(pool, business_date)
-    rows = _filter_by_client(all_rows, shipper_id, clientes_por_empresa)
+    rows = _filter_by_client(all_rows, shipper_id)
     por_tipo = {clave: [r for r in rows if codigo in r["categories"]] for clave, codigo in _TIPOS.items()}
     # Conductores y faltante de dotación, con la misma regla de pertenencia.
-    driver_rows = _filter_by_client(await _build_driver_rows(pool, business_date), shipper_id, clientes_por_empresa)
-    faltantes = _filter_by_client(await compute_fleet_driver_gap(pool), shipper_id, clientes_por_empresa)
+    driver_rows = _filter_by_client(await _build_driver_rows(pool, business_date), shipper_id)
+    faltantes = _filter_by_client(await compute_fleet_driver_gap(pool), shipper_id)
     catalogo_no_trabajo = [r["label"] for r in await pool.fetch(_SQL_MOTIVOS_DEL_GRUPO, GRUPO_NO_TRABAJANDO)]
     catalogo_sin_asignacion = [
         r["label"] for r in await pool.fetch(_SQL_MOTIVOS_DEL_GRUPO, GRUPO_TRABAJANDO_SIN_ASIGNACION)
