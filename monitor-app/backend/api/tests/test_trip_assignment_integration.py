@@ -270,3 +270,15 @@ async def test_fleet_edit_locks_the_trip_before_the_link(conexion_revertida):
     finally:
         await holder.close()
     assert link_was_free, "la edición tomó el vínculo antes que el viaje (orden inverso al de dbt)"
+
+
+async def test_editing_a_manual_trip_reaches_trips_manual(conexion_revertida):
+    """La copia escribe de verdad: sin ella, la siguiente corrida de dbt
+    reconstruye el viaje desde trips_manual y pisa la edición."""
+    conn = conexion_revertida
+    await apply_migration(conn)
+    trip_id = await create_manual_trip(conn, await open_status(conn), None)
+    await patch_trip(trip_id, TripPatch(comments="queda en trips_manual"),
+                     pool=PoolDeUnaConexion(conn), user=await _usuario_real(conn))
+    assert await conn.fetchval(
+        "SELECT comments FROM app.trips_manual WHERE id = $1::uuid", trip_id) == "queda en trips_manual"
