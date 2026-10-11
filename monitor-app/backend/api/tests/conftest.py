@@ -330,3 +330,13 @@ async def abrir_hoy(conn):
         "WHERE business_date = $1", hoy)
     return hoy
 
+
+async def cliente_de_prueba(conn) -> str:
+    """Un cliente del directorio para el viaje de un test, creado dentro de la
+    transacción revertida del test. El alta de un viaje exige un cliente del
+    directorio (spec 2026-10-11); el nombre "TEST-…" marca que ningún dato real
+    se llama así."""
+    import uuid
+    nombre = f"TEST-{uuid.uuid4().hex[:8]}"
+    await conn.execute("INSERT INTO public.shippers (name, status) VALUES ($1, 'ACTIVE')", nombre)
+    return nombre

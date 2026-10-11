@@ -8,7 +8,7 @@ import asyncpg
 import pytest
 
 from app.routers.trips import TripCreateBody, TripStopCreate, create_trip
-from tests.conftest import PoolDeUnaConexion, _usuario_real
+from tests.conftest import PoolDeUnaConexion, _usuario_real, cliente_de_prueba
 
 pytestmark = pytest.mark.integracion
 
@@ -18,7 +18,7 @@ DIA = date(2099, 1, 3)
 async def _viaje_manual(conn, usuario) -> str:
     viaje = await create_trip(
         TripCreateBody(
-            planning_date=DIA.isoformat(), client_name=f"TEST-{uuid.uuid4().hex[:8]}",
+            planning_date=DIA.isoformat(), client_name=await cliente_de_prueba(conn),
             driver_name="CONDUCTOR DE PRUEBA",
             stops=[TripStopCreate(local="SAN BERNARDO", stop_type="ORIGIN"), TripStopCreate(local="IANSA")],
         ),

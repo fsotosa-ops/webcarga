@@ -17,7 +17,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.routers.trips import TripCreateBody, TripPatch, TripStopCreate, create_trip, patch_trip
-from tests.conftest import PoolDeUnaConexion, _usuario_real
+from tests.conftest import PoolDeUnaConexion, _usuario_real, cliente_de_prueba
 
 pytestmark = pytest.mark.integracion
 
@@ -26,7 +26,7 @@ async def _viaje(conn, usuario, source_system: str) -> str:
     viaje = await create_trip(
         TripCreateBody(
             planning_date="2026-09-23",
-            client_name=f"TEST-{uuid.uuid4().hex[:8]}",
+            client_name=await cliente_de_prueba(conn),
             current_status="CERRADO FINALIZADO",
             stops=[TripStopCreate(local="IANSA")],
         ),

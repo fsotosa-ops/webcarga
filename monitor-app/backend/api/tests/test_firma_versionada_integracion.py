@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from app.routers.trips import TripCreateBody, TripStopCreate, create_trip
 from app.services import cierre_lineas
-from tests.conftest import PoolDeUnaConexion, _usuario_real, con_roles, ADMIN_EQUIVALENTE
+from tests.conftest import PoolDeUnaConexion, _usuario_real, con_roles, ADMIN_EQUIVALENTE, cliente_de_prueba
 
 pytestmark = pytest.mark.integracion
 
@@ -20,7 +20,7 @@ D = date(2099, 1, 2)
 async def _viaje_manual(conn, usuario) -> str:
     viaje = await create_trip(
         TripCreateBody(
-            planning_date=D.isoformat(), client_name=f"TEST-{uuid.uuid4().hex[:8]}",
+            planning_date=D.isoformat(), client_name=await cliente_de_prueba(conn),
             driver_name="CONDUCTOR DE PRUEBA",
             stops=[TripStopCreate(local="SAN BERNARDO", stop_type="ORIGIN"), TripStopCreate(local="IANSA")],
         ),

@@ -20,7 +20,7 @@ from app.routers.trips import (
 from app.schemas.trip import TripPatch, TripVoidBody
 from pydantic import ValidationError
 from app.services.anular_viajes import anular_viajes, revertir_anulacion
-from tests.conftest import PoolDeUnaConexion, _usuario_real, con_roles, usuario as usuario_de, ADMIN_EQUIVALENTE
+from tests.conftest import PoolDeUnaConexion, _usuario_real, con_roles, usuario as usuario_de, ADMIN_EQUIVALENTE, cliente_de_prueba
 
 pytestmark = pytest.mark.integracion
 
@@ -30,7 +30,7 @@ DIA = date(2099, 1, 1)
 async def _viaje_manual(conn, usuario) -> str:
     viaje = await create_trip(
         TripCreateBody(
-            planning_date=DIA.isoformat(), client_name=f"TEST-{uuid.uuid4().hex[:8]}",
+            planning_date=DIA.isoformat(), client_name=await cliente_de_prueba(conn),
             driver_name="CONDUCTOR DE PRUEBA",
             stops=[TripStopCreate(local="SAN BERNARDO", stop_type="ORIGIN"), TripStopCreate(local="IANSA")],
         ),
@@ -367,7 +367,7 @@ async def test_lote_con_un_viaje_de_dia_firmado_no_anula_ninguno(conexion_revert
     firmado = await _viaje_manual(conn, usuario)
     await _firmar_dia(conn, usuario)
     abierto = str((await create_trip(
-        TripCreateBody(planning_date="2099-01-07", client_name=f"TEST-{uuid.uuid4().hex[:8]}",
+        TripCreateBody(planning_date="2099-01-07", client_name=await cliente_de_prueba(conn),
                        driver_name="CONDUCTOR DE PRUEBA",
                        stops=[TripStopCreate(local="SAN BERNARDO", stop_type="ORIGIN"), TripStopCreate(local="IANSA")]),
         pool=PoolDeUnaConexion(conn), user=usuario))["id"])
