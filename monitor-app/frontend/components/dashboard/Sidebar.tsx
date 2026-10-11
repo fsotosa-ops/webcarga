@@ -64,6 +64,7 @@ const NAV_GROUPS: NavGroupDef[] = [
     items: [
       { href: '/dashboard/compliance',       label: 'Empresas' },
       { href: '/dashboard/compliance/inbox', label: 'Sin clasificar', badge: 'inbox' },
+      { href: '/dashboard/compliance/pending', label: 'Pendientes' },
     ],
   },
 ]

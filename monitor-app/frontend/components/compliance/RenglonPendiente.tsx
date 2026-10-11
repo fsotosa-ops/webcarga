@@ -15,6 +15,12 @@ interface Props {
    *  sabe de quién es); Pendientes ya sabe el documento y nombra a quien lo
    *  debe. Una variante, no un renglón hermano. */
   title?:      ReactNode
+  /** El estado dicho en palabras, en lugar del motivo por defecto
+   *  (`vigenciaDeLaFila`). Pendientes lo dice como chip ("Venció el 29/09"). */
+  status?:     ReactNode
+  /** El texto de la acción de carga ("Subir", "Completar", "Subir la nueva").
+   *  Por defecto, la invitación a arrastrar o elegir un archivo. */
+  actionLabel?: string
   puedeEditar: boolean
   /** Corregir el vencimiento. Por defecto, lo mismo que `puedeEditar`; sobre
    *  un documento ya aprobado exige además revisar (revisión final RBAC). */
@@ -78,7 +84,7 @@ function politicaDe(fila: PendingComplianceRow): PoliticaVencimiento {
  *  subía primero y clasificaba después, así que cada rechazo dejaba el
  *  archivo huérfano en la bandeja. */
 export function RenglonPendiente({
-  fila, title, puedeEditar, puedeCorregirFecha = puedeEditar, onSubir, onDeshacer, onVer, viendo, avisoVer, onFechaCorregida, onQuitarSolicitud,
+  fila, title, status, actionLabel, puedeEditar, puedeCorregirFecha = puedeEditar, onSubir, onDeshacer, onVer, viendo, avisoVer, onFechaCorregida, onQuitarSolicitud,
 }: Props) {
   const inputId = `archivo-${fila.id}`
   const fechaId = `vence-${fila.id}`
@@ -118,7 +124,9 @@ export function RenglonPendiente({
           {title ?? fila.document_name}
         </span>
 
-        {motivo && estado.tipo === 'reposo' && (
+        {status && estado.tipo === 'reposo' && <span className="shrink-0">{status}</span>}
+
+        {!status && motivo && estado.tipo === 'reposo' && (
           <span className={`shrink-0 text-etiqueta ${
             fila.urgencia === 'AL_DIA' || fila.urgencia === 'NO_EXIGIBLE' ? 'text-informativo' : 'text-espera'}`}>
             {motivo}
@@ -189,10 +197,11 @@ export function RenglonPendiente({
         {puedeEditar && (estado.tipo === 'reposo' || estado.tipo === 'recibiendo') && (
           <label
             htmlFor={inputId}
-            className="shrink-0 inline-flex items-center gap-1.5 text-etiqueta text-accion font-semibold cursor-pointer transition-opacity hover:opacity-70"
+            className={`shrink-0 inline-flex items-center gap-1.5 text-etiqueta text-accion font-semibold cursor-pointer transition-opacity hover:opacity-70 ${
+              actionLabel ? 'rounded-md border border-dashed border-accion/45 px-2 py-0.5' : ''}`}
           >
             <Upload size={12} aria-hidden="true" />
-            {estado.tipo === 'recibiendo' ? 'Suelta para cargar aquí' : 'Arrastra aquí o elige un archivo'}
+            {estado.tipo === 'recibiendo' ? 'Suelta para cargar aquí' : actionLabel ?? 'Arrastra aquí o elige un archivo'}
             <input
               id={inputId}
               type="file"

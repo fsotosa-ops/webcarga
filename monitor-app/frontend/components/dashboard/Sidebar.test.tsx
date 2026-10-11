@@ -104,7 +104,7 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
   // NAV_GROUPS a mano (ver comentario junto a MOBILE_NAV_ITEMS). Sin este
   // test, volver a listar Monitor "a mano" en vez de aplanar los grupos deja
   // a Certificacion afuera del mobile EN SILENCIO — nada se pone rojo.
-  it('en mobile las dos entradas de Certificación existen', async () => {
+  it('en mobile las entradas de Certificación existen', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     setup()
 
@@ -113,6 +113,8 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
       .toHaveAttribute('href', '/dashboard/compliance')
     expect(within(navMobile).getByRole('link', { name: /sin clasificar/i }))
       .toHaveAttribute('href', '/dashboard/compliance/inbox')
+    expect(within(navMobile).getByRole('link', { name: /^pendientes$/i }))
+      .toHaveAttribute('href', '/dashboard/compliance/pending')
   })
 
   // El Directorio SALIÓ de Certificación el 2026-09-07 y quedó como módulo
@@ -172,12 +174,30 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
     expect(new Set(nombres).size).toBe(nombres.length)
   })
 
-  it('no quedan Bandeja ni Pendientes como entradas propias', async () => {
+  it('no queda Bandeja como entrada propia', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     setup()
     await screen.findAllByText('Certificación')
     expect(screen.queryByRole('link', { name: /^bandeja$/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /^pendientes$/i })).not.toBeInTheDocument()
+  })
+
+  // Pendientes vuelve como tercer trabajo de Certificación (spec 2026-10-11,
+  // decisión D1): "qué documentos se deben y quién los debe". La aserción
+  // vieja de que NO existía quedó contradicha por esa decisión.
+  it('Certificación tiene Empresas, Sin clasificar y Pendientes, en ese orden', async () => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+    setup()
+    fireEvent.click(await screen.findByRole('button', { name: /certificación/i }))
+
+    const aside = document.querySelector('aside')!
+    const delGrupo = within(aside).getAllByRole('link')
+      .filter(a => a.getAttribute('href')?.startsWith('/dashboard/compliance'))
+      .map(a => [a.textContent?.trim(), a.getAttribute('href')])
+    expect(delGrupo).toEqual([
+      ['Empresas', '/dashboard/compliance'],
+      ['Sin clasificar', '/dashboard/compliance/inbox'],
+      ['Pendientes', '/dashboard/compliance/pending'],
+    ])
   })
 })
 

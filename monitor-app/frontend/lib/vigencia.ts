@@ -53,7 +53,8 @@ function corte(mes: Date, dia: number): Date {
 }
 
 const dd = (n: number) => String(n).padStart(2, '0')
-const corta = (d: Date) => `${dd(d.getDate())}/${dd(d.getMonth() + 1)}`
+/** "29/09": día y mes. La usa también Pendientes. */
+export const corta = (d: Date) => `${dd(d.getDate())}/${dd(d.getMonth() + 1)}`
 const larga = (d: Date) => `${corta(d)}/${d.getFullYear()}`
 
 // ── El ejemplo ──────────────────────────────────────────────────────────────
