@@ -16,6 +16,32 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Pendientes menores de las dos revisiones finales: resueltos (commits 8e6a8443, 85f4d358)
+
+- **Backend:**
+  - Anular toma FOR SHARE sobre los períodos que mira (su día y los 45 siguientes); `cerrar` los toma FOR UPDATE, así que se esperan.
+  - Un viaje anulado no se edita (409 en PATCH del viaje, paradas, vínculo de flota, restaurar campo, bulk-close, bulk-reopen y assign-driver). Las notas siguen abiertas.
+  - `can_void` exige trips.void, como la ruta; el rol admin trae trips.void junto con trips.void_any.
+  - Un anulado que el TMS reportó después (dejó de ser manual) se puede deshacer, y su regla de días firmados se sigue calculando.
+  - El comentario tiene un máximo de 500 caracteres.
+  - La firma copia y cuenta los viajes desde una sola lectura.
+  - conteo-activos no cuenta anulados.
+  - La auditoría de anular y revertir va en una sola sentencia (`auditar_en_lote` con actor).
+  - Tests nuevos: lote mixto con día firmado; revertir con firma real; ya no se cuentan datos reales del 23/09.
+- **Frontend:**
+  - `CamposDeMotivo` es un solo componente para la barra y el detalle: muestra "(obligatorio)", tiene maxLength 500 y avisa cuando no hay motivos activos.
+  - La barra no se puede editar ni cancelar mientras corre.
+  - TaxonomyTab invalida `['taxonomies', dominio]`.
+  - El detalle de un anulado es de solo lectura (`fieldset disabled`).
+  - La pestaña Viajes tiene aria-label con los ajustes; HistorialDeFirmas usa fmtDT.
+- **Decisión:** las notas de un viaje anulado quedan abiertas en la API (no cambian datos del viaje), pero la UI del detalle queda toda en solo lectura.
+- **Siguiente paso exacto:**
+  - [ ] Push a dev y verificar los dos despliegues.
+  - [ ] Probar en vivo la barra del Monitor con motivo (requiere un viaje de prueba autorizado).
+  - [ ] Contract de closure_periods y de las tablas viejas, con respaldo; issue #13.
+  - [ ] Test preexistente rojo de catálogo.
+  - [ ] Decisión A.
+
 ### 2026-10-11 — Motivos de anulación de catálogo, ajustes sin ruido y vuelta visible: DESPLEGADO en dev
 
 - **Hecho:**

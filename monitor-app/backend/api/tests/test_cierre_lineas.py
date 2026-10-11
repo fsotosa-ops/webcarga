@@ -26,7 +26,7 @@ from fastapi import HTTPException
 
 from app.services import cierre_lineas
 from app.services.pre_cierre import avisos_del_dia
-from tests.conftest import PoolDeUnaConexion, _usuario_real, con_roles, ADMIN_EQUIVALENTE
+from tests.conftest import PoolDeUnaConexion, _usuario_real, abrir_hoy, con_roles, ADMIN_EQUIVALENTE
 
 pytestmark = pytest.mark.integracion
 
@@ -646,7 +646,7 @@ async def test_una_correccion_del_recalculo_marca_los_dias_y_despues_converge(co
     conn = conexion_revertida
     pool = PoolDeUnaConexion(conn)
     asset, nueva = await _escenario_con_correccion(conn)
-    hoy = await conn.fetchval("SELECT public.hoy_chile()")
+    hoy = await abrir_hoy(conn)
     await conn.execute("DELETE FROM app.closure_recompute_queue")
 
     await cierre_lineas.recalcular(pool, D)

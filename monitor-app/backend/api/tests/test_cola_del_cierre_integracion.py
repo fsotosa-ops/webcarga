@@ -9,6 +9,8 @@ from datetime import timedelta
 
 import pytest
 
+from tests.conftest import abrir_hoy
+
 pytestmark = pytest.mark.integracion
 
 TABLAS_DE_LA_MIGRACION = [
@@ -29,7 +31,7 @@ async def _vaciar_cola(conn) -> None:
 
 
 async def test_escribir_en_cada_tabla_de_entrada_encola_hoy(conexion_revertida):
-    hoy = await conexion_revertida.fetchval("SELECT public.hoy_chile()")
+    hoy = await abrir_hoy(conexion_revertida)
     for tabla in TABLAS_DE_LA_MIGRACION:
         await _vaciar_cola(conexion_revertida)
         # Un UPDATE que sí toca una fila, sin cambiar su valor: la marca no mira
@@ -49,7 +51,7 @@ async def test_un_update_que_no_toca_filas_no_encola(conexion_revertida):
 
 
 async def test_un_dia_firmado_nunca_entra_y_uno_abierto_si(conexion_revertida):
-    hoy = await conexion_revertida.fetchval("SELECT public.hoy_chile()")
+    hoy = await abrir_hoy(conexion_revertida)
     abierto, firmado = hoy - timedelta(days=3), hoy - timedelta(days=2)
     actor = await conexion_revertida.fetchval("SELECT id FROM auth.users LIMIT 1")
     await conexion_revertida.execute(
@@ -68,7 +70,7 @@ async def test_un_dia_firmado_nunca_entra_y_uno_abierto_si(conexion_revertida):
 
 
 async def test_cada_marca_agrega_una_fila_y_la_primera_dice_desde_cuando(conexion_revertida):
-    hoy = await conexion_revertida.fetchval("SELECT public.hoy_chile()")
+    hoy = await abrir_hoy(conexion_revertida)
     await _vaciar_cola(conexion_revertida)
     tocar = "UPDATE public.carriers SET business_name = business_name WHERE ctid = (SELECT ctid FROM public.carriers LIMIT 1)"
     await conexion_revertida.execute(tocar)

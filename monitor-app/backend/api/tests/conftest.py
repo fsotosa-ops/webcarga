@@ -316,3 +316,17 @@ def pytest_configure(config):
             stacklevel=2,
         )
 
+
+async def abrir_hoy(conn):
+    """Deja abierto el día de hoy (Chile) dentro de la transacción revertida del test,
+    y lo devuelve.
+
+    Los tests de la cola del Cierre miran "hoy": un día firmado nunca entra a la cola.
+    Operaciones firma el día por la tarde, así que, sin esto, esos tests pasaban de día
+    y fallaban de noche con el código correcto (10/10: se firmó a las 21:36)."""
+    hoy = await conn.fetchval("SELECT public.hoy_chile()")
+    await conn.execute(
+        "UPDATE app.closure_periods SET status = 'OPEN', closed_by = NULL, closed_at = NULL "
+        "WHERE business_date = $1", hoy)
+    return hoy
+
