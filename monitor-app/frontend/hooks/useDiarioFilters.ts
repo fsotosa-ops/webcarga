@@ -68,6 +68,10 @@ export type DiarioFiltersAction =
    *  sort → asc → desc → sin sort — ahora dispara un fetch real al backend
    *  en vez de reordenar en memoria solo la página cargada. */
   | { type: 'toggleSort'; col: SortKey }
+  /** Desde el aviso al pie de "En curso" (11/10): los activos que llevan días
+   *  sin movimiento no están ahí; se ven en el Historial con la señal Activo,
+   *  sin rango de fechas, porque pueden ser de cualquier día. */
+  | { type: 'verActivosEnHistorial' }
   | { type: 'clear' }
 
 function reducer(state: DiarioFilters, action: DiarioFiltersAction): DiarioFilters {
@@ -128,6 +132,11 @@ function reducer(state: DiarioFilters, action: DiarioFiltersAction): DiarioFilte
       if (state.sortKey !== action.col) return { ...state, page: 1, sortKey: action.col, sortDir: 'asc' }
       if (state.sortDir === 'asc') return { ...state, page: 1, sortDir: 'desc' }
       return { ...state, page: 1, sortKey: null, sortDir: 'asc' }
+    case 'verActivosEnHistorial':
+      return {
+        ...state, tab: 'historial', fechaDesde: '', fechaHasta: '', page: 1,
+        activeSignals: state.activeSignals.includes('active') ? state.activeSignals : [...state.activeSignals, 'active'],
+      }
     case 'clear':
       return {
         ...state,

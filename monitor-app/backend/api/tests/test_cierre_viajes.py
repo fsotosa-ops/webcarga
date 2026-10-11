@@ -582,7 +582,7 @@ async def test_se_puede_filtrar_lo_no_asignado_por_webcarga(conexion_revertida):
     await conn.execute(
         "UPDATE app.trips SET unassigned_reason_id = $1 WHERE id = $2", motivo, trip_id)
 
-    resp = await list_trips(no_asignado_webcarga=True,
+    resp = await list_trips(view="historial", no_asignado_webcarga=True,
                             pool=PoolDeUnaConexion(conn), user=usuario("reader", sub=None))
 
     ids = [str(t["id"]) for t in resp["data"]]
@@ -607,7 +607,7 @@ async def test_el_filtro_no_mira_is_active(conexion_revertida):
         "UPDATE app.trips SET unassigned_reason_id = $1 WHERE id = $2",
         motivo, id_apagado_hace_meses)
 
-    resp = await list_trips(no_asignado_webcarga=True,
+    resp = await list_trips(view="historial", no_asignado_webcarga=True,
                             pool=PoolDeUnaConexion(conn), user=usuario("reader", sub=None))
 
     ids = [str(t["id"]) for t in resp["data"]]
@@ -820,8 +820,8 @@ async def test_en_curso_del_monitor_no_trae_lo_que_el_tms_borro_y_el_historial_s
     trip_id = await _crear_viaje(conn, planning_date=FECHA_NEGOCIO, is_active=True, is_assigned=False)
     await _anotar_ausente(conn, trip_id)
 
-    en_curso = await list_trips(q=str(trip_id), is_active="true", pool=pool, user=user)
-    historial = await list_trips(q=str(trip_id), pool=pool, user=user)
+    en_curso = await list_trips(view="en_curso", q=str(trip_id), is_active="true", pool=pool, user=user)
+    historial = await list_trips(view="historial", q=str(trip_id), pool=pool, user=user)
 
     assert en_curso["count"] == 0
     assert historial["count"] == 1

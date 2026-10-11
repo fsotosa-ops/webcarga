@@ -10,6 +10,7 @@ from ..db import get_pool
 from ..services.reordenamiento import (
     ESTADOS_DEL_TABLERO, MovimientoBody, mover_una_posicion,
 )
+from ..services.reglas_del_monitor import SQL_REGLAS_DEL_MONITOR
 from ..services.revisiones import SQL_PENDIENTES_POR_DOMINIO, registrar_revision
 
 # Cada ruta declara su permiso (RBAC): ver tests/test_toda_ruta_declara_permiso.py.
@@ -59,8 +60,11 @@ class MonitorAlertRulesPatch(BaseModel):
     # que el TMS dejó abierto sale del cierre. NULL es un valor válido —"no
     # ocultar nada"—, por eso es el único campo que viaja aunque venga vacío.
     stale_trip_days:        Optional[int]   = None
+    # Días sin movimiento tras los cuales un viaje activo sale de "En curso"
+    # del Monitor (11/10, services/ventana_en_curso.py). Siempre tiene valor.
+    in_progress_idle_days:  Optional[int]   = None
 
-    @field_validator("stale_trip_days")
+    @field_validator("stale_trip_days", "in_progress_idle_days")
     @classmethod
     def days_positive(cls, v: Optional[int]) -> Optional[int]:
         if v is not None and v <= 0:
@@ -363,18 +367,11 @@ async def delete_temperature_range(
 
 # ── Reglas de alerta del monitor (fila única) ─────────────────────────────────
 
-_ALERT_RULES_SELECT = (
-    "SELECT stale_report_hours, dwell_hours, late_arrival_grace_min, unassigned_enabled, "
-    "dwell_yellow_min, dwell_orange_min, dwell_red_min, tms_dropped_hours, stale_trip_days "
-    "FROM app.monitor_alert_rules WHERE id = 1"
-)
-
-
 @router.get("/monitor-alert-rules")
 async def get_monitor_alert_rules(pool=Depends(get_pool),
     _permiso=Depends(require(Permission.REFERENCE_READ)),
 ):
-    row = await pool.fetchrow(_ALERT_RULES_SELECT)
+    row = await pool.fetchrow(SQL_REGLAS_DEL_MONITOR)
     if not row:
         raise HTTPException(404, "Reglas de alerta no configuradas")
     return dict(row)
@@ -403,7 +400,7 @@ async def patch_monitor_alert_rules(
     await pool.execute(
         f"UPDATE app.monitor_alert_rules SET {', '.join(sets)} WHERE id = 1", *vals
     )
-    row = await pool.fetchrow(_ALERT_RULES_SELECT)
+    row = await pool.fetchrow(SQL_REGLAS_DEL_MONITOR)
     # Los umbrales son UN formulario, no una lista: su elemento es el
     # formulario entero, y revisarlo es decir "estos siete números están bien".
     await registrar_revision(

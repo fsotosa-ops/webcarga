@@ -10,6 +10,22 @@ describe('useDiarioFilters', () => {
     expect(countActiveFilters(f)).toBe(0)
   })
 
+  it('verActivosEnHistorial lleva al Historial con la señal Activo y sin rango de fechas', () => {
+    // El aviso al pie de "En curso" (11/10): los activos sin movimiento reciente
+    // no están ahí, y desde el aviso se va a verlos.
+    const { result } = renderHook(() => useDiarioFilters())
+    act(() => result.current[1]({ type: 'patch', patch: { fechaDesde: '2026-10-01', page: 4 } }))
+    act(() => result.current[1]({ type: 'verActivosEnHistorial' }))
+    const f = result.current[0]
+    expect(f.tab).toBe('historial')
+    expect(f.activeSignals).toEqual(['active'])
+    expect(f.fechaDesde).toBe('')
+    expect(f.page).toBe(1)
+    // Llamarlo de nuevo no duplica la señal.
+    act(() => result.current[1]({ type: 'verActivosEnHistorial' }))
+    expect(result.current[0].activeSignals).toEqual(['active'])
+  })
+
   it('patch resets page to 1 unless page is in the patch', () => {
     const { result } = renderHook(() => useDiarioFilters())
     act(() => result.current[1]({ type: 'patch', patch: { page: 3 } }))

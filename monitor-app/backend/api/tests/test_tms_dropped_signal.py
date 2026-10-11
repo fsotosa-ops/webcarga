@@ -128,7 +128,7 @@ def test_meta_expone_last_run_at_por_tms_y_el_umbral():
     pool.fetchrow.return_value = {
         "stale_report_hours": 2, "dwell_hours": 2, "late_arrival_grace_min": 60,
         "unassigned_enabled": True, "dwell_yellow_min": 60, "dwell_orange_min": 90,
-        "dwell_red_min": 120, "tms_dropped_hours": 3,
+        "dwell_red_min": 120, "tms_dropped_hours": 3, "in_progress_idle_days": 3,
     }
 
     res = _meta_client(pool).get("/api/v1/trips/meta")

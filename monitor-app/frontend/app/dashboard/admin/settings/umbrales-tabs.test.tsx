@@ -18,7 +18,7 @@ vi.mock('@/lib/api/config', () => ({
 const REGLAS = {
   stale_report_hours: 2, dwell_hours: 2, late_arrival_grace_min: 60, unassigned_enabled: true,
   dwell_yellow_min: 60, dwell_orange_min: 90, dwell_red_min: 120, tms_dropped_hours: 3,
-  stale_trip_days: 7,
+  stale_trip_days: 7, in_progress_idle_days: 3,
 }
 
 function render(ui: React.ReactElement) {
@@ -49,6 +49,22 @@ describe('Alertas del Monitor', () => {
 
     await waitFor(() => {
       expect(configApi.patchMonitorAlertRules).toHaveBeenCalledWith({ stale_trip_days: null })
+    })
+  })
+})
+
+describe('Días sin movimiento de En curso (11/10)', () => {
+  it('se edita como los demás umbrales y se guarda como número', async () => {
+    const { configApi } = await import('@/lib/api/config')
+    render(<AlertasMonitorTab />)
+    const campo = await screen.findByLabelText('Días sin movimiento para salir de En curso')
+    expect(campo).toHaveValue(3)
+
+    fireEvent.change(campo, { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: /Guardar cambios/ }))
+
+    await waitFor(() => {
+      expect(configApi.patchMonitorAlertRules).toHaveBeenCalledWith({ in_progress_idle_days: 5 })
     })
   })
 })

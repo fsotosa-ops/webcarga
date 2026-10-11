@@ -262,6 +262,9 @@ export type MonitorAlertRules = {
   /** D5 (minuta 02/10): días desde la última entrega tras los cuales un viaje
    *  que el TMS dejó abierto sale del cierre. null = no ocultar nada. */
   stale_trip_days?:       number | null
+  /** 11/10: días sin movimiento tras los cuales un viaje activo sale de "En
+   *  curso" del Monitor (services/ventana_en_curso.py). */
+  in_progress_idle_days:  number
 }
 
 export type TripsMeta = {

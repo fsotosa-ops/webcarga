@@ -16,11 +16,34 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Monitor: "En curso" por días sin movimiento (reemplaza la regla de 15 días) — en dev
+
+**Decisión del usuario:** la regla de 15 días no aplica (el Cierre ya muestra Pendientes / Por resolver). En el
+Monitor, un viaje activo sale de "En curso" tras **3 días sin movimiento**, configurable. Se descartaron, con datos
+del 11/10: la antigüedad del viaje (un viaje a regiones dura días), el último reporte del TMS (Sodimac/Wingsuite lo
+renuevan aunque esté cerrado: "duraciones" de 23-41 días) y un umbral dinámico por promedio histórico (QAnalytics
+0,3 días ocultaría los RETORNANDO; Sodimac y manuales no tienen horas en sus paradas).
+**Hecho:**
+- Migración `20261011190000_ventana_de_en_curso_del_monitor.sql` (aplicada): `app.monitor_alert_rules.in_progress_idle_days`
+  integer NOT NULL DEFAULT 3 CHECK > 0. Distinto de `stale_trip_days` (cuándo sale del Cierre un entregado sin cierre).
+- `services/ventana_en_curso.py`: `ultimo_movimiento(t)` = fecha (Chile) del último evento real en sus paradas (TMS,
+  GPS o manual; no las programadas) o, si nunca tuvo, `planning_date`; `dentro_de_la_ventana(t)`.
+- `list_trips`: con `view="en_curso"` aplica la ventana y devuelve `outside_window_count` (mismos filtros, ventana
+  negada). El Historial no tiene ventana.
+- `services/reglas_del_monitor.py`: `SQL_REGLAS_DEL_MONITOR`, la lista de columnas que antes estaba copiada en
+  `config.py` y en `/trips/meta`.
+- Front: campo "Días sin movimiento para salir de En curso" en Configuración › Alertas del Monitor;
+  `AvisoFueraDeEnCurso` al pie ("N viajes activos llevan más de 3 días sin movimiento… · Ver en Historial");
+  acción `verActivosEnHistorial` (Historial + señal Activo, sin fechas).
+- Tests: integración `test_ventana_en_curso_integracion.py` (6), `test_config_monitor` (+3), vitest (+6). 3 tests de
+  `test_cierre_viajes` llamaban a la lista sin vista y esperaban el Historial: ahora lo dicen. Backend del área 199 ok;
+  vitest 1694; tsc y build limpios.
+- Ojo: la API toma `view="en_curso"` por defecto; quien quiera el Historial debe decirlo (el front siempre lo dice).
+
 ### 2026-10-11 — Cierre de sesión: lo que queda de la minuta 09/10 (Pablo)
 
 - [ ] Que Pablo revise en dev todo lo de hoy (Monitor, Cierre › Flota/Viajes/Reporte, Configuración › Clientes del TMS).
 - [ ] Ítem 5: un viaje manual nuevo queda "activo, no asignado" hasta la próxima corrida de Mage (≤15 min).
-- [ ] Decisión A del usuario: regla de 15 días para viajes viejos (hoy no existe; `stale_trip_days` vacío).
 - [ ] Ítem 20 (resto): abrir una fila de requisito en Certificación para ver quién lo tiene vencido y subirlo ahí.
 - [ ] Ítem 21: enlaces a la ficha del conductor y del equipo (no existen esas fichas).
 - [ ] Ítem 23: editar los clientes de una empresa (hoy solo lectura).

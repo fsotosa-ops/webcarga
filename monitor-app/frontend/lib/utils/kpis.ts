@@ -22,6 +22,7 @@ export const DEFAULT_ALERT_RULES: MonitorAlertRules = {
   dwell_red_min:          120,
   tms_dropped_hours:      3,
   stale_trip_days:        null,
+  in_progress_idle_days:  3,
 }
 
 function toMs(iso: string | null | undefined): number | null {

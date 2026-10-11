@@ -271,6 +271,10 @@ const RULE_FIELDS: { key: keyof MonitorAlertRules; label: string; hint: string; 
   { key: 'dwell_red_min',    label: 'Semáforo local — rojo',     hint: 'Minutos en la parada activa para pasar a rojo', unit: 'min', step: '5' },
   // D5 (minuta 02/10): lo define WebCarga. Vacío = no ocultar nada, por eso es
   // el único campo que se puede dejar en blanco.
+  // 11/10: la ventana de "En curso" del Monitor. Se mide desde el último
+  // movimiento en las paradas (o la planificación, si nunca tuvo), así un viaje
+  // largo no sale mientras avanza.
+  { key: 'in_progress_idle_days', label: 'Días sin movimiento para salir de En curso', hint: 'Días sin llegadas ni salidas en sus paradas (o desde su planificación, si nunca tuvo) tras los cuales un viaje activo deja de mostrarse en En curso del Monitor. Sigue en el Historial y en el Cierre', unit: 'días', step: '1' },
   { key: 'stale_trip_days', label: 'Viaje entregado sin cierre del TMS', hint: 'Días desde la última entrega en destino tras los cuales un viaje que el TMS no cerró sale del cierre del día. Sigue en el historial. Vacío = no ocultar ninguno', unit: 'días', step: '1', opcional: true },
 ]
 

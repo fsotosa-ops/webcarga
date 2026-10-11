@@ -9,6 +9,9 @@ export type TripListResponse = {
   /** Las opciones del filtro de cliente: los clientes con viajes en la vista,
    *  sin aplicar el propio filtro de cliente. */
   clients: ClientFacet[]
+  /** Solo en "En curso": activos que llevan más de `in_progress_idle_days` sin
+   *  movimiento, con los mismos filtros. No están en `data`. */
+  outside_window_count?: number
 }
 
 export type TripPatch = {

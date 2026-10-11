@@ -34,6 +34,7 @@ import { useMotivosDeAnulacion } from '@/hooks/useMotivosDeAnulacion'
 import { BarraDeSeleccion } from '@/components/ui/BarraDeSeleccion'
 import { cuantos } from '@/lib/utils/cuantos'
 import { clientesDelFiltro } from '@/lib/monitor/clientesDelFiltro'
+import { AvisoFueraDeEnCurso } from '@/components/dashboard/AvisoFueraDeEnCurso'
 import { driversApi } from '@/lib/api/drivers'
 import { carriersApi } from '@/lib/api/carriers'
 import { Estado } from '@/components/ui/Estado'
@@ -674,6 +675,14 @@ export default function DiarioPage() {
                 </>
               )}
             </div>
+          )}
+
+          {f.tab === 'en_curso' && (
+            <AvisoFueraDeEnCurso
+              cantidad={tripsQuery.data?.outside_window_count}
+              dias={alertRules.in_progress_idle_days}
+              onVer={() => dispatch({ type: 'verActivosEnHistorial' })}
+            />
           )}
 
           {/* Historial pagination */}

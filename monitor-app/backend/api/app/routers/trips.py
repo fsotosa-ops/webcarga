@@ -16,6 +16,8 @@ from ..services.cliente_del_viaje import (
     SIN_VINCULAR, join_cliente, leer_filtro_de_cliente, nombre_del_cliente, resolver_cliente, texto_del_cliente_en_el_tms,
 )
 from ..services.vencimientos import pendiente_predicate
+from ..services.reglas_del_monitor import SQL_REGLAS_DEL_MONITOR
+from ..services.ventana_en_curso import dentro_de_la_ventana
 from ..schemas.trip import (
     AsignarConductorBody, TripBulkCloseBody, TripVoidBody, TripVoidRevertBody, TripBulkReopenBody, TripPatch, TripStopPatch,
     STOP_FIELD_PERMISSIONS, TRIP_FIELD_PERMISSIONS,
@@ -893,6 +895,13 @@ async def list_trips(
         # meses (Pablo, spec §6.3).
         filters.append("t.unassigned_reason_id IS NOT NULL")
 
+    # "En curso" es la ventana de los que se movieron hace poco (decisión del
+    # usuario 11/10, services/ventana_en_curso.py). Los demás siguen activos y
+    # se cuentan aparte para decirlo al pie.
+    ventana = dentro_de_la_ventana("t") if view == "en_curso" else None
+    if ventana:
+        filters.append(ventana)
+
     # Las opciones del filtro de cliente salen de la vista sin ese mismo filtro
     # (faceta disyuntiva): elegir un cliente no hace desaparecer a los demás. Por
     # eso el filtro de cliente va último, después de esta foto.
@@ -910,6 +919,10 @@ async def list_trips(
             filters.append("t.shipper_id IS NULL")
 
     where = "WHERE " + " AND ".join(filters)
+    # Los mismos filtros, con la ventana dada vuelta: lo que se está mirando,
+    # pero sin movimiento reciente.
+    where_fuera_de_la_ventana = (
+        "WHERE " + " AND ".join(f"NOT {c}" if c == ventana else c for c in filters) if ventana else None)
     offset = (page - 1) * limit
     sort_col = sort_by if sort_by in _SORTABLE_COLUMNS else "planning_date"
     sort_dir_sql = "ASC" if sort_dir == "asc" else "DESC"
@@ -962,7 +975,11 @@ async def list_trips(
         for r in clientes
     ]
 
-    return {"data": data, "count": count, "page": page, "limit": limit, "clients": clients}
+    respuesta = {"data": data, "count": count, "page": page, "limit": limit, "clients": clients}
+    if where_fuera_de_la_ventana:
+        respuesta["outside_window_count"] = await pool.fetchval(
+            f"SELECT COUNT(*) {_TRIP_FROM} {where_fuera_de_la_ventana}", *params)
+    return respuesta
 
 
 # ── Metadatos de presentación (sin auth — igual que /roles) ──────────────────
@@ -1071,6 +1088,7 @@ class MonitorAlertRulesMeta(BaseModel):
     dwell_red_min:          int
     tms_dropped_hours:      float
     stale_trip_days:        Optional[int] = None
+    in_progress_idle_days:  int
 
 
 class AlertThresholdMeta(BaseModel):
@@ -1135,11 +1153,7 @@ async def get_trips_meta(pool=Depends(get_pool), _=Depends(require(Permission.OP
     # Resiliente al orden de deploy: si la tabla aún no existe (migración
     # pendiente), /meta sigue funcionando y el frontend usa sus defaults
     try:
-        alert_rules_row = await pool.fetchrow(
-            "SELECT stale_report_hours, dwell_hours, late_arrival_grace_min, unassigned_enabled, "
-            "dwell_yellow_min, dwell_orange_min, dwell_red_min, tms_dropped_hours, stale_trip_days "
-            "FROM app.monitor_alert_rules WHERE id = 1"
-        )
+        alert_rules_row = await pool.fetchrow(SQL_REGLAS_DEL_MONITOR)
     except Exception:
         alert_rules_row = None
     # Última corrida por TMS — ver TmsSourceMeta.last_run_at. Se calcula sobre

@@ -70,6 +70,33 @@ def test_patch_monitor_alert_rules_updates():
     assert res.json()["dwell_hours"] == 3.5
 
 
+def test_patch_dias_sin_movimiento_de_en_curso():
+    """La ventana de "En curso" (11/10) se configura como los demás umbrales."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {**RULES_ROW, "in_progress_idle_days": 5}
+    client = make_client(pool)
+    res = client.patch("/api/v1/config/monitor-alert-rules", json={"in_progress_idle_days": 5})
+    assert res.status_code == 200
+    assert res.json()["in_progress_idle_days"] == 5
+    assert any("in_progress_idle_days = $1" in c.args[0] for c in pool.execute.call_args_list)
+
+
+def test_dias_sin_movimiento_no_acepta_cero_ni_vacio():
+    client = make_client(AsyncMock())
+    assert client.patch("/api/v1/config/monitor-alert-rules", json={"in_progress_idle_days": 0}).status_code == 422
+
+
+def test_configuracion_y_meta_leen_las_mismas_columnas():
+    """Una lista de columnas escrita una vez (services/reglas_del_monitor.py): la
+    leen Configuración y /trips/meta. Antes estaba copiada en los dos routers."""
+    from pathlib import Path
+
+    from app.services.reglas_del_monitor import SQL_REGLAS_DEL_MONITOR
+    assert "in_progress_idle_days" in SQL_REGLAS_DEL_MONITOR
+    for router in ("config.py", "trips.py"):
+        assert "stale_report_hours, dwell_hours" not in (Path("app/routers") / router).read_text()
+
+
 # ── /config/temperature-ranges ────────────────────────────────────────────────
 # Auditoría 2026-07-27: GET /trips/meta queda cacheado 5 min (CacheMiddleware)
 # — sin invalidar acá, un admin que configura un rango de temperatura no lo ve
