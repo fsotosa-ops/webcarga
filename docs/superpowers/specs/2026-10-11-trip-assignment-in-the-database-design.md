@@ -69,9 +69,10 @@ Migración `monitor-app/backend/supabase/migrations/20261012090000_trip_assignme
    - `is_assigned = app.is_trip_assigned($status, $fleet::jsonb, $id)`.
 
    El vínculo de flota que el alta escribe después lo cubre el trigger del punto 3.
-3. **El trigger `trg_sync_trip_assignment` sobre `app.trip_fleet_links`**: AFTER INSERT, UPDATE y DELETE, a nivel de
-   sentencia y con tablas de transición. Son tres triggers, uno por evento, como los de la cola del Cierre. La función
-   `app.sync_trip_assignment()` hace lo siguiente:
+3. **Los triggers `trg_sync_trip_assignment_ins/_upd/_del` sobre `app.trip_fleet_links`**: AFTER, a nivel de
+   sentencia y uno por evento, como los de la cola del Cierre. Las tablas de transición son `NEW TABLE AS changed` en
+   INSERT y UPDATE, y `OLD TABLE AS changed` en DELETE. Los tres llaman a la misma función,
+   `app.sync_trip_assignment()`:
    ```sql
    UPDATE app.trips t
       SET is_assigned = app.is_trip_assigned(t.trip_status, t.fleet, t.id)
