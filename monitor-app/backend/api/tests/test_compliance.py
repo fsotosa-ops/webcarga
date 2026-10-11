@@ -1862,3 +1862,17 @@ def test_la_respuesta_acepta_los_tipos_de_vigencia_nuevos():
     for politica in ("ISSUE_PLUS_MONTHS", "CALENDAR_PERIOD"):
         assert politica in PendingComplianceRow.model_fields["expiration_policy"].annotation.__args__
         assert politica in RequirementOption.model_fields["expiration_policy"].annotation.__args__
+
+
+def test_pending_summary_exige_certification_read():
+    from tests.conftest import usuario
+    pool = AsyncMock()
+    client = make_client(pool)
+    client.app.dependency_overrides[get_current_user] = lambda: usuario()  # sin roles
+    res = client.get("/api/v1/compliance-records/pending/summary?group_by=requirement")
+    assert res.status_code == 403
+
+
+def test_pending_summary_rechaza_un_group_by_desconocido():
+    res = make_client(AsyncMock()).get("/api/v1/compliance-records/pending/summary?group_by=cliente")
+    assert res.status_code == 422

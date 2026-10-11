@@ -536,3 +536,99 @@ async def test_pending_sin_state_responde_como_antes(conexion_revertida):
     assert fila["document_state"] == "OVERDUE"
     assert fila["due_on"] == fila["vence_el"] == hoy - timedelta(days=2)
     assert fila["missing_validity_data"] is fila["falta_dato_de_vigencia"] is False
+
+
+# ── Resumen (columna izquierda) ──────────────────────────────────────────────
+
+from app.routers.compliance import pending_summary  # noqa: E402
+
+
+async def test_el_resumen_por_documento_coincide_con_la_lista(conexion_revertida):
+    """La promesa central: las tres cifras de la izquierda son la lista de la derecha."""
+    conn = conexion_revertida
+    hoy = await _hoy(conn)
+    req = await _requisito(conn, entidad="CARRIER", politica="REQUIRED")
+    for _ in range(2):
+        await _registro(conn, req, "CARRIER", await _empresa(conn))
+    await _registro(conn, req, "CARRIER", await _empresa(conn), status="APPROVED_MANUAL", vence=hoy + timedelta(days=3))
+    await _registro(conn, req, "CARRIER", await _empresa(conn), status="APPROVED_MANUAL", vence=hoy - timedelta(days=3))
+    await _registro(conn, req, "CARRIER", await _empresa(conn, estado="INACTIVE"))  # fuera de alcance
+    codigo = await _codigo(conn, req)
+
+    resumen = await pending_summary(group_by="requirement", pool=PoolDeUnaConexion(conn), _=None)
+    fila = next(r for r in resumen["rows"] if r["requirement_code"] == codigo)
+
+    for state, campo in (("overdue", "overdue"), ("expiring", "expiring"), ("missing", "missing")):
+        lista = await _listar(conn, requirement_code=codigo, state=state)
+        assert fila[campo] == lista["total"], campo
+    assert (fila["overdue"], fila["expiring"], fila["missing"]) == (1, 1, 2)
+
+
+async def test_el_resumen_por_empresa_cuenta_lo_de_la_empresa_y_su_gente(conexion_revertida):
+    conn = conexion_revertida
+    # Una empresa y un conductor recién creados ya traen pendientes sembrados
+    # con el catálogo real: se mide contra una gemela sin nuestros registros.
+    gemela = await _empresa(conn)
+    await _conductor(conn, gemela)
+    empresa = await _empresa(conn)
+    d = await _conductor(conn, empresa)
+    req_e = await _requisito(conn, entidad="CARRIER")
+    req_d = await _requisito(conn, entidad="DRIVER")
+    await _registro(conn, req_e, "CARRIER", empresa)
+    await _registro(conn, req_d, "DRIVER", d)
+
+    resumen = await pending_summary(group_by="carrier", pool=PoolDeUnaConexion(conn), _=None)
+    base = next(r for r in resumen["rows"] if r["key"] == gemela)
+    fila = next(r for r in resumen["rows"] if r["key"] == empresa)
+
+    assert fila["missing"] == base["missing"] + 2   # lo de la empresa + lo de su conductor
+    assert fila["overdue"] == base["overdue"] and fila["vigencia"] is None
+
+
+async def test_el_resumen_por_empresa_coincide_con_la_lista_de_esa_empresa(conexion_revertida):
+    """Spec 7: la coherencia vale también por empresa, para cada estado."""
+    conn = conexion_revertida
+    hoy = await _hoy(conn)
+    gemela = await _empresa(conn)
+    await _conductor(conn, gemela)
+    empresa = await _empresa(conn)
+    d = await _conductor(conn, empresa)
+    req_e = await _requisito(conn, entidad="CARRIER", politica="REQUIRED")
+    req_d = await _requisito(conn, entidad="DRIVER", politica="REQUIRED")
+    await _registro(conn, req_e, "CARRIER", empresa)  # falta
+    await _registro(conn, req_d, "DRIVER", d, status="APPROVED_MANUAL", vence=hoy - timedelta(days=2))  # vencido
+    req_e2 = await _requisito(conn, entidad="CARRIER", politica="REQUIRED")
+    await _registro(conn, req_e2, "CARRIER", empresa, status="APPROVED_MANUAL", vence=hoy + timedelta(days=3))  # por vencer
+    inactiva = await _empresa(conn, estado="INACTIVE")
+    await _registro(conn, req_e, "CARRIER", inactiva)  # fuera de alcance: no aparece
+
+    resumen = await pending_summary(group_by="carrier", pool=PoolDeUnaConexion(conn), _=None)
+    base = next((r for r in resumen["rows"] if r["key"] == gemela),
+                {"overdue": 0, "expiring": 0, "missing": 0})
+    fila = next(r for r in resumen["rows"] if r["key"] == empresa)
+
+    for state in ("overdue", "expiring", "missing"):
+        lista = await _listar(conn, carrier_id=empresa, state=state)
+        assert fila[state] == lista["total"], state
+    # Lo sembrado del catálogo real está en las dos listas (arriba se comparó);
+    # lo nuestro es 1 vencido, 1 por vencer y 1 que falta además de lo sembrado.
+    assert fila["overdue"] == base["overdue"] + 1 and fila["expiring"] == base["expiring"] + 1
+    assert fila["missing"] == base["missing"] + 1
+    assert fila["requirement_code"] is None and fila["expiration_policy"] is None
+    assert all(r["key"] != inactiva for r in resumen["rows"])
+
+
+async def test_el_resumen_trae_la_regla_del_documento(conexion_revertida):
+    conn = conexion_revertida
+    req = await _requisito(conn, entidad="CARRIER", politica="CALENDAR_PERIOD")
+    await conn.execute(
+        "INSERT INTO public.compliance_requirement_rules (requirement_id, shipper_id, frequency_months, "
+        "cutoff_day, period_offset_months, warning_days, vigente_desde) "
+        "VALUES ($1, NULL, 1, 18, 1, 5, public.hoy_chile() - 30)", req)
+    await _registro(conn, req, "CARRIER", await _empresa(conn))
+
+    resumen = await pending_summary(group_by="requirement", pool=PoolDeUnaConexion(conn), _=None)
+    fila = next(r for r in resumen["rows"] if r["key"] == req)
+
+    assert fila["expiration_policy"] == "CALENDAR_PERIOD"
+    assert fila["vigencia"]["cutoff_day"] == 18 and fila["vigencia"]["frequency_months"] == 1

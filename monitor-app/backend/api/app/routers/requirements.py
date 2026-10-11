@@ -40,7 +40,7 @@ from ..services.edicion_catalogo import (
     contar_estados,
 )
 from ..services.catalogo import DocumentoYaExiste, crear_requisito
-from ..services.vigencia import PARAMETROS, guardar_vigencia
+from ..services.vigencia import PARAMETROS, guardar_vigencia, regla_base_json_sql
 
 requirements_router = APIRouter(prefix="/compliance-requirements", tags=["compliance"])
 
@@ -95,11 +95,7 @@ SQL_CATALOGO = f"""
            req.expiration_policy,
            -- La regla base que rige HOY (HU-C1, entrega 2b). Es la misma
            -- consulta de services/vigencia.py, correlacionada con `req`.
-           (SELECT jsonb_build_object({", ".join(f"'{c}', r.{c}" for c in PARAMETROS)})
-            FROM public.compliance_requirement_rules r
-            WHERE r.requirement_id = req.id AND r.shipper_id IS NULL
-              AND r.vigente_desde <= public.hoy_chile()
-            ORDER BY r.vigente_desde DESC LIMIT 1) AS vigencia,
+           {regla_base_json_sql('req')} AS vigencia,
            (SELECT count(*) > 1 FROM public.compliance_requirement_rules r
             WHERE r.requirement_id = req.id AND r.shipper_id IS NULL) AS tiene_versiones,
            req.exigible_on,

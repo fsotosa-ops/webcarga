@@ -46,6 +46,20 @@ SQL_REGLA_BASE_VIGENTE = f"""
 """
 
 
+def regla_base_json_sql(req_alias: str) -> str:
+    """La regla base vigente HOY de un requisito, como JSON con sus
+    PARAMETROS. Correlacionada con `req_alias` (debe exponer `id`). La usan el
+    catálogo de Configuración y el resumen de Pendientes: una sola consulta."""
+    campos = ", ".join(f"'{c}', vg_r.{c}" for c in PARAMETROS)
+    return (
+        f"(SELECT jsonb_build_object({campos}) "
+        f"FROM public.compliance_requirement_rules vg_r "
+        f"WHERE vg_r.requirement_id = {req_alias}.id AND vg_r.shipper_id IS NULL "
+        f"AND vg_r.vigente_desde <= public.hoy_chile() "
+        f"ORDER BY vg_r.vigente_desde DESC LIMIT 1)"
+    )
+
+
 def _necesita_regla(v: VigenciaBody) -> bool:
     """Los tipos sin parámetros solo llevan regla si cambian el aviso o la
     gracia; si no, rige el aviso general y no hay nada que guardar."""

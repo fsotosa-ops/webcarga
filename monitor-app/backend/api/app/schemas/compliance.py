@@ -236,3 +236,24 @@ class SolicitudBody(BaseModel):
     requirement_id: str
     entity_type: Literal["CARRIER", "DRIVER", "ASSET"]
     entity_id: str
+
+
+class PendingSummaryRow(BaseModel):
+    """Una fila de la columna izquierda de Pendientes: un documento o una
+    empresa, con lo que se debe. Las cifras salen de la MISMA definición que
+    la lista (`document_state_sql`), con el mismo alcance."""
+    key: str
+    label: str
+    requirement_code: Optional[str] = None
+    target_entity: Optional[Literal["CARRIER", "DRIVER", "ASSET"]] = None
+    expiration_policy: Optional[PoliticaVencimiento] = None
+    # Los parámetros de la regla, con la forma del catálogo; el frontend los
+    # dice en palabras con `resumenDeVigencia` (una sola definición).
+    vigencia: Optional[dict] = None
+    overdue: int
+    expiring: int
+    missing: int
+
+
+class PendingSummaryResponse(BaseModel):
+    rows: list[PendingSummaryRow]

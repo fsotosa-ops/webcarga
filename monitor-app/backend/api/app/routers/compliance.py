@@ -40,9 +40,11 @@ from ..schemas.compliance import (
     ComplianceRecordPatchBody,
     ComplianceSummaryResponse,
     PendingComplianceListResponse,
+    PendingSummaryResponse,
 )
 from ..schemas.document_ingest import unclassified_predicate
 from ..services.audit import log_change, record_manual_edit
+from ..services.vigencia import regla_base_json_sql
 from ..services.solicitudes import encender_registros
 from ..services.plantilla_certificacion import (
     COLUMNAS,
@@ -639,6 +641,69 @@ ORDER BY
     c.business_name, r.entity_type, r.subject_name
 LIMIT $6 OFFSET $7
 """
+
+
+# Una cifra por estado pendiente, con los nombres de las constantes (no una
+# lista escrita a mano). El orden de las columnas importa a quien lee por nombre
+# solamente: las consultas ordenan por nombre, no por posición.
+_PENDING_COUNTS = ",\n    ".join(
+    f"count(*) FILTER (WHERE r.document_state = '{estado}') AS {estado.lower()}"
+    for estado in PENDING_STATES)
+
+# El resumen pide 'falta' (= pendiente_predicate) al filtro viejo: trae solo lo
+# pendiente, y document_state lo reparte. Mismo alcance que la cola.
+_PENDING_SUMMARY_BY_REQUIREMENT_SQL = f"""
+WITH {_pending_ctes('$1')},
+agg AS (
+    SELECT r.requirement_id,
+    {_PENDING_COUNTS}
+    FROM resolved r
+    JOIN public.carriers c ON c.id = r.resolved_carrier_id
+    WHERE r.in_scope AND r.document_state = ANY($2::text[])
+    GROUP BY r.requirement_id
+)
+SELECT req.id::text AS key, req.name AS label, req.requirement_code, req.target_entity,
+       req.expiration_policy, {regla_base_json_sql('req')} AS vigencia,
+       agg.overdue, agg.expiring, agg.missing
+FROM agg JOIN public.compliance_requirements req ON req.id = agg.requirement_id
+ORDER BY agg.overdue DESC, label
+"""
+
+# Misma forma de fila que la de arriba: los campos del documento van en NULL.
+_PENDING_SUMMARY_BY_CARRIER_SQL = f"""
+WITH {_pending_ctes('$1')}
+SELECT c.id::text AS key, c.business_name AS label,
+       NULL AS requirement_code, NULL AS target_entity,
+       NULL AS expiration_policy, NULL AS vigencia,
+    {_PENDING_COUNTS}
+FROM resolved r
+JOIN public.carriers c ON c.id = r.resolved_carrier_id
+WHERE r.in_scope AND r.document_state = ANY($2::text[])
+GROUP BY c.id, c.business_name
+ORDER BY overdue DESC, label
+"""
+
+
+@router.get("/pending/summary", response_model=PendingSummaryResponse)
+async def pending_summary(
+    group_by: Literal["requirement", "carrier"] = Query(...),
+    pool=Depends(get_pool),
+    _=Depends(require(Permission.CERTIFICATION_READ)),
+):
+    """Pendientes: lo que se debe, por documento o por empresa (spec
+    2026-10-11). Una consulta agregada; las cifras coinciden con /pending
+    con el mismo `state` porque comparten CTE, definición y alcance."""
+    sql = (_PENDING_SUMMARY_BY_REQUIREMENT_SQL if group_by == "requirement"
+           else _PENDING_SUMMARY_BY_CARRIER_SQL)
+    filas = await pool.fetch(sql, "falta", list(PENDING_STATES))
+    rows = []
+    for f in filas:
+        fila = dict(f)
+        # jsonb llega como texto: el pool no registra un codec para jsonb.
+        if fila["vigencia"] is not None:
+            fila["vigencia"] = json.loads(fila["vigencia"])
+        rows.append(fila)
+    return {"rows": rows}
 
 
 @router.get("/pending", response_model=PendingComplianceListResponse)
