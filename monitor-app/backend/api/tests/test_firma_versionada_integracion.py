@@ -17,11 +17,11 @@ pytestmark = pytest.mark.integracion
 D = date(2099, 1, 2)
 
 
-async def _viaje_manual(conn, usuario) -> str:
+async def _viaje_manual(conn, usuario, driver_name: str | None = "CONDUCTOR DE PRUEBA") -> str:
     viaje = await create_trip(
         TripCreateBody(
             planning_date=D.isoformat(), client_name=await cliente_de_prueba(conn),
-            driver_name="CONDUCTOR DE PRUEBA",
+            driver_name=driver_name,
             stops=[TripStopCreate(local="SAN BERNARDO", stop_type="ORIGIN"), TripStopCreate(local="IANSA")],
         ),
         pool=PoolDeUnaConexion(conn), user=usuario,
@@ -128,7 +128,11 @@ async def test_la_pestana_viajes_del_cierre_no_lista_los_anulados(conexion_rever
     from app.services.cierre_viajes import SQL_CON_MOTIVO, SQL_GRUPOS_CIERRE
     conn = conexion_revertida
     admin = con_roles(await _usuario_real(conn), *ADMIN_EQUIVALENTE)
-    tid = await _viaje_manual(conn, admin)
+    # Sin conductor: sin flota, el viaje está en Por resolver. Con conductor, la
+    # regla lo da por asignado y un asignado del mismo día no está en el Cierre
+    # (antes aparecía porque el alta lo dejaba "no asignado" a la fuerza; spec
+    # 2026-10-11).
+    tid = await _viaje_manual(conn, admin, driver_name=None)
     consulta = f"SELECT g.trip_id::text AS trip_id FROM (({SQL_GRUPOS_CIERRE}) UNION ALL ({SQL_CON_MOTIVO})) g"
     assert tid in {r["trip_id"] for r in await conn.fetch(consulta, D)}
 

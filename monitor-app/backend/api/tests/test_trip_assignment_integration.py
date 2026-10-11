@@ -4,6 +4,7 @@ transacción revertida de cada test, así que esto prueba el archivo antes de
 aplicarlo en la base real."""
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from datetime import date
@@ -14,9 +15,10 @@ import pytest
 from app.routers import trips as trips_router
 from app.routers.trips import (
     TripCreateBody, TripPatch, TripStopCreate, assign_fleet_link, create_trip, patch_trip, remove_fleet_link,
+    reset_field,
 )
 from app.services.cierre_viajes import SQL_GRUPOS_CIERRE
-from tests.conftest import PoolDeUnaConexion, _usuario_real, cliente_de_prueba
+from tests.conftest import PoolDeUnaConexion, _usuario_real, cliente_de_prueba, credenciales_integracion
 
 pytestmark = pytest.mark.integracion
 
@@ -210,3 +212,58 @@ async def test_mirror_error_is_not_swallowed(conexion_revertida):
     conn = conexion_revertida
     with pytest.raises(Exception):
         await trips_router._mirror_manual_trip(conn, "no-es-un-uuid")
+
+
+async def test_resetting_the_override_recomputes_assignment(conexion_revertida):
+    """Quitar el override de "Asignado" vuelve a la regla en el acto, no en la
+    corrida siguiente de dbt (revisión final, spec 2026-10-11)."""
+    conn = conexion_revertida
+    await apply_migration(conn)
+    trip_id = await insert_tms_trip(conn, await open_status(conn), {"tractor_plate": "ZZZZ99"})
+    await conn.execute(
+        "UPDATE app.trips SET is_assigned = false, manually_edited_fields = ARRAY['is_assigned'] "
+        "WHERE id = $1::uuid", trip_id)
+    await reset_field(trip_id, "is_assigned", pool=PoolDeUnaConexion(conn), user=await _usuario_real(conn))
+    assert await is_assigned(conn, trip_id) is True
+
+
+async def test_fleet_edit_locks_the_trip_before_the_link(conexion_revertida):
+    """Mismo orden de bloqueo que la corrida de dbt (viaje y después vínculo):
+    con el orden inverso, una edición y la ingesta sobre el mismo viaje se
+    bloquean en cruz (deadlock; revisión final, spec 2026-10-11).
+
+    Otra conexión retiene el viaje, como lo haría el MERGE de dbt. La edición
+    debe quedar esperando el viaje SIN haber tomado el vínculo. Se usa un viaje
+    viejo y cerrado, que la ingesta ya no toca, y nada se escribe: la otra
+    conexión solo toma locks y la del test se revierte."""
+    conn = conexion_revertida
+    trip_id = str(await conn.fetchval(
+        """
+        SELECT t.id FROM app.trips t
+        JOIN app.trip_fleet_links l ON l.trip_id = t.id
+        WHERE t.planning_date < current_date - 60 AND t.voided_at IS NULL
+          AND t.trip_status LIKE 'CERRADO%' AND t.source_system <> 'manual'
+        ORDER BY t.planning_date LIMIT 1
+        """))
+    import asyncpg
+    holder = await asyncpg.connect(**credenciales_integracion())
+    try:
+        holding = holder.transaction()
+        await holding.start()
+        await holder.execute("SELECT 1 FROM app.trips WHERE id = $1::uuid FOR UPDATE", trip_id)
+        await conn.execute("SET LOCAL lock_timeout = '5s'")
+        edit = asyncio.ensure_future(assign_fleet_link(
+            trip_id, {"driver_id": await any_driver_id(conn)},
+            pool=PoolDeUnaConexion(conn), user=await _usuario_real(conn)))
+        await asyncio.sleep(1.5)
+        try:
+            await holder.execute(
+                "SELECT 1 FROM app.trip_fleet_links WHERE trip_id = $1::uuid FOR UPDATE NOWAIT", trip_id)
+            link_was_free = True
+        except asyncpg.exceptions.LockNotAvailableError:
+            link_was_free = False
+        await holding.rollback()
+        await asyncio.wait_for(edit, timeout=10)
+    finally:
+        await holder.close()
+    assert link_was_free, "la edición tomó el vínculo antes que el viaje (orden inverso al de dbt)"

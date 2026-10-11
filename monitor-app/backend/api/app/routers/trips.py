@@ -1964,6 +1964,15 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
     return trip_id
 
 
+async def _lock_trip_for_update(conn, trip_id: str) -> None:
+    """Bloquea el viaje antes de tocar su vínculo de flota, en el mismo orden que
+    la corrida de dbt (MERGE de app.trips y después resolve_trip_fleet sobre
+    app.trip_fleet_links). Con el orden inverso, una edición y la ingesta sobre
+    el mismo viaje se bloqueaban en cruz: deadlock, y Postgres cortaba la
+    edición o la corrida completa (revisión final, spec 2026-10-11)."""
+    await conn.execute("SELECT 1 FROM app.trips WHERE id = $1 FOR UPDATE", trip_id)
+
+
 async def _mirror_manual_trip(conn, trip_id: str) -> None:
     """Copia los campos editables de un viaje manual de app.trips a
     app.trips_manual, de donde dbt lo reconstruye. Sin copia, la siguiente
@@ -2732,6 +2741,8 @@ async def patch_trip(
     # en create_trip: es best-effort y adentro dejaría la transacción abortada.
     async with pool.acquire() as conn:
         async with conn.transaction():
+            await _lock_trip_for_update(conn, trip_id)
+
             # driver_name goes to trip_fleet_links.driver_name_raw (not app.trips)
             if "driver_name" in data:
                 new_name = data.pop("driver_name")
@@ -2936,6 +2947,7 @@ async def assign_fleet_link(
     # El vínculo y la copia a trips_manual, en una transacción (spec 2026-10-11).
     async with pool.acquire() as conn:
         async with conn.transaction():
+            await _lock_trip_for_update(conn, trip_id)
             tractor_asset_id, tractor_plate = await _activo_de_la_patente(
                 conn, body.get("tractor_plate"), body.get("tractor_asset_id"))
             trailer_asset_id, trailer_plate = await _activo_de_la_patente(
@@ -2981,6 +2993,7 @@ async def remove_fleet_link(
     # no por trips.fleet_link_id (huérfano tras cualquier --full-refresh).
     async with pool.acquire() as conn:
         async with conn.transaction():
+            await _lock_trip_for_update(conn, trip_id)
             link_id = await conn.fetchval(
                 "SELECT id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id
             )
@@ -3011,6 +3024,7 @@ async def reset_field(
     await exigir_vigentes(pool, [trip_id])
     async with pool.acquire() as conn:
         async with conn.transaction():
+            await _lock_trip_for_update(conn, trip_id)
             await conn.execute(
                 """
                 UPDATE app.trips
@@ -3020,6 +3034,15 @@ async def reset_field(
                 """,
                 trip_id, field,
             )
+            # Sin el override, "asignado" vuelve a la regla en el acto, no en la
+            # corrida siguiente de dbt (spec 2026-10-11). "Activo" de un viaje del
+            # TMS depende además de la recencia, que solo conoce dbt.
+            if field == "is_assigned":
+                await conn.execute(
+                    "UPDATE app.trips SET is_assigned = app.is_trip_assigned(trip_status, fleet, id) "
+                    "WHERE id = $1",
+                    trip_id,
+                )
             await _mirror_manual_trip(conn, trip_id)
     if field == "manual_status":
         await _log_system_note(
