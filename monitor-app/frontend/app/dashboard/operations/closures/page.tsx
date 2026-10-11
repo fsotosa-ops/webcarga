@@ -8,7 +8,6 @@ import {
   ChevronRight, ClipboardCheck, Truck, AlertTriangle, FileBarChart2, Route, Loader2, UserX, CheckCircle2, LockOpen,
 } from 'lucide-react'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
-import { shippersApi } from '@/lib/api/locations'
 import { dailyClosuresApi } from '@/lib/api/dailyClosures'
 import { closuresApi, isCierrePendienteError, type SinFlota } from '@/lib/api/closures'
 import { SinFlotaList } from '@/components/dashboard/SinFlotaList'
@@ -179,11 +178,6 @@ function ClosuresCenterPageInner() {
     fetchTripsMeta().then(setTripsMeta).catch(() => { /* fallback gracioso — usa defaults en la sección */ })
   }, [])
 
-  const shippersQuery = useQuery({
-    queryKey: ['shippers'],
-    queryFn: () => shippersApi.list(),
-    staleTime: 5 * 60_000,
-  })
 
   // Paso "Viajes" (Tarea 6) — sólo se pide mientras esa pestaña está activa;
   // las demás pestañas no la necesitan y el tab bar ya renderiza sólo la
@@ -416,7 +410,7 @@ function ClosuresCenterPageInner() {
             )}
           </>)}
           {tab === 'pending' && <PreCierrePendingSection fecha={fecha} />}
-          {tab === 'report' && <StatusReportSection fecha={fecha} shippers={shippersQuery.data} />}
+          {tab === 'report' && <StatusReportSection fecha={fecha} />}
         </div>
 
         <div className="border-t border-border bg-gray-50/60 p-5 sm:p-6 space-y-3 rounded-b-2xl">

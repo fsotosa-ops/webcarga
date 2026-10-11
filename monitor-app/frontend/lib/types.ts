@@ -1735,6 +1735,9 @@ export type OperationTypeReport = {
 export type StatusReport = {
   business_date: string
   client_filter: string | null
+  /** Las opciones del filtro: los clientes que cargaron ese día, con cuántos
+   *  equipos. Opcional: backend y frontend se despliegan por separado. */
+  clients?: { client_name: string; assigned: number }[]
   /** Spec 2026-10-10: cuándo se calcularon las líneas del día, y desde cuándo hay
    *  cambios esperando al ejecutor (null = al día). */
   calculado_a?:     string | null

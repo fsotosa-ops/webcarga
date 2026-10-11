@@ -78,6 +78,7 @@ const EQUIPO_COMPLETO: OperationTypeReport = {
 const REPORT: StatusReport = {
   business_date: '2026-08-02',
   client_filter: null,
+  clients: [{ client_name: 'Walmart', assigned: 29 }, { client_name: 'Iansa', assigned: 3 }],
   by_operation_type: { tractoreo: TRACTOREO, equipo_completo: EQUIPO_COMPLETO },
 }
 
@@ -262,11 +263,31 @@ describe('StatusReportSection', () => {
     expect(statusReportApi.get).toHaveBeenCalledTimes(2)
   })
 
-  it('filtrar por cliente vuelve a pedir el reporte con ese cliente', async () => {
-    const body = renderSection({ shippers: [{ id: 's1', name: 'Walmart', status: 'ACTIVE' }] })
+  it('la lista de clientes es la del día, con su cantidad, y elegir uno vuelve a pedir el reporte', async () => {
+    const body = renderSection()
     await body.findByText('Equipos activos')
-    fireEvent.change(body.getByRole('combobox', { name: 'Filtrar por cliente' }), { target: { value: 'Walmart' } })
-    expect(statusReportApi.get).toHaveBeenCalledWith('2026-08-02', 'Walmart')
+    const filtro = body.getByRole('combobox', { name: 'Filtrar por cliente' })
+    expect(within(filtro).getAllByRole('option').map(o => o.textContent))
+      .toEqual(['Todos los clientes', 'Walmart (29)', 'Iansa (3)'])
+    fireEvent.change(filtro, { target: { value: 'Iansa' } })
+    expect(statusReportApi.get).toHaveBeenCalledWith('2026-08-02', 'Iansa')
+  })
+
+  it('el cliente elegido se conserva aunque el reporte nuevo no lo traiga, con (0)', async () => {
+    const body = renderSection()
+    await body.findByText('Equipos activos')
+    vi.mocked(statusReportApi.get).mockResolvedValue({ ...REPORT, clients: [{ client_name: 'Walmart', assigned: 29 }] })
+    fireEvent.change(body.getByRole('combobox', { name: 'Filtrar por cliente' }), { target: { value: 'Iansa' } })
+    await waitFor(() => expect(within(body.getByRole('combobox', { name: 'Filtrar por cliente' }))
+      .getAllByRole('option').map(o => o.textContent)).toEqual(['Todos los clientes', 'Walmart (29)', 'Iansa (0)']))
+  })
+
+  it('con un backend que todavía no manda clients, la lista solo ofrece Todos los clientes', async () => {
+    vi.mocked(statusReportApi.get).mockResolvedValue({ ...REPORT, clients: undefined })
+    const body = renderSection()
+    await body.findByText('Equipos activos')
+    expect(within(body.getByRole('combobox', { name: 'Filtrar por cliente' })).getAllByRole('option')
+      .map(o => o.textContent)).toEqual(['Todos los clientes'])
   })
 
   it('el link "Ver histórico" apunta a /dashboard/operations/closures/history', async () => {

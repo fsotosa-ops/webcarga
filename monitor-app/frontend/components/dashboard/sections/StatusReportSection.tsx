@@ -2,11 +2,10 @@
 
 import { useRef, useState } from 'react'
 import Link from 'next/link'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Loader2, History, Printer, FileDown, Copy, Check, RotateCw } from 'lucide-react'
 import { statusReportApi } from '@/lib/api/statusReport'
 import { carriersApi } from '@/lib/api/carriers'
-import type { Shipper } from '@/lib/api/locations'
 import type { OperationTypeKey } from '@/lib/types'
 import { FleetDriverGapCard } from '../FleetDriverGapCard'
 import { descargarReporteExcel } from '@/lib/reporte/exportarReporte'
@@ -46,13 +45,12 @@ function htmlParaPegar(nodo: HTMLElement): string {
 
 interface Props {
   fecha:      string
-  shippers?:  Shipper[]
 }
 
 /** Reporte de estatus del día (Cierre › Reporte). Un tipo de operación a la vez,
  *  elegido arriba; seis secciones; solo lectura. El botón "Confirmar cierre"
  *  vive en la página, no acá. */
-export function StatusReportSection({ fecha, shippers }: Props) {
+export function StatusReportSection({ fecha }: Props) {
   const [tipo, setTipo] = useState<OperationTypeKey>('tractoreo')
   const [seccion, setSeccion] = useState<Seccion>('resumen')
   const [client, setClient] = useState('')
@@ -65,6 +63,8 @@ export function StatusReportSection({ fecha, shippers }: Props) {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['status-report', fecha, client],
     queryFn: () => statusReportApi.get(fecha, client || undefined),
+    // La lista de clientes no desaparece mientras llega el reporte del cliente nuevo.
+    placeholderData: keepPreviousData,
   })
   // Mismo queryKey que FleetDriverGapCard: cacheado, no duplica el pedido. Lo usan
   // el PDF y el Excel, aunque no se haya abierto la pestaña Dotación.
@@ -76,6 +76,14 @@ export function StatusReportSection({ fecha, shippers }: Props) {
   const porTipo = data?.by_operation_type
   const tipoActual = TIPOS_DE_OPERACION.find(t => t.clave === tipo)!
   const reporte = porTipo?.[tipo]
+  // Las opciones salen del día (spec 2026-10-11): solo quien operó, con su
+  // cantidad. Si el cliente elegido no operó ese día, se conserva con (0) en vez
+  // de resetearse en silencio.
+  const opcionesDeCliente = [
+    ...(data?.clients ?? []),
+    ...(client && !(data?.clients ?? []).some(c => c.client_name === client)
+      ? [{ client_name: client, assigned: 0 }] : []),
+  ]
 
   async function copiarEstatus() {
     const nodo = contenidoRef.current
@@ -110,7 +118,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
           `}</style>
           <div id="closures-print-summary" data-testid="resumen-imprimible" className="hidden print:block text-sm">
             <h1 className="text-xl font-bold mb-1">WebCarga — Reporte de Estatus del Día</h1>
-            <p className="text-gray-500 mb-6">{fecha}{client ? ` · ${client}` : ' · WebCarga consolidado'}</p>
+            <p className="text-gray-500 mb-6">{fecha}{client ? ` · ${client}` : ' · Todos los clientes'}</p>
             <div className="grid grid-cols-2 gap-6 mb-6">
               {TIPOS_DE_OPERACION.map(t => (
                 <div key={t.clave} className="space-y-3">
@@ -172,8 +180,10 @@ export function StatusReportSection({ fecha, shippers }: Props) {
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
             <select aria-label="Filtrar por cliente" value={client} onChange={e => setClient(e.target.value)}
                     className="text-[11px] border border-border rounded-lg px-2 py-1.5 bg-white">
-              <option value="">WebCarga consolidado</option>
-              {(shippers ?? []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+              <option value="">Todos los clientes</option>
+              {opcionesDeCliente.map(c => (
+                <option key={c.client_name} value={c.client_name}>{c.client_name} ({c.assigned})</option>
+              ))}
             </select>
             <button type="button" onClick={() => window.print()} disabled={!porTipo} className={ACCION}
                     title="Abre el diálogo de impresión — elige 'Guardar como PDF' para descargarlo">
