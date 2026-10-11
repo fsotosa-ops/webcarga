@@ -10,7 +10,7 @@ import { FleetDriverGapCard } from '../FleetDriverGapCard'
 import { descargarReporteExcel } from '@/lib/reporte/exportarReporte'
 import { TIPOS_DE_OPERACION } from '@/lib/reporte/tiposDeOperacion'
 import {
-  CuatroCifras, ViajesDeVariosDias, SeccionAsignados, SeccionEmpresas, SeccionNoTrabajaron, SeccionResumen, SeccionSegundasVueltas,
+  CuatroCifras, ViajesDeVariosDias, SeccionAsignados, SeccionEmpresas, SeccionNoTrabajaron, SeccionResumen, SeccionSegundasVueltas, Vacio,
 } from './reporte/SeccionesDelReporte'
 
 type Seccion = 'resumen' | 'asignados' | 'segundas_vueltas' | 'no_trabajaron' | 'empresas' | 'dotacion'
@@ -213,7 +213,9 @@ export function StatusReportSection({ fecha }: Props) {
         </div>
 
         {seccion === 'dotacion' ? (
-          <FleetDriverGapCard rows={faltante} />
+          faltante && faltante.length === 0
+          ? <Vacio>No hay empresas con desbalance de dotación</Vacio>
+          : <FleetDriverGapCard rows={faltante} />
         ) : isLoading ? (
           <div className="flex items-center justify-center py-16 text-gray-400">
             <Loader2 size={20} className="animate-spin" />

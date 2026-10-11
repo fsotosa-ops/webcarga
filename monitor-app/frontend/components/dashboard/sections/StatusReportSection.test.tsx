@@ -301,6 +301,13 @@ describe('StatusReportSection', () => {
     expect(body.queryByText('Transportes Sur')).toBeNull()
   })
 
+  it('Dotación sin desbalance lo dice, en vez de quedar en blanco', async () => {
+    vi.mocked(statusReportApi.get).mockResolvedValue({ ...REPORT, fleet_driver_gap: [] })
+    const body = renderSection()
+    await abrir(body, 'Dotación')
+    expect(body.getByText('No hay empresas con desbalance de dotación')).toBeInTheDocument()
+  })
+
   it('con un backend que todavía no manda clients, la lista solo ofrece Todos los clientes', async () => {
     vi.mocked(statusReportApi.get).mockResolvedValue({ ...REPORT, clients: undefined })
     const body = renderSection()
