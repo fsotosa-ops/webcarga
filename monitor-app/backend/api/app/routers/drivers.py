@@ -12,6 +12,7 @@ from ..schemas.contact import ContactCreateBody
 from ..schemas.driver import DriverCreateBody, DriverPatchBody
 from ..services.audit import log_change, record_manual_edit
 from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
+from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente
 from ..services.origen_del_viaje import origen_del_viaje
 from ..utils.document_storage import resolve_signed_url
 
@@ -184,7 +185,7 @@ WITH viajes AS (
     -- El origen del viaje: una sola definición (services/origen_del_viaje.py).
     JOIN LATERAL (SELECT {origen_del_viaje('t')} AS local) ts ON ts.local IS NOT NULL
     -- El cliente del directorio, por id (spec 2026-10-11).
-    JOIN public.shippers sh ON sh.id = t.shipper_id AND sh.status = 'ACTIVE'
+    {join_cliente('t', 'sh', solo_vinculados=True)}
     -- lower(name) y no lower(btrim(name)): es la expresión exacta del índice
     -- único locations_entity_name_site_number_ci_key.
     JOIN public.locations l

@@ -29,6 +29,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import date as _date
 
+from .cliente_del_viaje import join_cliente, nombre_del_cliente
 from .audit import auditar_en_lote
 
 
@@ -253,13 +254,13 @@ LEFT JOIN LATERAL (
 ) d ON r.es_canonico
 """
 
-_SQL_PARES_CLIENTE = """
+_SQL_PARES_CLIENTE = f"""
 SELECT DISTINCT upper(trim(t.fleet->>'tractor_plate')) AS plate,
        t.shipper_id::text AS shipper_id, sh.name AS shipper_name
 FROM app.trips t
 -- El cliente del directorio, por id (spec 2026-10-11). Un viaje sin vincular no
 -- propone vínculo empresa-cliente: no se sabe de qué cliente es.
-JOIN public.shippers sh ON sh.id = t.shipper_id AND sh.status = 'ACTIVE'
+{join_cliente('t', 'sh', solo_vinculados=True)}
 WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND t.fleet->>'tractor_plate' IS NOT NULL
 """
 

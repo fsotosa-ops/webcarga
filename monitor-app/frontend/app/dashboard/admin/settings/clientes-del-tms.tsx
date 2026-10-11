@@ -21,9 +21,18 @@ export function ClientesDelTmsTab() {
   const { errors, saving, run } = useRowFeedback()
   const puedeEditar = usePuedeEditarSeccion('tms-clients')
   const [aplicados, setAplicados] = useState<Set<string>>(new Set())
+  // Un cambio sobre un cliente ya vinculado mueve todos sus viajes: se confirma
+  // en la fila antes de escribir (revisión final, Importante 5).
+  const [porConfirmar, setPorConfirmar] = useState<{ cliente: TmsClient; shipperId: string } | null>(null)
+
+  function elegir(c: TmsClient, shipperId: string) {
+    if (!shipperId || shipperId === c.shipper_id) return
+    if (c.shipper_id) setPorConfirmar({ cliente: c, shipperId })
+    else void vincular(c, shipperId)
+  }
 
   async function vincular(c: TmsClient, shipperId: string) {
-    if (!shipperId) return
+    setPorConfirmar(null)
     await run(c.source_client_id, async () => {
       await tmsClientsApi.vincular(c.source_client_id, shipperId)
       setAplicados(a => new Set(a).add(c.source_client_id))
@@ -73,9 +82,10 @@ export function ClientesDelTmsTab() {
                     {puedeEditar ? (
                       <select
                         aria-label={`Cliente del directorio para ${c.source_client}`}
-                        value={c.shipper_id ?? ''}
+                        value={porConfirmar?.cliente.source_client_id === c.source_client_id
+                          ? porConfirmar.shipperId : (c.shipper_id ?? '')}
                         disabled={saving === c.source_client_id}
-                        onChange={e => { void vincular(c, e.target.value) }}
+                        onChange={e => elegir(c, e.target.value)}
                         className={INPUT}
                       >
                         {!c.shipper_id && <option value="">— Elige el cliente —</option>}
@@ -83,6 +93,22 @@ export function ClientesDelTmsTab() {
                       </select>
                     ) : (
                       <span>{c.shipper_name ?? 'Sin vincular'}</span>
+                    )}
+                    {porConfirmar?.cliente.source_client_id === c.source_client_id && (
+                      <div role="alert" className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-text-primary">
+                        <span>
+                          ¿Pasar «{c.source_client}» y sus {c.trips.toLocaleString('es-CL')} viajes a{' '}
+                          {directorio.find(s => s.id === porConfirmar.shipperId)?.name ?? 'otro cliente'}?
+                        </span>
+                        <button type="button" onClick={() => { void vincular(c, porConfirmar.shipperId) }}
+                                className="font-semibold text-accent hover:underline">
+                          Confirmar
+                        </button>
+                        <button type="button" onClick={() => setPorConfirmar(null)}
+                                className="font-semibold text-informativo hover:underline">
+                          Cancelar
+                        </button>
+                      </div>
                     )}
                     {aplicados.has(c.source_client_id) && !errors[c.source_client_id] && (
                       <p className="mt-1 text-[11px] text-informativo">Se aplicará a sus viajes en la próxima actualización</p>

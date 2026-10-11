@@ -138,3 +138,23 @@ async def test_el_csv_marca_todas_las_filas_con_cliente_fuera_del_directorio(con
 def test_la_plantilla_csv_exige_el_cliente():
     from app.routers.trips import _CSV_COLUMNS
     assert next(c for c in _CSV_COLUMNS if c["field"] == "client_name")["required"] is True
+
+
+async def test_cambiar_un_vinculo_queda_registrado_con_quien_y_desde_que_cliente(conexion_revertida):
+    """Revisión final, Importante 5: re-vincular mueve miles de viajes; queda
+    quién lo hizo, desde qué cliente y a cuál."""
+    from app.routers.tms_clients import VinculoBody, vincular
+    from tests.conftest import PoolDeUnaConexion, _usuario_real
+
+    fila = await conexion_revertida.fetchrow(
+        "SELECT source_client_id::text AS id, shipper_id::text AS antes FROM app.tms_client_shippers LIMIT 1")
+    otro = await conexion_revertida.fetchval(
+        "SELECT id::text FROM public.shippers WHERE id <> $1::uuid AND status = 'ACTIVE' LIMIT 1", fila["antes"])
+    usuario = await _usuario_real(conexion_revertida)
+    await vincular(fila["id"], VinculoBody(shipper_id=otro), pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
+    registro = await conexion_revertida.fetchrow(
+        "SELECT actor::text, action, field, old_value, new_value FROM public.audit_log "
+        "WHERE entity_type = 'TMS_CLIENT' AND entity_id = $1::uuid ORDER BY occurred_at DESC LIMIT 1", fila["id"])
+    assert registro is not None
+    assert (registro["actor"], registro["action"], registro["field"]) == (usuario["sub"], "link_tms_client", "shipper_id")
+    assert fila["antes"] in str(registro["old_value"]) and otro in str(registro["new_value"])

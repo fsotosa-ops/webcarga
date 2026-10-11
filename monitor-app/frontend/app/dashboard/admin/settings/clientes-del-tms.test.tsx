@@ -58,6 +58,22 @@ describe('ClientesDelTmsTab', () => {
     expect(await screen.findByText('Se aplicará a sus viajes en la próxima actualización')).toBeInTheDocument()
   })
 
+  it('cambiar un cliente ya vinculado pide confirmar, diciendo cuántos viajes mueve', async () => {
+    render(<ClientesDelTmsTab />)
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Cliente del directorio para walmart' }),
+      { target: { value: 's4' } })
+    expect(tmsClientsApi.vincular).not.toHaveBeenCalled()
+    expect(screen.getByText('¿Pasar «walmart» y sus 3.029 viajes a Colun?')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(screen.queryByText(/¿Pasar «walmart»/)).toBeNull()
+    expect(screen.getByRole('combobox', { name: 'Cliente del directorio para walmart' })).toHaveValue('s1')
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Cliente del directorio para walmart' }),
+      { target: { value: 's4' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    await waitFor(() => expect(tmsClientsApi.vincular).toHaveBeenCalledWith('k1', 's4'))
+  })
+
   it('sin commercial.edit se ve el cliente vinculado, sin selector', async () => {
     permisos.dados = new Set(['operations.configure'])
     render(<ClientesDelTmsTab />)

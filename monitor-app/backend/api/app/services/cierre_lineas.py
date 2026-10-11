@@ -27,6 +27,7 @@ from enum import StrEnum
 
 from fastapi import HTTPException
 
+from .cliente_del_viaje import join_cliente, nombre_del_cliente
 from .audit import log_change
 from .cierre_viajes import SQL_VIAJES_DEL_DIA
 from .driver_roster import TRACTOREO_ROSTER_CTE
@@ -402,10 +403,12 @@ cambios AS (
     UNION ALL
     (SELECT trip_id, 'quitado' FROM firmados EXCEPT SELECT trip_id, 'quitado' FROM del_dia)
 )
-SELECT c.trip_id::text AS trip_id, c.tipo, t.source_system_trip_id, t.client_name,
+SELECT c.trip_id::text AS trip_id, c.tipo, t.source_system_trip_id,
+       {nombre_del_cliente('t', 'sh')} AS client_name,
        t.voided_at, p.full_name AS voided_by_name, r.label AS void_reason_label, t.void_note
 FROM cambios c
 LEFT JOIN app.trips t ON t.id = c.trip_id
+{join_cliente('t', 'sh')}
 LEFT JOIN public.profiles p ON p.id = t.voided_by
 LEFT JOIN app.status_taxonomies r ON r.id = t.void_reason_id
 WHERE EXISTS (SELECT 1 FROM firma)

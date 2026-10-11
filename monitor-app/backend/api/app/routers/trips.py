@@ -498,9 +498,9 @@ def _tms_dropped(d: dict, ctx: tuple[dict, float]) -> bool:
 _TRIP_SELECT = """
     t.id,
     t.source_system,
-    -- El cliente que se muestra (services/cliente_del_viaje.nombre_del_cliente,
-    -- spec 2026-10-11): el del directorio, o el texto del TMS marcado.
-    COALESCE(sh.name, t.client_name || ' · sin vincular') AS client_name,
+    -- El cliente que se muestra (spec 2026-10-11): el del directorio, o el texto
+    -- del TMS marcado. Una sola definición, en services/cliente_del_viaje.py.
+    """ + nombre_del_cliente("t", "sh") + """ AS client_name,
     t.client_name AS source_client_name,
     t.planning_date,
     t.status_reported_at,
@@ -731,7 +731,7 @@ _TRIP_FROM = """
     + _compliance_alert_lateral("tcomp", "ASSET", "vfr.resolved_tractor_asset_id") \
     + _compliance_alert_lateral("ccomp", "CARRIER", "vfr.resolved_carrier_id") + """
     -- El cliente del directorio, por id (spec 2026-10-11; services/cliente_del_viaje.py).
-    LEFT JOIN public.shippers sh ON sh.id = t.shipper_id
+    """ + join_cliente("t", "sh") + """
     LEFT JOIN public.profiles p ON p.id = t.edited_by
 """
 
@@ -1164,7 +1164,7 @@ async def get_trips_meta(pool=Depends(get_pool), _=Depends(require(Permission.OP
     # viajes reales, aparece solo, sin tocar código.
     client_rows = await pool.fetch(
         "SELECT DISTINCT sh.id::text AS id, sh.name "
-        "FROM app.trips t JOIN public.shippers sh ON sh.id = t.shipper_id "
+        f"FROM app.trips t {join_cliente('t', 'sh', solo_vinculados=True)} "
         "ORDER BY sh.name"
     )
     # Los viajes de un cliente del TMS todavía sin vincular (spec 2026-10-11):
@@ -1408,7 +1408,7 @@ async def available_assets(
     # trip_id concreto para poder abrirlo (mismo criterio de "más reciente si
     # hay más de uno" que ya usa daily_closures.py para MISMATCH).
     busy_rows = await pool.fetch(
-        """
+        f"""
         WITH active_roster AS (
             SELECT a.id, a.license_plate, c.business_name AS carrier_name
             FROM public.assets a
@@ -1420,11 +1420,11 @@ async def available_assets(
             SELECT DISTINCT ON (vfr.resolved_tractor_asset_id)
                 vfr.resolved_tractor_asset_id AS asset_id,
                 t.id AS trip_id,
-                COALESCE(sh.name, t.client_name || ' · sin vincular') AS client_name,
+                {nombre_del_cliente('t', 'sh')} AS client_name,
                 t.trip_status AS current_status
             FROM app.trips t
             JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-            LEFT JOIN public.shippers sh ON sh.id = t.shipper_id
+            {join_cliente('t', 'sh')}
             -- FIX 2026-08-02 (ítem 16 de la minuta) — mismo criterio que las
             -- 2 queries de arriba: un viaje multi-día abierto desde un día
             -- anterior sigue haciendo "ocupado" al equipo hoy.

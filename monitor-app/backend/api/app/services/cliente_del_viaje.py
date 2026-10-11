@@ -9,10 +9,13 @@ el texto en minúsculas, y renombrar un cliente los dejaba sin cliente.
 viaje. Solo se muestra cuando el viaje no tiene cliente vinculado."""
 from fastapi import HTTPException
 
-JOIN_CLIENTE = "LEFT JOIN public.shippers sh ON sh.id = t.shipper_id"
-
-
-def join_cliente(t: str = "t", sh: str = "sh") -> str:
+def join_cliente(t: str = "t", sh: str = "sh", *, solo_vinculados: bool = False) -> str:
+    """El cruce del viaje con su cliente del directorio, por id. Por defecto LEFT:
+    un viaje sin vincular sigue en la consulta. `solo_vinculados` lo deja afuera
+    (y a los clientes inactivos), para lo que solo tiene sentido con un cliente
+    real: la sugerencia de CD de un conductor, los vínculos empresa-cliente."""
+    if solo_vinculados:
+        return f"JOIN public.shippers {sh} ON {sh}.id = {t}.shipper_id AND {sh}.status = 'ACTIVE'"
     return f"LEFT JOIN public.shippers {sh} ON {sh}.id = {t}.shipper_id"
 
 

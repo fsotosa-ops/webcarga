@@ -79,3 +79,26 @@ def test_ningun_cruce_de_cliente_por_texto_queda_en_el_backend():
     hallazgos = [f"{p.relative_to(APP)}:{i}" for p in APP.rglob("*.py")
                  for i, linea in enumerate(p.read_text().splitlines(), 1) if CRUCE_POR_TEXTO.search(linea)]
     assert hallazgos == []
+
+
+# El cliente DEL VIAJE (alias t): los cruces empresa→cliente (carrier_shippers) y
+# la correspondencia (tms_client_shippers) son otras relaciones.
+CRUCE_O_NOMBRE_A_MANO = re.compile(r"sin vincular'|shippers\s+\w+\s+ON\s+\w+\.id\s*=\s*t\d*\.shipper_id")
+
+
+def test_el_cruce_y_el_nombre_del_cliente_tienen_una_sola_definicion():
+    """Revisión final, Importante 4: el cruce por id y el nombre que se muestra
+    viven solo en services/cliente_del_viaje.py. Una copia a mano es la que
+    queda atrás el día que cambia la marca o el cruce."""
+    hallazgos = [f"{p.relative_to(APP)}:{i}" for p in APP.rglob("*.py")
+                 if p.name != "cliente_del_viaje.py"
+                 for i, linea in enumerate(p.read_text().splitlines(), 1) if CRUCE_O_NOMBRE_A_MANO.search(linea)]
+    assert hallazgos == []
+
+
+def test_los_ajustes_posteriores_al_cierre_muestran_el_cliente_del_directorio():
+    """Revisión final, Importante 3: "Ajustes posteriores" mostraba el texto crudo del TMS."""
+    from app.services.cierre_lineas import _SQL_AJUSTES
+
+    assert "COALESCE(sh.name, t.client_name || ' · sin vincular') AS client_name" in _SQL_AJUSTES
+    assert "LEFT JOIN public.shippers sh ON sh.id = t.shipper_id" in _SQL_AJUSTES

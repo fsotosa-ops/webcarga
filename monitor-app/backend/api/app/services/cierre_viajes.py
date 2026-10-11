@@ -30,15 +30,17 @@ GRUPOS_NO_TERMINALES = ("en_ruta", "retornando", "en_local", "otro")
 # el Cierre (app.closure_signature_trips, totals.viajes) y contra el que se calculan
 # los ajustes posteriores. Una sola definición (Importante 4, revisión de rama
 # 2026-08-18; spec 2026-10-10 anulación §3). Parámetro: $1 = D.
+from .cliente_del_viaje import join_cliente, nombre_del_cliente
+
 SQL_VIAJES_DEL_DIA = "SELECT t.id FROM app.trips t WHERE t.planning_date = $1 AND t.voided_at IS NULL"
 
-SQL_BASE = """    SELECT t.id AS trip_id, t.planning_date,
+SQL_BASE = f"""    SELECT t.id AS trip_id, t.planning_date,
            -- El nombre prolijo, no el crudo del TMS. Visto en pantalla el
            -- 14/09: esta pestana mostraba "walmart"/"sodimac" en minusculas
            -- mientras "Flota del dia" -que resuelve por public.shippers-
            -- mostraba "Walmart" en la columna que se llama IGUAL. La misma
            -- columna diciendo dos cosas distintas segun la pestana.
-           COALESCE(sh.name, t.client_name || ' · sin vincular') AS client_name,
+           {nombre_del_cliente('t', 'sh')} AS client_name,
            t.source_system_trip_id, t.trip_status, t.unassigned_reason_id,
            t.is_active, t.is_assigned,
            round((EXTRACT(EPOCH FROM (now() - t.status_reported_at)) / 86400)::numeric, 1)
@@ -84,7 +86,7 @@ SQL_BASE = """    SELECT t.id AS trip_id, t.planning_date,
             WHERE st.trip_id = t.id AND st.stop_type = 'DESTINATION'
         ) x
     ) entrega ON true
-    LEFT JOIN public.shippers sh ON sh.id = t.shipper_id
+    {join_cliente('t', 'sh')}
     -- planning_date IS NULL sólo entra si NOT is_active: así el único grupo
     -- que puede alcanzar (abandonado, que no exige fecha) queda disponible
     -- para él, pero un viaje activo sin fecha sigue sin calzar en ningún

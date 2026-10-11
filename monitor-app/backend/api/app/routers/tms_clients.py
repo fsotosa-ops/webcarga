@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from ..authz import Permission, require
 from ..db import get_pool
+from ..services.audit import log_change
 
 router = APIRouter(prefix="/tms-clients", tags=["tms-clients"])
 
@@ -46,6 +47,9 @@ async def vincular(source_client_id: str, body: VinculoBody, pool=Depends(get_po
             "SELECT id FROM public.shippers WHERE id = $1::uuid AND status = 'ACTIVE'", shipper_id)
         if not cliente:
             raise HTTPException(422, "El cliente elegido no está en el directorio")
+        antes = await conn.fetchval(
+            "SELECT shipper_id::text FROM app.tms_client_shippers WHERE source_client_id = $1::uuid",
+            source_client_id)
         origen = await conn.fetchrow(
             "SELECT min(source_system) AS source_system, min(client_name) AS source_client "
             "FROM app.trips WHERE source_client_id = $1::uuid", source_client_id)
@@ -59,4 +63,9 @@ async def vincular(source_client_id: str, body: VinculoBody, pool=Depends(get_po
             RETURNING source_client_id::text AS source_client_id, shipper_id::text AS shipper_id
             """,
             source_client_id, origen["source_system"], origen["source_client"], shipper_id, user["sub"])
+        # Vincular o re-vincular mueve todos los viajes de ese cliente del TMS:
+        # queda quién, desde qué cliente y a cuál (revisión final, Importante 5).
+        if antes != shipper_id:
+            await log_change(conn, actor=user["sub"], entity_type="TMS_CLIENT", entity_id=source_client_id,
+                             action="link_tms_client", field="shipper_id", old_value=antes, new_value=shipper_id)
     return dict(fila)

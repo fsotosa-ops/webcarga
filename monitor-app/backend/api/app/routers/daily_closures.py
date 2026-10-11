@@ -25,6 +25,7 @@ from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.daily_closures import DriverBatchReasonBody, DriverDayStatusPatchBody
+from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente
 from ..services.origen_del_viaje import origen_del_viaje
 from ..services.cierre_lineas import LINEAS_CONDUCTORES, ajustes_posteriores, frescura_del_dia, periodo, poner_motivo
 from ..services.pre_cierre import avisos_del_dia
@@ -92,10 +93,10 @@ LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
 -- (Sider/Lansa, Sodimac, Walmart todos pivotean por EETT y/o cliente).
 -- El nombre del cliente del directorio, cruzado por id (spec 2026-10-11).
 LEFT JOIN LATERAL (
-    SELECT array_agg(DISTINCT COALESCE(sh.name, t.client_name || ' · sin vincular')) AS client_names
+    SELECT array_agg(DISTINCT {nombre_del_cliente('t', 'sh')}) AS client_names
     FROM app.trip_fleet_links fl
     JOIN app.trips t ON t.id = fl.trip_id
-    LEFT JOIN public.shippers sh ON sh.id = t.shipper_id
+    {join_cliente('t', 'sh')}
     WHERE fl.driver_id = dds.driver_id AND t.planning_date = dds.business_date AND t.client_name IS NOT NULL
 ) clients ON true
 {_compliance_alert_lateral('dcomp', 'DRIVER', 'dds.driver_id', _DRIVER_CRITICAL_DOC_CODES)}
@@ -189,10 +190,10 @@ LEFT JOIN LATERAL (
 ) carrier_shippers ON true
 LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
 LEFT JOIN LATERAL (
-    SELECT array_agg(DISTINCT COALESCE(sh.name, t.client_name || ' · sin vincular')) AS client_names
+    SELECT array_agg(DISTINCT {nombre_del_cliente('t', 'sh')}) AS client_names
     FROM app.trip_fleet_links fl
     JOIN app.trips t ON t.id = fl.trip_id
-    LEFT JOIN public.shippers sh ON sh.id = t.shipper_id
+    {join_cliente('t', 'sh')}
     WHERE fl.driver_id = dds.driver_id AND t.planning_date = dds.business_date AND t.client_name IS NOT NULL
 ) clients ON true
 WHERE dds.business_date BETWEEN $1 AND $2
