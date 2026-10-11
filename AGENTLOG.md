@@ -16,6 +16,18 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Cierre de sesión: lo que queda de la minuta 09/10 (Pablo)
+
+- [ ] Que Pablo revise en dev todo lo de hoy (Monitor, Cierre › Flota/Viajes/Reporte, Configuración › Clientes del TMS).
+- [ ] Ítem 5: un viaje manual nuevo queda "activo, no asignado" hasta la próxima corrida de Mage (≤15 min).
+- [ ] Decisión A del usuario: regla de 15 días para viajes viejos (hoy no existe; `stale_trip_days` vacío).
+- [ ] Ítem 20 (resto): abrir una fila de requisito en Certificación para ver quién lo tiene vencido y subirlo ahí.
+- [ ] Ítem 21: enlaces a la ficha del conductor y del equipo (no existen esas fichas).
+- [ ] Ítem 23: editar los clientes de una empresa (hoy solo lectura).
+- [ ] Spec del reporte por período: el usuario define si el mes solo se ve/exporta o también se firma.
+- [ ] Menores: otras tablas del reporte con overflow en teléfono; dato Sodimac 878052 con una rampla como tracto
+      (lo corrige Operaciones); detalle del viaje en pausa.
+
 ### 2026-10-11 — Monitor: el filtro de cliente sale de la vista, con su cuenta — en dev (3ec20441)
 
 **Causa:** las opciones salían de `/trips/meta`, de todo el histórico. HBC aparecía por 1 viaje manual cerrado del
