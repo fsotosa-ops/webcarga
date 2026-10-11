@@ -51,6 +51,10 @@ cifras por igual.
 
 ## Rulings tomados al escribir el plan
 
+- **La URL del Cierre** va en inglés: `?date=`, `?tab=fleet|trips|pending|report` y `?trips=to_resolve|tracking|resolved`.
+  Un solo módulo (`lib/navegacion/cierre.ts`) la lee y la escribe, y lee también la forma vieja en español. Los
+  `?fecha=` de la API del backend quedan fuera (deuda aparte).
+
 - **Pestaña inicial.** Si la URL no trae `?viajes=`, se abre "Por resolver" cuando tiene viajes, y si no, "En
   seguimiento". La elección queda en la URL solo cuando la persona cambia de pestaña, igual que `?tab=`.
 - **La selección en lote** existe solo en "Por resolver" y no se limpia al cambiar de pestaña.
@@ -71,7 +75,7 @@ cifras por igual.
 | `monitor-app/frontend/lib/cierre/gruposDeViajes.ts` (+ `.test.ts`) (nuevo) | Qué pestaña, qué "por qué" y si bloquea, por grupo; filas de una pestaña ordenadas; días atrás; patentes repetidas |
 | `monitor-app/frontend/components/dashboard/sections/PasoViajesSection.tsx` (reescribir) | Pestañas, chips, buscador, barra de lote y una tabla con columnas según la pestaña |
 | `monitor-app/frontend/components/dashboard/sections/PasoViajesSection.test.tsx` (reescribir) | Comportamiento de Viajes |
-| `monitor-app/frontend/app/dashboard/operations/closures/page.tsx` (modificar) | `?viajes=` en la URL, `fecha` a Viajes, "Reintentar" en el error, sin `shippersQuery` |
+| `monitor-app/frontend/app/dashboard/operations/closures/page.tsx` (modificar) | `?trips=` en la URL, `fecha` a Viajes, "Reintentar" en el error, sin `shippersQuery` |
 | `monitor-app/backend/api/app/routers/status_report.py` (modificar) | `_SQL_CLIENTES_POR_EMPRESA`, `_clientes_de_la_fila`, `_filter_by_client` nuevo, `_clientes_del_dia`, `clients` |
 | `monitor-app/backend/api/tests/test_status_report.py` (modificar) | La regla de pertenencia y `clients` |
 | `monitor-app/backend/api/tests/test_reporte_de_estatus_integracion.py` (modificar) | La consulta de clientes por empresa contra Postgres |
@@ -89,7 +93,7 @@ cifras por igual.
 **Interfaces:**
 - Consumes: `GrupoDelCierre`, `ViajeDelCierre` (`lib/types.ts`, existentes).
 - Produces:
-  - **Tipos:** `PestanaDeViajes = 'por_resolver' | 'en_seguimiento' | 'resueltos'` y
+  - **Tipos:** `PestanaDeViajes = 'to_resolve' | 'tracking' | 'resolved'` (valores en inglés: viajan en la URL) y
     `FilaDeViaje = ViajeDelCierre & { grupo: GrupoDelCierre }`.
   - **`PESTANAS_DE_VIAJES`:** `{ id, etiqueta, bajada, vacio }[]`.
   - **`GRUPOS_DE_VIAJES`:**
@@ -140,8 +144,8 @@ const GRUPOS = {
 describe('gruposDeViajes', () => {
   it('cada grupo del backend cae en una de las tres pestañas', () => {
     expect(Object.fromEntries(Object.entries(GRUPOS_DE_VIAJES).map(([g, p]) => [g, p.pestana]))).toEqual({
-      hoy: 'por_resolver', rezago: 'por_resolver', oferta_sin_declarar: 'por_resolver', abandonado: 'por_resolver',
-      en_curso: 'en_seguimiento', pendiente_cierre_tms: 'en_seguimiento', con_motivo: 'resueltos',
+      hoy: 'to_resolve', rezago: 'to_resolve', oferta_sin_declarar: 'to_resolve', abandonado: 'to_resolve',
+      en_curso: 'tracking', pendiente_cierre_tms: 'tracking', con_motivo: 'resolved',
     })
   })
 
@@ -165,32 +169,32 @@ describe('gruposDeViajes', () => {
   })
 
   it('las filas de una pestaña juntan sus grupos, de la más antigua a la más nueva', () => {
-    const filas = filasDePestana(GRUPOS, 'en_seguimiento')
+    const filas = filasDePestana(GRUPOS, 'tracking')
     expect(filas.map(f => f.source_system_trip_id)).toEqual(['878052', '881496', '885613', '2069959', '2070673'])
     expect(filas[0].grupo).toBe('pendiente_cierre_tms')
   })
 
   it('a igual fecha, ordena por Nº de viaje', () => {
-    const filas = filasDePestana({ hoy: [viaje('a', '20'), viaje('b', '10')] }, 'por_resolver')
+    const filas = filasDePestana({ hoy: [viaje('a', '20'), viaje('b', '10')] }, 'to_resolve')
     expect(filas.map(f => f.source_system_trip_id)).toEqual(['10', '20'])
   })
 
   it('un grupo que todavía no llega del backend no rompe nada', () => {
-    expect(filasDePestana({ hoy: [viaje('t1', '1')] }, 'en_seguimiento')).toEqual([])
+    expect(filasDePestana({ hoy: [viaje('t1', '1')] }, 'tracking')).toEqual([])
   })
 
   it('se abre en Por resolver si tiene viajes, y si no en En seguimiento', () => {
-    expect(pestanaInicial(GRUPOS)).toBe('por_resolver')
-    expect(pestanaInicial({ ...GRUPOS, hoy: [] })).toBe('en_seguimiento')
+    expect(pestanaInicial(GRUPOS)).toBe('to_resolve')
+    expect(pestanaInicial({ ...GRUPOS, hoy: [] })).toBe('tracking')
   })
 
   it('una patente con más de un viaje en la pestaña se marca con sus números', () => {
-    const repetidas = viajesPorPatente(filasDePestana(GRUPOS, 'en_seguimiento'))
+    const repetidas = viajesPorPatente(filasDePestana(GRUPOS, 'tracking'))
     expect([...repetidas.entries()]).toEqual([['PYST91', ['881496', '885613']]])
   })
 
   it('reconoce solo las pestañas que existen', () => {
-    expect(esPestanaDeViajes('resueltos')).toBe(true)
+    expect(esPestanaDeViajes('resolved')).toBe(true)
     expect(esPestanaDeViajes('xyz')).toBe(false)
     expect(esPestanaDeViajes(null)).toBe(false)
   })
@@ -211,23 +215,23 @@ import type { GrupoDelCierre, ViajeDelCierre } from '@/lib/types'
 
 /** Las tres preguntas de la pestaña Viajes del Cierre (spec 2026-10-11): qué falta
  *  declarar, qué sigue vivo sin depender del cierre, y qué ya se declaró. */
-export type PestanaDeViajes = 'por_resolver' | 'en_seguimiento' | 'resueltos'
+export type PestanaDeViajes = 'to_resolve' | 'tracking' | 'resolved'
 
 export type FilaDeViaje = ViajeDelCierre & { grupo: GrupoDelCierre }
 
 export const PESTANAS_DE_VIAJES: { id: PestanaDeViajes; etiqueta: string; bajada: string; vacio: string }[] = [
   {
-    id: 'por_resolver', etiqueta: 'Por resolver',
+    id: 'to_resolve', etiqueta: 'Por resolver',
     bajada: 'Viajes que no se tomaron: declara por qué.',
     vacio: 'Nada por resolver: puedes firmar el día',
   },
   {
-    id: 'en_seguimiento', etiqueta: 'En seguimiento',
+    id: 'tracking', etiqueta: 'En seguimiento',
     bajada: 'No dependen del cierre: se miran. Los que esperan el cierre del TMS los sigue Facturación.',
     vacio: 'Ningún viaje en seguimiento',
   },
   {
-    id: 'resueltos', etiqueta: 'Resueltos',
+    id: 'resolved', etiqueta: 'Resueltos',
     bajada: 'Declarados como no asignados por WebCarga. Se pueden deshacer.',
     vacio: 'Todavía no se declaró ningún viaje',
   },
@@ -256,32 +260,32 @@ export function diasAtras(planning: string, fecha: string): number {
  *  no compila. Va anotado y no con `satisfies` para que todo `porQue` tenga la
  *  misma firma y se pueda llamar con (viaje, fecha) desde cualquier grupo. */
 export const GRUPOS_DE_VIAJES: Record<GrupoDelCierre, Presentacion> = {
-  hoy: { pestana: 'por_resolver', chip: 'Del día', bloqueaLaFirma: true, porQue: () => 'Del día' },
+  hoy: { pestana: 'to_resolve', chip: 'Del día', bloqueaLaFirma: true, porQue: () => 'Del día' },
   rezago: {
-    pestana: 'por_resolver', chip: 'Rezago', bloqueaLaFirma: true,
+    pestana: 'to_resolve', chip: 'Rezago', bloqueaLaFirma: true,
     porQue: (v, fecha) => `Rezago · ${plural(diasAtras(v.planning_date, fecha), 'día', 'días')}`,
   },
   // Ofertas que el TMS retiró porque WebCarga no las tomó (Sodimac, 07/10).
   oferta_sin_declarar: {
-    pestana: 'por_resolver', chip: 'Oferta retirada', bloqueaLaFirma: false,
+    pestana: 'to_resolve', chip: 'Oferta retirada', bloqueaLaFirma: false,
     porQue: () => 'Oferta retirada por el TMS',
   },
   // "Igual hay que cerrarlos" (Regla 5 de Pablo): se declaran como los demás.
   abandonado: {
-    pestana: 'por_resolver', chip: 'Abandonado', bloqueaLaFirma: false,
+    pestana: 'to_resolve', chip: 'Abandonado', bloqueaLaFirma: false,
     porQue: () => 'Abandonado por el TMS',
   },
   en_curso: {
-    pestana: 'en_seguimiento', chip: 'En ruta', bloqueaLaFirma: false,
+    pestana: 'tracking', chip: 'En ruta', bloqueaLaFirma: false,
     porQue: v => `En ruta · ${v.trip_status ?? 'sin estado'}`,
   },
   // Ítem 6 (minuta 09/10): asignado, falta que el TMS del cliente lo cierre.
   pendiente_cierre_tms: {
-    pestana: 'en_seguimiento', chip: 'Espera cierre del TMS', bloqueaLaFirma: false,
+    pestana: 'tracking', chip: 'Espera cierre del TMS', bloqueaLaFirma: false,
     porQue: () => 'Espera cierre del TMS',
   },
   con_motivo: {
-    pestana: 'resueltos', chip: 'Con motivo', bloqueaLaFirma: false,
+    pestana: 'resolved', chip: 'Con motivo', bloqueaLaFirma: false,
     porQue: v => v.unassigned_reason_label ?? 'Sin motivo',
   },
 }
@@ -306,7 +310,7 @@ export function filasDePestana(
 }
 
 export function pestanaInicial(grupos: Partial<Record<GrupoDelCierre, ViajeDelCierre[]>>): PestanaDeViajes {
-  return filasDePestana(grupos, 'por_resolver').length > 0 ? 'por_resolver' : 'en_seguimiento'
+  return filasDePestana(grupos, 'to_resolve').length > 0 ? 'to_resolve' : 'tracking'
 }
 
 /** Patente → Nº de sus viajes, solo las que aparecen más de una vez: dos viajes
@@ -331,6 +335,196 @@ Expected: 10/10 PASS y tsc sin errores.
 ```bash
 git add monitor-app/frontend/lib/cierre/
 git commit -m "feat(cierre): una sola definición de cómo se presenta cada grupo de Viajes"
+```
+
+---
+
+### Task 1b: La URL del Cierre, en inglés y en un solo lugar
+
+**Files:**
+- Create: `monitor-app/frontend/lib/navegacion/cierre.ts`
+- Test: `monitor-app/frontend/lib/navegacion/cierre.test.ts`
+- Modify: `monitor-app/frontend/lib/navegacion/viaje.ts` (`CIERRE` se mueve al módulo nuevo y se re-exporta)
+- Modify: `monitor-app/frontend/app/dashboard/operations/closures/page.tsx` (`TABS`, el estado `tab`, `setTab`, `setFecha`, `urlDeEsteCierre`, la lectura de la fecha)
+- Test: `monitor-app/frontend/app/dashboard/operations/closures/page.test.tsx`
+
+**Interfaces:**
+- Consumes: `PestanaDeViajes` y `esPestanaDeViajes` (Task 1).
+- Produces:
+  - **Tipos:** `PestanaDelCierre = 'fleet' | 'trips' | 'pending' | 'report'` y
+    `EstadoDeLaUrlDelCierre = { date: string | null; tab: PestanaDelCierre | null; trips: PestanaDeViajes | null }`.
+  - **Constantes:** `CIERRE` (ruta), `PESTANAS_DEL_CIERRE: PestanaDelCierre[]`.
+  - **Funciones:**
+    - `leerUrlDelCierre(params: URLSearchParams | ReadonlyURLSearchParams): EstadoDeLaUrlDelCierre`;
+    - `urlDelCierre(params, cambios: Partial<EstadoDeLaUrlDelCierre>): string`;
+    - `esUrlVieja(params): boolean`.
+
+- [ ] **Step 1: Escribir el test que falla**
+
+`lib/navegacion/cierre.test.ts`:
+
+```ts
+import { describe, it, expect } from 'vitest'
+import { esUrlVieja, leerUrlDelCierre, urlDelCierre } from './cierre'
+
+const p = (q: string) => new URLSearchParams(q)
+
+describe('URL del Cierre', () => {
+  it('lee la forma en inglés', () => {
+    expect(leerUrlDelCierre(p('date=2026-10-10&tab=trips&trips=tracking')))
+      .toEqual({ date: '2026-10-10', tab: 'trips', trips: 'tracking' })
+  })
+
+  it('lee los enlaces viejos en español, para no romper marcadores ni el ?next= del detalle', () => {
+    expect(leerUrlDelCierre(p('fecha=2026-10-07&tab=viajes'))).toEqual({ date: '2026-10-07', tab: 'trips', trips: null })
+    expect(leerUrlDelCierre(p('tab=flota')).tab).toBe('fleet')
+    expect(leerUrlDelCierre(p('tab=pendientes')).tab).toBe('pending')
+    expect(leerUrlDelCierre(p('tab=reporte')).tab).toBe('report')
+  })
+
+  it('lo que no reconoce lo deja en null, sin inventar', () => {
+    expect(leerUrlDelCierre(p('tab=xyz&trips=foo'))).toEqual({ date: null, tab: null, trips: null })
+  })
+
+  it('escribe siempre en inglés, y borra las claves viejas', () => {
+    expect(urlDelCierre(p('fecha=2026-10-07&tab=viajes&otro=1'), { trips: 'resolved' }))
+      .toBe('/dashboard/operations/closures?otro=1&date=2026-10-07&tab=trips&trips=resolved')
+  })
+
+  it('reconoce una URL vieja para reescribirla', () => {
+    expect(esUrlVieja(p('fecha=2026-10-07'))).toBe(true)
+    expect(esUrlVieja(p('tab=viajes'))).toBe(true)
+    expect(esUrlVieja(p('date=2026-10-07&tab=trips'))).toBe(false)
+  })
+})
+```
+
+- [ ] **Step 2: Correr el test y verlo fallar**
+
+Run: `cd monitor-app/frontend && npx vitest run lib/navegacion/cierre.test.ts`
+Expected: FAIL con "Failed to resolve import './cierre'".
+
+- [ ] **Step 3: Implementar el módulo**
+
+`lib/navegacion/cierre.ts`:
+
+```ts
+import { esPestanaDeViajes, type PestanaDeViajes } from '@/lib/cierre/gruposDeViajes'
+
+/** La URL del Cierre del Día, en un solo lugar (spec 2026-10-11). Claves y
+ *  valores en inglés, como las rutas de la app; lo que se ve, en español. Lee
+ *  también la forma vieja en español (?fecha=, ?tab=viajes) para no romper
+ *  marcadores, el historial ni el ?next= del detalle de un viaje. */
+export const CIERRE = '/dashboard/operations/closures'
+
+export type PestanaDelCierre = 'fleet' | 'trips' | 'pending' | 'report'
+export const PESTANAS_DEL_CIERRE: PestanaDelCierre[] = ['fleet', 'trips', 'pending', 'report']
+
+export type EstadoDeLaUrlDelCierre = {
+  date:  string | null
+  tab:   PestanaDelCierre | null
+  trips: PestanaDeViajes | null
+}
+
+type Parametros = Pick<URLSearchParams, 'get' | 'toString'>
+
+/** Los valores de la URL vieja, en español. */
+const PESTANA_VIEJA: Record<string, PestanaDelCierre> = {
+  flota: 'fleet', viajes: 'trips', pendientes: 'pending', reporte: 'report',
+}
+const CLAVES_VIEJAS = ['fecha', 'viajes'] as const
+
+function pestanaDe(v: string | null): PestanaDelCierre | null {
+  if (v && (PESTANAS_DEL_CIERRE as string[]).includes(v)) return v as PestanaDelCierre
+  return (v && PESTANA_VIEJA[v]) || null
+}
+
+export function leerUrlDelCierre(params: Parametros): EstadoDeLaUrlDelCierre {
+  const trips = params.get('trips')
+  return {
+    date: params.get('date') ?? params.get('fecha'),
+    tab: pestanaDe(params.get('tab')),
+    trips: esPestanaDeViajes(trips) ? trips : null,
+  }
+}
+
+export function esUrlVieja(params: Parametros): boolean {
+  const tab = params.get('tab')
+  return CLAVES_VIEJAS.some(c => params.get(c) !== null) || (tab !== null && tab in PESTANA_VIEJA)
+}
+
+/** La URL del Cierre con `cambios` aplicados. Conserva los parámetros ajenos y
+ *  siempre escribe la forma en inglés. */
+export function urlDelCierre(params: Parametros, cambios: Partial<EstadoDeLaUrlDelCierre>): string {
+  const estado = { ...leerUrlDelCierre(params), ...cambios }
+  const salida = new URLSearchParams(params.toString())
+  for (const c of [...CLAVES_VIEJAS, 'date', 'tab', 'trips']) salida.delete(c)
+  if (estado.date) salida.set('date', estado.date)
+  if (estado.tab) salida.set('tab', estado.tab)
+  if (estado.trips) salida.set('trips', estado.trips)
+  return `${CIERRE}?${salida.toString()}`
+}
+```
+
+En `lib/navegacion/viaje.ts`, borra `export const CIERRE = '/dashboard/operations/closures'` y agrega arriba
+`import { CIERRE } from './cierre'` y `export { CIERRE }`. Así quien lo importa desde `viaje.ts` sigue funcionando.
+
+- [ ] **Step 4: Usar el módulo en la página**
+
+En `app/dashboard/operations/closures/page.tsx`:
+
+1. **Las pestañas.** En `TABS`, cambia los `id` a `'fleet'`, `'trips'`, `'pending'` y `'report'`. Después, con `grep -n
+   "'flota'\|'viajes'\|'pendientes'\|'reporte'" app/dashboard/operations/closures/page.tsx`, reemplaza cada
+   comparación de `tab` (`tab === 'viajes'`, `t.id === 'viajes'`, etc.) por su valor en inglés. Las etiquetas visibles
+   no cambian.
+
+2. **La fecha.** Reemplaza `const fecha = searchParams.get('fecha') || todayISO()` por:
+   ```tsx
+   const url = leerUrlDelCierre(searchParams)
+   const fecha = url.date || todayISO()
+   ```
+
+3. **El estado de la pestaña.** En el inicializador de `tab`, usa `url.tab ?? 'fleet'`. En `setTab`, `setFecha` y
+   `urlDeEsteCierre`, reemplaza el armado a mano de `URLSearchParams` por el módulo:
+   - `router.replace(urlDelCierre(searchParams, { tab: next }))`;
+   - `router.replace(urlDelCierre(searchParams, { date: next }))`;
+   - `return urlDelCierre(searchParams, { date: fecha, tab })`.
+
+4. **Reescribir una URL vieja al cargar**, sin entrada nueva en el historial:
+   ```tsx
+   // Un enlace viejo (?fecha=, ?tab=viajes) se lee igual y se reescribe en inglés.
+   useEffect(() => {
+     if (esUrlVieja(searchParams)) router.replace(urlDelCierre(searchParams, {}))
+   }, [searchParams, router])
+   ```
+
+5. **Imports:** `import { esUrlVieja, leerUrlDelCierre, urlDelCierre } from '@/lib/navegacion/cierre'`, más
+   `useEffect` en el import de `react` si falta.
+
+En `page.test.tsx`, cambia las URL esperadas: `...closures?fecha=2026-08-04&tab=viajes` pasa a
+`...closures?date=2026-08-04&tab=trips`, y lo mismo en cualquier otra aserción de URL. Agrega:
+
+```tsx
+  it('un enlace viejo en español se reescribe en inglés sin perder la fecha ni la pestaña', async () => {
+    // Prepara useSearchParams con 'fecha=2026-08-04&tab=viajes', como los demás tests del archivo.
+    // ...render de la página...
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard/operations/closures?date=2026-08-04&tab=trips'))
+  })
+```
+
+Escríbelo con el mismo mock de `useSearchParams` y `useRouter` que usa el test
+`'cambiar de pestaña actualiza la URL'` del archivo: copia su preparación y cambia solo la query inicial.
+
+- [ ] **Step 5: Correr los tests y verlos pasar**
+
+Run: `cd monitor-app/frontend && npx vitest run lib/navegacion/ app/dashboard/operations/closures/ app/dashboard/operations/monitor/trips/ components/dashboard/AjustesPosterioresAlCierre 2>&1 | grep -E "Tests |×" && npx tsc --noEmit`
+Expected: todo PASS y tsc sin errores.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add monitor-app/frontend/lib/navegacion/ monitor-app/frontend/app/dashboard/operations/closures/
+git commit -m "refactor(cierre): la URL del Cierre en inglés y en un solo módulo, leyendo los enlaces viejos"
 ```
 
 ---
@@ -482,7 +676,7 @@ describe('PasoViajesSection', () => {
   it('En seguimiento no tiene acciones y dice la situación de cada viaje', () => {
     const { onCambiarPestana } = renderViajes()
     fireEvent.click(pestana(/En seguimiento/))
-    expect(onCambiarPestana).toHaveBeenCalledWith('en_seguimiento')
+    expect(onCambiarPestana).toHaveBeenCalledWith('tracking')
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
     expect(screen.queryAllByRole('combobox')).toHaveLength(0)
     expect(screen.getByText('En ruta · RETORNANDO')).toBeInTheDocument()
@@ -490,14 +684,14 @@ describe('PasoViajesSection', () => {
   })
 
   it('una patente con dos viajes lleva la marca, con los números en el título', () => {
-    renderViajes({ pestana: 'en_seguimiento' })
+    renderViajes({ pestana: 'tracking' })
     const marcas = screen.getAllByText('2 viajes')
     expect(marcas).toHaveLength(2)
     expect(marcas[0]).toHaveAttribute('title', 'PYST91: 881496, 885613')
   })
 
   it('Resueltos muestra el motivo y deja deshacer', async () => {
-    const { onDeshacer } = renderViajes({ pestana: 'resueltos' })
+    const { onDeshacer } = renderViajes({ pestana: 'resolved' })
     expect(screen.getByText('No da por tarifa')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Deshacer el motivo del viaje 2033003' }))
     await waitFor(() => expect(onDeshacer).toHaveBeenCalledWith(['t8']))
@@ -520,7 +714,7 @@ describe('PasoViajesSection', () => {
   })
 
   it('una pestaña vacía lo dice en una línea, sin tabla', () => {
-    renderViajes({ grupos: { ...GRUPOS, hoy: [], rezago: [], oferta_sin_declarar: [], abandonado: [] }, pestana: 'por_resolver' })
+    renderViajes({ grupos: { ...GRUPOS, hoy: [], rezago: [], oferta_sin_declarar: [], abandonado: [] }, pestana: 'to_resolve' })
     expect(screen.getByText('Nada por resolver: puedes firmar el día')).toBeInTheDocument()
     expect(screen.queryByRole('table')).toBeNull()
   })
@@ -536,8 +730,8 @@ describe('PasoViajesSection', () => {
   })
 
   it('al declarar el último por resolver, la pestaña no salta sola', () => {
-    const { rerender } = renderViajes({ pestana: 'por_resolver' })
-    rerender(<PasoViajesSection fecha="2026-10-10" bloquean={0} motivos={MOTIVOS} onCerrar={vi.fn()} pestana="por_resolver"
+    const { rerender } = renderViajes({ pestana: 'to_resolve' })
+    rerender(<PasoViajesSection fecha="2026-10-10" bloquean={0} motivos={MOTIVOS} onCerrar={vi.fn()} pestana="to_resolve"
                                 grupos={{ ...GRUPOS, hoy: [], rezago: [], oferta_sin_declarar: [], abandonado: [] }} />)
     expect(pestana(/Por resolver/)).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByText('Nada por resolver: puedes firmar el día')).toBeInTheDocument()
@@ -562,7 +756,7 @@ describe('PasoViajesSection', () => {
 
   it('si el backend todavía no manda un grupo, la pestaña igual se dibuja', () => {
     const { pendiente_cierre_tms: _, ...sinElNuevo } = GRUPOS
-    renderViajes({ grupos: sinElNuevo as typeof GRUPOS, pestana: 'en_seguimiento' })
+    renderViajes({ grupos: sinElNuevo as typeof GRUPOS, pestana: 'tracking' })
     expect(screen.getByText('2033001')).toBeInTheDocument()
   })
 })
@@ -735,8 +929,8 @@ export function PasoViajesSection({
   const { todas, coinciden } = porPestana[pestana]
   const filas = chip ? coinciden.filter(f => f.grupo === chip) : coinciden
   const repetidas = viajesPorPatente(todas)
-  const declarar = pestana === 'por_resolver' && !soloLectura
-  const deshacer = pestana === 'resueltos' && !soloLectura && !!onDeshacer
+  const declarar = pestana === 'to_resolve' && !soloLectura
+  const deshacer = pestana === 'resolved' && !soloLectura && !!onDeshacer
   // Los chips aparecen solo si la pestaña junta más de un camino.
   const chips = Object.entries(GRUPOS_DE_VIAJES)
     .filter(([g, p]) => p.pestana === pestana && todas.some(f => f.grupo === g))
@@ -839,15 +1033,15 @@ export function PasoViajesSection({
                 <th className="text-left px-3 py-2">TMS · Cliente</th>
                 <th className="text-left px-3 py-2">Nº viaje</th>
                 <th className="text-left px-3 py-2">Fecha</th>
-                {pestana !== 'resueltos' && (
-                  <th className="text-left px-3 py-2">{pestana === 'por_resolver' ? 'Por qué está aquí' : 'Situación'}</th>
+                {pestana !== 'resolved' && (
+                  <th className="text-left px-3 py-2">{pestana === 'to_resolve' ? 'Por qué está aquí' : 'Situación'}</th>
                 )}
                 <th className="text-left px-3 py-2">Patente</th>
                 <th className="text-left px-3 py-2">Conductor</th>
                 <th className="text-left px-3 py-2">Empresa</th>
                 <th className="text-left px-3 py-2">Origen · Destinos</th>
                 <th className="text-left px-3 py-2">Tiempo</th>
-                {pestana !== 'en_seguimiento' && <th className="text-left px-3 py-2">Motivo de no asignación</th>}
+                {pestana !== 'tracking' && <th className="text-left px-3 py-2">Motivo de no asignación</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -877,7 +1071,7 @@ export function PasoViajesSection({
                       {formatFecha(v.planning_date)}
                       {atras > 0 && <span className={`block text-etiqueta ${TEXTO_APOYO}`}>hace {atras} {atras === 1 ? 'día' : 'días'}</span>}
                     </td>
-                    {pestana !== 'resueltos' && (
+                    {pestana !== 'resolved' && (
                       <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>
                         {presentacion.porQue(v, fecha)}
                         {presentacion.bloqueaLaFirma && (
@@ -902,7 +1096,7 @@ export function PasoViajesSection({
                       )}
                     </td>
                     <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{formatDiasSinNovedad(v.dias_sin_novedad)}</td>
-                    {pestana === 'por_resolver' && (
+                    {pestana === 'to_resolve' && (
                       <td className="px-3 py-2">
                         {declarar ? (
                           <div className="flex items-center gap-1.5">
@@ -930,7 +1124,7 @@ export function PasoViajesSection({
                         )}
                       </td>
                     )}
-                    {pestana === 'resueltos' && (
+                    {pestana === 'resolved' && (
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1.5">
                           <span className={TEXTO_CUERPO}>{presentacion.porQue(v, fecha)}</span>
@@ -962,23 +1156,20 @@ export function PasoViajesSection({
 }
 ```
 
-- [ ] **Step 4: La página: URL, fecha y Reintentar**
+- [ ] **Step 4: La página: URL (con el módulo de Task 1b), fecha y Reintentar**
 
 En `app/dashboard/operations/closures/page.tsx`:
 
-1. **La pestaña de Viajes en la URL.** Debajo de `function setTab(...) { ... }`, agrega este bloque, que sigue el
-   mismo patrón que `?tab=`:
+1. **La pestaña de Viajes.** Debajo de `function setTab(...)`, agrega:
    ```tsx
-   // La pestaña de Viajes también vive en la URL (?viajes=), por el mismo motivo
+   // La pestaña de Viajes también vive en la URL (?trips=), por el mismo motivo
    // que ?tab=: volver del detalle de un viaje deja todo donde estaba.
-   const pestanaDeViajes = searchParams.get('viajes') as PestanaDeViajes | null
    function setPestanaDeViajes(next: PestanaDeViajes) {
-     const params = new URLSearchParams(searchParams.toString())
-     params.set('viajes', next)
-     router.replace(`/dashboard/operations/closures?${params.toString()}`)
+     router.replace(urlDelCierre(searchParams, { trips: next }))
    }
    ```
-   y el import: `import type { PestanaDeViajes } from '@/lib/cierre/gruposDeViajes'`.
+   La pestaña de la URL se lee con `leerUrlDelCierre(searchParams).trips` (Task 1b). Importa
+   `import type { PestanaDeViajes } from '@/lib/cierre/gruposDeViajes'`.
 
 2. **El bloque de error y `PasoViajesSection`.** Reemplaza `{cierreViajesQuery.isError ? (...) : (<PasoViajesSection .../>)}`
    por:
@@ -1004,7 +1195,7 @@ En `app/dashboard/operations/closures/page.tsx`:
        onDeshacer={handleDeshacerViajes}
        meta={tripsMeta}
        soloLectura={diaCerrado}
-       pestana={pestanaDeViajes}
+       pestana={leerUrlDelCierre(searchParams).trips}
        onCambiarPestana={setPestanaDeViajes}
      />
    )}
@@ -1021,8 +1212,8 @@ a las pestañas de Viajes.
 
 - [ ] **Step 6: Verificar que una mutación hace fallar los tests**
 
-En `lib/cierre/gruposDeViajes.ts`, cambia temporalmente `abandonado: { pestana: 'por_resolver'` por
-`abandonado: { pestana: 'en_seguimiento'`. Corre
+En `lib/cierre/gruposDeViajes.ts`, cambia temporalmente `abandonado: { pestana: 'to_resolve'` por
+`abandonado: { pestana: 'tracking'`. Corre
 `npx vitest run components/dashboard/sections/PasoViajesSection.test.tsx -t "abandonados"` (Expected: FAIL) y revierte
 el cambio.
 
@@ -1432,7 +1623,7 @@ Expected: los dos en verde.
    - Debe haber 1 viaje en Por resolver (889281, "Del día", "Bloquea la firma") y 8 en En seguimiento.
    - PYST91 lleva "2 viajes" y 878052 lleva "hace 11 días".
    - Prueba el buscador con "pyst91".
-   - Revisa `?viajes=` en la URL al cambiar de pestaña.
+   - Revisa `?trips=` en la URL al cambiar de pestaña.
 2. **07/10 › Reporte.**
    - La lista ofrece solo Walmart, Iansa y Sodimac, con su cantidad.
    - Con "Iansa", Equipo Completo › Equipos activos baja a la flota de las empresas de Iansa.

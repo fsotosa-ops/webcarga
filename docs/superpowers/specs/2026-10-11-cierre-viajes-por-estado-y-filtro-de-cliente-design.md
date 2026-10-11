@@ -45,7 +45,7 @@ Nº viaje  Cliente  Fecha  Por qué está aquí     Patente  Conductor  Empresa 
 ```
 
 - **Pestaña inicial:** se abre en "Por resolver", o en "En seguimiento" si "Por resolver" está vacía. La elegida queda en
-  la URL (`?viajes=por_resolver|en_seguimiento|resueltos`), como la pestaña del Cierre.
+  la URL (`?trips=to_resolve|tracking|resolved`), como la pestaña del Cierre.
 - **"Por qué está aquí"** (en Por resolver) es una columna con un valor por grupo de origen:
   - `hoy`: "Del día";
   - `rezago`: "Rezago · N días", donde N = fecha del cierre − fecha planificada;
@@ -82,6 +82,17 @@ Nº viaje  Cliente  Fecha  Por qué está aquí     Patente  Conductor  Empresa 
 | Pestaña vacía | Una línea según la pestaña:<br>- Por resolver: "Nada por resolver: puedes firmar el día"<br>- En seguimiento: "Ningún viaje en seguimiento"<br>- Resueltos: "Todavía no se declaró ningún viaje" |
 | Error al cargar | Mensaje con "Reintentar" |
 | Sin permiso / día firmado | Lo mismo que se ve, sin acciones (`useCanEdit` y `soloLectura`, como hoy) |
+
+### La URL del Cierre, en inglés
+
+Las rutas y la URL van en inglés; la etiqueta, en español (`lib/rutas.test.ts`). Hoy el Cierre usa `?fecha=` y valores
+de `?tab=` en español (`flota`, `viajes`, `pendientes`, `reporte`), y la página arma la URL a mano en tres lugares.
+- **Un módulo, `lib/navegacion/cierre.ts`,** junto a `lib/navegacion/viaje.ts`, es el único que lee y escribe la URL del
+  Cierre: `?date=2026-10-10&tab=fleet|trips|pending|report&trips=to_resolve|tracking|resolved`.
+- **Enlaces viejos.** Un enlace con `?fecha=…&tab=viajes` (marcadores, historial, el `?next=` del detalle del viaje) se
+  lee igual y se reescribe a la forma nueva, el mismo criterio que las rutas viejas: no dar 404.
+- **Fuera de alcance:** los parámetros `?fecha=` de la API del backend, que son contrato del backend. Quedan como deuda
+  aparte.
 
 ### Una sola definición de los grupos
 
