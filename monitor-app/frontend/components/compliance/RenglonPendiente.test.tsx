@@ -111,6 +111,19 @@ describe('RenglonPendiente — lo que el requisito exige', () => {
 
     await waitFor(() => expect(onSubir).toHaveBeenCalled())
   })
+
+  it('con title muestra a quien debe el documento en vez del nombre del documento', () => {
+    render(
+      <RenglonPendiente
+        fila={fila()}
+        puedeEditar
+        onSubir={vi.fn()}
+        title={<span>Transportes Cordillera SpA</span>}
+      />,
+    )
+    expect(screen.getByText('Transportes Cordillera SpA')).toBeInTheDocument()
+    expect(screen.queryByText(fila().document_name)).not.toBeInTheDocument()
+  })
 })
 
 describe('RenglonPendiente — el gesto', () => {

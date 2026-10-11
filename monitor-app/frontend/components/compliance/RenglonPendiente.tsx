@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { AlertTriangle, Check, Eye, Loader2, Upload } from 'lucide-react'
 import { useGestoDeCarga } from '@/hooks/useGestoDeCarga'
 import { AvisoDeFila } from './AvisoDeFila'
@@ -10,6 +11,10 @@ import { PedirDatoDelDocumento } from './PedirDatoDelDocumento'
 
 interface Props {
   fila:        PendingComplianceRow
+  /** Qué nombra la fila. Por defecto el documento (la ficha de una empresa ya
+   *  sabe de quién es); Pendientes ya sabe el documento y nombra a quien lo
+   *  debe. Una variante, no un renglón hermano. */
+  title?:      ReactNode
   puedeEditar: boolean
   /** Corregir el vencimiento. Por defecto, lo mismo que `puedeEditar`; sobre
    *  un documento ya aprobado exige además revisar (revisión final RBAC). */
@@ -73,7 +78,7 @@ function politicaDe(fila: PendingComplianceRow): PoliticaVencimiento {
  *  subía primero y clasificaba después, así que cada rechazo dejaba el
  *  archivo huérfano en la bandeja. */
 export function RenglonPendiente({
-  fila, puedeEditar, puedeCorregirFecha = puedeEditar, onSubir, onDeshacer, onVer, viendo, avisoVer, onFechaCorregida, onQuitarSolicitud,
+  fila, title, puedeEditar, puedeCorregirFecha = puedeEditar, onSubir, onDeshacer, onVer, viendo, avisoVer, onFechaCorregida, onQuitarSolicitud,
 }: Props) {
   const inputId = `archivo-${fila.id}`
   const fechaId = `vence-${fila.id}`
@@ -110,7 +115,7 @@ export function RenglonPendiente({
     >
       <div className="flex items-center gap-3">
         <span className="flex-1 min-w-0 truncate text-dato text-text-primary">
-          {fila.document_name}
+          {title ?? fila.document_name}
         </span>
 
         {motivo && estado.tipo === 'reposo' && (
