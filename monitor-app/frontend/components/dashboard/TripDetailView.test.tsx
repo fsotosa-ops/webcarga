@@ -783,3 +783,12 @@ describe('TripDetailView — anulación', () => {
     expect(screen.getByText(/por correo/i)).toBeInTheDocument()
   })
 })
+
+describe('TripDetailView — vuelta visible', () => {
+  it('con etiqueta de vuelta muestra un vínculo con texto que cierra el detalle', () => {
+    const onDismiss = vi.fn()
+    renderDetailView(baseTrip, { onDismiss, etiquetaVolver: 'Volver al Cierre' })
+    fireEvent.click(screen.getByRole('button', { name: /volver al cierre/i }))
+    expect(onDismiss).toHaveBeenCalled()
+  })
+})

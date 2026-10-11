@@ -13,3 +13,12 @@ export function urlDelViaje(tripId: string, volverA?: string): string {
 export function volverDesdeElViaje(next: string | null | undefined): string {
   return destinoSeguro(next, MONITOR)
 }
+
+export const CIERRE = '/dashboard/operations/closures'
+
+/** Qué dice el vínculo de vuelta del detalle (spec 2026-10-10 §4): adónde lleva,
+ *  no un ícono suelto (NN/g). Usa el mismo destino seguro que `volverDesdeElViaje`,
+ *  así la etiqueta nunca promete un lugar distinto del que se abre. */
+export function etiquetaDeVuelta(next: string | null | undefined): string {
+  return volverDesdeElViaje(next).startsWith(CIERRE) ? 'Volver al Cierre' : 'Volver al Monitor'
+}

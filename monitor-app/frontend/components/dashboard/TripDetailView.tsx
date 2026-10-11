@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { X, Copy, Check, Truck, User, Phone, Hash, MapPin, Ban } from 'lucide-react'
+import { X, Copy, Check, Truck, User, Phone, Hash, MapPin, Ban, ArrowLeft } from 'lucide-react'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { tripsApi } from '@/lib/api/trips'
 import { getLatestTemp, stopWasVisited, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
@@ -23,9 +23,11 @@ interface Props {
   onSaved:     (updated: Trip) => void
   meta?:       TripsMeta | null
   focusNotes?: boolean
+  /** Texto del vínculo de vuelta ("Volver al Cierre"). Sin él, sólo queda el ✕. */
+  etiquetaVolver?: string
 }
 
-export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = false }: Props) {
+export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = false, etiquetaVolver }: Props) {
   const notesRef                      = useRef<HTMLElement>(null)
   const [stopSaving, setStopSaving]   = useState<string | null>(null)
   const [copiedField, setCopiedField] = useState<'external' | null>(null)
@@ -81,6 +83,17 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
     <div className="flex flex-col h-full bg-white overflow-hidden">
       {/* ── Header — 1 fila compacta: identidad del viaje ── */}
       <div className="bg-slate-900 px-4 py-2.5 md:px-6 shrink-0 flex items-center gap-3 flex-wrap">
+        {/* Dice adónde vuelve (spec 2026-10-10 §4): el ✕ de la derecha se queda,
+            pero un ícono suelto no dice a qué pantalla lleva. */}
+        {etiquetaVolver && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="flex items-center gap-1 text-etiqueta font-semibold text-white/70 hover:text-white shrink-0 rounded px-1.5 py-1 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/40"
+          >
+            <ArrowLeft size={13} /> {etiquetaVolver}
+          </button>
+        )}
         {tmsLoginUrl ? (
           <a
             href={tmsLoginUrl}

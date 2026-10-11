@@ -14,7 +14,9 @@ vi.mock('@/lib/api/trips', () => ({ tripsApi: { get: vi.fn().mockResolvedValue({
 vi.mock('@/lib/api/tripsMeta', () => ({ fetchTripsMeta: vi.fn().mockResolvedValue(null) }))
 // El detalle tiene su propia suite; acá solo importa a dónde lleva cerrarlo.
 vi.mock('@/components/dashboard/TripDetailView', () => ({
-  TripDetailView: ({ onDismiss }: { onDismiss: () => void }) => <button onClick={onDismiss}>Cerrar detalle</button>,
+  TripDetailView: ({ onDismiss, etiquetaVolver }: { onDismiss: () => void; etiquetaVolver?: string }) => (
+    <><button onClick={onDismiss}>Cerrar detalle</button><span>{etiquetaVolver}</span></>
+  ),
 }))
 
 function abrir() {
@@ -42,5 +44,10 @@ describe('cerrar el detalle de un viaje', () => {
     abrir()
     fireEvent.click(await screen.findByText('Cerrar detalle'))
     expect(push).toHaveBeenCalledWith('/dashboard/operations/monitor')
+  })
+  it('dice adónde vuelve: "Volver al Cierre" si lo abrió el Cierre', async () => {
+    consulta = 'next=%2Fdashboard%2Foperations%2Fclosures%3Ffecha%3D2026-09-23'
+    abrir()
+    expect(await screen.findByText('Volver al Cierre')).toBeInTheDocument()
   })
 })

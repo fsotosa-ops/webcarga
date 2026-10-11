@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MONITOR, urlDelViaje, volverDesdeElViaje } from './viaje'
+import { MONITOR, etiquetaDeVuelta, urlDelViaje, volverDesdeElViaje } from './viaje'
 
 describe('abrir un viaje y volver a donde se estaba', () => {
   it('desde otra pantalla, el viaje se abre recordando a dónde volver', () => {
@@ -18,5 +18,18 @@ describe('abrir un viaje y volver a donde se estaba', () => {
     expect(volverDesdeElViaje(null)).toBe(MONITOR)
     expect(volverDesdeElViaje('https://otro-sitio.cl')).toBe(MONITOR)
     expect(volverDesdeElViaje('//otro-sitio.cl')).toBe(MONITOR)
+  })
+})
+
+describe('etiquetaDeVuelta', () => {
+  it('desde el Cierre dice "Volver al Cierre"', () => {
+    expect(etiquetaDeVuelta('/dashboard/operations/closures?fecha=2026-09-23&tab=viajes')).toBe('Volver al Cierre')
+  })
+  it('sin destino, o desde el Monitor, dice "Volver al Monitor"', () => {
+    expect(etiquetaDeVuelta(null)).toBe('Volver al Monitor')
+    expect(etiquetaDeVuelta('/dashboard/operations/monitor')).toBe('Volver al Monitor')
+  })
+  it('un destino externo no se respeta: dice "Volver al Monitor"', () => {
+    expect(etiquetaDeVuelta('https://evil.com/dashboard/operations/closures')).toBe('Volver al Monitor')
   })
 })

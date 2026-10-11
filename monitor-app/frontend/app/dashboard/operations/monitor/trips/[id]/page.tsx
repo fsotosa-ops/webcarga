@@ -7,7 +7,7 @@ import { tripsApi, type TripListResponse } from '@/lib/api/trips'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import type { Trip } from '@/lib/types'
 import { TripDetailView } from '@/components/dashboard/TripDetailView'
-import { volverDesdeElViaje } from '@/lib/navegacion/viaje'
+import { etiquetaDeVuelta, volverDesdeElViaje } from '@/lib/navegacion/viaje'
 
 export default function TripDetailStandalonePage() {
   const { id } = useParams<{ id: string }>()
@@ -16,6 +16,7 @@ export default function TripDetailStandalonePage() {
   const queryClient = useQueryClient()
   // A dónde vuelve al cerrar: la pantalla que lo abrió (?next=), o el Monitor.
   const volver = volverDesdeElViaje(searchParams.get('next'))
+  const etiqueta = etiquetaDeVuelta(searchParams.get('next'))
 
   const tripQuery = useQuery({ queryKey: ['trip', id], queryFn: () => tripsApi.get(id) })
   const metaQuery = useQuery({ queryKey: ['trips-meta'], queryFn: fetchTripsMeta, staleTime: 60 * 60 * 1000 })
@@ -43,7 +44,7 @@ export default function TripDetailStandalonePage() {
           onClick={() => router.push(volver)}
           className="text-xs font-semibold text-accent hover:underline"
         >
-          Volver
+          {etiqueta}
         </button>
       </div>
     )
@@ -55,6 +56,7 @@ export default function TripDetailStandalonePage() {
         trip={tripQuery.data}
         onSaved={handleSaved}
         onDismiss={() => router.push(volver)}
+        etiquetaVolver={etiqueta}
         meta={metaQuery.data ?? null}
         focusNotes={searchParams.get('focus') === 'bitacora'}
       />
