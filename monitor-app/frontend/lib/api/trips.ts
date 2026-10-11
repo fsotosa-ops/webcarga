@@ -1,4 +1,4 @@
-import type { CandidatosConductorResponse, Trip, TripCreatePayload, TripNote, AvailableDriver, AvailableAssetsResponse, FleetDailyOverviewResponse, CierreViajesResponse } from '@/lib/types'
+import type { CandidatosConductorResponse, Trip, TripCreatePayload, TripNote, AvailableDriver, AvailableAssetsResponse, FleetDailyOverviewResponse, CierreViajesResponse, ClientFacet } from '@/lib/types'
 import { apiFetch } from './client'
 
 export type TripListResponse = {
@@ -6,6 +6,9 @@ export type TripListResponse = {
   count: number
   page: number
   limit: number
+  /** Las opciones del filtro de cliente: los clientes con viajes en la vista,
+   *  sin aplicar el propio filtro de cliente. */
+  clients: ClientFacet[]
 }
 
 export type TripPatch = {

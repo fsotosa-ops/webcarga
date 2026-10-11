@@ -30,7 +30,7 @@ const meta: TripsMeta = {
     { id: 'RM', label: 'RM', bg_color: '#e8eeff', text_color: '#053bfa' },
     { id: 'ZONA_CERO', label: 'Zona Cero', bg_color: '#fef3e8', text_color: '#a35b00' },
   ],
-  clients: [], origins: [],
+  origins: [],
 }
 
 // Bug 5.2: Estado (grupos default + custom) se movió al popover — mismo

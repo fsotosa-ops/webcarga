@@ -132,29 +132,6 @@ def test_meta_reads_operational_states_and_unassigned_reasons_from_status_taxono
     assert "DRIVER_REASON" in reason_query, f"Expected DRIVER_REASON domain filter in reason_query, got: {reason_query}"
 
 
-def test_meta_expone_los_clientes_con_viajes_cruzando_por_id():
-    """Bug 5.2: Cliente en la barra principal es dinámico (solo clientes con
-    viajes reales), no el catálogo completo. Desde el spec 2026-10-11 el cruce
-    es por el id del cliente del directorio, no por texto."""
-    pool = AsyncMock()
-    pool.fetch.side_effect = meta_fetch({
-        "public.shippers": [{"id": "s1", "name": "Walmart"}, {"id": "s2", "name": "Sodimac"}],
-    })
-    pool.fetchrow.return_value = None
-    pool.fetchval.return_value = False  # ningún viaje sin vincular
-    client = make_client(pool)
-
-    res = client.get("/api/v1/trips/meta")
-
-    assert res.status_code == 200
-    body = res.json()
-    assert body["clients"] == [{"id": "s1", "name": "Walmart"}, {"id": "s2", "name": "Sodimac"}]
-
-    clients_query = consulta_con(pool, "public.shippers")
-    assert "sh.id = t.shipper_id" in clients_query
-    assert "lower(" not in clients_query
-    assert "DISTINCT" in clients_query
-
 # ── El motivo del viaje es del catalogo del viaje (2026-09-07) ─────────────
 
 

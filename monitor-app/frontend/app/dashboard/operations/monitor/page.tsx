@@ -33,6 +33,7 @@ import { useAnularViajes } from '@/hooks/useAnularViajes'
 import { useMotivosDeAnulacion } from '@/hooks/useMotivosDeAnulacion'
 import { BarraDeSeleccion } from '@/components/ui/BarraDeSeleccion'
 import { cuantos } from '@/lib/utils/cuantos'
+import { clientesDelFiltro } from '@/lib/monitor/clientesDelFiltro'
 import { driversApi } from '@/lib/api/drivers'
 import { carriersApi } from '@/lib/api/carriers'
 import { Estado } from '@/components/ui/Estado'
@@ -183,6 +184,14 @@ export default function DiarioPage() {
   const tripsQuery  = useTrips(params, { poll: f.tab === 'en_curso' })
 
   const trips    = tripsQuery.data?.data ?? []
+  // Los nombres de los clientes vistos, para que un cliente elegido que ya no
+  // tiene viajes en la vista siga visible y se pueda quitar.
+  const facetas = tripsQuery.data?.clients
+  const [nombresDeClientes, setNombresDeClientes] = useState<Record<string, string>>({})
+  if (facetas && facetas.some(c => nombresDeClientes[c.id] !== c.name)) {
+    setNombresDeClientes(n => ({ ...n, ...Object.fromEntries(facetas.map(c => [c.id, c.name])) }))
+  }
+  const opcionesDeCliente = clientesDelFiltro(facetas ?? [], f.fClient, nombresDeClientes)
   const total    = tripsQuery.data?.count ?? 0
   const loading  = tripsQuery.isPending
   const fetching = tripsQuery.isFetching
@@ -534,11 +543,12 @@ export default function DiarioPage() {
               />
             </div>
 
-            {/* Cliente — dinámico según quién realmente tiene viajes en el
-                Diario (bug 5.2, GET /trips/meta), no el catálogo completo
-                de public.shippers. Estado (antes acá) se movió al popover
-                "Filtros" — Operaciones pidió Cliente visible de entrada. */}
-            {(tripsMeta?.clients ?? []).map(c => {
+            {/* Cliente — los clientes con viajes en la vista (en curso o el
+                rango del historial), con su cuenta (GET /trips, 2026-10-11).
+                Antes salían de todo el histórico y aparecía un cliente con un
+                solo viaje cerrado hace semanas. Estado (antes acá) se movió al
+                popover "Filtros" — Operaciones pidió Cliente visible de entrada. */}
+            {opcionesDeCliente.map(c => {
               // Por id del cliente del directorio (spec 2026-10-11).
               const active = f.fClient.includes(c.id)
               return (
@@ -550,7 +560,7 @@ export default function DiarioPage() {
                     active ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
                   }`}
                 >
-                  {c.name}
+                  {c.name} <span className="tabular-nums opacity-70">{c.count}</span>
                 </button>
               )
             })}

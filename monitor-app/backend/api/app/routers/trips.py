@@ -13,7 +13,7 @@ from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require, require_fields
 from ..db import get_pool
 from ..services.cliente_del_viaje import (
-    join_cliente, leer_filtro_de_cliente, nombre_del_cliente, resolver_cliente, texto_del_cliente_en_el_tms,
+    SIN_VINCULAR, join_cliente, leer_filtro_de_cliente, nombre_del_cliente, resolver_cliente, texto_del_cliente_en_el_tms,
 )
 from ..services.vencimientos import pendiente_predicate
 from ..schemas.trip import (
@@ -858,16 +858,6 @@ async def list_trips(
     if tms:
         tms_list = [t.strip() for t in tms.split(',') if t.strip()]
         add("t.source_system = ANY(?)", tms_list)
-    if shipper_id:
-        # Por id del directorio (spec 2026-10-11). "unlinked" = viajes de un
-        # cliente del TMS todavía sin vincular en Configuración.
-        reales, sin_vincular = leer_filtro_de_cliente(shipper_id)
-        if reales and sin_vincular:
-            add("(t.shipper_id = ANY(?::uuid[]) OR t.shipper_id IS NULL)", reales)
-        elif reales:
-            add("t.shipper_id = ANY(?::uuid[])", reales)
-        else:
-            filters.append("t.shipper_id IS NULL")
     if cargo_type:
         cargo_type_list = [c.strip() for c in cargo_type.split(',') if c.strip()]
         add("t.cargo_type = ANY(?)", cargo_type_list)
@@ -902,6 +892,22 @@ async def list_trips(
         # ofrecieron y no tomamos, incluidos los que ya se apagaron hace
         # meses (Pablo, spec §6.3).
         filters.append("t.unassigned_reason_id IS NOT NULL")
+
+    # Las opciones del filtro de cliente salen de la vista sin ese mismo filtro
+    # (faceta disyuntiva): elegir un cliente no hace desaparecer a los demás. Por
+    # eso el filtro de cliente va último, después de esta foto.
+    where_sin_cliente = "WHERE " + " AND ".join(filters)
+    params_sin_cliente = list(params)
+    if shipper_id:
+        # Por id del directorio (spec 2026-10-11). "unlinked" = viajes de un
+        # cliente del TMS todavía sin vincular en Configuración.
+        reales, sin_vincular = leer_filtro_de_cliente(shipper_id)
+        if reales and sin_vincular:
+            add("(t.shipper_id = ANY(?::uuid[]) OR t.shipper_id IS NULL)", reales)
+        elif reales:
+            add("t.shipper_id = ANY(?::uuid[])", reales)
+        else:
+            filters.append("t.shipper_id IS NULL")
 
     where = "WHERE " + " AND ".join(filters)
     offset = (page - 1) * limit
@@ -946,7 +952,17 @@ async def list_trips(
         d["tms_dropped"] = _tms_dropped(d, dropped_ctx)
         anotar_anulable(d, user)
 
-    return {"data": data, "count": count, "page": page, "limit": limit}
+    clientes = await pool.fetch(
+        f"SELECT t.shipper_id::text AS id, sh.name, count(*) AS count {_TRIP_FROM} {where_sin_cliente} "
+        "GROUP BY t.shipper_id, sh.name ORDER BY sh.name NULLS LAST",
+        *params_sin_cliente,
+    )
+    clients = [
+        {"id": r["id"] or SIN_VINCULAR, "name": r["name"] or "Sin cliente vinculado", "count": r["count"]}
+        for r in clientes
+    ]
+
+    return {"data": data, "count": count, "page": page, "limit": limit, "clients": clients}
 
 
 # ── Metadatos de presentación (sin auth — igual que /roles) ──────────────────
@@ -1093,11 +1109,6 @@ class OperationTypeMeta(BaseModel):
     text_color: str
 
 
-class ClientMeta(BaseModel):
-    id:   str
-    name: str
-
-
 class TripsMeta(BaseModel):
     statuses:            list[StatusMeta]
     tms_sources:         list[TmsSourceMeta]
@@ -1107,7 +1118,6 @@ class TripsMeta(BaseModel):
     temperature_ranges:  list[TemperatureRangeMeta]
     unassigned_reasons:  list[UnassignedReasonMeta]
     operation_types:     list[OperationTypeMeta]
-    clients:             list[ClientMeta]
     origins:             list[str]
     monitor_alert_rules: Optional[MonitorAlertRulesMeta] = None
 
@@ -1155,23 +1165,7 @@ async def get_trips_meta(pool=Depends(get_pool), _=Depends(require(Permission.OP
         "FROM app.status_taxonomies "
         "WHERE domain = 'DRIVER_REASON' AND active = true ORDER BY sort_order"
     )
-    # Bug 5.2: dinámico según quién realmente tiene viajes en el Diario, no
-    # el catálogo completo de public.shippers (que incluye clientes
-    # históricos sin actividad — confirmado contra datos reales 2026-08-07:
-    # 11 shippers ACTIVE en el catálogo, solo 3-5 con viajes reales). Mismo
-    # patrón de normalización lower(trim(...)) que el filtro de cliente
-    # (bug 5.1) y el JOIN de _TRIP_FROM — si un cliente vuelve a tener
-    # viajes reales, aparece solo, sin tocar código.
-    client_rows = await pool.fetch(
-        "SELECT DISTINCT sh.id::text AS id, sh.name "
-        f"FROM app.trips t {join_cliente('t', 'sh', solo_vinculados=True)} "
-        "ORDER BY sh.name"
-    )
-    # Los viajes de un cliente del TMS todavía sin vincular (spec 2026-10-11):
-    # una opción propia, para que no desaparezcan del filtro.
-    hay_sin_vincular = await pool.fetchval(
-        "SELECT EXISTS (SELECT 1 FROM app.trips WHERE shipper_id IS NULL AND voided_at IS NULL)")
-    # Los CD de origen que EXISTEN, mismo criterio que los clientes (bug 5.2):
+    # Los CD de origen que EXISTEN (bug 5.2):
     # dinamico segun lo que hay en la base, no un catalogo. El filtro de Origen
     # era un autocomplete con el argumento de que son "cientos de locales" —
     # cierto para los DESTINOS (279 distintos) y falso para los origenes:
@@ -1198,8 +1192,6 @@ async def get_trips_meta(pool=Depends(get_pool), _=Depends(require(Permission.OP
         temperature_ranges=[TemperatureRangeMeta(**dict(r)) for r in temp_range_rows],
         unassigned_reasons=[UnassignedReasonMeta(**dict(r)) for r in unassigned_reason_rows],
         operation_types=[OperationTypeMeta(**t) for t in _OPERATION_TYPE_META],
-        clients=[ClientMeta(**dict(r)) for r in client_rows]
-        + ([ClientMeta(id="unlinked", name="Sin cliente vinculado")] if hay_sin_vincular else []),
         origins=[r["local"] for r in origin_rows],
         monitor_alert_rules=MonitorAlertRulesMeta(**dict(alert_rules_row)) if alert_rules_row else None,
     )

@@ -160,3 +160,47 @@ async def test_cambiar_un_vinculo_queda_registrado_con_quien_y_desde_que_cliente
     assert registro is not None
     assert (registro["actor"], registro["action"], registro["field"]) == (usuario["sub"], "link_tms_client", "shipper_id")
     assert fila["antes"] in str(registro["old_value"]) and otro in str(registro["new_value"])
+
+
+async def test_los_clientes_del_filtro_son_los_de_la_vista_con_su_cuenta(conexion_revertida):
+    """El Monitor mostraba HBC y "Sin cliente vinculado" porque las opciones
+    salían de todo el histórico. Ahora salen de los viajes de la vista (en curso
+    o el rango del historial), con su cuenta, y sin aplicar el propio filtro de
+    cliente: elegir Walmart no hace desaparecer a los demás."""
+    import uuid
+    from datetime import date
+
+    from app.routers.trips import list_trips
+    from tests.conftest import PoolDeUnaConexion, _usuario_real, cliente_de_prueba
+
+    conn = conexion_revertida
+    activo, cerrado = await cliente_de_prueba(conn), await cliente_de_prueba(conn)
+    ids = {n: await conn.fetchval("SELECT id::text FROM public.shippers WHERE name = $1", n) for n in (activo, cerrado)}
+
+    async def viaje(shipper_id, is_active):
+        await conn.execute(
+            "INSERT INTO app.trips (id, planning_date, client_name, source_system_trip_id, trip_status, "
+            "is_active, is_assigned, shipper_id) VALUES ($1, $2, 'x', $3, 'RUTA', $4, true, $5::uuid)",
+            uuid.uuid4(), date(2099, 3, 1), f"ZZFACET-{uuid.uuid4().hex[:6]}", is_active, shipper_id)
+
+    await viaje(ids[activo], True)
+    await viaje(ids[activo], True)
+    await viaje(ids[cerrado], False)
+    await viaje(None, True)
+
+    usuario = await _usuario_real(conn)
+    pool = PoolDeUnaConexion(conn)
+    en_curso = await list_trips(q="ZZFACET", is_active="true", pool=pool, user=usuario)
+    assert en_curso["clients"] == [
+        {"id": ids[activo], "name": activo, "count": 2},
+        {"id": "unlinked", "name": "Sin cliente vinculado", "count": 1},
+    ]
+
+    # Con un cliente elegido, las opciones no cambian: el filtro no se filtra a sí mismo.
+    elegido = await list_trips(q="ZZFACET", is_active="true", shipper_id=ids[activo], pool=pool, user=usuario)
+    assert elegido["count"] == 2
+    assert elegido["clients"] == en_curso["clients"]
+
+    historial = await list_trips(q="ZZFACET", view="historial", fecha_desde="2099-03-01", fecha_hasta="2099-03-01",
+                                 pool=pool, user=usuario)
+    assert {c["id"]: c["count"] for c in historial["clients"]} == {ids[activo]: 2, ids[cerrado]: 1, "unlinked": 1}

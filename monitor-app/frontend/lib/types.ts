@@ -146,11 +146,13 @@ export type OperationTypeMeta = {
   text_color: string
 }
 
-/** Cliente (shipper) con viajes reales en el Diario — dinámico, no el
- *  catálogo completo de public.shippers (bug 5.2, 2026-08-07). */
-export type ClientMeta = {
-  id:   string
-  name: string
+/** Una opción del filtro de cliente del Monitor: un cliente con viajes en la
+ *  vista y cuántos tiene (`GET /trips`). `unlinked` = viajes de un cliente del
+ *  TMS todavía sin vincular. */
+export type ClientFacet = {
+  id:    string
+  name:  string
+  count: number
 }
 
 /** Shape común mínimo entre AvailableDriver y DriverSearchResult — lo que
@@ -271,9 +273,8 @@ export type TripsMeta = {
   temperature_ranges:  TemperatureRangeMeta[]
   unassigned_reasons:  UnassignedReasonMeta[]
   operation_types:     OperationTypeMeta[]
-  clients:             ClientMeta[]
   /** Los lugares de origen que EXISTEN en la base, ordenados por volumen. Dinámico
-   *  como `clients` y no un catálogo: si un CD deja de operar, deja de estar.
+   *  y no un catálogo: si un CD deja de operar, deja de estar.
    *  Medido el 2026-09-07: 23 orígenes distintos contra 279 destinos — por eso
    *  el origen se puede listar y el destino no. */
   origins:             string[]
