@@ -54,7 +54,7 @@ export function TripCard({ trip, meta, onSaved, onSelect, onSelectFocusNotes, up
         {trip.driver_name
           ? nombreLegible(trip.driver_name)
           : <span className="italic text-gray-400">sin conductor</span>}
-        {trip.client_name && <span className="text-gray-400 capitalize"> · {trip.client_name}</span>}
+        {trip.client_name && <span className="text-gray-400"> · {trip.client_name}</span>}
       </p>
       {/* Solo destinos — StopProgressDots filtra el origen internamente
           (hito 13, mismo lenguaje visual que StopTimeline/StopPills). */}

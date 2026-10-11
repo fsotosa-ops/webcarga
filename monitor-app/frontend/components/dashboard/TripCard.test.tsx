@@ -95,6 +95,12 @@ describe('TripCard', () => {
     expect(screen.getByText(/walmart/)).toBeInTheDocument()
   })
 
+  it('muestra el cliente tal como lo da el directorio, sin disfrazarlo con CSS', () => {
+    renderCard({ trip: makeTrip({ client_name: 'Walmart' }) })
+    const cliente = screen.getByText(/· Walmart/)
+    expect(cliente.className).not.toContain('capitalize')
+  })
+
   it('shows the ETA of the active stop', () => {
     const stops: Trip['stops'] = [{
       stop_id: 's1', local: 'Parada 1', planning_date: '2026-07-02 09:00:00', arrival_date: null, departure_date: null,

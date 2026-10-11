@@ -60,7 +60,8 @@ export const tripsApi = {
     is_assigned?:    boolean
     second_leg_plus?: boolean
     tms?:            string
-    client?:         string
+    /** Ids de cliente del directorio, separados por coma; 'unlinked' = sin vincular. */
+    shipper_id?:     string
     cargo_type?:     string
     origin?:         string
     fleet_match?:    'unmatched' | 'mismatch'
@@ -78,7 +79,7 @@ export const tripsApi = {
     if (params?.fecha_hasta)     qs.set('fecha_hasta',     params.fecha_hasta)
     if (params?.status)          qs.set('status',          params.status)
     if (params?.tms)             qs.set('tms',             params.tms)
-    if (params?.client)          qs.set('client',          params.client)
+    if (params?.shipper_id)      qs.set('shipper_id',      params.shipper_id)
     if (params?.cargo_type)      qs.set('cargo_type',      params.cargo_type)
     if (params?.origin)          qs.set('origin',          params.origin)
     if (params?.fleet_match)     qs.set('fleet_match',     params.fleet_match)
@@ -217,9 +218,9 @@ export const tripsApi = {
   availableAssets: (fecha: string) =>
     apiFetch<AvailableAssetsResponse>(`/api/v1/trips/available-assets?fecha=${encodeURIComponent(fecha)}`),
 
-  fleetDailyOverview: (fecha: string, client?: string[], origin?: string[]) => {
+  fleetDailyOverview: (fecha: string, shipperIds?: string[], origin?: string[]) => {
     const params = new URLSearchParams({ fecha })
-    if (client?.length) params.set('client', client.join(','))
+    if (shipperIds?.length) params.set('shipper_id', shipperIds.join(','))
     if (origin?.length) params.set('origin', origin.join(','))
     return apiFetch<FleetDailyOverviewResponse>(`/api/v1/trips/fleet-daily-overview?${params.toString()}`)
   },

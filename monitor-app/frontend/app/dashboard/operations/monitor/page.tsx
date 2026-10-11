@@ -151,7 +151,7 @@ export default function DiarioPage() {
   // sort_by (contrato sin cambios), este default nuevo vive acá.
   const sortParams = { sort_by: f.sortKey ?? 'status_reported_at', sort_dir: f.sortDir }
   const catalogFilterParams = {
-    client:     f.fClient.join(','),
+    shipper_id: f.fClient.join(','),
     cargo_type: f.fCargoType.join(','),
     origin:     f.fOrigin.join(','),
   }
@@ -539,11 +539,12 @@ export default function DiarioPage() {
                 de public.shippers. Estado (antes acá) se movió al popover
                 "Filtros" — Operaciones pidió Cliente visible de entrada. */}
             {(tripsMeta?.clients ?? []).map(c => {
-              const active = f.fClient.includes(c.name)
+              // Por id del cliente del directorio (spec 2026-10-11).
+              const active = f.fClient.includes(c.id)
               return (
                 <button
                   key={c.id}
-                  onClick={() => dispatch({ type: 'toggleClient', id: c.name })}
+                  onClick={() => dispatch({ type: 'toggleClient', id: c.id })}
                   aria-pressed={active}
                   className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
                     active ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'

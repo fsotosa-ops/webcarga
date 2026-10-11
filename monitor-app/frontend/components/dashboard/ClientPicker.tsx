@@ -6,15 +6,24 @@ import { useQuery } from '@tanstack/react-query'
 import { shippersApi } from '@/lib/api/locations'
 import { ApiError } from '@/lib/api/client'
 
+export type ClienteElegido = { id: string; name: string }
+
 interface Props {
-  /** client_name actual — texto libre o el nombre exacto de un shipper real */
-  value:       string
-  onChange:    (name: string) => void
+  /** El cliente del directorio elegido, o null. Siempre un cliente real: el
+   *  viaje guarda su id (spec 2026-10-11), nunca texto libre. */
+  value:        ClienteElegido | null
+  onChange:     (cliente: ClienteElegido | null) => void
   placeholder?: string
-  size?:       'sm' | 'md'
+  size?:        'sm' | 'md'
 }
 
+const normalizar = (s: string) => s.trim().toLowerCase()
+
+/** Elige el cliente del viaje del directorio, o lo crea si no existe. Elegido,
+ *  queda fijo con "Cambiar" (el mismo patrón que el conductor en el formulario):
+ *  así nunca conviven un texto escrito y un id elegido que digan cosas distintas. */
 export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size = 'md' }: Props) {
+  const [texto, setTexto]       = useState('')
   const [open, setOpen]         = useState(false)
   const [creating, setCreating] = useState(false)
   const [err, setErr]           = useState<string | null>(null)
@@ -25,31 +34,57 @@ export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size
     staleTime: 5 * 60 * 1000,
   })
   const shippers = shippersQuery.data ?? []
-  const q = value.trim().toLowerCase()
+  const q = normalizar(texto)
   const results = q ? shippers.filter(s => s.name.toLowerCase().includes(q)) : shippers
-  const exactMatch = shippers.some(s => s.name.toLowerCase() === q)
+  const exactMatch = shippers.some(s => normalizar(s.name) === q)
+
+  function elegir(c: ClienteElegido) {
+    onChange({ id: c.id, name: c.name })
+    setTexto('')
+    setOpen(false)
+  }
 
   async function handleCreate() {
-    const name = value.trim()
+    const name = texto.trim()
     if (!name) return
     setCreating(true); setErr(null)
     try {
       const created = await shippersApi.create({ name })
-      onChange(created.name)
-      setOpen(false)
+      elegir(created)
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
-        // Carrera: alguien más lo creó justo antes — igual queda seleccionado,
-        // no es un error real desde la perspectiva del operador.
-        await shippersQuery.refetch()
-        onChange(name)
-        setOpen(false)
+        // Carrera: alguien lo creó justo antes. Se elige el del directorio, que
+        // es el mismo cliente aunque lo hayan escrito con otras mayúsculas.
+        const { data } = await shippersQuery.refetch()
+        const existente = (data ?? []).find(s => normalizar(s.name) === normalizar(name))
+        if (existente) elegir(existente)
+        else setErr('Ese cliente ya existe; búscalo en la lista')
       } else {
         setErr(e instanceof Error ? e.message : 'Error al crear el cliente')
       }
     } finally {
       setCreating(false)
     }
+  }
+
+  const textSize = size === 'sm' ? 'text-xs' : 'text-sm'
+
+  if (value) {
+    return (
+      <div className={`flex items-center justify-between gap-2 border border-border rounded-lg px-3 py-2 bg-white ${textSize}`}>
+        <span className="flex items-center gap-2 min-w-0">
+          <Building2 size={13} className="text-gray-400 shrink-0" />
+          <span className="font-semibold text-text-primary truncate">{value.name}</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          className="text-[11px] font-semibold text-accent hover:underline shrink-0"
+        >
+          Cambiar
+        </button>
+      </div>
+    )
   }
 
   const inputCls = size === 'sm'
@@ -63,8 +98,8 @@ export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size
         <Search size={iconSize} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
         <input
           type="text"
-          value={value}
-          onChange={e => { onChange(e.target.value); setOpen(true) }}
+          value={texto}
+          onChange={e => { setTexto(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           placeholder={placeholder}
@@ -84,7 +119,7 @@ export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size
               key={s.id}
               type="button"
               onMouseDown={e => e.preventDefault()}
-              onClick={() => { onChange(s.name); setOpen(false) }}
+              onClick={() => elegir(s)}
               className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
             >
               <Building2 size={12} className="text-gray-400 shrink-0" />
@@ -100,7 +135,7 @@ export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size
               className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-accent/5 transition-colors text-accent disabled:opacity-50"
             >
               {creating ? <Loader2 size={12} className="animate-spin shrink-0" /> : <Plus size={12} className="shrink-0" />}
-              <p className="text-[11px] font-semibold truncate">Crear cliente &ldquo;{value.trim()}&rdquo;</p>
+              <p className="text-[11px] font-semibold truncate">Crear cliente &ldquo;{texto.trim()}&rdquo;</p>
             </button>
           )}
           {!shippersQuery.isLoading && !q && results.length === 0 && (

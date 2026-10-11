@@ -35,7 +35,8 @@ export interface DiarioFilters {
    *  param nuevo. */
   fOperationType: string[]
   /** Cliente (shipper) — server-side, mismo parámetro `client` que ya
-   *  soportaba el backend, ahora como lista (2026-08-02). */
+   *  soportaba el backend, ahora como lista (2026-08-02). Son ids de cliente
+   *  del directorio (spec 2026-10-11); "unlinked" = sin vincular. */
   fClient:        string[]
   /** Tipo de carga (ej. FRIO/CONGELADO) — server-side, parámetro `cargo_type`. */
   fCargoType:     string[]

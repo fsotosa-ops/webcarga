@@ -49,6 +49,12 @@ async function pickDriver() {
   fireEvent.click(await screen.findByText('Juan Pérez'))
 }
 
+/** El cliente del viaje sale del directorio (spec 2026-10-11): sin él no se crea. */
+async function pickCliente(nombre = 'Walmart') {
+  fireEvent.focus(screen.getByLabelText('Cliente'))
+  fireEvent.click(await screen.findByText(nombre))
+}
+
 beforeEach(() => {
   vi.mocked(tripsApi.create).mockReset()
   vi.mocked(tripsApi.availableDrivers).mockReset().mockResolvedValue([])
@@ -85,6 +91,7 @@ describe('TripAssignDialog', () => {
     renderCreate()
 
     await pickDriver()
+    await pickCliente()
 
     expect(screen.getByDisplayValue('Transportes Sur Spa')).toBeInTheDocument()
     expect(screen.getByDisplayValue('ABCD12')).toBeInTheDocument()
@@ -119,6 +126,7 @@ describe('TripAssignDialog', () => {
     const onCreated = vi.fn()
     renderCreate({ onCreated })
     await pickDriver()
+    await pickCliente()
 
     fireEvent.change(screen.getByLabelText('Origen'), { target: { value: 'CD Lo Aguirre' } })
     fireEvent.click(screen.getByText('Agregar destino'))
@@ -140,30 +148,37 @@ describe('TripAssignDialog', () => {
     fireEvent.click(screen.getByText('TMS integrado'))
     fireEvent.change(screen.getByLabelText('TMS de origen'), { target: { value: 'qanalytics' } })
     fireEvent.change(screen.getByPlaceholderText('1994062'), { target: { value: '555' } })
-    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'Walmart' } })
+    await pickCliente()
     expect(await screen.findByText(/Se vinculará automáticamente/)).toBeInTheDocument()
     expect(screen.getByText(/pueden reemplazarse por lo que reporte el TMS/)).toBeInTheDocument()
   })
 
-  it('Cliente busca contra el directorio real y permite crear uno nuevo al vuelo', async () => {
+  it('el cliente sale del directorio: se manda su id, y uno nuevo se crea al vuelo', async () => {
     vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new' } as never)
     vi.mocked(shippersApi.create).mockResolvedValue({ id: 's2', name: 'Agrosuper', status: 'ACTIVE' } as never)
     renderCreate()
     await pickDriver()
 
-    fireEvent.focus(screen.getByLabelText('Cliente'))
-    fireEvent.click(await screen.findByText('Walmart'))
+    expect(screen.getByText('Crear viaje')).toBeDisabled()
+    await pickCliente('Walmart')
     fireEvent.click(screen.getByText('Crear viaje'))
     await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
-    expect(vi.mocked(tripsApi.create).mock.calls[0][0].client_name).toBe('Walmart')
+    const enviado = vi.mocked(tripsApi.create).mock.calls[0][0]
+    expect(enviado.shipper_id).toBe('s1')
+    expect(enviado.client_name).toBeUndefined()
+  })
 
-    vi.mocked(tripsApi.create).mockClear()
+  it('un cliente nuevo se crea en el directorio al vuelo y el viaje lleva su id', async () => {
+    vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new' } as never)
+    vi.mocked(shippersApi.create).mockResolvedValue({ id: 's2', name: 'Agrosuper', status: 'ACTIVE' } as never)
+    renderCreate()
+    await pickDriver()
     fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'Agrosuper' } })
     fireEvent.click(await screen.findByText('Crear cliente “Agrosuper”'))
     await waitFor(() => expect(shippersApi.create).toHaveBeenCalledWith({ name: 'Agrosuper' }))
     fireEvent.click(screen.getByText('Crear viaje'))
     await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
-    expect(vi.mocked(tripsApi.create).mock.calls[0][0].client_name).toBe('Agrosuper')
+    expect(vi.mocked(tripsApi.create).mock.calls[0][0].shipper_id).toBe('s2')
   })
 
   it('tipo de carga es dropdown con SECO/FRIO/CONGELADO', () => {
@@ -177,6 +192,7 @@ describe('TripAssignDialog', () => {
     vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new' } as never)
     renderCreate()
     await pickDriver()
+    await pickCliente()
     fireEvent.change(screen.getByPlaceholderText(/Guía, hoja de ruta/), { target: { value: 'FAC-50' } })
     fireEvent.click(screen.getByText('Crear viaje'))
     await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
@@ -198,6 +214,7 @@ describe('TripAssignDialog', () => {
     vi.mocked(tripsApi.create).mockRejectedValue(new Error('Ya registraste el viaje 555 de Walmart'))
     renderCreate()
     await pickDriver()
+    await pickCliente()
     fireEvent.click(screen.getByText('Crear viaje'))
     expect(await screen.findByText(/Ya registraste el viaje/)).toBeInTheDocument()
   })
@@ -216,6 +233,7 @@ describe('TripAssignDialog', () => {
     })
     renderCreate()
     await pickDriver()
+    await pickCliente()
 
     fireEvent.click(screen.getByText('Agregar destino'))
     fireEvent.change(screen.getByLabelText('Nombre destino 1'), { target: { value: 'CD El Peñón' } })
@@ -258,7 +276,7 @@ describe('TripAssignDialog', () => {
     expect(driversApi.search).not.toHaveBeenCalled()
   })
 
-  it('con initialFleet (Centro de Flota → Asignar viaje), abre con el equipo ya cargado', () => {
+  it('con initialFleet (Centro de Flota → Asignar viaje), abre con el equipo ya cargado y pide el cliente', async () => {
     renderCreate({
       initialFleet: {
         driver_id: 'd9', driver_name: 'Pedro Soto', driver_rut: '9-9', driver_phone: null,
@@ -268,6 +286,9 @@ describe('TripAssignDialog', () => {
     expect(screen.getByText('Pedro Soto')).toBeInTheDocument()
     expect(screen.getByDisplayValue('RPS Logística')).toBeInTheDocument()
     expect(screen.getByDisplayValue('WXYZ99')).toBeInTheDocument()
+    // Sin cliente del directorio no se crea (spec 2026-10-11).
+    expect(screen.getByText('Crear viaje')).toBeDisabled()
+    await pickCliente()
     expect(screen.getByText('Crear viaje')).not.toBeDisabled()
   })
 })

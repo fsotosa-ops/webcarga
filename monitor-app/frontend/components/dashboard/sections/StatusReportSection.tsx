@@ -52,7 +52,10 @@ interface Props {
 export function StatusReportSection({ fecha }: Props) {
   const [tipo, setTipo] = useState<OperationTypeKey>('tractoreo')
   const [seccion, setSeccion] = useState<Seccion>('resumen')
-  const [client, setClient] = useState('')
+  // El cliente elegido, por id del directorio (spec 2026-10-11), con su nombre
+  // para mostrarlo aunque el reporte de otro día no lo traiga.
+  const [clienteElegido, setClienteElegido] = useState<{ id: string; name: string } | null>(null)
+  const client = clienteElegido?.id ?? ''
   // Lo que está a la vista, para "Copiar estatus": el coordinador lo pega tal cual
   // en el correo o el chat del día (minuta 09/10). Lo plegado no está en el DOM,
   // así que no se copia: se copia lo que se ve.
@@ -81,8 +84,9 @@ export function StatusReportSection({ fecha }: Props) {
   // de resetearse en silencio.
   const opcionesDeCliente = [
     ...(clientesConocidos ?? []),
-    ...(client && !(clientesConocidos ?? []).some(c => c.client_name === client)
-      ? [{ client_name: client, assigned: 0, by_operation_type: undefined }] : []),
+    ...(clienteElegido && !(clientesConocidos ?? []).some(c => c.shipper_id === clienteElegido.id)
+      ? [{ shipper_id: clienteElegido.id, client_name: clienteElegido.name, assigned: 0, by_operation_type: undefined }]
+      : []),
   ]
 
   async function copiarEstatus() {
@@ -118,7 +122,7 @@ export function StatusReportSection({ fecha }: Props) {
           `}</style>
           <div id="closures-print-summary" data-testid="resumen-imprimible" className="hidden print:block text-sm">
             <h1 className="text-xl font-bold mb-1">WebCarga — Reporte de Estatus del Día</h1>
-            <p className="text-gray-500 mb-6">{fecha}{client ? ` · ${client}` : ' · Todos los clientes'}</p>
+            <p className="text-gray-500 mb-6">{fecha}{clienteElegido ? ` · ${clienteElegido.name}` : ' · Todos los clientes'}</p>
             <div className="grid grid-cols-2 gap-6 mb-6">
               {TIPOS_DE_OPERACION.map(t => (
                 <div key={t.clave} className="space-y-3">
@@ -178,12 +182,16 @@ export function StatusReportSection({ fecha }: Props) {
             ))}
           </div>
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
-            <select aria-label="Filtrar por cliente" value={client} onChange={e => setClient(e.target.value)}
+            <select aria-label="Filtrar por cliente" value={client}
+                    onChange={e => {
+                      const elegido = opcionesDeCliente.find(c => c.shipper_id === e.target.value)
+                      setClienteElegido(elegido ? { id: elegido.shipper_id, name: elegido.client_name } : null)
+                    }}
                     className="text-[11px] border border-border rounded-lg px-2 py-1.5 bg-white">
               <option value="">Todos los clientes</option>
               {opcionesDeCliente.map(c => (
                 // La cantidad del tipo a la vista: la misma que dicen las tarjetas.
-                <option key={c.client_name} value={c.client_name}>
+                <option key={c.shipper_id} value={c.shipper_id}>
                   {c.client_name} ({c.by_operation_type?.[tipo] ?? c.assigned})
                 </option>
               ))}

@@ -7,7 +7,7 @@ import { tripsApi } from '@/lib/api/trips'
 import { useQuery } from '@tanstack/react-query'
 import { RouteEditor } from '@/components/dashboard/RouteEditor'
 import { FleetAssignSection, EMPTY_FLEET_ASSIGN_VALUE, type FleetAssignValue } from '@/components/dashboard/FleetAssignSection'
-import { ClientPicker } from '@/components/dashboard/ClientPicker'
+import { ClientPicker, type ClienteElegido } from '@/components/dashboard/ClientPicker'
 
 interface Props {
   open:      boolean
@@ -55,7 +55,8 @@ type OriginMode = 'none' | 'mapped' | 'other'
 
 export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initialFleet }: Props) {
   const [form, setForm]             = useState<Partial<TripCreatePayload>>({})
-  const [clientName, setClientName] = useState('')
+  // El cliente del directorio (spec 2026-10-11): el viaje guarda su id.
+  const [cliente, setCliente] = useState<ClienteElegido | null>(null)
   const [originMode, setOriginMode] = useState<OriginMode>('none')
   const [originTms, setOriginTms]   = useState('')
   const [stops, setStops]           = useState<TripStopCreatePayload[]>([])
@@ -74,7 +75,7 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
   useEffect(() => {
     if (open) {
       setForm({ planning_date: todayISO() })
-      setClientName('')
+      setCliente(null)
       setOriginMode('none')
       setOriginTms('')
       setStops([])
@@ -127,10 +128,11 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
   ]))
 
   const canReconcile =
-    originMode === 'mapped' && !!originTms && !!form.source_system_trip_id && !!clientName
+    originMode === 'mapped' && !!originTms && !!form.source_system_trip_id && !!cliente
 
   async function handleCreate() {
     if (!form.planning_date) { setErr('La fecha de planificación es requerida'); return }
+    if (!cliente) { setErr('Elige el cliente del viaje'); return }
     if (!fleet.driver_id) { setErr('Elige un conductor del directorio de Empresas antes de crear el viaje'); return }
     if (stops.some(s => s.stop_type !== 'ORIGIN' && !s.local.trim())) { setErr('Cada destino debe tener un nombre'); return }
     setSaving(true); setErr(null)
@@ -139,7 +141,7 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
         planning_date:          form.planning_date,
         origin_tms:              originMode === 'none' ? undefined : originTms || undefined,
         source_system_trip_id:  form.source_system_trip_id,
-        client_name:             clientName.trim() || undefined,
+        shipper_id:              cliente.id,
         cargo_type:              form.cargo_type,
         current_status:          form.current_status,
         stops:                   stops.filter(s => s.local.trim()),
@@ -207,8 +209,8 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
                 <Field label="Fecha planificación" required>
                   <input ref={firstFieldRef} type="date" value={form.planning_date ?? ''} onChange={e => set('planning_date', e.target.value)} className={INPUT} />
                 </Field>
-                <Field label="Cliente">
-                  <ClientPicker value={clientName} onChange={setClientName} placeholder="Buscar o crear cliente…" />
+                <Field label="Cliente" required>
+                  <ClientPicker value={cliente} onChange={setCliente} placeholder="Buscar o crear cliente…" />
                 </Field>
               </div>
               <Field label="Tipo de carga">
@@ -349,7 +351,7 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
             </button>
             <button
               type="submit"
-              disabled={saving || !form.planning_date || !fleet.driver_id}
+              disabled={saving || !form.planning_date || !cliente || !fleet.driver_id}
               className="flex-1 flex items-center justify-center gap-2 bg-accent text-white text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-accent/90 disabled:opacity-40 transition-colors"
             >
               {saving && <Loader2 size={14} className="animate-spin" />}

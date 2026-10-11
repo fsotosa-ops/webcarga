@@ -329,6 +329,9 @@ export type TripCreatePayload = {
   origin_tms?:            string | null
   source_system_trip_id?: string | null
   client_name?:           string | null
+  /** El cliente del directorio (spec 2026-10-11). La carga CSV manda el nombre y
+   *  el backend lo resuelve; el formulario manda el id. */
+  shipper_id?:            string | null
   origin_region?:         string | null
   origin_city?:           string | null
   cargo_type?:            string | null
@@ -436,6 +439,9 @@ export type Trip = {
   /** Solo viajes manuales: TMS de origen declarado al registrarlo (null si no aplica) */
   origin_tms?:            string | null
   client_name:            string | null
+  /** El texto del cliente tal como lo manda el TMS (spec 2026-10-11): `client_name`
+   *  es el nombre del directorio, o este texto con "· sin vincular". */
+  source_client_name?: string | null
   planning_date:          string | null
   status_reported_at:     string | null
   current_status:         string | null
@@ -1740,6 +1746,8 @@ export type StatusReport = {
    *  el número del filtro es el de las tarjetas. Opcional: backend y frontend se
    *  despliegan por separado. */
   clients?: {
+    /** El id del cliente del directorio: es el valor del filtro (spec 2026-10-11). */
+    shipper_id:         string
     client_name:        string
     assigned:           number
     by_operation_type?: Record<OperationTypeKey, number>

@@ -105,3 +105,21 @@ describe('tripsApi.cierreViajes — construcción de URL', () => {
     expect(requestedUrl).toBe('/api/v1/trips/cierre-viajes?fecha=2026-08-18%26extra%3D1')
   })
 })
+
+describe('tripsApi.list — filtro de cliente', () => {
+  it('filtra por el id del cliente del directorio, no por su nombre (spec 2026-10-11)', async () => {
+    let requestedUrl = ''
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      requestedUrl = url
+      return new Response(JSON.stringify({ data: [], count: 0, page: 1, limit: 200 }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    }))
+
+    await tripsApi.list({ view: 'historial', shipper_id: 's1,unlinked' })
+
+    const qs = new URLSearchParams(requestedUrl.split('?')[1])
+    expect(qs.get('shipper_id')).toBe('s1,unlinked')
+    expect(qs.has('client')).toBe(false)
+  })
+})

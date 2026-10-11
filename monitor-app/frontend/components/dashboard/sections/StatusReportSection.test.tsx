@@ -79,8 +79,8 @@ const REPORT: StatusReport = {
   business_date: '2026-08-02',
   client_filter: null,
   clients: [
-    { client_name: 'Walmart', assigned: 33, by_operation_type: { tractoreo: 29, equipo_completo: 4 } },
-    { client_name: 'Iansa', assigned: 3, by_operation_type: { tractoreo: 0, equipo_completo: 3 } },
+    { shipper_id: 's1', client_name: 'Walmart', assigned: 33, by_operation_type: { tractoreo: 29, equipo_completo: 4 } },
+    { shipper_id: 's2', client_name: 'Iansa', assigned: 3, by_operation_type: { tractoreo: 0, equipo_completo: 3 } },
   ],
   fleet_driver_gap: [{ carrier_id: 'c9', business_name: 'Solo Iansa Spa', n_tractos: 2, n_conductores: 1, gap: 1 }],
   by_operation_type: { tractoreo: TRACTOREO, equipo_completo: EQUIPO_COMPLETO },
@@ -273,8 +273,10 @@ describe('StatusReportSection', () => {
     const filtro = body.getByRole('combobox', { name: 'Filtrar por cliente' })
     expect(within(filtro).getAllByRole('option').map(o => o.textContent))
       .toEqual(['Todos los clientes', 'Walmart (29)', 'Iansa (0)'])
-    fireEvent.change(filtro, { target: { value: 'Iansa' } })
-    expect(statusReportApi.get).toHaveBeenCalledWith('2026-08-02', 'Iansa')
+    fireEvent.change(filtro, { target: { value: 's2' } })
+    // Por id del cliente del directorio (spec 2026-10-11); se ve el nombre.
+    expect(statusReportApi.get).toHaveBeenCalledWith('2026-08-02', 's2')
+    expect(within(filtro).getAllByRole('option').map(o => o.getAttribute('value'))).toEqual(['', 's1', 's2'])
   })
 
   it('la cantidad de cada cliente es la del tipo a la vista, la misma de las tarjetas', async () => {
@@ -288,17 +290,18 @@ describe('StatusReportSection', () => {
   it('el cliente elegido se conserva aunque el reporte nuevo no lo traiga, con (0)', async () => {
     const body = renderSection()
     await body.findByText('Equipos activos')
-    vi.mocked(statusReportApi.get).mockResolvedValue({ ...REPORT, clients: [{ client_name: 'Walmart', assigned: 33, by_operation_type: { tractoreo: 29, equipo_completo: 4 } }] })
-    fireEvent.change(body.getByRole('combobox', { name: 'Filtrar por cliente' }), { target: { value: 'Iansa' } })
+    vi.mocked(statusReportApi.get).mockResolvedValue({ ...REPORT, clients: [{ shipper_id: 's1', client_name: 'Walmart', assigned: 32, by_operation_type: { tractoreo: 28, equipo_completo: 4 } }] })
+    fireEvent.change(body.getByRole('combobox', { name: 'Filtrar por cliente' }), { target: { value: 's2' } })
+    // La lista nueva (Walmart 28) ya llegó, y el elegido sigue, por nombre, con (0).
     await waitFor(() => expect(within(body.getByRole('combobox', { name: 'Filtrar por cliente' }))
-      .getAllByRole('option').map(o => o.textContent)).toEqual(['Todos los clientes', 'Walmart (29)', 'Iansa (0)']))
+      .getAllByRole('option').map(o => o.textContent)).toEqual(['Todos los clientes', 'Walmart (28)', 'Iansa (0)']))
   })
 
   it('mientras llega el reporte de otro cliente no muestra las cifras del anterior, pero la lista sigue', async () => {
     const body = renderSection()
     await body.findByText('Equipos activos')
     vi.mocked(statusReportApi.get).mockReturnValue(new Promise(() => {}))
-    fireEvent.change(body.getByRole('combobox', { name: 'Filtrar por cliente' }), { target: { value: 'Iansa' } })
+    fireEvent.change(body.getByRole('combobox', { name: 'Filtrar por cliente' }), { target: { value: 's2' } })
     await waitFor(() => expect(body.queryByText('Equipos activos')).toBeNull())
     expect(within(body.getByRole('combobox', { name: 'Filtrar por cliente' })).getAllByRole('option')
       .map(o => o.textContent)).toEqual(['Todos los clientes', 'Walmart (29)', 'Iansa (0)'])
