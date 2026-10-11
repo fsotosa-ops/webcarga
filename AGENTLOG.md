@@ -46,15 +46,15 @@
   - el filtro Iansa funciona;
   - Clientes del TMS muestra los 4 bien vinculados.
 - **Hallazgo:** 2 viajes del TMS huérfanos que el pipeline ya no produce (add6d7dc Sodimac 01/07; c79be64d Walmart sin fecha) quedan "sin vincular". No se parchean a mano.
-- **Pendientes menores** (revisión final):
-  - un UUID malformado da 500 en vez de 422 (`tms-clients`, `list_trips`);
-  - `fleet_daily_overview` no tiene quién lo llame;
-  - se ofrecen clientes inactivos;
-  - el texto del aviso en Configuración;
-  - falta manejar la carga y el error de la lista del directorio en Configuración;
-  - falta el `aria-label` de "Cambiar";
-  - faltan tests 403/404 de `tms-clients`;
-  - `source_client` queda en minúsculas o crudo según el camino.
+- **Pendientes menores de la revisión: resueltos (11/10)**
+  - Un id mal formado responde 422: `leer_filtro_de_cliente` y tipos UUID.
+  - `unlinked` funciona en el Centro de Flota.
+  - Los selectores ya no ofrecen clientes inactivos, y avisan si lo escrito es uno.
+  - Configuración espera la lista del directorio antes de mostrar los selectores.
+  - El aviso en Configuración es más preciso.
+  - El botón "Cambiar" tiene `aria-label`.
+  - Hay tests de 403, 404 y 422.
+  - `source_client` queda normalizado igual en la migración y en el PUT.
 - **Deuda:** el `?fecha=` de la API del backend.
 - **Siguiente paso exacto:**
   - [ ] Que Pablo revise en dev (Monitor, Cierre, Reporte, Configuración › Clientes del TMS).
