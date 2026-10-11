@@ -174,3 +174,35 @@ decisión del usuario sobre la alternativa queda registrada. Recién entonces se
 - No toca Seguros más allá de la superposición con Certificación (su auditoría propia es C6).
 - No define el rediseño del detalle del viaje, que es otra sesión. Solo registra qué del badge de documentos
   depende de esto.
+
+## 4. Primera corrida de la lente A (11/10, Playwright en dev, sin guardar nada)
+
+Las tareas se simularon partiendo desde el Monitor, el Cierre y Certificación. En cada recorrido la simulación se
+detuvo antes de guardar, porque dev y prod comparten la base.
+
+| Tarea | Hoy | Prototipo objetivo |
+|---|---|---|
+| S1. Desde el Monitor, resolver los documentos pendientes del conductor de un viaje | Hay 5 o más acciones antes de elegir el archivo y se pasa por 3 pantallas (fila → detalle → "revisar en Empresas" → ficha del Directorio → panel del conductor). Se pierde el viaje. El badge "12" tiene cursor de mano pero no responde al clic. | 4 acciones. No se sale del Monitor. |
+| S2. Lo mismo desde el Cierre | 5 acciones y 2 pantallas (vista rápida → "Abrir ficha completa" → Directorio). La vista rápida muestra los documentos pero no deja cargarlos. | 4 acciones. Es el mismo panel que en el Monitor. |
+| S3. Ver quién tiene vencida la Licencia y subirla | **No se puede.** "Por requisito → Licencia de Conducir: 72" no se abre, así que hay que revisar empresa por empresa. | 4 acciones, con filtro vencidos / por vencer / faltan. |
+| S4. Mismo conductor, entrando por Certificación | 3 clics hasta la fila, y se carga en el lugar arrastrando el archivo. Es el mejor patrón de hoy, pero con otro componente y otros textos que el Directorio ("Arrastra aquí" contra "Subir documento"). | Es el mismo panel en todas las pantallas. |
+
+Hallazgos de la corrida:
+- **Al hacer clic en la fila del Monitor**, si cae sobre el conductor, se abre la reasignación aunque el conductor
+  ya esté identificado. El popover muestra "Aplicar a los 0 viajes de esta persona" y el botón "Asignar a 0 viajes".
+- **Los conteos cambian de forma según la pantalla**:
+  - el Monitor dice "N pendientes";
+  - la portada de Certificación dice "X de Y" (cubiertos de exigidos);
+  - la vista rápida dice "N faltan".
+  Además, el total cambia según la vista: 2.319 en la portada y 2.306 por requisito.
+- **En ninguna pantalla se distingue "vencido" de "falta"**: el Monitor, la vista rápida y el panel del Directorio
+  los muestran juntos.
+- **El panel del conductor en el Directorio** abre con el formulario de nombre y origen habitual, y deja los
+  documentos más abajo.
+- **El aviso del detalle del viaje** solo dice "Falta Licencia o Carnet" y lleva a la pestaña Conductores, no al
+  documento.
+- **En las listas productivas aparecen datos de prueba** ("Diego Prueba / Test Empresa Webcarga").
+- **La portada muestra "Al día: 0"**, así que no da ninguna señal de quién está habilitado para operar.
+
+Prototipo: `.superpowers/brainstorm/84727-1791741985/content/certificacion-ux-objetivo.html`. Usa datos ficticios
+y se recorrió con Playwright. Capturas en `.playwright-mcp/sim-*.png`.
