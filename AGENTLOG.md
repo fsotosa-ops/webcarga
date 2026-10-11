@@ -16,6 +16,32 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Cierre › Viajes: grupo "Asignación incompleta" (minuta 09/10 §2.4) — DESPLEGADO en dev
+
+- **Decisiones del usuario (11/10):** entran los del día (activos o cerrados) y los activos de antes; bloquea la
+  firma solo si es del día.
+- **Hecho (`778bdeaa`, `ab764895` y la bajada):**
+  - Backend: grupo `incomplete_assignment` en `SQL_GRUPOS_CIERRE`, definido una vez (`INCOMPLETE_ASSIGNMENT`):
+    asignado y sin tracto o conductor resueltos (`v_trip_fleet_resolution`). Va antes que "Espera cierre del
+    TMS" (un Sodimac con solo la rampla primero se completa, §2.3). Cada fila trae `missing_fleet`. `bloquean`
+    suma los incompletos del día.
+  - Frontend: `bloqueaLaFirma` pasó a función `(viaje, fecha)`; cada grupo declara su `action`
+    (`declare`/`complete`/`none`); la fila muestra "Falta conductor/tracto" y "Completar asignación" (al detalle
+    del viaje, con vuelta al Cierre, prop `tripHref`), sin motivo ni casilla. Columna "Resolver".
+  - Tests: 6 de integración nuevos + 3 mutaciones; los sintéticos "asignados" de `test_cierre_viajes.py` llevan
+    flota completa (antes no tenían y ahora serían incompletos); vitest 1.706; build OK.
+- **Verificado en dev:** 08/10 muestra "Asignación incompleta 2" (2070220 sin conductor del directorio;
+  IA161103 de Iansa "POR CONFIRMAR"), con "Bloquea la firma" y "Completar asignación".
+- **Pendientes menores del ítem 5, resueltos:** test de que la copia escribe en `trips_manual`; guarda AST de
+  ningún `pool.` dentro de `conn.transaction()` en las rutas de viajes; la guarda de INSERT ve `ON CONFLICT` y
+  `RETURNING`. **Queda a propósito:** `app.resolving_fleet` vale toda la transacción; apagarlo reactivaría la
+  resolución de flota en cada UPDATE posterior de la misma transacción (más Disk IO en cada corrida de dbt) y hoy
+  no tiene efecto.
+
+**Siguiente paso exacto:**
+- [ ] P3, ítem 21: enlaces desde el Cierre (Flota y Viajes) a la empresa / `?driver=` / `?asset=`.
+- [ ] P4 (ítem 20), P5 (ítem 23), P6 (menores) y P7 (respuestas para Pablo): ver la auditoría, abajo.
+
 ### 2026-10-11 — Ítem 5 de la minuta 09/10: activo y asignado del viaje en la base — DESPLEGADO (dev + base + Mage)
 
 Spec `docs/superpowers/specs/2026-10-11-trip-assignment-in-the-database-design.md` y plan del mismo nombre, ejecutado
@@ -44,7 +70,7 @@ native con revisión final (opus). Ledger: `.superpowers/sdd/2026-10-11-trip-ass
   INSERT con `ON CONFLICT` antes de las comillas.
 
 **Siguiente paso exacto:**
-- [ ] P2: grupo `incomplete_assignment` en Por resolver (solo patente o solo conductor; decisión D2 del 11/10).
+- [x] P2: grupo `incomplete_assignment` (ver la entrada de arriba).
 - [ ] P3 (ítem 21), P4 (ítem 20), P5 (ítem 23), P6 (menores), P7 (respuestas para Pablo): ver la entrada de la
       auditoría de la minuta, abajo.
 
@@ -81,7 +107,7 @@ mirror de Mage y en git, no solo aquí.
 - [x] P0b verificado en dev (expandida, contraída y teléfono).
 - [x] P1, ítem 5: hecho (ver la entrada de arriba). Que editar un manual actualice `status_reported_at` no era un
       bug: en un viaje gestionado a mano la edición es su "reporte".
-- [ ] P2: grupo `incomplete_assignment` en `services/cierre_viajes.py` + `lib/cierre/gruposDeViajes.ts`.
+- [x] P2: grupo `incomplete_assignment` (ver la entrada de arriba).
 - [ ] P3, ítem 21: enlaces del Cierre (Flota y Viajes) a la empresa / `?driver=` / `?asset=`.
 - [ ] P4, ítem 20: abrir la fila de requisito (`listPending({requirementCode, estado})`, sin llamadores hoy).
 - [ ] P5, ítem 23: editar los clientes de una empresa (`PUT /carriers/{id}/shippers`).
