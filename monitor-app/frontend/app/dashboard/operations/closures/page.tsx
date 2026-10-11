@@ -21,6 +21,7 @@ import { StatusReportSection } from '@/components/dashboard/sections/StatusRepor
 import { PasoViajesSection } from '@/components/dashboard/sections/PasoViajesSection'
 import { AjustesPosterioresAlCierre } from '@/components/dashboard/AjustesPosterioresAlCierre'
 import { HistorialDeFirmas } from '@/components/dashboard/HistorialDeFirmas'
+import { IndicadorDeAjustes } from '@/components/dashboard/IndicadorDeAjustes'
 import { AvisoDeActualizacion } from '@/components/dashboard/AvisoDeActualizacion'
 import { Estado } from '@/components/ui/Estado'
 import { urlDelViaje } from '@/lib/navegacion/viaje'
@@ -133,6 +134,9 @@ function ClosuresCenterPageInner() {
   })
 
   const diaCerrado = cierreQuery.data?.closed ?? false
+  // Los ajustes sólo existen en un día firmado: en uno abierto, lo que cambia
+  // entra en su recálculo (spec 2026-10-10 §4).
+  const ajustes = diaCerrado ? (cierreQuery.data?.cierre?.ajustes ?? []) : []
 
   // Las veces que se firmó el día (spec 2026-10-10 §3). También en un día
   // reabierto: lo firmado antes sigue guardado, y es justo lo que se quiere ver.
@@ -308,13 +312,6 @@ function ClosuresCenterPageInner() {
         </label>
       </div>
 
-      {/* Va AL LADO del encabezado de arriba, no lo reemplaza: el día sigue
-          firmado y sigue diciendo "Cerrado" — esto es el delta que llegó
-          después, nunca una reapertura. */}
-      <AjustesPosterioresAlCierre
-        ajustes={cierreQuery.data?.cierre?.ajustes ?? []}
-        volverA={urlDeEsteCierre()}
-      />
       <HistorialDeFirmas firmas={firmasQuery.data?.signatures ?? []} />
       {cierreQuery.data && (
         <AvisoDeActualizacion pendienteDesde={pendiente} calculadoA={cierreQuery.data.calculado_a ?? null} />
@@ -347,6 +344,11 @@ function ClosuresCenterPageInner() {
               >
                 <Icon size={14} className="shrink-0" />
                 {t.label}
+                {t.id === 'viajes' && ajustes.length > 0 && (
+                  <span className="ml-0.5 rounded-full bg-gray-200 px-1.5 text-[10px] font-bold tabular-nums text-text-secondary">
+                    {ajustes.length}
+                  </span>
+                )}
               </button>
             )
           })}
@@ -366,8 +368,9 @@ function ClosuresCenterPageInner() {
               // puede responderle.
             />
           )}
-          {tab === 'viajes' && (
-            cierreViajesQuery.isError ? (
+          {tab === 'viajes' && (<>
+            <AjustesPosterioresAlCierre ajustes={ajustes} volverA={urlDeEsteCierre()} />
+            {cierreViajesQuery.isError ? (
               <Estado
                 tipo="error"
                 titulo="No se pudieron cargar los viajes"
@@ -384,15 +387,15 @@ function ClosuresCenterPageInner() {
                 meta={tripsMeta}
                 soloLectura={diaCerrado}
               />
-            )
-          )}
+            )}
+          </>)}
           {tab === 'pendientes' && <PreCierrePendingSection fecha={fecha} />}
           {tab === 'reporte' && <StatusReportSection fecha={fecha} shippers={shippersQuery.data} />}
         </div>
 
         <div className="border-t border-border bg-gray-50/60 p-5 sm:p-6 space-y-3 rounded-b-2xl">
           {diaCerrado ? (
-            <DiaCerrado periodo={cierreQuery.data?.periodo ?? null} />
+            <DiaCerrado periodo={cierreQuery.data?.periodo ?? null} ajustes={ajustes.length} onVerAjustes={() => setTab('viajes')} />
           ) : (
             <div>
               <h2 className="text-sm font-bold text-text-primary">Confirmar cierre</h2>
@@ -514,7 +517,12 @@ const HORA = new Intl.DateTimeFormat('es-CL', {
 /** El día firmado, dicho con nombre, hora y cifras. Lo que Operaciones pidió
  *  ver al cerrar ("no entrega ningún aviso de cierre finalizado"), y lo que ve
  *  cualquiera que abra el día después. */
-function DiaCerrado({ periodo }: { periodo: PeriodoDeCierre | null }) {
+function DiaCerrado({ periodo, ajustes, onVerAjustes }: {
+  periodo: PeriodoDeCierre | null
+  /** Ajustes posteriores a la firma vigente: el indicador lleva a la pestaña Viajes. */
+  ajustes: number
+  onVerAjustes: () => void
+}) {
   const t = periodo?.frozen_totals
   return (
     <div role="status" className="flex items-start gap-2.5 rounded-xl border border-resuelto/20 bg-resuelto/5 px-4 py-3">
@@ -533,6 +541,7 @@ function DiaCerrado({ periodo }: { periodo: PeriodoDeCierre | null }) {
             {(periodo?.override_count ?? 0) > 0 && <> · {periodo!.override_count} forzados con nota</>}
           </p>
         )}
+        <IndicadorDeAjustes cantidad={ajustes} onVer={onVerAjustes} />
       </div>
     </div>
   )

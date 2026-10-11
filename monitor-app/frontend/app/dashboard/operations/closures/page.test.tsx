@@ -108,6 +108,40 @@ beforeEach(async () => {
 })
 
 describe('ClosuresCenterPage', () => {
+  it('un día firmado con ajustes los cuenta junto a "Cerrado" y en la pestaña Viajes, sin bloque fijo arriba', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const ajuste = { trip_id: 'a', tipo: 'agregado' as const, source_system_trip_id: 'Q-9', client_name: 'walmart',
+                     voided_at: null, voided_by_name: null, void_reason_label: null, void_note: null }
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...EMPTY_STATUS, closed: true, cierre: { total_trips_al_firmar: 3, ajustes: [ajuste, { ...ajuste, trip_id: 'b' }] },
+    })
+    renderPage()
+    expect(await screen.findByRole('button', { name: /2 ajustes posteriores al cierre/i })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /viajes.*2/i })).toBeInTheDocument()
+    expect(screen.queryByText(/después de la firma/i)).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /2 ajustes posteriores al cierre/i }))
+    expect(screen.getByRole('tab', { name: /viajes/i })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText(/después de la firma/i)).toBeInTheDocument()
+  })
+
+  it('un día abierto no muestra ajustes ni número en Viajes, aunque la respuesta los traiga', async () => {
+    // Un día reabierto no está firmado: lo que cambió entra en su recálculo.
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const ajuste = { trip_id: 'a', tipo: 'agregado' as const, source_system_trip_id: 'Q-9', client_name: 'walmart',
+                     voided_at: null, voided_by_name: null, void_reason_label: null, void_note: null }
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...EMPTY_STATUS, cierre: { total_trips_al_firmar: null, ajustes: [ajuste] },
+    })
+    renderPage()
+    fireEvent.click(await screen.findByRole('tab', { name: 'Viajes' }))
+    await waitFor(() => expect(dailyClosuresApi.get).toHaveBeenCalled())
+    // Si la sección apareciera, sería con los datos ya llegados: se espera un poco.
+    await expect(screen.findByText(/después de la firma/i, {}, { timeout: 600 })).rejects.toThrow()
+    expect(screen.getByRole('tab', { name: 'Viajes' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /ajustes posteriores/i })).toBeNull()
+  })
+
   it('un día reabierto sigue mostrando las firmas que tuvo', async () => {
     // Revisión final: firmar, reabrir, firmar y reabrir otra vez deja el día
     // abierto con dos firmas guardadas; el historial es justo lo que se quiere ver.

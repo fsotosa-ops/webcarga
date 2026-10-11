@@ -1391,7 +1391,8 @@ export type AjustePosterior = {
   client_name:           string | null
   voided_at:             string | null
   voided_by_name:        string | null
-  void_reason:           string | null
+  void_reason_label:     string | null
+  void_note:             string | null
 }
 
 /** Una firma del día (GET /closures/{fecha}/signatures). */
