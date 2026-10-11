@@ -206,3 +206,72 @@ Hallazgos de la corrida:
 
 Prototipo: `.superpowers/brainstorm/84727-1791741985/content/certificacion-ux-objetivo.html`. Usa datos ficticios
 y se recorrió con Playwright. Capturas en `.playwright-mcp/sim-*.png`.
+
+## 5. Simulación del ciclo completo en una copia local (11/10)
+
+**El entorno.** Supabase local (Postgres 17) con el esquema de producción, solo estructura y sin datos.
+- Datos 100 % ficticios: 3 empresas (una inactiva), 5 conductores (uno inactivo), 4 equipos.
+- La API y el frontend locales corren sobre ese mismo stack.
+- Tres usuarias y usuarios ficticios: Certificación (supervisora), Operaciones (supervisor) y owner.
+- El reloj de la base (`hoy_chile()`) se adelantó para ver las transiciones.
+- Archivos y guion en `.superpowers/local-sim/` (fuera de git).
+
+**El recorrido.**
+1. Configurar 5 tipos de documento:
+   - fecha impresa (Licencia, Revisión Técnica);
+   - plazo desde la emisión (Antecedentes, 3 meses, aviso 15 días);
+   - período mensual (F30-1, día 18);
+   - solo a pedido (Política de Seguridad).
+2. Activarlos.
+3. Subir documentos: uno por vencer, uno nacido vencido.
+4. Adelantar el reloj.
+5. Reemplazar el vencido.
+6. Repetir con el usuario de Operaciones.
+
+### Bugs confirmados (con evidencia en la copia local)
+
+| # | Bug | Efecto | Dónde |
+|---|---|---|---|
+| L1 | `/config/inventario` leía `profiles.role`, que se retiró con RBAC | La portada de Configuración decía "Sin datos por ahora" en todos los dominios (también en dev). **Corregido** en `b5375bd8`, con un test de integración. | `config.py:438` |
+| L2 | `/compliance-records/pending` responde 500 si la empresa no tiene RUT | El modelo exige `carrier_tax_id: str` y la columna admite NULL. La fila de la empresa queda en blanco. | `compliance.py:633` |
+| L3 | Ante un error de carga, la ficha dice "No le falta ningún documento" | Un fallo se presenta como "todo al día", contra la regla de `Estado` | panel de Certificación |
+| L4 | Los documentos que se crean desde "Nuevo documento" quedan con `requires_file = false` | En el Directorio no se les puede subir archivo (Certificación sí deja). Afecta al F30-1 y a los 75 de WebCarga en producción (por verificar con datos reales). | `catalogo.py:crear_requisito` |
+| L5 | El Directorio muestra "Subir documento" según `directory.edit`, pero la API exige `documents.upload` | El supervisor de Operaciones elige el archivo, pone la fecha y recibe 403 al guardar | `carriers/[id]/page.tsx:151` |
+| L6 | Activar un documento se lo exige también a conductores y empresas **inactivos** | Configuración dice "alcanza 5 de 5" y crea 17 pendientes, mientras Certificación cuenta 14. Pablo pidió solo las activas. | disparadores de siembra |
+| L7 | Un dominio de taxonomía sin filas responde 422 en vez de una lista vacía | Con un dominio vacío, la pantalla se rompe en lugar de mostrar el estado vacío | `status_taxonomies.py:32` |
+
+### Gaps de UX observados
+
+**Configuración**
+- Dos flujos distintos para activar lo mismo:
+  - en el panel: "Guardar → Ver qué cambia → Aplicar", con un `confirm()` nativo;
+  - en la tabla: borrador con "Ver efecto → Publicar".
+- Entre "Guardar" y "Aplicar", el documento figura vigente pero no se le exige a nadie, y la pantalla no lo dice.
+- "Ver qué cambia" se habilita recién después de guardar.
+- El estado vacío del catálogo dice "Ningún documento coincide con el filtro" sin que haya ningún filtro.
+- El error de nombre duplicado expone nombres internos ("documento de DRIVER con el codigo …").
+- Un documento "solo a pedido" muestra "Todas las empresas 3 de 3".
+
+**Certificación**
+- La vista por conductor incluye al conductor inactivo de la empresa inactiva.
+- Un documento que se carga ya vencido queda marcado "Listo" sin ningún aviso.
+- Un documento válido que está por vencer cuenta como "falta" ("0 de 2"), y la portada solo cuenta los vencidos, no los por vencer (pedido del 14/08).
+- La vista por requisito mezcla los vencidos con los que faltan y no deja abrir la fila.
+- El historial existe (cada archivo queda en el almacenamiento), pero no se ve desde Certificación.
+- Error de concordancia: "1 DOCUMENTOS".
+
+**Directorio**
+- El panel del conductor es un modal centrado, otro patrón que el de la vista rápida.
+- El estado de cada documento va solo con ícono y color, sin texto ni fecha.
+
+**Transversal**
+- No existe un paso de revisión: todo lo que se sube queda `APPROVED_MANUAL`. La base real tiene 0 documentos en revisión.
+- La sesión de Certificación aterriza en el Monitor de Operaciones.
+- En el login, los rótulos no están asociados a sus campos, y el campo de fecha de carga no tiene nombre accesible.
+
+**Lo que funciona bien y hay que conservar**
+- El formulario "Nuevo documento" usa lenguaje de negocio.
+- La frase "Así queda: uno emitido el … vence el … Avisa desde el …".
+- La carga en línea, que pide la fecha según la regla y advierte "no vale sin su vencimiento".
+- Calcular el vencimiento desde la regla en vez de guardarlo.
+- Reemplazar un documento conserva el archivo anterior.
