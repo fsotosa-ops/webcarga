@@ -13,6 +13,7 @@ vi.mock('@/lib/api/locations', async importOriginal => {
 const SHIPPERS = [
   { id: 's1', name: 'Walmart', status: 'ACTIVE' },
   { id: 's2', name: 'Colún', status: 'ACTIVE' },
+  { id: 's5', name: 'Agrícola Vieja', status: 'INACTIVE' },
 ]
 
 function Wrapper({ children }: { children: React.ReactNode }) {
@@ -57,7 +58,7 @@ describe('ClientPicker', () => {
     render(<Harness value={{ id: 's1', name: 'Walmart' }} onChange={onChange} />)
     expect(screen.getByText('Walmart')).toBeInTheDocument()
     expect(screen.queryByLabelText('Cliente')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /Cambiar/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar cliente' }))
     expect(onChange).toHaveBeenCalledWith(null)
   })
 
@@ -95,5 +96,15 @@ describe('ClientPicker', () => {
     fireEvent.click(await screen.findByText('Crear cliente “agrosuper”'))
     await waitFor(() => expect(onChange).toHaveBeenCalledWith({ id: 's4', name: 'Agrosuper' }))
     expect(screen.queryByText('Ya existe')).not.toBeInTheDocument()
+  })
+
+  it('no ofrece clientes inactivos, y si lo escrito es uno, lo dice en vez de ofrecer crearlo', async () => {
+    render(<Harness />)
+    fireEvent.focus(screen.getByLabelText('Cliente'))
+    await screen.findByText('Walmart')
+    expect(screen.queryByText('Agrícola Vieja')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'agrícola vieja' } })
+    expect(await screen.findByText('«Agrícola Vieja» está inactivo en el directorio')).toBeInTheDocument()
+    expect(screen.queryByText(/Crear cliente/)).toBeNull()
   })
 })

@@ -26,7 +26,10 @@ const SIN_VINCULAR = {
   source_client_id: 'k9', source_system: 'wingsuite', source_client: 'lider express', trips: 4,
   shipper_id: null, shipper_name: null,
 }
-const DIRECTORIO = [{ id: 's1', name: 'Walmart' }, { id: 's4', name: 'Colun' }]
+const DIRECTORIO = [
+  { id: 's1', name: 'Walmart', status: 'ACTIVE' }, { id: 's4', name: 'Colun', status: 'ACTIVE' },
+  { id: 's5', name: 'Agrícola Vieja', status: 'INACTIVE' },
+]
 
 describe('ClientesDelTmsTab', () => {
   beforeEach(() => {
@@ -38,7 +41,7 @@ describe('ClientesDelTmsTab', () => {
 
   it('avisa cuántos están sin vincular y por qué importa', async () => {
     render(<ClientesDelTmsTab />)
-    expect(await screen.findByText('1 cliente del TMS sin vincular: sus viajes no aparecen en los filtros por cliente'))
+    expect(await screen.findByText('1 cliente del TMS sin vincular: sus viajes no quedan bajo ningún cliente en los filtros'))
       .toBeInTheDocument()
   })
 
@@ -93,6 +96,19 @@ describe('ClientesDelTmsTab', () => {
     vi.mocked(tmsClientsApi.list).mockResolvedValue([] as never)
     render(<ClientesDelTmsTab />)
     expect(await screen.findByText('Todavía no llegan viajes de ningún TMS')).toBeInTheDocument()
+  })
+
+  it('el selector no ofrece clientes inactivos', async () => {
+    render(<ClientesDelTmsTab />)
+    const selector = await screen.findByRole('combobox', { name: 'Cliente del directorio para walmart' })
+    expect(within(selector).getAllByRole('option').map(o => o.textContent)).toEqual(['Walmart', 'Colun'])
+  })
+
+  it('si falla la carga del directorio no deja selectores en blanco: ofrece reintentar', async () => {
+    vi.mocked(shippersApi.list).mockRejectedValueOnce(new Error('500'))
+    render(<ClientesDelTmsTab />)
+    expect(await screen.findByRole('button', { name: /Reintentar/ })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).toBeNull()
   })
 
   it('si falla la carga ofrece reintentar', async () => {

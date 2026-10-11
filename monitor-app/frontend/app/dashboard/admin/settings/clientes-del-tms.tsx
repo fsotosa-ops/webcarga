@@ -17,7 +17,9 @@ export function ClientesDelTmsTab() {
   const traerClientes = useCallback(() => tmsClientsApi.list(), [])
   const traerDirectorio = useCallback(() => shippersApi.list(), [])
   const { items: clientes, loading, error, reload } = useConfigList<TmsClient>(traerClientes)
-  const { items: directorio } = useConfigList(traerDirectorio)
+  const directorioQuery = useConfigList(traerDirectorio)
+  // Solo clientes activos: el backend rechaza vincular uno inactivo.
+  const directorio = directorioQuery.items.filter(s => s.status === 'ACTIVE')
   const { errors, saving, run } = useRowFeedback()
   const puedeEditar = usePuedeEditarSeccion('tms-clients')
   const [aplicados, setAplicados] = useState<Set<string>>(new Set())
@@ -40,7 +42,17 @@ export function ClientesDelTmsTab() {
     })
   }
 
-  if (loading || error) return <LoadState loading={loading} error={error} onRetry={reload} />
+  // Sin el directorio, los selectores quedarían en blanco aunque el cliente esté
+  // vinculado: se espera a las dos listas.
+  if (loading || error || directorioQuery.loading || directorioQuery.error) {
+    return (
+      <LoadState
+        loading={loading || directorioQuery.loading}
+        error={error ?? directorioQuery.error}
+        onRetry={() => { reload(); directorioQuery.reload() }}
+      />
+    )
+  }
 
   const sinVincular = clientes.filter(c => !c.shipper_id).length
 
@@ -54,8 +66,8 @@ export function ClientesDelTmsTab() {
       {sinVincular > 0 && (
         <p role="status" className="text-xs border border-espera/20 bg-espera/5 rounded-lg px-3 py-2 text-text-primary">
           {sinVincular === 1
-            ? '1 cliente del TMS sin vincular: sus viajes no aparecen en los filtros por cliente'
-            : `${sinVincular} clientes del TMS sin vincular: sus viajes no aparecen en los filtros por cliente`}
+            ? '1 cliente del TMS sin vincular: sus viajes no quedan bajo ningún cliente en los filtros'
+            : `${sinVincular} clientes del TMS sin vincular: sus viajes no quedan bajo ningún cliente en los filtros`}
         </p>
       )}
 

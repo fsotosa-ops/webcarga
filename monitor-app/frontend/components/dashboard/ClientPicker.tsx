@@ -33,10 +33,14 @@ export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size
     queryFn: () => shippersApi.list(),
     staleTime: 5 * 60 * 1000,
   })
-  const shippers = shippersQuery.data ?? []
+  // Solo clientes activos: el backend rechaza un viaje con un cliente inactivo.
+  const todos = shippersQuery.data ?? []
+  const shippers = todos.filter(s => s.status === 'ACTIVE')
   const q = normalizar(texto)
   const results = q ? shippers.filter(s => s.name.toLowerCase().includes(q)) : shippers
   const exactMatch = shippers.some(s => normalizar(s.name) === q)
+  // Lo escrito es un cliente inactivo: crearlo daría "ya existe". Se dice.
+  const inactivo = q ? todos.find(s => s.status !== 'ACTIVE' && normalizar(s.name) === q) : undefined
 
   function elegir(c: ClienteElegido) {
     onChange({ id: c.id, name: c.name })
@@ -79,6 +83,7 @@ export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size
         <button
           type="button"
           onClick={() => onChange(null)}
+          aria-label="Cambiar cliente"
           className="text-[11px] font-semibold text-accent hover:underline shrink-0"
         >
           Cambiar
@@ -126,7 +131,10 @@ export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size
               <p className="text-[11px] font-semibold text-text-primary truncate">{s.name}</p>
             </button>
           ))}
-          {!shippersQuery.isLoading && q && !exactMatch && (
+          {!shippersQuery.isLoading && inactivo && (
+            <p className="px-3 py-2 text-[11px] text-gray-500">«{inactivo.name}» está inactivo en el directorio</p>
+          )}
+          {!shippersQuery.isLoading && q && !exactMatch && !inactivo && (
             <button
               type="button"
               disabled={creating}
