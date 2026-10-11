@@ -26,8 +26,16 @@
   - "Copiar estatus" copia la sección a la vista en html y en texto.
   - La exportación vive en `lib/reporte/exportarReporte.ts`, con `sumar` compartido entre la pantalla y el Excel.
 - **Ítem 20 (revisado):** ya existen "Agrupar por Requisito", "Actualizar por planilla" y la Bandeja. Falta abrir una fila de requisito para ver quiénes lo tienen vencido y subirlo ahí mismo.
+- **Ítem 6 — HECHO (`feat(cierre): asignados pendientes de cierre del TMS`, en dev):**
+  - El catálogo tiene un grupo nuevo, "Pendiente de cierre TMS". Se agregó en VALID_GROUP_IDS, en `schemas/status_taxonomy`, en `GROUP_OPTIONS` y como columna del tablero (token `espera`).
+  - "Control de salida" se movió a ese grupo desde Configuración, el 11/10.
+  - En el Cierre › Viajes hay una sección final "Asignados, pendientes de cierre del TMS": sin casilla ni motivo y no bloquea la firma. En dev muestra 5 viajes Sodimac.
+  - El 860859 no aparece porque tiene declarado "No tenemos proveedor" (16/09) aunque tiene patente y conductor; si fue un error, se deshace.
+  - La 2.ª vuelta se verificó en la base: se cuenta por patente (el 07/10 hay 6 casos, todos camiones distintos). El CSV de Pablo era la exportación vieja, sin la columna patente.
 - **Siguiente paso exacto:**
-  - [ ] Ítem 6: "asignado, pendiente de cierre TMS", condición del Go Live del 15/10.
+  - [ ] Reporte según el CSV anotado por Pablo (`bugs/20261009/reporte_estatus_2026-10-07.csv`), ítems 8 y 14:
+    - Sección 2 con Cliente/Origen/Empresa, separando Tractoreo de Equipo Completo, con totales;
+    - Sección 4 con una fila "Eq Completos".
   - [ ] Ítem 5: viajes manuales nuevos quedan "no asignado" hasta la corrida de Mage.
   - [ ] Decisión A (15 días).
   - [ ] Ítems 8 y 14 (reporte), 21, 23 y lo que falta del 20.
