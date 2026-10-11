@@ -56,6 +56,7 @@ describe('AnularViaje', () => {
     fireEvent.click(screen.getByRole('button', { name: /anular viaje/i }))
     fireEvent.change(screen.getByLabelText(/motivo/i), { target: { value: 'otro' } })
     expect(screen.getByRole('button', { name: /sí, anular/i })).toBeDisabled()
+    expect(screen.getByLabelText(/comentario \(obligatorio\)/i)).toBeInTheDocument()
   })
 
   it('un viaje anulado ofrece deshacer la anulación', async () => {

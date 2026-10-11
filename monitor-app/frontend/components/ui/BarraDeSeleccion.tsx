@@ -92,7 +92,8 @@ export function BarraDeSeleccion({ seleccionados, ayuda, onLimpiar, destructiva,
                 </select>
               </label>
               <label className="flex items-center gap-1.5 text-[11px] text-white/80">
-                Comentario
+                {destructiva.motivos.opciones.find(o => o.id === eleccion.motivoId)?.pideNota
+                  ? 'Comentario (obligatorio)' : 'Comentario'}
                 <input
                   value={eleccion.nota}
                   onChange={e => setEleccion(prev => ({ ...prev, nota: e.target.value }))}

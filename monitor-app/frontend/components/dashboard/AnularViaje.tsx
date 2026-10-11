@@ -71,7 +71,7 @@ export function AnularViaje({ trip, onCambio }: Props) {
             </select>
           </label>
           <label className="flex items-center gap-1.5 text-etiqueta text-white/70">
-            Comentario
+            {motivos.find(m => m.id === eleccion.motivoId)?.pideNota ? 'Comentario (obligatorio)' : 'Comentario'}
             <input
               value={eleccion.nota}
               onChange={e => setEleccion(prev => ({ ...prev, nota: e.target.value }))}

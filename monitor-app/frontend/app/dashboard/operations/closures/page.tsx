@@ -137,6 +137,13 @@ function ClosuresCenterPageInner() {
   // Los ajustes sólo existen en un día firmado: en uno abierto, lo que cambia
   // entra en su recálculo (spec 2026-10-10 §4).
   const ajustes = diaCerrado ? (cierreQuery.data?.cierre?.ajustes ?? []) : []
+  // El indicador está al pie de la tarjeta y la sección arriba del panel: además de
+  // abrir la pestaña, hay que llevar la vista hasta la sección (spec §3).
+  const ajustesRef = useRef<HTMLDivElement>(null)
+  const [irAAjustes, setIrAAjustes] = useState(0)
+  useEffect(() => {
+    if (irAAjustes > 0) ajustesRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+  }, [irAAjustes])
 
   // Las veces que se firmó el día (spec 2026-10-10 §3). También en un día
   // reabierto: lo firmado antes sigue guardado, y es justo lo que se quiere ver.
@@ -369,7 +376,9 @@ function ClosuresCenterPageInner() {
             />
           )}
           {tab === 'viajes' && (<>
-            <AjustesPosterioresAlCierre ajustes={ajustes} volverA={urlDeEsteCierre()} />
+            <div ref={ajustesRef} className="scroll-mt-4">
+              <AjustesPosterioresAlCierre ajustes={ajustes} volverA={urlDeEsteCierre()} />
+            </div>
             {cierreViajesQuery.isError ? (
               <Estado
                 tipo="error"
@@ -395,7 +404,7 @@ function ClosuresCenterPageInner() {
 
         <div className="border-t border-border bg-gray-50/60 p-5 sm:p-6 space-y-3 rounded-b-2xl">
           {diaCerrado ? (
-            <DiaCerrado periodo={cierreQuery.data?.periodo ?? null} ajustes={ajustes.length} onVerAjustes={() => setTab('viajes')} />
+            <DiaCerrado periodo={cierreQuery.data?.periodo ?? null} ajustes={ajustes.length} onVerAjustes={() => { setTab('viajes'); setIrAAjustes(n => n + 1) }} />
           ) : (
             <div>
               <h2 className="text-sm font-bold text-text-primary">Confirmar cierre</h2>

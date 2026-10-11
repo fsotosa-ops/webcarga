@@ -125,6 +125,22 @@ describe('ClosuresCenterPage', () => {
     expect(await screen.findByText(/después de la firma/i)).toBeInTheDocument()
   })
 
+  it('el indicador lleva a la sección de ajustes, no solo a la pestaña', async () => {
+    // Revisión final: el indicador está al pie de la tarjeta y la sección arriba
+    // del panel; sin desplazarse, la sección queda fuera de la vista.
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const ajuste = { trip_id: 'a', tipo: 'agregado' as const, source_system_trip_id: 'Q-9', client_name: 'walmart',
+                     voided_at: null, voided_by_name: null, void_reason_label: null, void_note: null }
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...EMPTY_STATUS, closed: true, cierre: { total_trips_al_firmar: 3, ajustes: [ajuste] },
+    })
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /1 ajuste posterior al cierre/i }))
+    await waitFor(() => expect(scroll).toHaveBeenCalled())
+  })
+
   it('un día abierto no muestra ajustes ni número en Viajes, aunque la respuesta los traiga', async () => {
     // Un día reabierto no está firmado: lo que cambió entra en su recálculo.
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')

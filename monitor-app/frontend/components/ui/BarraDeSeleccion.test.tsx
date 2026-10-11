@@ -27,6 +27,8 @@ describe('BarraDeSeleccion con motivo de catálogo', () => {
     montar()
     fireEvent.change(screen.getByLabelText(/motivo/i), { target: { value: 'otro' } })
     expect(screen.getByRole('button', { name: /sí, anular 2/i })).toBeDisabled()
+    // Que diga por qué el botón no se habilita.
+    expect(screen.getByLabelText(/comentario \(obligatorio\)/i)).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText(/comentario/i), { target: { value: 'por correo' } })
     expect(screen.getByRole('button', { name: /sí, anular 2/i })).toBeEnabled()
   })
