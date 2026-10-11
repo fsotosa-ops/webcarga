@@ -64,6 +64,12 @@ SQL_BASE = f"""    SELECT t.id AS trip_id, t.planning_date,
            (t.tms_missing_since IS NOT NULL
             AND COALESCE(t.tms_absence_kind, 'eliminado') = 'eliminado') AS eliminado_en_tms,
            (t.tms_absence_kind = 'oferta_retirada') AS oferta_retirada,
+           -- Asignación incompleta (minuta 09/10 §2.4): lo que le falta al viaje
+           -- resuelto contra el directorio, con la misma fuente que Flota del día.
+           array_remove(ARRAY[
+               CASE WHEN vfr.resolved_tractor_asset_id IS NULL THEN 'tractor' END,
+               CASE WHEN vfr.resolved_driver_id IS NULL THEN 'driver' END
+           ], NULL) AS missing_fleet,
            -- D5: la última entrega en destino, sólo si TODOS los destinos tienen
            -- una. Mismo orden que _cargo_delivered en trips.py: lo manual, después
            -- el GPS, después el TMS.
@@ -96,15 +102,28 @@ SQL_BASE = f"""    SELECT t.id AS trip_id, t.planning_date,
       AND t.voided_at IS NULL
 """
 
+# Una sola definición del grupo, usada en el CASE y en el WHERE. Bloquea la firma
+# solo si es del día (lo cuenta `bloquean` en GET /trips/cierre-viajes).
+INCOMPLETE_ASSIGNMENT = (
+    "(is_assigned AND cardinality(missing_fleet) > 0 "
+    "AND (planning_date = $1::date OR is_active))"
+)
+
 SQL_GRUPOS_CIERRE = f"""
 WITH base AS (
 {SQL_BASE}
 )
 SELECT trip_id, planning_date, client_name, source_system_trip_id, trip_status,
        unassigned_reason_id, dias_sin_novedad,
-       source_system, tractor_plate, driver_name, carrier_name,
+       source_system, tractor_plate, driver_name, carrier_name, missing_fleet,
        CASE
            WHEN oferta_retirada THEN 'oferta_sin_declarar'
+           -- Minuta 09/10 §2.4 (decisiones del usuario del 11/10): asignado pero sin
+           -- tracto o sin conductor resueltos. Los del día (activos o cerrados) y
+           -- los activos de antes; se completa la flota, no se declara motivo. Va
+           -- antes que "Espera cierre del TMS": un Sodimac con solo la rampla
+           -- primero se completa (§2.3).
+           WHEN {INCOMPLETE_ASSIGNMENT} THEN 'incomplete_assignment'
            -- Ítem 6 (minuta 09/10): asignado, pero el TMS del cliente todavía no lo
            -- cierra. Va aparte, sin importar la fecha ni si el TMS dejó de reportar
            -- (Sodimac puede tardar hasta el martes siguiente): no es "en curso" ni
@@ -127,6 +146,7 @@ FROM base
 WHERE unassigned_reason_id IS NULL
   AND NOT eliminado_en_tms
   AND (oferta_retirada
+   OR {INCOMPLETE_ASSIGNMENT}
    OR (is_assigned AND group_id = 'pendiente_cierre_tms')
    OR (is_active AND NOT is_assigned)
    OR (is_active AND is_assigned AND planning_date < $1::date)
@@ -152,7 +172,7 @@ ORDER BY grupo, planning_date DESC
 SQL_CON_MOTIVO = f"""
 SELECT b.trip_id, b.planning_date, b.client_name, b.source_system_trip_id, b.trip_status,
        b.unassigned_reason_id, b.dias_sin_novedad,
-       b.source_system, b.tractor_plate, b.driver_name, b.carrier_name,
+       b.source_system, b.tractor_plate, b.driver_name, b.carrier_name, b.missing_fleet,
        'con_motivo' AS grupo
 FROM ({SQL_BASE}) b
 WHERE b.unassigned_reason_id IS NOT NULL

@@ -1,4 +1,4 @@
-import type { GrupoDelCierre, ViajeDelCierre } from '@/lib/types'
+import type { FleetGap, GrupoDelCierre, ViajeDelCierre } from '@/lib/types'
 
 /** Las tres preguntas de la pestaña Viajes del Cierre (spec 2026-10-11): qué falta
  *  declarar, qué sigue vivo sin depender del cierre, y qué ya se declaró. */
@@ -24,14 +24,30 @@ export const PESTANAS_DE_VIAJES: { id: PestanaDeViajes; etiqueta: string; bajada
   },
 ]
 
+/** Qué se hace con un viaje de Por resolver: declarar el motivo de no asignación
+ *  o completar su flota en el detalle del viaje. */
+export type TripAction = 'declare' | 'complete' | 'none'
+
 type Presentacion = {
   pestana: PestanaDeViajes
   /** La etiqueta corta del filtro de chips dentro de la pestaña. */
   chip: string
-  /** Lo mismo que cuenta `bloquean` en la API: hoy y rezago. */
-  bloqueaLaFirma: boolean
+  /** Lo mismo que cuenta `bloquean` en la API: hoy, rezago y la asignación incompleta del día. */
+  bloqueaLaFirma: (v: ViajeDelCierre, fecha: string) => boolean
+  action: TripAction
   /** "Por qué está aquí" (Por resolver), "Situación" (En seguimiento) o el motivo (Resueltos). */
   porQue: (v: ViajeDelCierre, fecha: string) => string
+}
+
+const siempre = () => true
+const nunca = () => false
+
+const PIEZA: Record<FleetGap, string> = { tractor: 'tracto', driver: 'conductor' }
+
+/** "Falta conductor", "Falta tracto" o "Falta tracto y conductor". */
+function loQueFalta(v: ViajeDelCierre): string {
+  const piezas = (['tractor', 'driver'] as const).filter(p => v.missing_fleet?.includes(p)).map(p => PIEZA[p])
+  return piezas.length ? `Falta ${piezas.join(' y ')}` : 'Flota incompleta'
 }
 
 const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`
@@ -47,32 +63,39 @@ export function diasAtras(planning: string, fecha: string): number {
  *  no compila. Va anotado y no con `satisfies` para que todo `porQue` tenga la
  *  misma firma y se pueda llamar con (viaje, fecha) desde cualquier grupo. */
 export const GRUPOS_DE_VIAJES: Record<GrupoDelCierre, Presentacion> = {
-  hoy: { pestana: 'to_resolve', chip: 'Del día', bloqueaLaFirma: true, porQue: () => 'Del día' },
+  hoy: { pestana: 'to_resolve', chip: 'Del día', bloqueaLaFirma: siempre, action: 'declare', porQue: () => 'Del día' },
   rezago: {
-    pestana: 'to_resolve', chip: 'Rezago', bloqueaLaFirma: true,
+    pestana: 'to_resolve', chip: 'Rezago', bloqueaLaFirma: siempre, action: 'declare',
     porQue: (v, fecha) => `Rezago · ${plural(diasAtras(v.planning_date, fecha), 'día', 'días')}`,
+  },
+  // Minuta 09/10 §2.4: asignado, pero sin tracto o sin conductor resueltos. Se
+  // completa en el detalle del viaje, no se declara; bloquea solo si es del día.
+  incomplete_assignment: {
+    pestana: 'to_resolve', chip: 'Asignación incompleta', action: 'complete',
+    bloqueaLaFirma: (v, fecha) => v.planning_date === fecha,
+    porQue: v => loQueFalta(v),
   },
   // Ofertas que el TMS retiró porque WebCarga no las tomó (Sodimac, 07/10).
   oferta_sin_declarar: {
-    pestana: 'to_resolve', chip: 'Oferta retirada', bloqueaLaFirma: false,
+    pestana: 'to_resolve', chip: 'Oferta retirada', bloqueaLaFirma: nunca, action: 'declare',
     porQue: () => 'Oferta retirada por el TMS',
   },
   // "Igual hay que cerrarlos" (Regla 5 de Pablo): se declaran como los demás.
   abandonado: {
-    pestana: 'to_resolve', chip: 'Abandonado', bloqueaLaFirma: false,
+    pestana: 'to_resolve', chip: 'Abandonado', bloqueaLaFirma: nunca, action: 'declare',
     porQue: () => 'Abandonado por el TMS',
   },
   en_curso: {
-    pestana: 'tracking', chip: 'En ruta', bloqueaLaFirma: false,
+    pestana: 'tracking', chip: 'En ruta', bloqueaLaFirma: nunca, action: 'none',
     porQue: v => `En ruta · ${v.trip_status ?? 'sin estado'}`,
   },
   // Ítem 6 (minuta 09/10): asignado, falta que el TMS del cliente lo cierre.
   pendiente_cierre_tms: {
-    pestana: 'tracking', chip: 'Espera cierre del TMS', bloqueaLaFirma: false,
+    pestana: 'tracking', chip: 'Espera cierre del TMS', bloqueaLaFirma: nunca, action: 'none',
     porQue: () => 'Espera cierre del TMS',
   },
   con_motivo: {
-    pestana: 'resolved', chip: 'Con motivo', bloqueaLaFirma: false,
+    pestana: 'resolved', chip: 'Con motivo', bloqueaLaFirma: nunca, action: 'none',
     porQue: v => v.unassigned_reason_label ?? 'Sin motivo',
   },
 }

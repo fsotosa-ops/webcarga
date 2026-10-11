@@ -211,7 +211,8 @@ describe('ClosuresCenterPage', () => {
       grupos: { hoy: [{ trip_id: 't1', planning_date: '2026-08-04', client_name: 'Walmart', source_system: 'qanalytics',
         source_system_trip_id: '2032999', trip_status: 'Asignado', tractor_plate: null, driver_name: null, carrier_name: null,
         origin: null, destinations: [], dias_sin_novedad: 0.2, unassigned_reason_id: null, unassigned_reason_label: null }],
-        rezago: [], oferta_sin_declarar: [], abandonado: [], en_curso: [], pendiente_cierre_tms: [], con_motivo: [] },
+        rezago: [], oferta_sin_declarar: [], abandonado: [], en_curso: [], pendiente_cierre_tms: [], con_motivo: [],
+        incomplete_assignment: [] },
       bloquean: 1,
     })
     consulta = 'date=2026-08-04&tab=trips'

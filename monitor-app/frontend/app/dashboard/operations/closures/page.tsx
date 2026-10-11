@@ -400,6 +400,7 @@ function ClosuresCenterPageInner() {
                 fecha={fecha}
                 grupos={cierreViajesQuery.data?.grupos}
                 bloquean={cierreViajesQuery.data?.bloquean}
+                tripHref={id => urlDelViaje(id, urlDeEsteCierre())}
                 cargando={cierreViajesQuery.isLoading}
                 motivos={motivosViajesQuery.data ?? []}
                 onCerrar={handleCerrarViajes}

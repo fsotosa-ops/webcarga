@@ -34,12 +34,29 @@ describe('gruposDeViajes', () => {
     expect(Object.fromEntries(Object.entries(GRUPOS_DE_VIAJES).map(([g, p]) => [g, p.pestana]))).toEqual({
       hoy: 'to_resolve', rezago: 'to_resolve', oferta_sin_declarar: 'to_resolve', abandonado: 'to_resolve',
       en_curso: 'tracking', pendiente_cierre_tms: 'tracking', con_motivo: 'resolved',
+      incomplete_assignment: 'to_resolve',
     })
   })
 
-  it('solo hoy y rezago bloquean la firma, igual que `bloquean` de la API', () => {
-    const bloquean = Object.entries(GRUPOS_DE_VIAJES).filter(([, p]) => p.bloqueaLaFirma).map(([g]) => g)
-    expect(bloquean.sort()).toEqual(['hoy', 'rezago'])
+  it('bloquean la firma hoy, rezago y la asignación incompleta del día, igual que `bloquean` de la API', () => {
+    const delDia = viaje('t9', '1', { planning_date: '2026-10-10' })
+    const deAntes = viaje('t9', '1', { planning_date: '2026-10-08' })
+    const bloquean = (v: ViajeDelCierre) => Object.entries(GRUPOS_DE_VIAJES)
+      .filter(([, p]) => p.bloqueaLaFirma(v, '2026-10-10')).map(([g]) => g).sort()
+    expect(bloquean(delDia)).toEqual(['hoy', 'incomplete_assignment', 'rezago'])
+    expect(bloquean(deAntes)).toEqual(['hoy', 'rezago'])
+  })
+
+  it('la asignación incompleta dice qué falta y se completa, no se declara', () => {
+    const g = GRUPOS_DE_VIAJES.incomplete_assignment
+    const v = viaje('t9', '1')
+    expect(g.porQue({ ...v, missing_fleet: ['driver'] }, '2026-10-10')).toBe('Falta conductor')
+    expect(g.porQue({ ...v, missing_fleet: ['tractor'] }, '2026-10-10')).toBe('Falta tracto')
+    expect(g.porQue({ ...v, missing_fleet: ['tractor', 'driver'] }, '2026-10-10')).toBe('Falta tracto y conductor')
+    expect(g.action).toBe('complete')
+    const declarables = Object.entries(GRUPOS_DE_VIAJES)
+      .filter(([, p]) => p.pestana === 'to_resolve' && p.action === 'declare').map(([k]) => k).sort()
+    expect(declarables).toEqual(['abandonado', 'hoy', 'oferta_sin_declarar', 'rezago'])
   })
 
   it('el "por qué" dice cuántos días tiene el rezago', () => {

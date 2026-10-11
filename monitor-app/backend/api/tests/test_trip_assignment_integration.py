@@ -168,8 +168,11 @@ async def test_closed_manual_trip_with_fleet_is_born_inactive_and_assigned(conex
     trip_id = await create_manual_trip(conn, "CERRADO FINALIZADO", "ZZZZ99")
     row = await conn.fetchrow("SELECT is_active, is_assigned FROM app.trips WHERE id = $1::uuid", trip_id)
     assert (row["is_active"], row["is_assigned"]) == (False, True)
-    in_closure = {str(r["trip_id"]) for r in await conn.fetch(SQL_GRUPOS_CIERRE, TEST_DATE)}
-    assert trip_id not in in_closure
+    # Ya no aparece como no asignado ("Del día"/"Rezago"). Su patente y su
+    # conductor no están en el directorio, así que puede figurar como asignación
+    # incompleta (minuta 09/10 §2.4), que es lo correcto.
+    group = {str(r["trip_id"]): r["grupo"] for r in await conn.fetch(SQL_GRUPOS_CIERRE, TEST_DATE)}.get(trip_id)
+    assert group not in ("hoy", "rezago")
 
 
 async def test_manual_trip_without_fleet_is_born_active_and_unassigned(conexion_revertida):

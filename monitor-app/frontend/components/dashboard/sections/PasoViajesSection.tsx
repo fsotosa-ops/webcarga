@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { Search } from 'lucide-react'
 import { Estado } from '@/components/ui/Estado'
 import { Cifra } from '@/components/ui/Cifra'
@@ -31,6 +32,9 @@ interface Props {
   /** La pestaña que trae la URL (`?trips=`); la página es dueña de la URL. */
   pestana?:         PestanaDeViajes | null
   onCambiarPestana?: (p: PestanaDeViajes) => void
+  /** El detalle de un viaje, con la vuelta a este Cierre: ahí se completa la flota
+   *  de una asignación incompleta. La página es dueña de la URL. */
+  tripHref: (tripId: string) => string
 }
 
 /** Fecha de planificación corta, como la lee el coordinador: 02/10. */
@@ -54,7 +58,7 @@ function formatDiasSinNovedad(dias: number): string {
  *  Sin encabezado propio: vive dentro de una pestaña del Centro de Cierre. */
 export function PasoViajesSection({
   fecha, grupos, bloquean, cargando = false, motivos, onCerrar, onDeshacer, meta, soloLectura = false,
-  pestana: pestanaDeLaUrl, onCambiarPestana,
+  pestana: pestanaDeLaUrl, onCambiarPestana, tripHref,
 }: Props) {
   // La pestaña elegida a mano manda; si no hay, la de la URL; si no, la inicial.
   // La inicial se calcula UNA vez, con los primeros datos, y se congela: si se
@@ -180,7 +184,9 @@ export function PasoViajesSection({
     : undefined
   // El lote solo actúa sobre lo que sigue por resolver: un viaje que se declaró,
   // se deshizo o cambió de grupo sale solo de la selección.
-  const porResolver = new Set(porPestana.to_resolve.todas.map(f => f.trip_id))
+  // Solo lo que se declara entra al lote: una asignación incompleta se completa.
+  const porResolver = new Set(porPestana.to_resolve.todas
+    .filter(f => GRUPOS_DE_VIAJES[f.grupo].action === 'declare').map(f => f.trip_id))
   const seleccion = [...selected].filter(id => porResolver.has(id))
   const n = soloLectura ? 0 : seleccion.length
 
@@ -285,7 +291,9 @@ export function PasoViajesSection({
                 <th className="text-left px-3 py-2">Empresa</th>
                 <th className="text-left px-3 py-2">Origen · Destinos</th>
                 <th className="text-left px-3 py-2">Tiempo</th>
-                {pestana !== 'tracking' && <th className="text-left px-3 py-2">Motivo de no asignación</th>}
+                {/* En Por resolver la columna declara el motivo o lleva a completar la flota. */}
+                {pestana === 'to_resolve' && <th className="text-left px-3 py-2">Resolver</th>}
+                {pestana === 'resolved' && <th className="text-left px-3 py-2">Motivo de no asignación</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -296,7 +304,8 @@ export function PasoViajesSection({
                 const otros = v.tractor_plate ? repetidas.get(v.tractor_plate) : undefined
                 return (
                   <tr key={v.trip_id}>
-                    {declarar && (
+                    {declarar && presentacion.action !== 'declare' && <td className="px-3 py-2" />}
+                    {declarar && presentacion.action === 'declare' && (
                       <td className="px-3 py-2">
                         <input
                           type="checkbox"
@@ -318,7 +327,7 @@ export function PasoViajesSection({
                     {pestana !== 'resolved' && (
                       <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>
                         {presentacion.porQue(v, fecha)}
-                        {presentacion.bloqueaLaFirma && (
+                        {presentacion.bloqueaLaFirma(v, fecha) && (
                           <span className="block text-etiqueta font-semibold text-accent">Bloquea la firma</span>
                         )}
                       </td>
@@ -342,7 +351,15 @@ export function PasoViajesSection({
                     <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{formatDiasSinNovedad(v.dias_sin_novedad)}</td>
                     {pestana === 'to_resolve' && (
                       <td className="px-3 py-2">
-                        {declarar ? (
+                        {presentacion.action === 'complete' ? (
+                          <Link
+                            href={tripHref(v.trip_id)}
+                            aria-label={`Completar asignación del viaje ${nro}`}
+                            className="text-etiqueta font-semibold text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded"
+                          >
+                            Completar asignación
+                          </Link>
+                        ) : declarar ? (
                           <div className="flex items-center gap-1.5">
                             <select
                               aria-label={`Motivo del viaje ${nro}`}

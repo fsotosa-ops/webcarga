@@ -55,6 +55,23 @@ async def _crear_viaje(
         trip_id, planning_date, str(trip_id), trip_status, status_reported_at,
         is_active, is_assigned,
     )
+    if is_assigned:
+        # Asignado de verdad: tracto y conductor resueltos contra el directorio.
+        # Sin flota resuelta, el viaje es una asignación incompleta (minuta 09/10
+        # §2.4) y cae en ese grupo, no en el que el test quiere probar.
+        await conexion.execute(
+            """
+            INSERT INTO app.trip_fleet_links (trip_id, tractor_asset_id, driver_id, link_source)
+            VALUES ($1,
+                    (SELECT id FROM public.assets WHERE license_plate IS NOT NULL ORDER BY id LIMIT 1),
+                    (SELECT id FROM public.drivers WHERE operational_status = 'ACTIVE' ORDER BY id LIMIT 1),
+                    'manual')
+            ON CONFLICT (trip_id) DO UPDATE
+                SET tractor_asset_id = EXCLUDED.tractor_asset_id, driver_id = EXCLUDED.driver_id,
+                    link_source = 'manual'
+            """,
+            trip_id,
+        )
     return trip_id
 
 
@@ -69,6 +86,15 @@ async def test_el_dominio_de_motivos_existe_y_tiene_codigo_estable(conexion_reve
     codigos = {f["code"] for f in filas}
     assert None not in codigos, "un motivo sin code se rompe al renombrar la etiqueta"
     assert {"SIN_CAMION", "SIN_PROVEEDOR", "NO_DA_TARIFA", "MANDANTE_DECLINO"} <= codigos
+
+
+def _bloquean_esperado(resp: dict, dia: date) -> int:
+    """Lo que impide firmar: hoy, rezago y la asignación incompleta del día
+    (minuta 09/10 §2.4). Nada más: ni en curso, ni abandonados, ni pendientes de
+    cierre del TMS."""
+    incompletas_del_dia = [v for v in resp["grupos"]["incomplete_assignment"]
+                           if v["planning_date"] == dia.isoformat()]
+    return len(resp["grupos"]["hoy"]) + len(resp["grupos"]["rezago"]) + len(incompletas_del_dia)
 
 
 async def test_cada_grupo_clasifica_al_viaje_que_le_corresponde(conexion_revertida):
@@ -259,8 +285,8 @@ async def test_el_endpoint_agrupa_y_dice_cuantos_bloquean(conexion_revertida):
                                pool=PoolDeUnaConexion(conexion_revertida), _=None)
 
     assert set(resp["grupos"]) == {"hoy", "rezago", "en_curso", "abandonado", "con_motivo", "oferta_sin_declarar",
-                                   "pendiente_cierre_tms"}
-    assert resp["bloquean"] == len(resp["grupos"]["hoy"]) + len(resp["grupos"]["rezago"])
+                                   "pendiente_cierre_tms", "incomplete_assignment"}
+    assert resp["bloquean"] == _bloquean_esperado(resp, FECHA_NEGOCIO)
 
     grupo_por_id = {
         item["trip_id"]: grupo
@@ -917,6 +943,5 @@ async def test_los_pendientes_de_cierre_no_bloquean_la_firma(conexion_revertida)
     resp = await cierre_viajes(fecha=FECHA_NEGOCIO.isoformat(), pool=PoolDeUnaConexion(conexion_revertida), _=None)
 
     assert str(tid) in {v["trip_id"] for v in resp["grupos"]["pendiente_cierre_tms"]}
-    bloquean_sin_el = len(resp["grupos"]["hoy"]) + len(resp["grupos"]["rezago"])
-    assert resp["bloquean"] == bloquean_sin_el
+    assert resp["bloquean"] == _bloquean_esperado(resp, FECHA_NEGOCIO)
 

@@ -24,6 +24,13 @@ const GRUPOS = {
   ],
   con_motivo: [viaje('t8', '2033003', { unassigned_reason_label: 'No da por tarifa' })],
 }
+// Asignación incompleta (minuta 09/10 §2.4): una del día y una activa de antes.
+const INCOMPLETAS = {
+  incomplete_assignment: [
+    viaje('t10', '2034000', { tractor_plate: 'FRTC42', missing_fleet: ['driver'] }),
+    viaje('t11', '2034001', { planning_date: '2026-10-08', driver_name: 'Juan Dos', missing_fleet: ['tractor'] }),
+  ],
+}
 const MOTIVOS = [{ id: 'm1', label: 'No da por tarifa' }]
 
 function renderViajes(props: Partial<ComponentProps<typeof PasoViajesSection>> = {}) {
@@ -32,7 +39,8 @@ function renderViajes(props: Partial<ComponentProps<typeof PasoViajesSection>> =
   const onCambiarPestana = vi.fn()
   const utils = render(
     <PasoViajesSection fecha="2026-10-10" grupos={GRUPOS} bloquean={2} motivos={MOTIVOS}
-                       onCerrar={onCerrar} onDeshacer={onDeshacer} onCambiarPestana={onCambiarPestana} {...props} />,
+                       onCerrar={onCerrar} onDeshacer={onDeshacer} onCambiarPestana={onCambiarPestana}
+                       tripHref={id => `/viaje/${id}`} {...props} />,
   )
   return { ...utils, onCerrar, onDeshacer, onCambiarPestana }
 }
@@ -43,7 +51,7 @@ const numerosDeViaje = () => screen.queryAllByTestId('nro-viaje').map(e => e.tex
 describe('PasoViajesSection', () => {
   it('no muestra ninguna cifra mientras carga', () => {
     render(<PasoViajesSection fecha="2026-10-10" grupos={undefined} bloquean={undefined} cargando
-                              motivos={[]} onCerrar={vi.fn()} />)
+                              motivos={[]} onCerrar={vi.fn()} tripHref={id => `/viaje/${id}`} />)
     expect(screen.queryByText('0')).toBeNull()
     expect(screen.queryByRole('tab')).toBeNull()
   })
@@ -178,7 +186,7 @@ describe('PasoViajesSection', () => {
 
   it('al declarar el último por resolver, la pestaña no salta sola', () => {
     const { rerender } = renderViajes({ pestana: 'to_resolve' })
-    rerender(<PasoViajesSection fecha="2026-10-10" bloquean={0} motivos={MOTIVOS} onCerrar={vi.fn()} pestana="to_resolve"
+    rerender(<PasoViajesSection tripHref={id => `/viaje/${id}`} fecha="2026-10-10" bloquean={0} motivos={MOTIVOS} onCerrar={vi.fn()} pestana="to_resolve"
                                 grupos={{ ...GRUPOS, hoy: [], rezago: [], oferta_sin_declarar: [], abandonado: [] }} />)
     expect(pestana(/Por resolver/)).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByText('Nada por resolver: puedes firmar el día')).toBeInTheDocument()
@@ -186,7 +194,7 @@ describe('PasoViajesSection', () => {
 
   it('sin pestaña en la URL, declarar el último por resolver tampoco hace saltar la pestaña', () => {
     const { rerender } = renderViajes()
-    rerender(<PasoViajesSection fecha="2026-10-10" bloquean={0} motivos={MOTIVOS} onCerrar={vi.fn()}
+    rerender(<PasoViajesSection tripHref={id => `/viaje/${id}`} fecha="2026-10-10" bloquean={0} motivos={MOTIVOS} onCerrar={vi.fn()}
                                 grupos={{ ...GRUPOS, hoy: [], rezago: [], oferta_sin_declarar: [], abandonado: [] }} />)
     expect(pestana(/Por resolver/)).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByText('Nada por resolver: puedes firmar el día')).toBeInTheDocument()
@@ -195,7 +203,7 @@ describe('PasoViajesSection', () => {
   it('un chip elegido que se queda sin viajes deja de filtrar, en vez de dejar la tabla vacía', () => {
     const { rerender } = renderViajes()
     fireEvent.click(screen.getByRole('button', { name: /^Rezago/ }))
-    rerender(<PasoViajesSection fecha="2026-10-10" bloquean={1} motivos={MOTIVOS} onCerrar={vi.fn()}
+    rerender(<PasoViajesSection tripHref={id => `/viaje/${id}`} fecha="2026-10-10" bloquean={1} motivos={MOTIVOS} onCerrar={vi.fn()}
                                 grupos={{ ...GRUPOS, rezago: [] }} />)
     expect(numerosDeViaje()).toEqual(['2033002', '808702', '2032999'])
   })
@@ -213,7 +221,7 @@ describe('PasoViajesSection', () => {
   it('un viaje seleccionado que deja de estar por resolver no cuenta en el lote', () => {
     const { rerender } = renderViajes()
     fireEvent.click(within(screen.getByText('2032999').closest('tr')!).getByRole('checkbox'))
-    rerender(<PasoViajesSection fecha="2026-10-10" bloquean={1} motivos={MOTIVOS} onCerrar={vi.fn()}
+    rerender(<PasoViajesSection tripHref={id => `/viaje/${id}`} fecha="2026-10-10" bloquean={1} motivos={MOTIVOS} onCerrar={vi.fn()}
                                 grupos={{ ...GRUPOS, hoy: [], con_motivo: [...GRUPOS.con_motivo, GRUPOS.hoy[0]] }} />)
     expect(screen.queryByText('1 seleccionado')).toBeNull()
   })
@@ -239,5 +247,20 @@ describe('PasoViajesSection', () => {
     const { pendiente_cierre_tms: _, ...sinElNuevo } = GRUPOS
     renderViajes({ grupos: sinElNuevo as typeof GRUPOS, pestana: 'tracking' })
     expect(screen.getByText('2033001')).toBeInTheDocument()
+  })
+
+  it('la asignación incompleta dice qué falta, lleva a completar la flota y no pide motivo', () => {
+    renderViajes({ grupos: { ...GRUPOS, ...INCOMPLETAS } })
+    const delDia = screen.getByText('2034000').closest('tr')!
+    expect(within(delDia).getByText('Falta conductor')).toBeInTheDocument()
+    expect(within(delDia).getByText('Bloquea la firma')).toBeInTheDocument()
+    expect(within(delDia).getByRole('link', { name: 'Completar asignación del viaje 2034000' }))
+      .toHaveAttribute('href', '/viaje/t10')
+    expect(within(delDia).queryByRole('combobox')).toBeNull()
+    expect(within(delDia).queryByRole('checkbox')).toBeNull()
+
+    const deAntes = screen.getByText('2034001').closest('tr')!
+    expect(within(deAntes).getByText('Falta tracto')).toBeInTheDocument()
+    expect(within(deAntes).queryByText('Bloquea la firma')).toBeNull()
   })
 })

@@ -1637,16 +1637,24 @@ export type ViajeDelCierre = {
   dias_sin_novedad:        number
   unassigned_reason_id:    string | null
   unassigned_reason_label: string | null
+  /** Lo que le falta a la flota resuelta contra el directorio (minuta 09/10 §2.4).
+   *  Opcional: backend y frontend se despliegan por separado. */
+  missing_fleet?:          FleetGap[]
 }
+
+/** Una pieza de la flota del viaje que no está resuelta contra el directorio. */
+export type FleetGap = 'tractor' | 'driver'
 
 /** `con_motivo` (HU-D3): declarados desde el cierre de ese día o después. */
 export type GrupoDelCierre = 'hoy' | 'rezago' | 'en_curso' | 'abandonado' | 'con_motivo' | 'oferta_sin_declarar'
   // Ítem 6 (minuta 09/10): asignados cuyo estado del TMS está en el grupo "Pendiente de cierre TMS".
   | 'pendiente_cierre_tms'
+  // Minuta 09/10 §2.4: asignados sin tracto o sin conductor resueltos; se completan.
+  | 'incomplete_assignment'
 
 export type CierreViajesResponse = {
   grupos:   Record<GrupoDelCierre, ViajeDelCierre[]>
-  /** Cuántos impiden firmar el día: sólo `hoy` + `rezago`. */
+  /** Cuántos impiden firmar el día: `hoy`, `rezago` y la asignación incompleta del día. */
   bloquean: number
 }
 

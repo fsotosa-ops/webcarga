@@ -2358,6 +2358,7 @@ async def cierre_viajes(
     desaparezcan de la vista —regla 5 de Pablo, "si no me cerraron el viaje no
     me lo van a pagar"— pero no impiden firmar el día. Tampoco
     `pendiente_cierre_tms` (ítem 6): ya están asignados; falta el cierre del TMS.
+    `incomplete_assignment` (minuta 09/10 §2.4) bloquea solo si es del día.
 
     Declarado ANTES de GET /{trip_id} — FastAPI matchea rutas en el orden en
     que se registran, así que el literal "/cierre-viajes" debe ir antes del
@@ -2384,7 +2385,7 @@ async def cierre_viajes(
 
     grupos: dict[str, list] = {
         "hoy": [], "rezago": [], "en_curso": [], "abandonado": [], "con_motivo": [],
-        "oferta_sin_declarar": [], "pendiente_cierre_tms": [],
+        "oferta_sin_declarar": [], "pendiente_cierre_tms": [], "incomplete_assignment": [],
     }
     for r in filas:
         stops = paradas.get(str(r["trip_id"]), [])
@@ -2404,9 +2405,15 @@ async def cierre_viajes(
             "dias_sin_novedad": float(r["dias_sin_novedad"] or 0),
             "unassigned_reason_id": str(r["unassigned_reason_id"]) if r["unassigned_reason_id"] else None,
             "unassigned_reason_label": r["unassigned_reason_label"],
+            "missing_fleet": list(r["missing_fleet"] or []),
         })
 
-    return {"grupos": grupos, "bloquean": len(grupos["hoy"]) + len(grupos["rezago"])}
+    # Una asignación incompleta bloquea solo si es del día (decisión del 11/10).
+    incompletas_del_dia = sum(1 for v in grupos["incomplete_assignment"] if v["planning_date"] == day.isoformat())
+    return {
+        "grupos": grupos,
+        "bloquean": len(grupos["hoy"]) + len(grupos["rezago"]) + incompletas_del_dia,
+    }
 
 
 @router.get("/{trip_id}")
