@@ -460,6 +460,20 @@ def test_pending_rows_empty_when_nothing_pending():
     assert res.json() == {"total": 0, "rows": []}
 
 
+def test_pending_rows_tolerate_a_carrier_without_tax_id():
+    """L2 (simulación local 11/10): la columna admite NULL y el modelo exigía
+    texto, así que una empresa sin RUT tumbaba /pending con 500 y su ficha
+    en Certificación decía "No le falta ningún documento"."""
+    pool = AsyncMock()
+    pool.fetch.return_value = [_pending_row(carrier_tax_id=None)]
+    client = make_client(pool)
+
+    res = client.get("/api/v1/compliance-records/pending")
+
+    assert res.status_code == 200
+    assert res.json()["rows"][0]["carrier_tax_id"] is None
+
+
 def test_pending_rows_maps_categories_and_certification_type():
     pool = AsyncMock()
     pool.fetch.return_value = [

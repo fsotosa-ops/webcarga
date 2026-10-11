@@ -64,7 +64,8 @@ class PendingComplianceRow(BaseModel):
     id: str
     carrier_id: str
     carrier_name: str
-    carrier_tax_id: str
+    # La columna admite NULL: una empresa dada de alta sin RUT (L2, 11/10).
+    carrier_tax_id: Optional[str] = None
     carrier_operation_types: list[str]
     certification_type: Literal["BASICA", "ADICIONAL"]
     category: Literal["EMPRESA", "CHOFER", "EQUIPO"]

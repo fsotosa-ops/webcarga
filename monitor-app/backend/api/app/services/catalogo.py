@@ -66,8 +66,11 @@ async def crear_requisito(conn, body: RequirementCreateBody, *, actor: str | Non
         """
         INSERT INTO public.compliance_requirements
             (requirement_code, name, target_entity, requirement_level,
-             expiration_policy, exigible_on, shipper_id, is_active)
-        VALUES ($1, $2, $3, $4, 'NONE', $5, $6::uuid, false)
+             expiration_policy, exigible_on, shipper_id, is_active, requires_file)
+        -- requires_file: lo que se da de alta acá es un documento, y se carga
+        -- con archivo. La columna vale false por defecto y la ficha del
+        -- Directorio no ofrecía subirlo (L4, 11/10).
+        VALUES ($1, $2, $3, $4, 'NONE', $5, $6::uuid, false, true)
         RETURNING id::text, requirement_code, name, target_entity,
                   requirement_level, exigible_on, is_active
         """,
