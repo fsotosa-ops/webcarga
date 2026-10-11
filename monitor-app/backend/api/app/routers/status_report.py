@@ -386,16 +386,24 @@ def _resumen_del_tipo(rows: list[dict]) -> dict:
 def _asignados(rows: list[dict]) -> list[dict]:
     """Cliente × origen REAL del viaje × empresa, por tipo de destino: la tabla
     del CSV de Pablo (minuta 09/10, ítem 14). Una fila por hoja del árbol; los
-    subtotales los arma el frontend (lib/reporte/arbolDeAsignados.ts)."""
+    subtotales los arma el frontend (lib/reporte/arbolDeAsignados.ts).
+    `vehicles` son los tractos de la fila con su conductor: la vista por
+    conductor (pedido del usuario 11/10). Primero los que tienen conductor, por
+    nombre; los sin conductor resuelto al final."""
     acc: dict = {}
     for r in rows:
         if not r["con_carga"]:
             continue
         clave = (r["client_name"] or "Sin cliente", r["origin_cd"] or "Sin origen", r["carrier_name"] or "Sin empresa")
         b = acc.setdefault(clave, {"client_name": clave[0], "origin": clave[1], "carrier_name": clave[2],
-                                   "rm": 0, "z0": 0, "region": 0, "unclassified": 0, "total": 0})
-        b[_ZONA_A_CLAVE[r["destination_zone"] or "Sin clasificar"]] += 1
+                                   "rm": 0, "z0": 0, "region": 0, "unclassified": 0, "total": 0,
+                                   "vehicles": []})
+        zona = _ZONA_A_CLAVE[r["destination_zone"] or "Sin clasificar"]
+        b[zona] += 1
         b["total"] += 1
+        b["vehicles"].append({"tractor_plate": r["tractor_plate"], "driver_name": r["driver_name"], "zone": zona})
+    for b in acc.values():
+        b["vehicles"].sort(key=lambda v: (v["driver_name"] is None, v["driver_name"] or "", v["tractor_plate"] or ""))
     return [acc[k] for k in sorted(acc)]
 
 

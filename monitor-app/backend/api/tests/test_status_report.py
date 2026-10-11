@@ -257,13 +257,27 @@ def test_asignados_cruza_cliente_origen_real_y_empresa_por_zona():
         # Sin carga: no entra en asignados.
         _row(asset_id="a5", con_carga=False, category="NO_TRABAJANDO"),
     ]
-    assert _asignados(rows) == [
+    sin_vehiculos = [{k: v for k, v in r.items() if k != "vehicles"} for r in _asignados(rows)]
+    assert sin_vehiculos == [
         {"client_name": "Sin cliente", "origin": "Sin origen", "carrier_name": "Transportes Sur",
          "rm": 0, "z0": 0, "region": 0, "unclassified": 1, "total": 1},
         {"client_name": "Walmart", "origin": "CD Lo Aguirre", "carrier_name": "Transportes Sur",
          "rm": 1, "z0": 0, "region": 1, "unclassified": 0, "total": 2},
         {"client_name": "Walmart", "origin": "CD Quilicura", "carrier_name": "Transportes Sur",
          "rm": 0, "z0": 1, "region": 0, "unclassified": 0, "total": 1},
+    ]
+
+
+def test_cada_fila_de_asignados_trae_sus_conductores_con_patente_y_zona():
+    """La vista por conductor de Asignados (pedido del usuario 11/10): la hoja
+    del árbol se abre en los tractos que la forman, cada uno con su conductor."""
+    rows = [
+        _row(asset_id="a1", tractor_plate="BBBB22", driver_name="Ana Soto", destination_zone="RM"),
+        _row(asset_id="a2", tractor_plate="AAAA11", driver_name=None, destination_zone="Región"),
+    ]
+    assert _asignados(rows)[0]["vehicles"] == [
+        {"tractor_plate": "BBBB22", "driver_name": "Ana Soto", "zone": "rm"},
+        {"tractor_plate": "AAAA11", "driver_name": None, "zone": "region"},
     ]
 
 
