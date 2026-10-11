@@ -16,6 +16,38 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Rediseño de Certificación, bloque 1 "Pendientes": SPEC ESCRITA, espera revisión (se ejecuta en otra sesión)
+
+Spec: `docs/superpowers/specs/2026-10-11-pending-documents-design.md`. El diseño se aprobó por secciones en el chat (brainstorming, camino de arquitectura).
+
+**Maquetas aprobadas.** Están en `.superpowers/brainstorm/84727-1791741985/content/`, fuera de git:
+- `cubo-opciones.html`: se eligió la opción A;
+- `pendientes-estados.html`;
+- `pendientes-carga-en-lote.html`.
+
+**Se leyeron las transcripciones** de Granola del 09/10 y del 02/10, además de las minutas. El cubo por documento con carga "al tiro" es el pedido central de Pablo. Él quiere Certificación como tareas y el Directorio "solo para mirar".
+
+**Decisiones del usuario (11/10):**
+- D1: el nombre es "Pendientes".
+- D2: lista y detalle.
+- D3: tres estados (Vencido, Por vencer, Falta).
+- D4: ver por documento o por empresa.
+- D5: carga en lote con asignación automática y revisión.
+- D6: extender lo que existe (`/pending`, `vencimientos.py`, `document_matcher`).
+- D7: Operaciones ve y "Pide a Certificación". Esto va en el bloque 3 y falta validarlo con Pablo.
+- D8: alcance solo activos, aplicado al leer.
+
+**Los cuatro bloques del rediseño:**
+1. Pendientes (esta spec).
+2. Certificación como tareas y el Directorio solo para mirar; se retira la segunda ficha.
+3. Panel de consulta único y "Pedir a Certificación".
+4. Configuración › Certificación: un flujo para activar, variantes por cliente y L7.
+
+**Siguiente paso exacto:**
+- [ ] El usuario revisa la spec.
+- [ ] Con su OK, `superpowers:writing-plans` sobre la spec. Plan en `docs/superpowers/plans/2026-10-1X-pending-documents.md`, con el método de ejecución que elija.
+- [ ] Al ejecutar: medir primero el resumen con reglas activas (objetivo < 300 ms), usar la copia local para el recorrido y desplegar a dev cuando esté en verde.
+
 ### 2026-10-11 — Auditoría de Certificación: simulación en copia local + bugs L1-L5 cerrados
 
 Plan y hallazgos en `docs/superpowers/plans/2026-10-11-certification-audit.md` (secciones 4 y 5).
@@ -55,7 +87,7 @@ alcance y de estado.**
   aprobar.
 
 **Siguiente paso exacto:**
-- [ ] Brainstorming del rediseño de Certificación y Configuración:
+- [x] Brainstorming del rediseño de Certificación (bloque 1, Pendientes): spec escrita, ver entrada de arriba. Resto de bloques pendiente:
   - un panel único de documentos por entidad;
   - un solo estado y un solo alcance (incluye L6);
   - el "cubo" por documento;
