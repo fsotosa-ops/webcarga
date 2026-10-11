@@ -150,6 +150,10 @@ function EmpresaDetailPageInner() {
   const backLink            = returnLink(searchParams.get('next'))
   const canEdit = usePermiso('directory.edit')
   const canAdmin = usePermiso('directory.delete')
+  // Los documentos son de Certificación: subirlos y reasignarlos se decide con
+  // SUS permisos, los mismos que exige la API (L5, 11/10).
+  const canUploadDocuments = usePermiso('documents.upload')
+  const canReviewDocuments = usePermiso('documents.review')
   const [activeTab, setActiveTab] = useState<Tab>(
     requestedTab ?? (handoffDriverName ? 'conductores' : handoffTractorPlate ? 'equipos' : 'resumen'),
   )
@@ -837,6 +841,8 @@ function EmpresaDetailPageInner() {
         carrierId={id}
         canEdit={canEdit}
         canAdmin={canAdmin}
+        canUploadDocuments={canUploadDocuments}
+        canReviewDocuments={canReviewDocuments}
         onClose={() => setSelectedDriverId(null)}
         onPatch={handlePatchDriver}
         onRemove={() => handleRemoveDriver(selectedDriver!.id)}
@@ -848,6 +854,8 @@ function EmpresaDetailPageInner() {
         carrierId={id}
         canEdit={canEdit}
         canAdmin={canAdmin}
+        canUploadDocuments={canUploadDocuments}
+        canReviewDocuments={canReviewDocuments}
         onClose={() => setSelectedAssetId(null)}
         onPatch={handlePatchAsset}
         onRemove={() => handleRemoveAsset(selectedAsset!.id)}

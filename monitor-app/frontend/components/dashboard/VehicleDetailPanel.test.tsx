@@ -59,6 +59,8 @@ function renderPanel(asset: Asset | null, opts: {
       asset={asset}
       carrierId="c1"
       canEdit={opts.canEdit ?? true}
+      canUploadDocuments
+      canReviewDocuments
       canAdmin={opts.canAdmin ?? true}
       onClose={vi.fn()}
       onPatch={opts.onPatch ?? vi.fn().mockResolvedValue(undefined)}
@@ -234,7 +236,7 @@ describe('VehicleDetailPanel', () => {
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <VehicleDetailPanel
           asset={{ ...ASSET, id: 'v2', webcarga_operation_type_id: 'ec' }}
-          carrierId="c1" canEdit canAdmin={false}
+          carrierId="c1" canEdit canAdmin={false} canUploadDocuments canReviewDocuments
           onClose={vi.fn()} onPatch={vi.fn()} onRemove={vi.fn()} onTransferClick={vi.fn()}
           drivers={DRIVERS}
         />

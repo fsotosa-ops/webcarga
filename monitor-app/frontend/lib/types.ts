@@ -808,7 +808,7 @@ export type PendingComplianceRow = {
   id:                      string
   carrier_id:              string
   carrier_name:            string
-  carrier_tax_id:          string
+  carrier_tax_id:          string | null
   /** Tipo de Operación (Tractoreo/Equipo Completo) agregado desde los
    *  vehículos activos de la empresa — puede traer ambos si la flota es
    *  mixta, no se fuerza un solo valor. */

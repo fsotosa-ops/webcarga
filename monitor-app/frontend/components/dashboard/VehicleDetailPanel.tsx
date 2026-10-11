@@ -21,6 +21,10 @@ interface Props {
   asset:           Asset | null
   carrierId:       string
   canEdit:         boolean
+  /** Subir o reemplazar documentos (`documents.upload`) y reasignarlos
+   *  (`documents.review`): permisos de Certificación, no de editar la ficha. */
+  canUploadDocuments: boolean
+  canReviewDocuments: boolean
   canAdmin:        boolean
   onClose:         () => void
   onPatch:         (id: string, body: AssetPatchBody) => Promise<void>
@@ -47,7 +51,7 @@ interface Props {
  *  exige motivo—, así que un equipo importado por la ingesta sin clasificar
  *  bloqueaba el cierre sin que hubiera dónde arreglarlo. Pablo, 04/09: *"no
  *  puedo definir qué tractoreo, entonces no me lo muestra aquí"*. */
-export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick, drivers = [] }: Props) {
+export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, canUploadDocuments, canReviewDocuments, onClose, onPatch, onRemove, onTransferClick, drivers = [] }: Props) {
   const open = !!asset
   const panelRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
@@ -430,7 +434,8 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, onClos
                  carga se centralizó en Certificación. */
               <DocumentChecklist
                 items={items}
-                canEdit={canEdit}
+                canUpload={canUploadDocuments}
+                canReview={canReviewDocuments}
                 hideCounter
                 /* EL MISMO hook que Certificación. Antes esto llamaba a
                    la puerta de la Bandeja, que sube ANTES de clasificar: cada

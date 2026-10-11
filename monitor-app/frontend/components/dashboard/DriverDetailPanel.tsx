@@ -22,6 +22,10 @@ interface Props {
   driver:          Driver | null
   carrierId:       string
   canEdit:         boolean
+  /** Subir o reemplazar documentos (`documents.upload`) y reasignarlos
+   *  (`documents.review`): permisos de Certificación, no de editar la ficha. */
+  canUploadDocuments: boolean
+  canReviewDocuments: boolean
   canAdmin:        boolean
   onClose:         () => void
   onPatch:         (id: string, body: DriverPatchBody) => Promise<void>
@@ -34,7 +38,7 @@ interface Props {
  *  el roster, que solo expone el agregado) vía GET /drivers/{id}/compliance-records.
  *  Solo lectura desde Ronda 88 — subir/editar documentos se hace en
  *  Certificación, ver TransporterDocumentsPanel. */
-export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, onClose, onPatch, onRemove, onTransferClick }: Props) {
+export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, canUploadDocuments, canReviewDocuments, onClose, onPatch, onRemove, onTransferClick }: Props) {
   const open = !!driver
   const panelRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
@@ -334,7 +338,8 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, onClos
                  carga se centralizó en Certificación. */
               <DocumentChecklist
                 items={items}
-                canEdit={canEdit}
+                canUpload={canUploadDocuments}
+                canReview={canReviewDocuments}
                 hideCounter
                 /* EL MISMO hook que Certificación. Antes esto llamaba a
                    la puerta de la Bandeja, que sube ANTES de clasificar: cada

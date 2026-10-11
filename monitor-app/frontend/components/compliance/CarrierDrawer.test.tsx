@@ -64,6 +64,23 @@ describe('CarrierDrawer', () => {
     expect(enlace).toHaveAttribute('href', '/dashboard/compliance/inbox?empresa=c1')
   })
 
+  // L3 (simulación local 11/10): con /pending caído, el cajón decía "No le
+  // falta ningún documento" — un fallo disfrazado de "todo al día".
+  it('si no se pudo cargar lo dice y ofrece reintentar, no afirma que no falta nada', async () => {
+    vi.mocked(complianceApi.listPending).mockRejectedValueOnce(new Error('500'))
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <CarrierDrawer carrierId="c1" carrierName="Transportes Charlotte Spa" />
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo cargar lo que le falta')
+    expect(screen.queryByText(/no le falta ningún documento/i)).not.toBeInTheDocument()
+
+    vi.mocked(complianceApi.listPending).mockResolvedValueOnce({ total: 1, rows: [pendiente()] })
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+    expect(await screen.findByText(/faltan 1/)).toBeInTheDocument()
+  })
+
   it('pide solo los pendientes de esa empresa', async () => {
     setup()
     await waitFor(() =>

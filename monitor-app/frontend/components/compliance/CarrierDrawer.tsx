@@ -12,6 +12,7 @@ import { agruparPorSujeto } from '@/lib/utils/agruparPorSujeto'
 import { useQuery } from '@tanstack/react-query'
 import type { PendingComplianceRow } from '@/lib/types'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
+import { Estado } from '@/components/ui/Estado'
 
 interface Props {
   carrierId:   string
@@ -132,7 +133,21 @@ export function CarrierDrawer({ carrierId, carrierName, subject }: Props) {
           </p>
         )}
 
-        {!pendingQuery.isPending && !rows.length && (
+        {/* Un fallo no es "todo al día" (L3, 11/10): si no se pudo leer, se
+            dice, y lo que ya estaba cargado no se toca. */}
+        {pendingQuery.isError && (
+          <Estado tipo="error" titulo="No se pudo cargar lo que le falta." detalle="Lo que ya estaba cargado no se perdió.">
+            <button
+              type="button"
+              onClick={() => pendingQuery.refetch()}
+              className="rounded-md border border-border bg-white px-3 py-1.5 text-dato font-semibold text-text-primary hover:bg-bg-main"
+            >
+              Reintentar
+            </button>
+          </Estado>
+        )}
+
+        {pendingQuery.isSuccess && !rows.length && (
           <p className="text-etiqueta text-resuelto flex items-center gap-1.5 py-1">
             <Check size={12} /> No le falta ningún documento
           </p>

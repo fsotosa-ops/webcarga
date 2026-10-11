@@ -34,7 +34,12 @@ export type ChecklistItem = {
 
 interface Props {
   items:               ChecklistItem[]
-  canEdit:             boolean
+  /** Subir, reemplazar, corregir el vencimiento o borrar: la API pide
+   *  `documents.upload`. No es lo mismo que editar la ficha (`directory.edit`):
+   *  confundirlos mostraba "Subir" a quien después recibía 403 (L5, 11/10). */
+  canUpload:           boolean
+  /** Reasignar un documento a otro requisito o sujeto: `documents.review`. */
+  canReview?:          boolean
   /** El tercer argumento lo pone el gesto compartido cuando el requisito pide
    *  fecha. Quien lo implemente debe pasarlo a `complianceApi.uploadFile`.
    *
@@ -80,9 +85,10 @@ export function checklistCompletion(items: ChecklistItem[]): { ok: number; total
   return { ok: items.filter(item => nodeState(item) === 'ok').length, total: items.length }
 }
 
-function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationChange, onDelete, carrierId, onReassigned }: {
+function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, onExpirationChange, onDelete, carrierId, onReassigned }: {
   item: ChecklistItem
-  canEdit: boolean
+  canUpload: boolean
+  canReview: boolean
   onUpload?: (recordId: string, file: File, datos?: DatosDelDocumento) => void | Promise<void>
   onStatusChange?: (recordId: string, status: ComplianceStatus) => void
   onExpirationChange?: (recordId: string, expirationDate: string) => void
@@ -99,13 +105,20 @@ function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationCha
    *  reasignación— y envolver uno en otro dibujaría el nombre dos veces. */
   const carga = useGestoDeCarga({
     politica: item.expiration_policy ?? 'OPTIONAL',
-    puedeEditar: canEdit && !!onUpload,
+    puedeEditar: canUpload && !!onUpload,
     onSubir: async (archivo, datos) => { await onUpload?.(item.id, archivo, datos) },
   })
   /** Soltar un archivo encima sólo carga lo que FALTA. Sobre una fila que ya
    *  tiene documento, un arrastre accidental lo reemplazaría sin que nadie lo
    *  pidiera; reemplazar sigue siendo un clic explícito en su propio control. */
-  const zona = item.requires_file && !item.file_url ? carga.propsDeZona() : {}
+  /** Se carga con archivo salvo que quien llama haya pedido el modo "marcar a
+   *  mano" (requisito sin archivo + `onStatusChange`). Sin ese modo, una fila
+   *  con `requires_file = false` —como nacen los documentos creados desde
+   *  Configuración— quedaba sin ninguna acción, mientras Certificación sí la
+   *  dejaba subir (L4, 11/10). */
+  const marcaAMano = !item.requires_file && !!onStatusChange
+  const conArchivo = !marcaAMano
+  const zona = conArchivo && !item.file_url ? carga.propsDeZona() : {}
   const iconCls = state === 'ok'
     ? 'bg-green-500 border-green-500 text-white'
     : state === 'overdue'
@@ -127,7 +140,7 @@ function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationCha
       </span>
       <div className="flex-1 min-w-0">
         <span className="text-xs font-semibold text-text-primary truncate block">{item.label}</span>
-        {(item.expiration_date || (canEdit && onExpirationChange)) && (
+        {(item.expiration_date || (canUpload && onExpirationChange)) && (
           <div className="flex items-center gap-1.5 mt-0.5">
             {item.expiration_date && (
               <span className="text-[10px] text-gray-400">
@@ -139,7 +152,7 @@ function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationCha
                 ({relative})
               </span>
             )}
-            {canEdit && onExpirationChange && (
+            {canUpload && onExpirationChange && (
               <input
                 type="date"
                 aria-label={`Fecha de vencimiento de ${item.label}`}
@@ -165,7 +178,7 @@ function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationCha
       {/* Estado "Falta" con carga habilitada: CTA visible en vez de un
          link chico — cargar debe ser la acción obvia (pedido explícito
          del usuario 2026-07-18). */}
-      {canEdit && item.requires_file && !item.file_url && onUpload && (
+      {canUpload && conArchivo && !item.file_url && onUpload && (
         <label className="flex items-center gap-1 text-[11px] font-semibold text-accent border border-dashed border-accent/40 rounded-md px-2 py-1 hover:bg-accent/5 transition-colors cursor-pointer shrink-0">
           <Upload size={11} /> Subir documento
           <input
@@ -177,14 +190,14 @@ function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationCha
         </label>
       )}
       {/* HU-03: el archivo está, pero puede estar en el lugar equivocado. */}
-      {canEdit && item.file_url && carrierId && (
+      {canReview && item.file_url && carrierId && (
         <ReassignDocument
           recordId={item.id}
           carrierId={carrierId}
           onDone={() => onReassigned?.()}
         />
       )}
-      {canEdit && item.requires_file && item.file_url && onUpload && (
+      {canUpload && conArchivo && item.file_url && onUpload && (
         <label
           title="Reemplazar archivo"
           className="flex items-center gap-1 text-[11px] font-semibold text-gray-400 hover:text-accent cursor-pointer shrink-0"
@@ -198,7 +211,7 @@ function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationCha
           />
         </label>
       )}
-      {canEdit && !item.requires_file && onStatusChange && (
+      {canUpload && marcaAMano && (
         <select
           aria-label={`Estado de ${item.label}`}
           value={item.status}
@@ -213,9 +226,9 @@ function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationCha
         <DocumentPreviewModal
           label={item.label}
           url={item.file_url}
-          canEdit={canEdit}
+          canEdit={canUpload}
           onClose={() => setPreviewOpen(false)}
-          onDelete={canEdit && onDelete ? () => onDelete(item.id) : undefined}
+          onDelete={canUpload && onDelete ? () => onDelete(item.id) : undefined}
         />
       )}
     </div>
@@ -247,11 +260,11 @@ function ChecklistRow({ item, canEdit, onUpload, onStatusChange, onExpirationCha
 
 /** Checklist de documentos — lista vertical de filas (icono + nombre +
  *  acción). Genérico: data-driven desde compliance_records, no un catálogo
- *  hardcodeado por módulo. La acción por fila se decide por
- *  `item.requires_file` (subir archivo vs. cambiar estado a mano) — no por
- *  cuál callback pasó el llamador, porque un mismo carrier/driver/asset
- *  mezcla requisitos con y sin archivo en el mismo checklist. */
-export function DocumentChecklist({ items, canEdit, onUpload, onStatusChange, onExpirationChange, onDelete, hideCounter, carrierId, onReassigned }: Props) {
+ *  hardcodeado por módulo. Por defecto cada fila se carga con archivo, como en
+ *  Certificación. Cambiar el estado a mano es la excepción: solo para un
+ *  requisito sin archivo (`requires_file = false`) y solo si quien llama pasa
+ *  `onStatusChange`; un mismo carrier/driver/asset puede mezclar los dos. */
+export function DocumentChecklist({ items, canUpload, canReview = false, onUpload, onStatusChange, onExpirationChange, onDelete, hideCounter, carrierId, onReassigned }: Props) {
   const { ok: okCount } = checklistCompletion(items)
 
   return (
@@ -264,7 +277,8 @@ export function DocumentChecklist({ items, canEdit, onUpload, onStatusChange, on
           <ChecklistRow
             key={item.id}
             item={item}
-            canEdit={canEdit}
+            canUpload={canUpload}
+            canReview={canReview}
             onUpload={onUpload}
             onStatusChange={onStatusChange}
             onExpirationChange={onExpirationChange}

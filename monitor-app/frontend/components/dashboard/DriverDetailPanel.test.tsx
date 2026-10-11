@@ -48,6 +48,7 @@ const RECORDS: ComplianceRecord[] = [{
 
 function renderPanel(driver: Driver | null, opts: {
   canEdit?: boolean; canAdmin?: boolean
+  canUploadDocuments?: boolean; canReviewDocuments?: boolean
   onPatch?: (...args: unknown[]) => Promise<void>
   onRemove?: () => Promise<void>
 } = {}) {
@@ -57,6 +58,8 @@ function renderPanel(driver: Driver | null, opts: {
       carrierId="c1"
       canEdit={opts.canEdit ?? true}
       canAdmin={opts.canAdmin ?? true}
+      canUploadDocuments={opts.canUploadDocuments ?? true}
+      canReviewDocuments={opts.canReviewDocuments ?? true}
       onClose={vi.fn()}
       onPatch={opts.onPatch ?? vi.fn().mockResolvedValue(undefined)}
       onRemove={opts.onRemove ?? vi.fn().mockResolvedValue(undefined)}
@@ -112,6 +115,29 @@ describe('DriverDetailPanel', () => {
     expect(screen.getByLabelText('Subir Licencia')).toBeInTheDocument()
   })
 
+  // L5 (simulación local 11/10): el Directorio mostraba "Subir" y
+  // "Reasignar" con directory.edit, pero la API exige documents.upload y
+  // documents.review. El supervisor de Operaciones elegía el archivo, ponía la
+  // fecha y recibía 403 al guardar.
+  it('editar la ficha no alcanza para subir documentos: sin documents.upload no ofrece Subir', async () => {
+    vi.mocked(driversApi.listComplianceRecords).mockResolvedValue([
+      { ...RECORDS[0], id: 'cr2', requirement_code: 'LICENCIA', name: 'Licencia', requires_file: true },
+    ])
+    renderPanel(DRIVER, { canEdit: true, canUploadDocuments: false })
+    await waitFor(() => expect(screen.getByText('Licencia')).toBeInTheDocument())
+    expect(screen.queryByLabelText('Subir Licencia')).not.toBeInTheDocument()
+  })
+
+  it('reasignar un documento exige documents.review, no editar la ficha', async () => {
+    vi.mocked(driversApi.listComplianceRecords).mockResolvedValue([
+      { ...RECORDS[0], id: 'cr3', requirement_code: 'LICENCIA', name: 'Licencia', requires_file: true,
+        status: 'APPROVED_MANUAL', file_url: 'https://storage.example/l.pdf' },
+    ])
+    renderPanel(DRIVER, { canEdit: true, canUploadDocuments: true, canReviewDocuments: false })
+    await waitFor(() => expect(screen.getByText('Licencia')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /Reasignar/ })).not.toBeInTheDocument()
+  })
+
   it('saves the edited name when "Guardar" is clicked', async () => {
     const onPatch = vi.fn().mockResolvedValue(undefined)
     renderPanel(DRIVER, { onPatch })
@@ -138,7 +164,7 @@ describe('DriverDetailPanel', () => {
     const onTransferClick = vi.fn()
     renderWithClient(
       <DriverDetailPanel
-        driver={DRIVER} carrierId="c1" canEdit={true} canAdmin={true}
+        driver={DRIVER} carrierId="c1" canEdit={true} canAdmin={true} canUploadDocuments canReviewDocuments
         onClose={vi.fn()} onPatch={vi.fn().mockResolvedValue(undefined)}
         onRemove={vi.fn().mockResolvedValue(undefined)}
         onTransferClick={onTransferClick}
@@ -285,7 +311,7 @@ describe('DriverDetailPanel', () => {
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <DriverDetailPanel
           driver={{ ...DRIVER, id: 'd2', home_location_id: null }}
-          carrierId="c1" canEdit canAdmin={false}
+          carrierId="c1" canEdit canAdmin={false} canUploadDocuments canReviewDocuments
           onClose={vi.fn()} onPatch={vi.fn()} onRemove={vi.fn()} onTransferClick={vi.fn()}
         />
       </QueryClientProvider>,
