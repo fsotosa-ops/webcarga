@@ -364,3 +364,77 @@ def match_document(
 
     candidates.sort(key=lambda c: c.confidence, reverse=True)
     return candidates
+
+
+# ── De quién es un archivo cuando el documento ya se sabe ────────────────────
+#
+# Pendientes (spec 2026-10-11): se arrastran 15 F30-1 sobre el F30-1. El TIPO
+# no hay que adivinarlo, solo el dueño, y el universo es quienes lo DEBEN.
+# `match_document` no sirve tal cual: su confianza depende de reconocer el tipo
+# por alias (sin alias, un RUT exacto queda en 0.60) y no mira nombres de
+# empresa. Esta función reutiliza sus piezas, no las copia.
+
+
+@dataclass(frozen=True)
+class PendingOwner:
+    """Quien debe el documento: su registro pendiente y cómo reconocerlo.
+    `label` es la razón social, el nombre del conductor o la patente."""
+    record_id: str
+    entity_type: str  # CARRIER | DRIVER | ASSET
+    label: str
+    tax_id: str | None
+    carrier_name: str
+
+
+@dataclass(frozen=True)
+class OwnerCandidate:
+    record_id: str
+    confidence: float
+    reason: str  # rut | plate | name
+
+
+def match_owner(file_name: str, owners: list[PendingOwner]) -> list[OwnerCandidate]:
+    """Candidatos para un archivo, de mayor a menor confianza. Un identificador
+    fuerte (RUT con DV válido, patente) vale 0.95; el nombre, la misma escala
+    difusa de la Bandeja (un nombre exacto llega a 0.90)."""
+    normalized = normalize_text(file_name)
+    ruts = set(extract_ruts(file_name))
+    tokens = set(normalized.split())
+    found: dict[str, OwnerCandidate] = {}
+
+    def keep(c: OwnerCandidate) -> None:
+        if c.record_id not in found or found[c.record_id].confidence < c.confidence:
+            found[c.record_id] = c
+
+    for o in owners:
+        if o.tax_id and o.tax_id in ruts:
+            keep(OwnerCandidate(o.record_id, 0.95, "rut"))
+            continue
+        if o.entity_type == "ASSET":
+            plate = normalize_text(o.label)
+            if plate and plate in tokens:
+                keep(OwnerCandidate(o.record_id, 0.95, "plate"))
+            continue
+        ratio = best_name_similarity(normalized, o.label)
+        if ratio >= _FUZZY_FLOOR:
+            keep(OwnerCandidate(o.record_id, _fuzzy_confidence(ratio), "name"))
+
+    # Un identificador fuerte en el archivo manda sobre cualquier nombre: un
+    # homónimo con otro RUT (0.90 exacto) quedaba a menos de _AMBIGUITY_MARGIN
+    # del 0.95 y volvía ambiguo un archivo que sí identifica a su dueño.
+    if any(c.reason != "name" for c in found.values()):
+        found = {k: c for k, c in found.items() if c.reason != "name"}
+
+    return sorted(found.values(), key=lambda c: c.confidence, reverse=True)
+
+
+def classify_owner_match(candidates: list[OwnerCandidate]) -> str:
+    """matched: un candidato sin rival cercano (la pantalla igual muestra la
+    razón y deja cambiarlo). ambiguous: dos a menos de _AMBIGUITY_MARGIN.
+    unmatched: ninguno. Nada se guarda sin que una persona confirme el lote."""
+    if not candidates:
+        return "unmatched"
+    top = candidates[0]
+    if any(abs(top.confidence - c.confidence) < _AMBIGUITY_MARGIN for c in candidates[1:]):
+        return "ambiguous"
+    return "matched"
