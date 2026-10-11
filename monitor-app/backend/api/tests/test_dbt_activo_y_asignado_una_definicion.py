@@ -43,3 +43,17 @@ def test_la_rama_manual_ya_no_copia_los_flags_del_alta(modelo):
     manual = modelo.split("FROM app.trips_manual m")[0].rsplit("UNION ALL", 1)[1]
     assert "m.is_active                                         AS is_active" not in manual
     assert "m.is_assigned                                       AS is_assigned" not in manual
+
+
+MACROS = DBT / "macros/viaje_activo_y_asignado.sql"
+
+
+def test_las_macros_llaman_a_la_regla_de_la_base():
+    if not MACROS.exists():
+        pytest.skip("mirror de Mage no sincronizado en esta máquina")
+    macros = MACROS.read_text()
+    assert "app.is_trip_open(" in macros
+    assert "app.is_trip_assigned(" in macros
+    # La regla ya no se repite en dbt: vive en la base (spec 2026-10-11).
+    assert "->>'tractor_plate'" not in macros
+    assert "NOT IN ('CANCELADO', 'Declinada', 'Removida')" not in macros
