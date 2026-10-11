@@ -405,7 +405,9 @@ function ClosuresCenterPageInner() {
                 onCerrar={handleCerrarViajes}
                 onDeshacer={handleDeshacerViajes}
                 meta={tripsMeta}
-                soloLectura={diaCerrado}
+                // Mientras no se sabe si el día está firmado, nada se declara: las
+                // acciones que escriben esperan la información de la que dependen.
+                soloLectura={diaCerrado || cierreQuery.isLoading}
                 pestana={url.trips}
                 onCambiarPestana={setPestanaDeViajes}
               />

@@ -27,8 +27,14 @@ vi.mock('@/lib/supabase/client', () => ({
 }))
 
 vi.mock('@/lib/api/tripsMeta', () => ({
-  fetchTripsMeta: vi.fn().mockResolvedValue({ unassigned_reasons: [{ id: 'pana', label: 'Pana' }] }),
+  fetchTripsMeta: vi.fn().mockResolvedValue({ unassigned_reasons: [{ id: 'pana', label: 'Pana' }], tms_sources: [] }),
 }))
+
+// Solo cierreViajes se simula; el resto de tripsApi queda como está.
+vi.mock('@/lib/api/trips', async (original) => {
+  const real = await original<typeof import('@/lib/api/trips')>()
+  return { tripsApi: { ...real.tripsApi, cierreViajes: vi.fn() } }
+})
 
 vi.mock('@/lib/api/dailyClosures', () => ({
   dailyClosuresApi: { get: vi.fn(), setReason: vi.fn(), setReasonBatch: vi.fn() },
@@ -195,6 +201,24 @@ describe('ClosuresCenterPage', () => {
     renderPage()
     fireEvent.click(screen.getByRole('tab', { name: 'Viajes' }))
     expect(replace).toHaveBeenCalledWith('/dashboard/operations/closures?date=2026-08-04&tab=trips')
+  })
+
+  it('mientras no se sabe si el día está firmado, Viajes no deja declarar', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const { tripsApi } = await import('@/lib/api/trips')
+    vi.mocked(dailyClosuresApi.get).mockReturnValue(new Promise(() => {}))
+    vi.mocked(tripsApi.cierreViajes).mockResolvedValue({
+      grupos: { hoy: [{ trip_id: 't1', planning_date: '2026-08-04', client_name: 'Walmart', source_system: 'qanalytics',
+        source_system_trip_id: '2032999', trip_status: 'Asignado', tractor_plate: null, driver_name: null, carrier_name: null,
+        origin: null, destinations: [], dias_sin_novedad: 0.2, unassigned_reason_id: null, unassigned_reason_label: null }],
+        rezago: [], oferta_sin_declarar: [], abandonado: [], en_curso: [], pendiente_cierre_tms: [], con_motivo: [] },
+      bloquean: 1,
+    })
+    consulta = 'date=2026-08-04&tab=trips'
+    renderPage()
+    expect(await screen.findByText('2032999')).toBeInTheDocument()
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    expect(screen.queryByLabelText('Motivo del viaje 2032999', { selector: 'select' })).toBeNull()
   })
 
   it('un enlace viejo en español abre donde decía y se reescribe en inglés', async () => {
