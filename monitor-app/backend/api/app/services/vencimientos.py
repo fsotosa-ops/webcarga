@@ -350,7 +350,8 @@ def nombre_del_periodo(inicio: date) -> str:
 # (avisos del viaje, vista rápida, roster) migran en el bloque 3.
 
 DOCUMENT_STATES = ("NOT_REQUIRED", "UP_TO_DATE", "OVERDUE", "EXPIRING", "MISSING")
-PENDING_STATES = ("OVERDUE", "EXPIRING", "MISSING")
+MISSING_STATE = "MISSING"  # el unico pendiente sin fecha de vencimiento que ordenar
+PENDING_STATES = ("OVERDUE", "EXPIRING", MISSING_STATE)
 
 
 def document_state_sql(alias: str = "cr") -> str:

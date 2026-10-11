@@ -65,6 +65,7 @@ from ..services.vencimientos import (
     nombre_del_periodo,
     cubierto_predicate,
     DOCUMENT_STATES,
+    MISSING_STATE,
     document_state_sql,
     in_scope_sql,
     PENDING_STATES,
@@ -556,7 +557,7 @@ STATE_FILTERS: dict[str, tuple[str, ...] | None] = {
 _order_list = ", ".join(
     f"'{x}'" for x in (*PENDING_STATES, *(e for e in DOCUMENT_STATES if e not in PENDING_STATES)))
 # Los que tienen fecha de vencimiento que ordenar: todos los pendientes menos MISSING.
-_urgent_list = ", ".join(f"'{x}'" for x in PENDING_STATES if x != PENDING_STATES[-1])
+_urgent_list = ", ".join(f"'{x}'" for x in PENDING_STATES if x != MISSING_STATE)
 
 _PENDING_ROWS_SQL = f"""
 WITH {_pending_ctes('$10')},

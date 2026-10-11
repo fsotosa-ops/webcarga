@@ -26,12 +26,12 @@ async def _hoy(conn) -> date:
     return await conn.fetchval("SELECT public.hoy_chile()")
 
 
-async def _empresa(conn, *, estado: str = "ACTIVE") -> str:
+async def _empresa(conn, *, estado: str = "ACTIVE", nombre: str = "Empresa") -> str:
     s = _suf()
     return str(await conn.fetchval(
         "INSERT INTO public.carriers (business_name, tax_id, operational_status) "
         "VALUES ($1, $2, $3) RETURNING id",
-        f"{PREFIJO} Empresa {s}", f"{PREFIJO}-{s}", estado))
+        f"{PREFIJO} {nombre} {s}", f"{PREFIJO}-{s}", estado))
 
 
 async def _conductor(conn, empresa: str | None, *, estado: str = "ACTIVE",
@@ -484,7 +484,11 @@ async def test_pending_ordena_por_fecha_dentro_de_cada_estado_y_el_total_es_el_f
     conn = conexion_revertida
     hoy = await _hoy(conn)
     req = await _requisito(conn, entidad="CARRIER", politica="REQUIRED")
-    emp = {k: await _empresa(conn) for k in ("v_viejo", "v_reciente", "p_cerca", "p_lejos", "falta1", "falta2", "al_dia")}
+    # Nombres en orden alfabetico OPUESTO al orden esperado por fecha: sin el
+    # orden por fecha, el desempate por nombre dejaria la lista al reves.
+    nombres = {"v_viejo": "Z", "v_reciente": "A", "p_cerca": "Z", "p_lejos": "A"}
+    emp = {k: await _empresa(conn, nombre=nombres.get(k, "Empresa"))
+           for k in ("v_viejo", "v_reciente", "p_cerca", "p_lejos", "falta1", "falta2", "al_dia")}
     await _registro(conn, req, "CARRIER", emp["v_reciente"], status="APPROVED_MANUAL", vence=hoy - timedelta(days=2))
     await _registro(conn, req, "CARRIER", emp["v_viejo"], status="APPROVED_MANUAL", vence=hoy - timedelta(days=30))
     await _registro(conn, req, "CARRIER", emp["p_lejos"], status="APPROVED_MANUAL", vence=hoy + timedelta(days=9))
