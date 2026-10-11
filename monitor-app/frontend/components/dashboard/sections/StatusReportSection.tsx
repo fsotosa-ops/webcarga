@@ -82,7 +82,7 @@ export function StatusReportSection({ fecha }: Props) {
   const opcionesDeCliente = [
     ...(clientesConocidos ?? []),
     ...(client && !(clientesConocidos ?? []).some(c => c.client_name === client)
-      ? [{ client_name: client, assigned: 0 }] : []),
+      ? [{ client_name: client, assigned: 0, by_operation_type: undefined }] : []),
   ]
 
   async function copiarEstatus() {
@@ -182,7 +182,10 @@ export function StatusReportSection({ fecha }: Props) {
                     className="text-[11px] border border-border rounded-lg px-2 py-1.5 bg-white">
               <option value="">Todos los clientes</option>
               {opcionesDeCliente.map(c => (
-                <option key={c.client_name} value={c.client_name}>{c.client_name} ({c.assigned})</option>
+                // La cantidad del tipo a la vista: la misma que dicen las tarjetas.
+                <option key={c.client_name} value={c.client_name}>
+                  {c.client_name} ({c.by_operation_type?.[tipo] ?? c.assigned})
+                </option>
               ))}
             </select>
             <button type="button" onClick={() => window.print()} disabled={!porTipo} className={ACCION}

@@ -1736,8 +1736,14 @@ export type StatusReport = {
   business_date: string
   client_filter: string | null
   /** Las opciones del filtro: los clientes que cargaron ese día, con cuántos
-   *  equipos. Opcional: backend y frontend se despliegan por separado. */
-  clients?: { client_name: string; assigned: number }[]
+   *  equipos en total y por tipo. La pantalla muestra el del tipo a la vista, así
+   *  el número del filtro es el de las tarjetas. Opcional: backend y frontend se
+   *  despliegan por separado. */
+  clients?: {
+    client_name:        string
+    assigned:           number
+    by_operation_type?: Record<OperationTypeKey, number>
+  }[]
   /** El faltante de dotación con el mismo filtro de cliente que el resto del
    *  reporte. Opcional por el mismo motivo. */
   fleet_driver_gap?: FleetDriverGapRow[]

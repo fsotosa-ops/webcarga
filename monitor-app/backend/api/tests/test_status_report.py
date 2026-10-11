@@ -125,8 +125,11 @@ def test_los_clientes_del_dia_son_los_que_cargaron_con_su_cantidad():
         # Un equipo sin tipo no está en el reporte: no hace aparecer a su cliente.
         _row(asset_id="a5", client_name="Colun", categories=["SIN_CLASIFICAR"]),
     ]
+    # El total y el detalle por tipo: la pantalla muestra el del tipo a la vista,
+    # para que el número del filtro sea el mismo de las tarjetas.
     assert _clientes_del_dia(rows) == [
-        {"client_name": "Walmart", "assigned": 2}, {"client_name": "Iansa", "assigned": 1},
+        {"client_name": "Walmart", "assigned": 2, "by_operation_type": {"tractoreo": 2, "equipo_completo": 0}},
+        {"client_name": "Iansa", "assigned": 1, "by_operation_type": {"tractoreo": 0, "equipo_completo": 1}},
     ]
 
 
@@ -511,7 +514,7 @@ def test_el_filtro_de_cliente_cuadra_todas_las_cifras_y_devuelve_los_clientes_de
     assert [d["driver_id"] for d in espia.call_args.args[0]] == ["d1"]
     assert [f["carrier_id"] for f in espia.call_args.kwargs["faltantes"]] == ["c1"]
     # La lista sale del día completo, antes del filtro.
-    assert body["clients"] == [{"client_name": "Sodimac", "assigned": 1}, {"client_name": "Walmart", "assigned": 1}]
+    assert [(c["client_name"], c["assigned"]) for c in body["clients"]] == [("Sodimac", 1), ("Walmart", 1)]
     # La pestaña Dotación, el PDF y el Excel leen el mismo faltante, ya filtrado.
     assert [f["carrier_id"] for f in body["fleet_driver_gap"]] == ["c1"]
 

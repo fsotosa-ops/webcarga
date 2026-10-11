@@ -330,13 +330,22 @@ def _filter_by_client(rows: list[dict], client: str | None, clientes_por_empresa
 
 def _clientes_del_dia(rows: list[dict]) -> list[dict]:
     """Las opciones del filtro: los clientes con al menos un equipo de los tipos
-    del reporte cargado ese día, con cuántos. Sale del día completo, antes del
-    filtro, para que la lista no cambie al elegir."""
+    del reporte cargado ese día. Trae el total y el detalle por tipo: la pantalla
+    muestra el del tipo a la vista, así el número del filtro es el mismo de las
+    tarjetas (Walmart el 10/10: 31 en Tractoreo, 4 en Equipo Completo). Sale del
+    día completo, antes del filtro, para que la lista no cambie al elegir."""
     acc: dict = {}
     for r in rows:
-        if r["con_carga"] and r["client_name"] and any(c in _TIPOS.values() for c in r["categories"]):
-            acc[r["client_name"]] = acc.get(r["client_name"], 0) + 1
-    return [{"client_name": k, "assigned": v} for k, v in sorted(acc.items(), key=lambda kv: (-kv[1], kv[0]))]
+        if not (r["con_carga"] and r["client_name"]):
+            continue
+        for clave, codigo in _TIPOS.items():
+            if codigo in r["categories"]:
+                b = acc.setdefault(r["client_name"], {clave_: 0 for clave_ in _TIPOS})
+                b[clave] += 1
+    return [
+        {"client_name": k, "assigned": sum(v.values()), "by_operation_type": v}
+        for k, v in sorted(acc.items(), key=lambda kv: (-sum(kv[1].values()), kv[0]))
+    ]
 
 
 # Las columnas de motivo salen del catálogo, no de una lista escrita a mano:
