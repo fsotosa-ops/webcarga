@@ -1645,31 +1645,9 @@ export type CierreViajesResponse = {
   bloquean: number
 }
 
-// ── Reporte de estatus del día, 6 secciones (Fase 5, HU-04) ─────────────────
+// ── Reporte de estatus del día, por tipo de operación (spec 2026-10-11) ─────
 
-export type ZoneCrossTab = {
-  cd: string
-  carrier_name?: string
-  RM: number
-  Z0: number
-  "Región": number
-  "Sin clasificar": number
-  total: number
-  /** Minuta 09/10: los que trabajaron sin asignación, por motivo del catálogo.
-   *  Va aparte del total, que son los asignados. */
-  sin_carga?: Record<string, number>
-}
-
-export type MotivoCrossTab = {
-  cd: string
-  carrier_name?: string
-  [motivo: string]: string | number | undefined
-  total: number
-}
-
-/** Tabla Empresa/Enrolados/Asignados/No asignados/% utilización — mismo
- *  shape para Tractoreo y Equipo Completo (paridad pedida por el usuario
- *  2026-08-04: la tab "por empresa" solo existía para Equipo Completo). */
+/** Tabla Empresa/Enrolados/Asignados/No asignados/% utilización, igual para los dos tipos. */
 export type CarrierUtilizationRow = {
   carrier_name:     string
   enrolled:         number
@@ -1678,27 +1656,71 @@ export type CarrierUtilizationRow = {
   utilization_pct:  number
 }
 
-export type VueltaRow = {
-  /** La vuelta es de la patente (minuta 09/10). */
-  tractor_plate: string
+export type OperationTypeKey = 'tractoreo' | 'equipo_completo'
+
+/** Una hoja del árbol de Asignados: cliente × origen real del viaje × empresa. */
+export type AssignedRow = {
+  client_name:  string
+  origin:       string
   carrier_name: string
-  cd_origen:    string | null
-  tipo_destino: string | null
-  vueltas:      number
+  rm:           number
+  z0:           number
+  region:       number
+  unclassified: number
+  total:        number
 }
 
-/** Tarea 6 (plan 2.3) — fila plana por conductor Tractoreo no trabajando,
- *  con el tipo de operación de su tracto habitual (puede diferir del
- *  roster, que se arma a nivel empresa). El backend ya la devuelve desde
- *  esa tarea, sin tipo en el frontend hasta la Tarea 14. */
-export type DriverDetailRow = {
-  driver_id:                 string
-  full_name:                 string
-  carrier_name:               string | null
-  cd_origen:                  string | null
-  unassigned_reason_label:    string | null
-  tractor_plate:               string | null
-  operation_type:              string | null
+/** Origen × empresa con un conteo por motivo; `counts` trae solo los motivos con casos. */
+export type ReasonRow = {
+  origin:       string
+  carrier_name: string | null
+  counts:       Record<string, number>
+  total:        number
+}
+
+export type OperationTypeReport = {
+  summary: {
+    total:           number
+    assigned:        number
+    /** Equipos del tipo que no trabajaron (o sin motivo todavía). */
+    not_working:     number
+    utilization_pct: number
+    by_client:       { client_name: string; assigned: number }[]
+    /** Enrolados vs asignados por origen habitual declarado (HU-28). */
+    by_home_origin:  { origin: string; enrolled: number; assigned: number }[]
+  }
+  assigned: {
+    rows: AssignedRow[]
+    other_origin: {
+      tractor_plate: string | null
+      carrier_name:  string | null
+      home_origin:   string
+      origin:        string
+      client_name:   string | null
+    }[]
+  }
+  worked_without_assignment: { reasons: string[]; rows: ReasonRow[] }
+  second_legs: {
+    tractor_plate:    string
+    carrier_name:     string
+    driver_name:      string | null
+    origin:           string | null
+    destination_zone: string | null
+    legs:             number
+  }[]
+  not_working: {
+    reasons:   string[]
+    by_reason: ReasonRow[]
+    /** Tractoreo: un conductor por fila. Equipo Completo: un equipo (`name` es la patente). */
+    detail: {
+      name:          string
+      carrier_name:  string | null
+      home_origin:   string | null
+      reason:        string
+      tractor_plate: string | null
+    }[]
+  }
+  carriers: CarrierUtilizationRow[]
 }
 
 export type StatusReport = {
@@ -1708,49 +1730,8 @@ export type StatusReport = {
    *  cambios esperando al ejecutor (null = al día). */
   calculado_a?:     string | null
   pendiente_desde?: string | null
-  section1_resumen: {
-    total_equipos_activos: number
-    tractoreo:              EquipmentCategorySummary
-    equipos_completos:      EquipmentCategorySummary
-    multi_dia_activos: { total: number; por_dias_atras: Record<string, number> }
-  }
-  section2_tractoreo_asignado: {
-    /** Columnas "sin carga" en el orden del catálogo. Opcional: backend y
-     *  frontend se despliegan por separado. */
-    motivos_sin_carga?: string[]
-    por_cd:          ZoneCrossTab[]
-    por_empresa_y_cd: ZoneCrossTab[]
-  }
-  section3_vueltas: VueltaRow[]
-  section4_tractoreo_no_trabajando: {
-    por_cd:           MotivoCrossTab[]
-    por_empresa_y_cd: MotivoCrossTab[]
-    driver_detail:    DriverDetailRow[]
-    /** Las columnas de motivo, en orden: los motivos de "no trabajó" del
-     *  catálogo más los retirados que aparezcan ese día. Opcional porque
-     *  backend y frontend se despliegan por separado. */
-    motivos?:         string[]
-  }
-  section_tractoreo_por_empresa: CarrierUtilizationRow[]
-  section5_equipos_completos: CarrierUtilizationRow[]
-  section6_resumen_general: {
-    tractoreo:          EquipmentCategorySummary
-    equipos_completos:  EquipmentCategorySummary
-    /** Enrolados vs asignados por CD BASE DECLARADO (HU-28, ola 4). "Enrolados"
-     *  incluye a quien no salió, y ése no tiene origen: por eso la clave es el
-     *  CD declarado y no el del viaje. */
-    por_cd:      { cd: string; enrolled: number; assigned: number }[]
-    por_cliente: { client_name: string; assigned: number }[]
-  }
-  /** Los que cargaron en un CD distinto al suyo (HU-28, ola 4.1). Declarar el
-   *  Origen habitual no sirve para que todos calcen, sino para poder ver cuándo no. */
-  section7_desvios_de_cd: {
-    tractor_plate: string | null
-    carrier_name:  string | null
-    home_cd:       string
-    origin_cd:     string
-    client_name:   string | null
-  }[]
+  /** Opcional: un backend anterior al rediseño no lo manda (despliegues separados). */
+  by_operation_type?: Record<OperationTypeKey, OperationTypeReport>
 }
 
 // ── Bandeja de documentos sin clasificar (HU-01) ──────────────────────────
