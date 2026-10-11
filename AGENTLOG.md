@@ -16,6 +16,46 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Cierre de bugs pendientes (B1-B5) + diagnóstico para la próxima sesión
+
+Pedido del usuario: "solo los bugs; el resto lo abordamos en otra sesión". Inventario hecho con tres
+investigaciones de solo lectura (bugs, sincronización del detalle del viaje, Configuración).
+
+- **Hecho:**
+  - B1 `test_cargar_catalogo_webcarga`: el test no era hermético (el catálogo ya se cargó en la base el 08/10).
+    Ahora aparta los ya cargados dentro de la transacción revertida; test nuevo: aplicar dos veces no crea nada
+    la segunda. 15/15.
+  - B2 `test_get_del_cierre_no_escribe_integracion[<lambda>2]`: pasa 3/3; el rojo fue un corte durante la
+    ingesta. Cerrado como no reproducible; vigilar en la próxima corrida completa.
+  - B3 `PanelLateral`: solo el modal (`dim`) atrapa el Tab; un clic en una barra de desplazamiento (de la
+    página o de una lista) ya no cierra la vista rápida. 3 tests nuevos, vistos en rojo.
+  - B4 `EntityQuickView`: un conductor o equipo sin empresa no ofrece "Abrir ficha completa" (llevaba a un
+    callejón); dice "Sin empresa asignada: no tiene ficha propia." Test nuevo, visto en rojo.
+  - B5 `test_padron_conductor.py`: los 7 tests que leen el padrón completo llevan `@pytest.mark.padron_completo`
+    y solo corren con `--padron-completo` (hook en `tests/conftest.py`); la salida dice cuántos se saltearon.
+    No se achicó el padrón dentro del test: exigiría un lock exclusivo sobre una vista que la app lee.
+  - Dato para Operaciones (sin código): Sodimac 878052 tiene la rampla JF8307 como tracto.
+
+**Para la próxima sesión (decisión del usuario 11/10: rediseño = opción (b), datos + organización de la pantalla):**
+- **Detalle del viaje** (proyecto de arquitectura: preguntas → spec → plan). Hallazgos, con evidencia:
+  1. Nada de lo que se edita en el detalle invalida `['cierre-viajes']`, `['daily-closure']`,
+     `['equipment-closures']`; solo anular lo hace (`hooks/useAnularViajes.ts:11`). Al revés tampoco: bulkClose/
+     bulkReopen del Cierre y las ediciones del Directorio no refrescan el viaje ni `['entity-summary']`.
+  2. Viajes armados a mano tras mutar: `GestionPanel` (desvincular, revertir estado) e `IndicatorSwitches`
+     (revertir Asignado deja `is_assigned` viejo).
+  3. `tms_dropped` solo lo pone `list_trips`: tras editar, el aviso "Ya no está en el TMS" desaparece del Monitor.
+  4. "Asignado" con cuatro definiciones; empresa sin conductor = "vinculado" en el detalle e "incompleto" en el
+     Cierre, sin forma de completarlo desde el detalle. `daily_closures.py:87,178` lee `fl.driver_id` crudo.
+  5. Documentos pendientes: el detalle cuenta con `pendiente_predicate` (solo obligatorios) y la vista rápida con
+     `vencimientos` (todos los niveles).
+  6. Las notas de sistema (vincular, desvincular, estado manual) no aparecen: no se invalida `['trip-notes']`.
+  7. Abrir un viaje: ~6 idas a la base en serie y 5-6 pedidos HTTP; el GET puede escribir una nota
+     (`trips.py:2443`); URL firmada por adjunto (`trips.py:3143`).
+- **Configuración** (después, su propio ciclo): clave de caché `'taxonomies'` vs `'taxonomias'`
+  (`estados-tabs.tsx:70` vs `condiciones-tabla.tsx:56,64`, `AltaDeFlota.tsx:90,96`, `VehicleDetailPanel.tsx:74`);
+  `useConfigList` y cargas a mano sin caché; `UsersTable` copia la lista sin resincronizar (cuentas desfasadas);
+  `FormularioDeRol` sin `key`; la lógica de tabla editable escrita tres veces; `CondicionPanel` 506 líneas.
+
 ### 2026-10-11 — Pasada visual del detalle del viaje — DESPLEGADA y verificada en dev (`9c447b1d`, `4f98e28e`)
 
 Maqueta aprobada por el usuario ("si estoy ok"): `.superpowers/brainstorm/84727-1791741985/content/detalle-viaje-v3.html`.
@@ -40,11 +80,12 @@ Mismo contenido, mismas acciones; solo estilo, con las primitivas y tokens de la
 - **Fuera de alcance a propósito:** `FleetAssignSection` (lo comparten `TripAssignDialog` y `FleetCenterDialog`;
   todavía con `text-[10px]` y grises crudos) — pasada propia. Las fechas siguen con segundos (`fmtDT` de toda la app).
 
-**Siguiente paso exacto:**
-- [ ] Pasada visual de Configuración (maqueta propia, aprobar antes de implementar).
-- [ ] Pasada de `FleetAssignSection` con las mismas primitivas (afecta tres pantallas).
-- [ ] Minuta: P4 ítem 20 (requisito → titulares + subir), P5 ítem 23 (clientes de una empresa), P6 menores, P7 respuestas a Pablo.
-- [ ] Deuda: `test_padron_conductor.py` contra el padrón completo (Disk IO).
+**Siguiente paso exacto (actualizado tras el cierre de bugs):**
+- [ ] Próxima sesión: rediseño del detalle del viaje, opción (b) — brainstorming de arquitectura sobre los
+      hallazgos de la entrada de arriba; después Configuración (incluye su pasada visual), su propio ciclo.
+- [ ] Pasada de `FleetAssignSection` con las mismas primitivas (entra en el rediseño del detalle).
+- [ ] Minuta: P4 ítem 20 (requisito → titulares + subir), P5 ítem 23 (clientes de una empresa), P7 respuestas a Pablo.
+- [x] Deuda `test_padron_conductor.py`: cerrada con `--padron-completo` (B5).
 
 ### 2026-10-11 — Ítem 21: vista rápida de empresa, conductor y equipo desde el Cierre — DESPLEGADO y verificado en dev
 
