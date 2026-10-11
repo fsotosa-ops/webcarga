@@ -435,7 +435,9 @@ SELECT
   (SELECT count(*) FROM app.status_taxonomies WHERE domain='FLEET_SERVICE_TYPE' AND active) AS subtipos,
   (SELECT count(*) FROM app.status_taxonomies WHERE domain='WEBCARGA_OPERATION_TYPE' AND active) AS tipos_operacion,
   (SELECT count(*) FROM public.profiles WHERE active)                                      AS usuarios,
-  (SELECT count(DISTINCT role) FROM public.profiles WHERE active)                          AS roles
+  -- profiles.role se borró con el contract de RBAC (10/10): los roles viven en app.user_roles.
+  (SELECT count(DISTINCT ur.role_id) FROM app.user_roles ur
+     JOIN public.profiles p ON p.id = ur.user_id WHERE p.active)                          AS roles
 """
 
 
