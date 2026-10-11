@@ -106,6 +106,7 @@ async def test_el_conductor_anterior_puede_quedar_inactivo(conexion_revertida):
 # El padron
 # ══════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.padron_completo
 async def test_el_padron_da_una_sola_fila_por_patente(conexion_revertida):
     """Es la clave de la tabla destino: si repitiera patente, el sembrado
     chocaria contra ux_vehicle_driver_assignments_active_asset."""
@@ -116,6 +117,7 @@ async def test_el_padron_da_una_sola_fila_por_patente(conexion_revertida):
     assert fila["filas"] == fila["plates"]
 
 
+@pytest.mark.padron_completo
 async def test_el_padron_solo_trae_identificadores_canonicos(conexion_revertida):
     """Nada que no pase por canonical_rut/canonical_plate sale de la vista."""
     assert await conexion_revertida.fetchval(
@@ -127,6 +129,7 @@ async def test_el_padron_solo_trae_identificadores_canonicos(conexion_revertida)
     ) == 0
 
 
+@pytest.mark.padron_completo
 async def test_el_padron_cubre_las_patentes_que_estan_rodando(conexion_revertida):
     """La prueba que importa: los viajes de agosto —que el legacy NO conoce,
     porque sus despachos cortan el 31/07— tienen que resolver igual."""
@@ -155,6 +158,7 @@ async def test_el_padron_cubre_las_patentes_que_estan_rodando(conexion_revertida
 # El sembrado
 # ══════════════════════════════════════════════════════════════════════════
 
+@pytest.mark.padron_completo
 async def test_sembrar_es_idempotente(conexion_revertida):
     """Correrlo dos veces deja lo mismo que correrlo una."""
     conn = conexion_revertida
@@ -165,6 +169,7 @@ async def test_sembrar_es_idempotente(conexion_revertida):
     assert await conn.fetchval(sql) == primera
 
 
+@pytest.mark.padron_completo
 async def test_no_siembra_entradas_viejas_del_padron(conexion_revertida):
     """El corte de frescura, que es la decision de diseno mas importante del
     sembrado. Medido contra julio: una entrada de menos de 3 meses acierta el
@@ -197,6 +202,7 @@ async def test_no_siembra_entradas_viejas_del_padron(conexion_revertida):
         "WHERE asset_id = $1 AND status = 'ACTIVE'", asset_id) == 0
 
 
+@pytest.mark.padron_completo
 async def test_no_pisa_una_correccion_manual(conexion_revertida):
     """La regla que sostiene todo el diseno: quien corrigio a mano sabe algo
     que la inferencia no, y el proximo sembrado no puede borrarlo."""
@@ -228,6 +234,7 @@ async def test_no_pisa_una_correccion_manual(conexion_revertida):
         "WHERE asset_id=$1 AND status='ACTIVE'", asset_id) == otro
 
 
+@pytest.mark.padron_completo
 async def test_reemplaza_una_asignacion_automatica_desactualizada(conexion_revertida):
     """Lo automatico si se actualiza, y el anterior queda como historia."""
     conn = conexion_revertida

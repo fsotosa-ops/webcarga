@@ -295,6 +295,31 @@ async def _usuario_real(conn) -> dict:
     return {**usuario(*EDITOR_EQUIVALENTE, sub=str(fila["id"])), "email": fila["email"]}
 
 
+# ── Padrón completo (11/10) ──────────────────────────────────────────────────
+# Los tests marcados `padron_completo` leen la vista
+# silver.int_habitual_driver_by_tractor o corren public.sync_habitual_drivers()
+# contra el padrón ENTERO: ~6 GB leídos y ~21 s por llamada. Fueron el mayor
+# lector de la base el 11/10, cuando Supabase quedó con el Disk IO al 100 % y
+# la app de dev respondía 504. No hay forma de achicar el padrón dentro de una
+# transacción sin tomar un lock exclusivo sobre la vista que la app está
+# leyendo, así que no corren por defecto: se piden con --padron-completo, en
+# una ventana sin ingesta, y la salida dice cuántos se saltearon y por qué.
+def pytest_addoption(parser):
+    parser.addoption(
+        "--padron-completo", action="store_true", default=False,
+        help="corre los tests que leen el padrón de conductores completo (pesados para la base)",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--padron-completo"):
+        return
+    saltear = pytest.mark.skip(reason="lee el padrón completo: correr con --padron-completo")
+    for item in items:
+        if "padron_completo" in item.keywords:
+            item.add_marker(saltear)
+
+
 def pytest_report_header(config):
     """El estado de la capa de integración, en la cabecera de la corrida."""
     if HAY_CREDENCIALES:

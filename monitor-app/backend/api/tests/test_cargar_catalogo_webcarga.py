@@ -121,12 +121,30 @@ def test_las_dudas_se_listan(resultado):
     assert any("Cronograma" in d for d in dudas)
 
 
+async def _apartar_los_ya_cargados(conn, propuestas) -> None:
+    """El catálogo de WebCarga ya se cargó en la base real el 08/10, así que
+    `aplicar()` chocaría con sus propios documentos. El test no puede depender
+    de eso: dentro de la transacción revertida, los ya cargados cambian de
+    código y la base queda como estaba ANTES de la carga."""
+    await conn.execute(
+        """
+        UPDATE public.compliance_requirements req
+        SET requirement_code = 'PREVIO_' || req.id::text
+        FROM unnest($1::text[], $2::text[]) AS p(target_entity, code)
+        WHERE req.target_entity = p.target_entity AND req.requirement_code = p.code
+        """,
+        [p.cuerpo.target_entity for p in propuestas],
+        [codigo_desde_nombre(p.cuerpo.name) for p in propuestas],
+    )
+
+
 @pytest.mark.integracion
 async def test_aplicar_crea_los_nuevos_apagados_y_sin_sembrar(conexion_revertida, resultado):
     """Contra la base, en una transacción revertida: entran los 75, apagados,
     con su regla si su tipo la pide, y no siembran un solo pendiente."""
     from scripts.cargar_catalogo_webcarga import aplicar
 
+    await _apartar_los_ya_cargados(conexion_revertida, _propuestas(resultado))
     antes = await conexion_revertida.fetchval("SELECT count(*) FROM public.compliance_records")
     creados = await aplicar(conexion_revertida, resultado)
 
@@ -144,3 +162,19 @@ async def test_aplicar_crea_los_nuevos_apagados_y_sin_sembrar(conexion_revertida
     assert all(f["tiene_regla"] for f in filas
                if f["expiration_policy"] in ("ISSUE_PLUS_MONTHS", "CALENDAR_PERIOD"))
     assert await conexion_revertida.fetchval("SELECT count(*) FROM public.compliance_records") == antes
+
+
+@pytest.mark.integracion
+async def test_aplicar_dos_veces_no_crea_nada_la_segunda(conexion_revertida, resultado):
+    """Correr el script de nuevo (el caso real de hoy) no duplica ni deja
+    media carga: choca con el primero que ya existe y revierte todo."""
+    from app.services.catalogo import DocumentoYaExiste
+    from scripts.cargar_catalogo_webcarga import aplicar
+
+    await _apartar_los_ya_cargados(conexion_revertida, _propuestas(resultado))
+    await aplicar(conexion_revertida, resultado)
+    total = await conexion_revertida.fetchval("SELECT count(*) FROM public.compliance_requirements")
+
+    with pytest.raises(DocumentoYaExiste):
+        await aplicar(conexion_revertida, resultado)
+    assert await conexion_revertida.fetchval("SELECT count(*) FROM public.compliance_requirements") == total

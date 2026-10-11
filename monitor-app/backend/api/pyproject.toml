@@ -42,4 +42,5 @@ asyncio_mode = "auto"
 #   venv/bin/python -m pytest tests/ -q -m "not integracion"  # sin tocar la base
 markers = [
     "integracion: ejecuta SQL real contra Postgres en una transaccion revertida",
+    "padron_completo: lee el padron de conductores completo; solo corre con --padron-completo",
 ]
