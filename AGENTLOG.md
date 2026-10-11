@@ -16,6 +16,23 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Minuta 09/10: ítems rápidos (24, 22, 9, 15 y copiar estatus) — en dev
+
+- **Ítem 24:** "Venta de camión" se creó desde Configuración › Motivos de conductor (DRIVER_REASON, grupo no_trabajando). Sin código.
+- **Ítem 22:** buscador en la pestaña Viajes del Cierre. Filtra todos los grupos por Nº de viaje, cliente, patente, conductor, empresa, origen o destino, y muestra "x de y" en cada grupo (`c16a7a2a`).
+- **Ítems 9 y 15, y copiar:** `86bf3d47`.
+  - Totales al pie en las tablas de Asignado y Sin trabajar.
+  - "Descargar Excel" baja un .xlsx real, con una hoja por sección (`write-excel-file`, cargado al hacer clic), en vez de CSV.
+  - "Copiar estatus" copia la sección a la vista en html y en texto.
+  - La exportación vive en `lib/reporte/exportarReporte.ts`, con `sumar` compartido entre la pantalla y el Excel.
+- **Ítem 20 (revisado):** ya existen "Agrupar por Requisito", "Actualizar por planilla" y la Bandeja. Falta abrir una fila de requisito para ver quiénes lo tienen vencido y subirlo ahí mismo.
+- **Siguiente paso exacto:**
+  - [ ] Ítem 6: "asignado, pendiente de cierre TMS", condición del Go Live del 15/10.
+  - [ ] Ítem 5: viajes manuales nuevos quedan "no asignado" hasta la corrida de Mage.
+  - [ ] Decisión A (15 días).
+  - [ ] Ítems 8 y 14 (reporte), 21, 23 y lo que falta del 20.
+  - [ ] Rediseño del detalle del viaje (en pausa; retomarlo con algo más concreto).
+
 ### 2026-10-11 — Pendientes menores de las dos revisiones finales: resueltos (commits 8e6a8443, 85f4d358)
 
 - **Backend:**
