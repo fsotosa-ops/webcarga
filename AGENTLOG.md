@@ -16,6 +16,41 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Reporte de estatus por tipo (minuta 09/10, ítems 8 y 14) — en dev
+
+- **Qué se hizo:** spec `docs/superpowers/specs/2026-10-11-reporte-de-estatus-por-tipo-design.md` y plan `docs/superpowers/plans/2026-10-11-reporte-de-estatus-por-tipo.md`, ejecutado inline (commits `3f6c2345` a los fixes del cierre).
+  - **API:** `GET /status-report` devuelve `by_operation_type.{tractoreo,equipo_completo}`, cada uno con `summary`, `assigned`, `worked_without_assignment`, `second_legs`, `not_working` y `carriers`. Las claves `section*` se retiraron. Sin migraciones; `_TODAY_TRIPS_SQL` trae `driver_name`.
+  - **Pantalla:**
+    - Selector Tractoreo | Equipo Completo y seis pestañas: Resumen, Asignados, Segundas vueltas, No trabajaron, Empresas, Dotación.
+    - Asignados es un árbol Cliente → Origen → Empresa (`lib/reporte/arbolDeAsignados.ts`).
+    - Estados: vacío, "Actualizando el reporte…" y error con "Reintentar".
+  - **Excel:** una hoja por sección y tipo, más Dotación.
+  - **Copiar estatus:** copia lo que se ve, sin botones.
+  - **PDF:** los dos tipos lado a lado.
+- **Verificado en dev (07/10):**
+  - Tractoreo da 32 asignados (16 RM, 12 Z0, 0 Región, 4 sin clasificar), idéntico al CSV de Pablo.
+  - Equipo Completo da 3 (Iansa 2, Sodimac 1), igual a la base. La tabla de Equipo Completo del CSV era un ejemplo de formato armado con filas copiadas de Tractoreo.
+  - 7 segundas vueltas, con conductor.
+  - En el teléfono no hay desborde.
+- **Hallazgo de datos:** el 07/10 los 35 equipos de Equipo Completo que no trabajaron aparecen "Sin motivo" y "Sin origen". Nadie captura motivo ni origen habitual para Equipo Completo. Es un dato pendiente, no un error del reporte.
+- **Decisiones:**
+  - Las claves nuevas de la API van en inglés.
+  - "Sin motivo" es la última columna.
+  - `summary.not_working` cuenta equipos; en Tractoreo, la pestaña "No trabajaron" cuenta conductores.
+  - Se retiraron los viajes multi-día del reporte.
+  - `sumar` vive en `lib/reporte/sumar.ts`.
+  - Los mensajes vacíos no dicen "Hoy", porque el cierre se mira del día anterior.
+  - La suite completa del backend no se corrió: `status_report.py` solo lo importa `main.py`. Regla nueva en la memoria.
+- **Pendientes menores:**
+  - El docstring de `status_report.py` todavía describe la Sección 2 vieja.
+  - Los nombres de cliente salen como vienen del TMS ("walmart", "iansa").
+- **Siguiente paso exacto:**
+  - [ ] Que Pablo revise el reporte nuevo en dev; definir si Equipo Completo debe llevar motivo y origen habitual.
+  - [ ] Ítem 5: viajes manuales nuevos quedan "no asignado" hasta la corrida de Mage.
+  - [ ] Decisión A (15 días).
+  - [ ] Ítems 21, 23 y lo que falta del 20.
+  - [ ] Rediseño del detalle del viaje (en pausa; retomarlo con algo más concreto).
+
 ### 2026-10-11 — Minuta 09/10: ítems rápidos (24, 22, 9, 15 y copiar estatus) — en dev
 
 - **Ítem 24:** "Venta de camión" se creó desde Configuración › Motivos de conductor (DRIVER_REASON, grupo no_trabajando). Sin código.
@@ -33,9 +68,7 @@
   - El 860859 no aparece porque tiene declarado "No tenemos proveedor" (16/09) aunque tiene patente y conductor; si fue un error, se deshace.
   - La 2.ª vuelta se verificó en la base: se cuenta por patente (el 07/10 hay 6 casos, todos camiones distintos). El CSV de Pablo era la exportación vieja, sin la columna patente.
 - **Siguiente paso exacto:**
-  - [ ] Reporte según el CSV anotado por Pablo (`bugs/20261009/reporte_estatus_2026-10-07.csv`), ítems 8 y 14:
-    - Sección 2 con Cliente/Origen/Empresa, separando Tractoreo de Equipo Completo, con totales;
-    - Sección 4 con una fila "Eq Completos".
+  - [x] Reporte según el CSV anotado por Pablo, ítems 8 y 14 (ver la entrada de arriba).
   - [ ] Ítem 5: viajes manuales nuevos quedan "no asignado" hasta la corrida de Mage.
   - [ ] Decisión A (15 días).
   - [ ] Ítems 8 y 14 (reporte), 21, 23 y lo que falta del 20.
