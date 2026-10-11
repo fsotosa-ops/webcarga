@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { ViajeDelCierre } from '@/lib/types'
 import {
-  GRUPOS_DE_VIAJES, diasAtras, esPestanaDeViajes, filasDePestana, pestanaInicial, viajesPorPatente,
+  GRUPOS_DE_VIAJES, PESTANAS_DE_VIAJES, diasAtras, esPestanaDeViajes, filasDePestana, pestanaInicial, viajesPorPatente,
 } from './gruposDeViajes'
 
 const viaje = (id: string, nro: string, extra: Partial<ViajeDelCierre> = {}): ViajeDelCierre => ({
@@ -102,5 +102,12 @@ describe('gruposDeViajes', () => {
     expect(esPestanaDeViajes('resolved')).toBe(true)
     expect(esPestanaDeViajes('xyz')).toBe(false)
     expect(esPestanaDeViajes(null)).toBe(false)
+  })
+})
+
+describe('la bajada de Por resolver', () => {
+  it('nombra los dos trabajos: declarar lo que no se tomó y completar la flota', () => {
+    const porResolver = PESTANAS_DE_VIAJES.find(p => p.id === 'to_resolve')!
+    expect(porResolver.bajada).toBe('Declara por qué no se tomó un viaje, o completa la flota de una asignación incompleta.')
   })
 })

@@ -9,7 +9,7 @@ export type FilaDeViaje = ViajeDelCierre & { grupo: GrupoDelCierre }
 export const PESTANAS_DE_VIAJES: { id: PestanaDeViajes; etiqueta: string; bajada: string; vacio: string }[] = [
   {
     id: 'to_resolve', etiqueta: 'Por resolver',
-    bajada: 'Viajes que no se tomaron: declara por qué.',
+    bajada: 'Declara por qué no se tomó un viaje, o completa la flota de una asignación incompleta.',
     vacio: 'Nada por resolver: puedes firmar el día',
   },
   {
