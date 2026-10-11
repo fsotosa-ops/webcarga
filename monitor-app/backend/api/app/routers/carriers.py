@@ -4,6 +4,8 @@ router de Checkpoint A-E (transporters.py/transporters_legacy.py, borrados
 """
 from typing import Optional
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from ..auth import get_current_user, get_supabase
@@ -16,6 +18,7 @@ from ..schemas.common import PaginatedResponse
 from ..schemas.contact import ContactCreateBody
 from ..schemas.insurance import CarrierInsuranceOverviewResponse, InsurancePolicyCreateBody
 from ..services.audit import log_change, record_manual_edit
+from ..services.entity_summary import carrier_summary
 from ..services.fleet_driver_gap import compute_fleet_driver_gap
 from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
 from ..utils.document_storage import build_documents_zip, resolve_signed_url, safe_storage_name
@@ -481,6 +484,15 @@ async def get_directorio(pool=Depends(get_pool), _=Depends(require(Permission.DI
             "conductores": fila["conductores"],
         },
     }
+
+
+@router.get("/{carrier_id}/summary")
+async def get_carrier_summary(carrier_id: UUID, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
+    """Resumen de solo lectura para la vista rápida del Cierre (HU 20261011/01)."""
+    summary = await carrier_summary(pool, carrier_id)
+    if summary is None:
+        raise HTTPException(404, "Empresa no encontrada")
+    return summary
 
 
 @router.get("/{carrier_id}")

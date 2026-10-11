@@ -3,6 +3,8 @@
 import re
 
 from asyncpg.exceptions import CheckViolationError, ForeignKeyViolationError, UniqueViolationError
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import get_current_user, get_supabase
@@ -11,6 +13,7 @@ from ..db import get_pool
 from ..schemas.contact import ContactCreateBody
 from ..schemas.driver import DriverCreateBody, DriverPatchBody
 from ..services.audit import log_change, record_manual_edit
+from ..services.entity_summary import driver_summary
 from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
 from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente
 from ..services.origen_del_viaje import origen_del_viaje
@@ -125,6 +128,15 @@ async def fuzzy_match_drivers(
         cleaned, _FUZZY_MATCH_MIN_SIMILARITY, limit,
     )
     return [dict(r) for r in rows]
+
+
+@router.get("/{driver_id}/summary")
+async def get_driver_summary(driver_id: UUID, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
+    """Resumen de solo lectura para la vista rápida del Cierre (HU 20261011/01)."""
+    summary = await driver_summary(pool, driver_id)
+    if summary is None:
+        raise HTTPException(404, "Conductor no encontrado")
+    return summary
 
 
 @router.get("/{driver_id}")

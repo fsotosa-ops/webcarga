@@ -1,5 +1,7 @@
 """public.assets — master data, independiente de a qué carrier esté asignado
 (H2.2). Alta/baja de la asignación vive en routers/carriers.py."""
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import get_current_user, get_supabase
@@ -7,10 +9,20 @@ from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.asset import AssetCreateBody, AssetPatchBody
 from ..services.audit import log_change, record_manual_edit
+from ..services.entity_summary import asset_summary
 from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
 from ..utils.document_storage import resolve_signed_url
 
 router = APIRouter(prefix="/assets", tags=["assets"])
+
+
+@router.get("/{asset_id}/summary")
+async def get_asset_summary(asset_id: UUID, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
+    """Resumen de solo lectura para la vista rápida del Cierre (HU 20261011/01)."""
+    summary = await asset_summary(pool, asset_id)
+    if summary is None:
+        raise HTTPException(404, "Equipo no encontrado")
+    return summary
 
 
 @router.get("/{asset_id}")
