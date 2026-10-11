@@ -58,7 +58,7 @@ export function TablaDeAsignados({ rows, plegado }: { rows: AssignedRow[]; plega
                 <td className={`py-2 pr-3 ${SANGRIA[f.nivel]}`}>
                   {f.plegable ? (
                     <button type="button" aria-expanded={abierto} onClick={() => plegado.alternar(f)}
-                            className="flex items-center gap-1 hover:text-accent">
+                            className="flex items-center gap-1 text-left hover:text-accent">
                       <ChevronRight size={12} aria-hidden className={`transition-transform ${abierto ? 'rotate-90' : ''}`} />
                       {f.etiqueta}
                     </button>
