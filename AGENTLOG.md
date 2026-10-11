@@ -24,7 +24,6 @@
 - [ ] Ítem 20 (resto): abrir una fila de requisito en Certificación para ver quién lo tiene vencido y subirlo ahí.
 - [ ] Ítem 21: enlaces a la ficha del conductor y del equipo (no existen esas fichas).
 - [ ] Ítem 23: editar los clientes de una empresa (hoy solo lectura).
-- [ ] Spec del reporte por período: el usuario define si el mes solo se ve/exporta o también se firma.
 - [ ] Menores: otras tablas del reporte con overflow en teléfono; dato Sodimac 878052 con una rampla como tracto
       (lo corrige Operaciones); detalle del viaje en pausa.
 
@@ -102,7 +101,7 @@ investigada (corrió con código previo a los arreglos de la revisión final).
 - **Deuda:** el `?fecha=` de la API del backend.
 - **Siguiente paso exacto:**
   - [ ] Que Pablo revise en dev (Monitor, Cierre, Reporte, Configuración › Clientes del TMS).
-  - [ ] Spec del reporte por período: falta que el usuario defina si el mes solo se ve o también se firma.
+  - Reporte por período: excluido por el usuario (11/10).
   - [ ] Ítem 5, decisión A (15 días), ítems 21 y 23, y lo que falta del 20.
   - [ ] Detalle del viaje (en pausa).
 
@@ -135,7 +134,7 @@ investigada (corrió con código previo a los arreglos de la revisión final).
 - **Deuda anotada:** los `?fecha=` de la API del backend (8 endpoints) siguen en español; cambiarlos exige coordinar backend y frontend.
 - **Siguiente paso exacto:**
   - [ ] Que Pablo revise en dev Viajes (3 pestañas) y el filtro de cliente.
-  - [ ] Spec del reporte por período (mes, trimestre, año, rango): falta que el usuario defina si el mes solo se ve y exporta o también se firma.
+  - Reporte por período: excluido por el usuario (11/10).
   - [ ] Ítem 5, decisión A (15 días), ítems 21 y 23, y lo que falta del 20.
   - [ ] Detalle del viaje (en pausa).
 
