@@ -25,7 +25,7 @@
 - [ ] Ítem 21: enlaces a la ficha del conductor y del equipo (no existen esas fichas).
 - [ ] Ítem 23: editar los clientes de una empresa (hoy solo lectura).
 - [ ] Menores: otras tablas del reporte con overflow en teléfono; dato Sodimac 878052 con una rampla como tracto
-      (lo corrige Operaciones); detalle del viaje en pausa.
+      (lo corrige Operaciones).
 
 ### 2026-10-11 — Monitor: el filtro de cliente sale de la vista, con su cuenta — en dev (3ec20441)
 
@@ -103,7 +103,7 @@ investigada (corrió con código previo a los arreglos de la revisión final).
   - [ ] Que Pablo revise en dev (Monitor, Cierre, Reporte, Configuración › Clientes del TMS).
   - Reporte por período: excluido por el usuario (11/10).
   - [ ] Ítem 5, decisión A (15 días), ítems 21 y 23, y lo que falta del 20.
-  - [ ] Detalle del viaje (en pausa).
+  - Rediseño del detalle del viaje: excluido por el usuario (11/10).
 
 ### 2026-10-11 — Cierre › Viajes en tres pestañas, filtro de cliente coherente y URL en inglés — en dev
 
@@ -136,7 +136,7 @@ investigada (corrió con código previo a los arreglos de la revisión final).
   - [ ] Que Pablo revise en dev Viajes (3 pestañas) y el filtro de cliente.
   - Reporte por período: excluido por el usuario (11/10).
   - [ ] Ítem 5, decisión A (15 días), ítems 21 y 23, y lo que falta del 20.
-  - [ ] Detalle del viaje (en pausa).
+  - Rediseño del detalle del viaje: excluido por el usuario (11/10).
 
 ### 2026-10-11 — Reporte de estatus por tipo (minuta 09/10, ítems 8 y 14) — en dev
 
@@ -174,7 +174,7 @@ investigada (corrió con código previo a los arreglos de la revisión final).
   - [ ] Ítem 5: viajes manuales nuevos quedan "no asignado" hasta la corrida de Mage.
   - [ ] Decisión A (15 días).
   - [ ] Ítems 21, 23 y lo que falta del 20.
-  - [ ] Rediseño del detalle del viaje (en pausa; retomarlo con algo más concreto).
+  - Rediseño del detalle del viaje: excluido por el usuario (11/10).
 
 ### 2026-10-11 — Minuta 09/10: ítems rápidos (24, 22, 9, 15 y copiar estatus) — en dev
 
@@ -197,7 +197,7 @@ investigada (corrió con código previo a los arreglos de la revisión final).
   - [ ] Ítem 5: viajes manuales nuevos quedan "no asignado" hasta la corrida de Mage.
   - [ ] Decisión A (15 días).
   - [ ] Ítems 8 y 14 (reporte), 21, 23 y lo que falta del 20.
-  - [ ] Rediseño del detalle del viaje (en pausa; retomarlo con algo más concreto).
+  - Rediseño del detalle del viaje: excluido por el usuario (11/10).
 
 ### 2026-10-11 — Pendientes menores de las dos revisiones finales: resueltos (commits 8e6a8443, 85f4d358)
 
