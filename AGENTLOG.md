@@ -61,7 +61,7 @@ Spec: `docs/superpowers/specs/2026-10-11-pending-documents-design.md`. El diseñ
 
 **Siguiente paso exacto:**
 - [ ] El usuario revisa la spec.
-- [ ] Con su OK, `superpowers:writing-plans` sobre la spec. Plan en `docs/superpowers/plans/2026-10-1X-pending-documents.md`, con el método de ejecución que elija.
+- [x] Plan escrito: `docs/superpowers/plans/2026-10-11-pending-documents.md` (11 tareas, rulings R1-R4). Falta que el usuario lo revise y elija el método de ejecución.
 - [ ] Al ejecutar: medir primero el resumen con reglas activas (objetivo < 300 ms), usar la copia local para el recorrido y desplegar a dev cuando esté en verde.
 
 ### 2026-10-11 — Auditoría de Certificación: simulación en copia local + bugs L1-L5 cerrados
