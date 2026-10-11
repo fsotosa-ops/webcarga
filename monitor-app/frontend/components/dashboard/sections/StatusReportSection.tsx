@@ -1,14 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, History, Printer, FileDown } from 'lucide-react'
+import { Loader2, History, Printer, FileDown, Copy, Check } from 'lucide-react'
 import { statusReportApi } from '@/lib/api/statusReport'
 import { carriersApi } from '@/lib/api/carriers'
 import type { Shipper } from '@/lib/api/locations'
 import type { CarrierUtilizationRow, MotivoCrossTab, StatusReport, ZoneCrossTab } from '@/lib/types'
 import { FleetDriverGapCard } from '../FleetDriverGapCard'
+import { ZONE_COLS, descargarReporteExcel, sumar } from '@/lib/reporte/exportarReporte'
 
 type Tab = 'resumen' | 'asignado' | 'vueltas' | 'sin_trabajar' | 'tractoreo_empresa' | 'eq_completos' | 'general' | 'dotacion'
 
@@ -17,83 +18,6 @@ interface Props {
   shippers?:  Shipper[]
 }
 
-function csvEscape(v: string | number | null | undefined): string {
-  const s = v == null ? '' : String(v)
-  return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
-
-/** Excel/CSV con el detalle completo de las 6 secciones (para pivotar en
- *  Excel) — pedido explícito del equipo de operaciones para compartir con
- *  coordinación. Mismo patrón de exportCsv que ya usa Certificación:
- *  bloques secuenciales con su propio encabezado, separados por línea en
- *  blanco, un solo archivo. */
-function exportReportCsv(report: StatusReport, fecha: string) {
-  const lines: string[] = [`Reporte de Estatus del Día;${fecha}`, '']
-
-  lines.push('SECCIÓN 2 — Tractoreo asignado por empresa y origen del viaje (sin carga: origen habitual)')
-  const sinCarga = report.section2_tractoreo_asignado.motivos_sin_carga ?? []
-  lines.push(['Origen', 'Empresa', 'RM', 'Z0', 'Región', 'Sin clasificar', 'Total', ...sinCarga].map(csvEscape).join(';'))
-  for (const r of report.section2_tractoreo_asignado.por_empresa_y_cd) {
-    lines.push([r.cd, r.carrier_name, r.RM, r.Z0, r['Región'], r['Sin clasificar'], r.total,
-      ...sinCarga.map(m => r.sin_carga?.[m] ?? 0)].map(csvEscape).join(';'))
-  }
-  lines.push('')
-
-  lines.push('SECCIÓN 3 — Segundas y terceras vueltas')
-  lines.push(['Patente', 'Empresa', 'Origen del viaje', 'Tipo de destino', 'Vueltas'].map(csvEscape).join(';'))
-  for (const v of report.section3_vueltas) {
-    lines.push([v.tractor_plate, v.carrier_name, v.cd_origen, v.tipo_destino, v.vueltas].map(csvEscape).join(';'))
-  }
-  lines.push('')
-
-  lines.push('SECCIÓN 4 — Tractoreo no trabajando, detalle por conductor')
-  lines.push(['Conductor', 'Empresa', 'Origen habitual', 'Motivo', 'Tracto habitual', 'Tipo de operación'].map(csvEscape).join(';'))
-  for (const d of report.section4_tractoreo_no_trabajando.driver_detail) {
-    lines.push([d.full_name, d.carrier_name, d.cd_origen, d.unassigned_reason_label, d.tractor_plate, d.operation_type].map(csvEscape).join(';'))
-  }
-  lines.push('')
-
-  lines.push('SECCIÓN 5 — Tractoreo por empresa')
-  lines.push(['Empresa', 'Enrolados', 'Asignados', 'No asignados', '% utilización'].map(csvEscape).join(';'))
-  for (const r of report.section_tractoreo_por_empresa) {
-    lines.push([r.carrier_name, r.enrolled, r.assigned, r.unassigned, r.utilization_pct].map(csvEscape).join(';'))
-  }
-  lines.push('')
-
-  lines.push('SECCIÓN 6 — Equipos Completos por empresa')
-  lines.push(['Empresa', 'Enrolados', 'Asignados', 'No asignados', '% utilización'].map(csvEscape).join(';'))
-  for (const r of report.section5_equipos_completos) {
-    lines.push([r.carrier_name, r.enrolled, r.assigned, r.unassigned, r.utilization_pct].map(csvEscape).join(';'))
-  }
-  lines.push('')
-
-  lines.push('SECCIÓN 7 — Resumen general por origen habitual')
-  lines.push(['Origen habitual', 'Enrolados', 'Asignados'].map(csvEscape).join(';'))
-  for (const c of report.section6_resumen_general.por_cd) {
-    lines.push([c.cd, c.enrolled, c.assigned].map(csvEscape).join(';'))
-  }
-  lines.push('')
-  lines.push('')
-  lines.push('SECCIÓN 7 — Cargaron en otro origen')
-  lines.push(['Patente', 'Empresa', 'Origen habitual', 'Cargó en', 'Generador de carga'].map(csvEscape).join(';'))
-  for (const d of report.section7_desvios_de_cd) {
-    lines.push([d.tractor_plate ?? '', d.carrier_name ?? '', d.home_cd, d.origin_cd, d.client_name ?? ''].map(csvEscape).join(';'))
-  }
-  lines.push('')
-  lines.push('SECCIÓN 7 — Resumen general por cliente')
-  lines.push(['Cliente', 'Asignados'].map(csvEscape).join(';'))
-  for (const c of report.section6_resumen_general.por_cliente) {
-    lines.push([c.client_name, c.assigned].map(csvEscape).join(';'))
-  }
-
-  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url; a.download = `reporte_estatus_${fecha}.csv`; a.click()
-  URL.revokeObjectURL(url)
-}
-
-const ZONE_COLS = ['RM', 'Z0', 'Región', 'Sin clasificar', 'total'] as const satisfies readonly (keyof ZoneCrossTab)[]
 // Las columnas de motivo las manda el backend (`section4.motivos`), desde el
 // catálogo: la lista escrita acá dejaba fuera 9 motivos, que sólo sumaban al
 // total sin que se viera cuáles eran.
@@ -117,6 +41,29 @@ function Pct({ value }: { value: number }) {
 export function StatusReportSection({ fecha, shippers }: Props) {
   const [tab, setTab] = useState<Tab>('resumen')
   const [client, setClient] = useState('')
+  // Lo que está a la vista, para "Copiar estatus": el coordinador lo pega tal cual
+  // en el correo o el chat del día (minuta 09/10), sin bajar PDF ni Excel.
+  const contenidoRef = useRef<HTMLDivElement>(null)
+  const [copiado, setCopiado] = useState(false)
+
+  async function copiarEstatus() {
+    const nodo = contenidoRef.current
+    if (!nodo) return
+    const seccion = TABS.find(t => t.id === tab)?.label ?? ''
+    const encabezado = `Estatus del día ${fecha} — ${seccion}`
+    const html = `<p><b>${encabezado}</b></p>${nodo.innerHTML}`
+    const texto = `${encabezado}\n\n${nodo.innerText ?? nodo.textContent ?? ''}`
+    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([texto], { type: 'text/plain' }),
+      })])
+    } else {
+      await navigator.clipboard.writeText(texto)
+    }
+    setCopiado(true)
+    setTimeout(() => setCopiado(false), 2000)
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ['status-report', fecha, client],
@@ -250,11 +197,20 @@ export function StatusReportSection({ fecha, shippers }: Props) {
           </button>
           <button
             type="button"
-            onClick={() => data && exportReportCsv(data, fecha)}
+            onClick={() => { if (data) void descargarReporteExcel(data, fecha) }}
             disabled={!data}
             className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-accent disabled:opacity-40"
           >
             <FileDown size={12} /> Descargar Excel
+          </button>
+          <button
+            type="button"
+            onClick={() => { void copiarEstatus() }}
+            disabled={!data || tab === 'dotacion'}
+            className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-accent disabled:opacity-40"
+            title="Copia la sección a la vista, lista para pegar en un correo o un chat"
+          >
+            {copiado ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar estatus</>}
           </button>
           <Link
             href="/dashboard/operations/closures/history"
@@ -273,7 +229,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
           <Loader2 size={20} className="animate-spin" />
         </div>
       ) : (
-        <>
+        <div ref={contenidoRef}>
           {tab === 'resumen' && (
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
@@ -511,7 +467,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
               )}
             </div>
           )}
-        </>
+        </div>
       )}
       </div>
     </div>
@@ -590,6 +546,17 @@ function ZoneTable({ title, rows, showCarrier, motivosSinCarga = [] }: {
               </tr>
             ))}
           </tbody>
+          {rows.length > 0 && (
+            <tfoot>
+              {/* Totales al pie (minuta 09/10, ítem 9): el número que se compara con el Excel. */}
+              <tr className="border-t-2 border-border font-bold bg-gray-50">
+                <td className="px-3 py-2">Total</td>
+                {showCarrier && <td className="px-3 py-2" />}
+                {ZONE_COLS.map(c => <td key={c} className="px-3 py-2 text-right">{sumar(rows, r => r[c] as number)}</td>)}
+                {motivosSinCarga.map(m => <td key={m} className="px-3 py-2 text-right">{sumar(rows, r => r.sin_carga?.[m])}</td>)}
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </div>
@@ -639,6 +606,15 @@ function MotivoTable({ title, rows, motivos, showCarrier }: {
               </tr>
             ))}
           </tbody>
+          {rows.length > 0 && (
+            <tfoot>
+              <tr className="border-t-2 border-border font-bold bg-gray-50">
+                <td className="px-3 py-2">Total</td>
+                {showCarrier && <td className="px-3 py-2" />}
+                {columnas.map(c => <td key={c} className="px-2 py-2 text-right">{sumar(rows, r => r[c] as number)}</td>)}
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
     </div>

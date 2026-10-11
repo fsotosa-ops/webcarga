@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StatusReportSection } from './StatusReportSection'
 import { statusReportApi } from '@/lib/api/statusReport'
 import type { StatusReport } from '@/lib/types'
+
+const escribirExcel = vi.hoisted(() => vi.fn())
+vi.mock('write-excel-file/browser', () => ({ default: escribirExcel }))
 
 vi.mock('@/lib/api/statusReport', () => ({
   statusReportApi: { get: vi.fn() },
@@ -178,23 +181,56 @@ describe('StatusReportSection', () => {
     printSpy.mockRestore()
   })
 
-  it('"Descargar Excel" dispara la descarga del CSV con el detalle completo', async () => {
+  it('"Descargar Excel" baja un .xlsx de verdad, con una hoja por sección (minuta 09/10, ítem 15)', async () => {
+    const toFile = vi.fn().mockResolvedValue(undefined)
+    escribirExcel.mockReset().mockReturnValue({ toFile })
     const body = renderSection()
     await body.findByText('Total equipos activos')
-    const clickSpy = vi.fn()
-    const originalCreateElement = document.createElement.bind(document)
-    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
-      const el = originalCreateElement(tag)
-      if (tag === 'a') el.click = clickSpy
-      return el
-    })
-    URL.createObjectURL = vi.fn().mockReturnValue('blob:mock')
-    URL.revokeObjectURL = vi.fn()
 
     fireEvent.click(body.getByRole('button', { name: /Descargar Excel/ }))
 
-    expect(clickSpy).toHaveBeenCalled()
-    vi.mocked(document.createElement).mockRestore()
+    await waitFor(() => expect(toFile).toHaveBeenCalledWith('reporte_estatus_2026-08-02.xlsx'))
+    const hojas = escribirExcel.mock.calls[0][0] as { sheet: string; data: unknown[][] }[]
+    expect(hojas.map(h => h.sheet)).toContain('2. Asignado')
+    const asignado = hojas.find(h => h.sheet === '2. Asignado')!
+    expect(JSON.stringify(asignado.data)).toContain('CD Lo Aguirre')
+  })
+
+  it('la tabla de asignados suma cada columna al pie, para comparar con el Excel (minuta 09/10, ítem 9)', async () => {
+    vi.mocked(statusReportApi.get).mockResolvedValue({
+      ...REPORT,
+      section2_tractoreo_asignado: {
+        ...REPORT.section2_tractoreo_asignado,
+        por_cd: [
+          { cd: 'CD Lo Aguirre', RM: 3, Z0: 1, "Región": 0, "Sin clasificar": 0, total: 4, sin_carga: { 'Se retira sin carga': 2 } },
+          { cd: 'CD Quilicura', RM: 2, Z0: 0, "Región": 5, "Sin clasificar": 1, total: 8, sin_carga: { 'Se retira sin carga': 1 } },
+        ],
+      },
+    })
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    fireEvent.click(body.getByRole('button', { name: '2. Asignado' }))
+    const pie = (await body.findAllByRole('row', { name: /^Total/ }))[0]
+    expect(within(pie).getAllByRole('cell').map(c => c.textContent)).toEqual(['Total', '5', '1', '5', '1', '12', '3'])
+  })
+
+  it('"Copiar estatus" deja la sección a la vista lista para pegar (minuta 09/10)', async () => {
+    const write = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { write } })
+    vi.stubGlobal('ClipboardItem', class { constructor(public items: Record<string, Blob>) {} })
+    const body = renderSection()
+    await body.findByText('Total equipos activos')
+    fireEvent.click(body.getByRole('button', { name: '2. Asignado' }))
+    await body.findAllByText('CD Lo Aguirre')
+
+    fireEvent.click(body.getByRole('button', { name: /Copiar estatus/ }))
+
+    await waitFor(() => expect(write).toHaveBeenCalled())
+    const item = write.mock.calls[0][0][0] as { items: Record<string, Blob> }
+    expect(Object.keys(item.items).sort()).toEqual(['text/html', 'text/plain'])
+    expect(await item.items['text/plain'].text()).toContain('CD Lo Aguirre')
+    expect(await body.findByText(/copiado/i)).toBeInTheDocument()
+    vi.unstubAllGlobals()
   })
 
   it('en la Sección 7 muestra los que cargaron en un CD distinto al suyo', async () => {
