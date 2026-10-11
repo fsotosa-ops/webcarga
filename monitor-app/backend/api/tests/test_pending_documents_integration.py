@@ -214,17 +214,25 @@ async def test_un_periodo_antiguo_pasado_su_corte_esta_vencido(conexion_revertid
     assert await _estado(conn, reg) == "OVERDUE"
 
 
-async def test_un_documento_a_pedido_entra_solo_si_existe_el_registro(conexion_revertida):
-    """A pedido no se siembra: sin registro no hay fila que evaluar; con el
-    registro que alguien solicitó, falta."""
+async def test_un_documento_a_pedido_solicitado_y_sin_archivo_falta_y_esta_en_alcance(conexion_revertida):
+    """A pedido se exige desde que existe el registro (la siembra no lo crea:
+    eso es de la siembra, no de esta función)."""
     conn = conexion_revertida
     empresa = await _empresa(conn)
     req = await _requisito(conn, entidad="CARRIER", exigible_on="ON_REQUEST")
-    sin = await conn.fetchval(
-        "SELECT count(*) FROM public.compliance_records WHERE requirement_id = $1", req)
-    assert sin == 0
     reg = await _registro(conn, req, "CARRIER", empresa)
     assert await _estado(conn, reg) == "MISSING"
+    assert await _en_alcance(conn, reg) is True
+
+
+async def test_un_documento_a_pedido_con_archivo_vigente_esta_al_dia(conexion_revertida):
+    conn = conexion_revertida
+    hoy = await _hoy(conn)
+    empresa = await _empresa(conn)
+    req = await _requisito(conn, entidad="CARRIER", politica="REQUIRED", exigible_on="ON_REQUEST")
+    reg = await _registro(conn, req, "CARRIER", empresa, status="APPROVED_MANUAL",
+                          vence=hoy + timedelta(days=400))
+    assert await _estado(conn, reg) == "UP_TO_DATE"
 
 
 # ── Alcance ──────────────────────────────────────────────────────────────────
@@ -324,4 +332,17 @@ async def test_un_documento_corriente_de_quien_se_fue_sigue_fuera_de_alcance(con
     empresa = await _empresa(conn)
     d = await _conductor_que_se_fue(conn, empresa)
     req = await _requisito(conn, entidad="DRIVER")
+    assert await _en_alcance(conn, await _registro(conn, req, "DRIVER", d)) is False
+
+
+async def test_la_ultima_asignacion_abierta_a_una_empresa_de_baja_deja_fuera(conexion_revertida):
+    """end_date NULL es la más reciente aunque haya otra, cerrada, a una empresa activa."""
+    conn = conexion_revertida
+    activa = await _empresa(conn)
+    de_baja = await _empresa(conn, estado="INACTIVE")
+    d = await _conductor_que_se_fue(conn, activa)
+    await conn.execute(
+        "INSERT INTO public.driver_assignments (driver_id, carrier_id, status, start_date, end_date) "
+        "VALUES ($1, $2, 'INACTIVE', public.hoy_chile() - 5, NULL)", d, de_baja)
+    req = await _requisito(conn, entidad="DRIVER", exigible_on="ON_ENTITY_END")
     assert await _en_alcance(conn, await _registro(conn, req, "DRIVER", d)) is False
