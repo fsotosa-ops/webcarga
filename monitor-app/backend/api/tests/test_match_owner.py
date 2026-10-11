@@ -52,3 +52,17 @@ def test_sin_rut_ni_nombre_reconocible_queda_sin_asignar():
 
 def test_un_rut_con_digito_verificador_invalido_no_asigna():
     assert match_owner("F30-1 76222222-9.pdf", [CORDILLERA]) == []
+
+
+BBCL23 = PendingOwner("r8", "ASSET", "BBCL23", None, "Transportes Cordillera SpA")
+
+
+def test_la_patente_con_guion_o_espacio_asigna_al_equipo():
+    for nombre in ("revision tecnica BBCL-23.pdf", "revision tecnica BBCL 23.pdf", "rt_bbcl23.pdf"):
+        c = match_owner(nombre, [BBCL23])
+        assert c and (c[0].record_id, c[0].reason) == ("r8", "plate"), nombre
+
+
+def test_la_patente_dentro_de_una_secuencia_mas_larga_no_asigna():
+    assert match_owner("revision XBBCL234.pdf", [BBCL23]) == []
+    assert match_owner("revision X-BBCL-234.pdf", [BBCL23]) == []

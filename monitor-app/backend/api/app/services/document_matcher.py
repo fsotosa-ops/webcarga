@@ -393,13 +393,32 @@ class OwnerCandidate:
     reason: str  # rut | plate | name
 
 
+def _plate_in_tokens(label: str, tokens: list[str]) -> bool:
+    """La patente aparece como tokens CONTIGUOS completos del nombre, sin
+    importar guion o espacio: 'BBCL-23', 'BBCL 23' y 'bbcl23' son BBCL23. Unir
+    solo tokens enteros evita encontrarla dentro de una secuencia más larga
+    ('XBBCL234')."""
+    plate = normalize_text(label).replace(" ", "")
+    if not plate:
+        return False
+    for i in range(len(tokens)):
+        joined = ""
+        for token in tokens[i:]:
+            joined += token
+            if len(joined) >= len(plate):
+                break
+        if joined == plate:
+            return True
+    return False
+
+
 def match_owner(file_name: str, owners: list[PendingOwner]) -> list[OwnerCandidate]:
     """Candidatos para un archivo, de mayor a menor confianza. Un identificador
     fuerte (RUT con DV válido, patente) vale 0.95; el nombre, la misma escala
     difusa de la Bandeja (un nombre exacto llega a 0.90)."""
     normalized = normalize_text(file_name)
     ruts = set(extract_ruts(file_name))
-    tokens = set(normalized.split())
+    token_list = normalized.split()
     found: dict[str, OwnerCandidate] = {}
 
     def keep(c: OwnerCandidate) -> None:
@@ -411,8 +430,7 @@ def match_owner(file_name: str, owners: list[PendingOwner]) -> list[OwnerCandida
             keep(OwnerCandidate(o.record_id, 0.95, "rut"))
             continue
         if o.entity_type == "ASSET":
-            plate = normalize_text(o.label)
-            if plate and plate in tokens:
+            if _plate_in_tokens(o.label, token_list):
                 keep(OwnerCandidate(o.record_id, 0.95, "plate"))
             continue
         ratio = best_name_similarity(normalized, o.label)
