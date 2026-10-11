@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require, require_fields
 from ..db import get_pool
-from ..services.cliente_del_viaje import resolver_cliente
+from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente, resolver_cliente
 from ..services.vencimientos import pendiente_predicate
 from ..schemas.trip import (
     AsignarConductorBody, TripBulkCloseBody, TripVoidBody, TripVoidRevertBody, TripBulkReopenBody, TripPatch, TripStopPatch,
@@ -350,26 +350,26 @@ def _normalize_location_name(name: str) -> str:
     return re.sub(r"\s+", " ", name).strip().upper()
 
 
-async def _load_operation_type_buckets(pool, client_names: set[str]) -> dict:
-    """shipper_name (lower) -> {"by_number": {site_number: [(nombre_norm, operation_type)]},
+async def _load_operation_type_buckets(pool, shipper_ids: set[str]) -> dict:
+    """shipper_id -> {"by_number": {site_number: [(nombre_norm, operation_type)]},
     "by_name": {nombre_norm: operation_type}} — resuelve operation_type contra
     public.locations, siempre scopeado por shipper (nunca un lookup global de
     site_number, que sería ambiguo si dos shippers reusan el mismo número)."""
-    if not client_names:
+    if not shipper_ids:
         return {}
     rows = await pool.fetch(
         """
-        SELECT lower(s.name) AS shipper_name, l.name, l.site_number, l.operation_type
+        SELECT s.id::text AS shipper_id, l.name, l.site_number, l.operation_type
         FROM public.locations l
         JOIN public.shippers s ON s.id = l.entity_id AND l.entity_type = 'SHIPPER'
-        WHERE lower(s.name) = ANY($1::text[])
+        WHERE s.id = ANY($1::uuid[])
           AND l.operational_status = 'ACTIVE' AND l.operation_type IS NOT NULL
         """,
-        list(client_names),
+        list(shipper_ids),
     )
     buckets: dict = {}
     for r in rows:
-        bucket = buckets.setdefault(r["shipper_name"], {"by_number": {}, "by_name": {}})
+        bucket = buckets.setdefault(r["shipper_id"], {"by_number": {}, "by_name": {}})
         norm_name = _normalize_location_name(r["name"])
         if r["site_number"]:
             bucket["by_number"].setdefault(r["site_number"], []).append((norm_name, r["operation_type"]))
@@ -421,7 +421,7 @@ def _attach_origin(d: dict) -> None:
 
 
 def _apply_operation_types(d: dict, buckets: dict) -> None:
-    bucket = buckets.get((d.get("client_name") or "").strip().lower())
+    bucket = buckets.get(str(d["shipper_id"])) if d.get("shipper_id") else None
     d["origin_operation_type"] = _resolve_operation_type(bucket, d.get("origin"))
     stops = d.get("stops")
     if stops:
@@ -498,7 +498,10 @@ def _tms_dropped(d: dict, ctx: tuple[dict, float]) -> bool:
 _TRIP_SELECT = """
     t.id,
     t.source_system,
-    t.client_name,
+    -- El cliente que se muestra (services/cliente_del_viaje.nombre_del_cliente,
+    -- spec 2026-10-11): el del directorio, o el texto del TMS marcado.
+    COALESCE(sh.name, t.client_name || ' · sin vincular') AS client_name,
+    t.client_name AS source_client_name,
     t.planning_date,
     t.status_reported_at,
     t.trip_status                                  AS current_status,
@@ -727,14 +730,8 @@ _TRIP_FROM = """
 """ + _compliance_alert_lateral("dcomp", "DRIVER", "vfr.resolved_driver_id", _DRIVER_CRITICAL_DOC_CODES) \
     + _compliance_alert_lateral("tcomp", "ASSET", "vfr.resolved_tractor_asset_id") \
     + _compliance_alert_lateral("ccomp", "CARRIER", "vfr.resolved_carrier_id") + """
-    -- Cliente/shipper real, resuelto en vivo (Ronda 26, Fase 2) — mismo
-    -- patrón "resolución en vivo" que driver_id/carrier_id/tractor_asset_id
-    -- (Rondas 18-19), sin tocar el pipeline dbt. client_name va a estar
-    -- garantizado como el nombre exacto de un shipper real desde que el
-    -- formulario de creación usa el directorio real (ClientPicker) — el
-    -- match por texto alcanza, no hace falta una columna persistida.
-    LEFT JOIN public.shippers sh
-        ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE'
+    -- El cliente del directorio, por id (spec 2026-10-11; services/cliente_del_viaje.py).
+    LEFT JOIN public.shippers sh ON sh.id = t.shipper_id
     LEFT JOIN public.profiles p ON p.id = t.edited_by
 """
 
@@ -773,7 +770,7 @@ async def list_trips(
     is_assigned: Annotated[str, Query()] = "",
     second_leg_plus: Annotated[str, Query()] = "",
     tms: Annotated[str, Query()] = "",
-    client: Annotated[str, Query()] = "",
+    shipper_id: Annotated[str, Query()] = "",
     cargo_type: Annotated[str, Query()] = "",
     origin: Annotated[str, Query()] = "",
     origin_region: Annotated[str, Query()] = "",
@@ -798,6 +795,7 @@ async def list_trips(
         "OR t.fleet->>'driver_rut_tms' ILIKE '%'||$1||'%' "
         "OR c.business_name ILIKE '%'||$1||'%' "
         "OR t.fleet->>'transporter_name_tms' ILIKE '%'||$1||'%' "
+        "OR sh.name ILIKE '%'||$1||'%' "
         "OR t.client_name ILIKE '%'||$1||'%' "
         "OR t.source_system_trip_id ILIKE '%'||$1||'%' "
         # Nº de entrega (IANSA): Facturación y Operaciones arrancan desde el
@@ -858,14 +856,18 @@ async def list_trips(
     if tms:
         tms_list = [t.strip() for t in tms.split(',') if t.strip()]
         add("t.source_system = ANY(?)", tms_list)
-    if client:
-        # Lista (multi-select en la UI), normalizada con lower(trim(...))
-        # igual que el JOIN de sh (líneas 660-661): el client_name crudo del
-        # TMS no garantiza casing/whitespace estable contra el nombre
-        # canónico del shipper (bug 5.1, confirmado contra datos reales:
-        # ~100% de los viajes tienen client_name en minúsculas).
-        client_list = [c.strip().lower() for c in client.split(',') if c.strip()]
-        add("lower(trim(t.client_name)) = ANY(?)", client_list)
+    if shipper_id:
+        # Por id del directorio (spec 2026-10-11). "unlinked" = viajes de un
+        # cliente del TMS todavía sin vincular en Configuración.
+        ids = [s.strip() for s in shipper_id.split(',') if s.strip()]
+        reales = [s for s in ids if s != 'unlinked']
+        sin_vincular = 'unlinked' in ids
+        if reales and sin_vincular:
+            add("(t.shipper_id = ANY(?::uuid[]) OR t.shipper_id IS NULL)", reales)
+        elif reales:
+            add("t.shipper_id = ANY(?::uuid[])", reales)
+        else:
+            filters.append("t.shipper_id IS NULL")
     if cargo_type:
         cargo_type_list = [c.strip() for c in cargo_type.split(',') if c.strip()]
         add("t.cargo_type = ANY(?)", cargo_type_list)
@@ -921,17 +923,17 @@ async def list_trips(
         f"SELECT COUNT(*) {_TRIP_FROM} {where}", *params
     )
     data = []
-    client_names = set()
+    shipper_ids = set()
     trip_ids = set()
     for r in rows:
         d = dict(r)
-        if d.get("client_name"):
-            client_names.add(d["client_name"].strip().lower())
+        if d.get("shipper_id"):
+            shipper_ids.add(str(d["shipper_id"]))
         trip_ids.add(str(d["id"]))
         data.append(d)
 
     stops_by_trip = await _load_trip_stops(pool, trip_ids)
-    op_type_buckets = await _load_operation_type_buckets(pool, client_names)
+    op_type_buckets = await _load_operation_type_buckets(pool, shipper_ids)
     temp_ranges = await _load_temperature_ranges(pool)
     dropped_ctx = await _load_tms_dropped_context(pool)
     for d in data:
@@ -1161,12 +1163,14 @@ async def get_trips_meta(pool=Depends(get_pool), _=Depends(require(Permission.OP
     # (bug 5.1) y el JOIN de _TRIP_FROM — si un cliente vuelve a tener
     # viajes reales, aparece solo, sin tocar código.
     client_rows = await pool.fetch(
-        "SELECT DISTINCT sh.id::text, sh.name "
-        "FROM app.trips t "
-        "JOIN public.shippers sh "
-        "  ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE' "
+        "SELECT DISTINCT sh.id::text AS id, sh.name "
+        "FROM app.trips t JOIN public.shippers sh ON sh.id = t.shipper_id "
         "ORDER BY sh.name"
     )
+    # Los viajes de un cliente del TMS todavía sin vincular (spec 2026-10-11):
+    # una opción propia, para que no desaparezcan del filtro.
+    hay_sin_vincular = await pool.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM app.trips WHERE shipper_id IS NULL AND voided_at IS NULL)")
     # Los CD de origen que EXISTEN, mismo criterio que los clientes (bug 5.2):
     # dinamico segun lo que hay en la base, no un catalogo. El filtro de Origen
     # era un autocomplete con el argumento de que son "cientos de locales" —
@@ -1194,7 +1198,8 @@ async def get_trips_meta(pool=Depends(get_pool), _=Depends(require(Permission.OP
         temperature_ranges=[TemperatureRangeMeta(**dict(r)) for r in temp_range_rows],
         unassigned_reasons=[UnassignedReasonMeta(**dict(r)) for r in unassigned_reason_rows],
         operation_types=[OperationTypeMeta(**t) for t in _OPERATION_TYPE_META],
-        clients=[ClientMeta(**dict(r)) for r in client_rows],
+        clients=[ClientMeta(**dict(r)) for r in client_rows]
+        + ([ClientMeta(id="unlinked", name="Sin cliente vinculado")] if hay_sin_vincular else []),
         origins=[r["local"] for r in origin_rows],
         monitor_alert_rules=MonitorAlertRulesMeta(**dict(alert_rules_row)) if alert_rules_row else None,
     )
@@ -1415,10 +1420,11 @@ async def available_assets(
             SELECT DISTINCT ON (vfr.resolved_tractor_asset_id)
                 vfr.resolved_tractor_asset_id AS asset_id,
                 t.id AS trip_id,
-                t.client_name,
+                COALESCE(sh.name, t.client_name || ' · sin vincular') AS client_name,
                 t.trip_status AS current_status
             FROM app.trips t
             JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+            LEFT JOIN public.shippers sh ON sh.id = t.shipper_id
             -- FIX 2026-08-02 (ítem 16 de la minuta) — mismo criterio que las
             -- 2 queries de arriba: un viaje multi-día abierto desde un día
             -- anterior sigue haciendo "ocupado" al equipo hoy.
@@ -1447,7 +1453,7 @@ async def available_assets(
 @router.get("/fleet-daily-overview")
 async def fleet_daily_overview(
     fecha: str = Query(""),
-    client: str = Query(""),
+    shipper_id: str = Query(""),
     origin: str = Query(""),
     pool=Depends(get_pool),
     _=Depends(require(Permission.OPERATIONS_READ)),
@@ -1489,7 +1495,8 @@ async def fleet_daily_overview(
     day = _parse_date(fecha)
     if day is None:
         raise HTTPException(422, "fecha requerida (YYYY-MM-DD)")
-    client_list = [c.strip().lower() for c in client.split(',') if c.strip()]
+    # Por id del directorio (spec 2026-10-11).
+    client_list = [c.strip() for c in shipper_id.split(',') if c.strip()]
     origin_list = [o.strip().lower() for o in origin.split(',') if o.strip()]
 
     rows = await pool.fetch(
@@ -1509,10 +1516,12 @@ async def fleet_daily_overview(
             SELECT DISTINCT ON (vfr.resolved_tractor_asset_id)
                 vfr.resolved_tractor_asset_id AS asset_id,
                 t.id AS trip_id,
-                t.client_name,
+                t.shipper_id::text AS shipper_id,
+                {nombre_del_cliente('t', 'sh')} AS client_name,
                 {origen_del_viaje('t')} AS origin_local
             FROM app.trips t
             JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+            {join_cliente('t', 'sh')}
             WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
               AND vfr.resolved_tractor_asset_id IS NOT NULL
             ORDER BY vfr.resolved_tractor_asset_id, t.status_reported_at DESC NULLS LAST
@@ -1521,7 +1530,7 @@ async def fleet_daily_overview(
             ar.asset_id, ar.tractor_plate, ar.carrier_id, ar.carrier_name,
             COALESCE(ar.is_tractoreo, false)      AS is_tractoreo,
             COALESCE(ar.is_equipo_completo, false) AS is_equipo_completo,
-            tt.trip_id, tt.client_name, tt.origin_local
+            tt.trip_id, tt.shipper_id, tt.client_name, tt.origin_local
         FROM active_roster ar
         LEFT JOIN today_trips tt ON tt.asset_id = ar.asset_id
         """,
@@ -1532,20 +1541,19 @@ async def fleet_daily_overview(
     if client_list:
         shipper_rows = await pool.fetch(
             """
-            SELECT cs.carrier_id, lower(s.name) AS shipper_name
+            SELECT cs.carrier_id, cs.shipper_id::text AS shipper_id
             FROM public.carrier_shippers cs
-            JOIN public.shippers s ON s.id = cs.shipper_id
             WHERE cs.status = 'ACTIVE'
             """
         )
         carriers_for_client = {
-            r["carrier_id"] for r in shipper_rows if r["shipper_name"] in client_list
+            r["carrier_id"] for r in shipper_rows if r["shipper_id"] in client_list
         }
 
     equipment = []
     for r in rows:
         if client_list:
-            today_client_ok = (r["client_name"] or "").strip().lower() in client_list
+            today_client_ok = r["shipper_id"] in client_list
             carrier_client_ok = r["carrier_id"] in carriers_for_client
             if not (today_client_ok or carrier_client_ok):
                 continue
@@ -2381,8 +2389,8 @@ async def get_trip(
     d["temp_status"] = _trip_temp_status(d["stops"], d.get("cargo_type"), d["cargo_delivered"], temp_ranges)
     _annotate_stop_temp_status(d["stops"], d.get("cargo_type"), temp_ranges)
     _attach_origin(d)
-    client_names = {d["client_name"].strip().lower()} if d.get("client_name") else set()
-    op_type_buckets = await _load_operation_type_buckets(pool, client_names)
+    shipper_ids = {str(d["shipper_id"])} if d.get("shipper_id") else set()
+    op_type_buckets = await _load_operation_type_buckets(pool, shipper_ids)
     _apply_operation_types(d, op_type_buckets)
     await _log_tms_divergence_once(pool, trip_id, user, d)
     anotar_anulable(d, user)

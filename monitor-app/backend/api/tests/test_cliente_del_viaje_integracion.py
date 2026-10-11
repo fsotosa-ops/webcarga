@@ -56,3 +56,17 @@ async def test_el_alta_manual_guarda_el_id_y_el_nombre_del_directorio(conexion_r
     fila = await conexion_revertida.fetchrow(
         "SELECT shipper_id::text, client_name FROM app.trips_manual WHERE id = $1", trip_id)
     assert (fila["shipper_id"], fila["client_name"]) == (iansa["id"], iansa["name"])
+
+
+async def test_renombrar_un_cliente_no_saca_sus_viajes_del_monitor(conexion_revertida):
+    """El caso que motivó todo: con el cruce por texto, renombrar "Colun" dejaba
+    sus viajes sin cliente."""
+    from app.routers.trips import list_trips
+    from tests.conftest import PoolDeUnaConexion, _usuario_real
+
+    colun = await conexion_revertida.fetchval("SELECT id::text FROM public.shippers WHERE lower(name) = 'colun'")
+    await conexion_revertida.execute("UPDATE public.shippers SET name = 'Colun Renombrada' WHERE id = $1::uuid", colun)
+    usuario = await _usuario_real(conexion_revertida)
+    res = await list_trips(pool=PoolDeUnaConexion(conexion_revertida), user=usuario, shipper_id=colun, view="historial", limit=5)
+    assert res["count"] > 0
+    assert {d["client_name"] for d in res["data"]} == {"Colun Renombrada"}

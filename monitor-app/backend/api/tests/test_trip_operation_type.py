@@ -96,9 +96,10 @@ def test_resolve_operation_type_none_without_bucket_or_local():
 
 
 def test_apply_operation_types_sets_origin_and_per_stop():
-    buckets = {"walmart": _bucket_walmart()}
+    # Indexado por el id del cliente del directorio (spec 2026-10-11).
+    buckets = {"s-walmart": _bucket_walmart()}
     trip = {
-        "client_name": "walmart",
+        "shipper_id": "s-walmart",
         "origin": "CD LO AGUIRRE",
         "stops": [
             {"stop_id": "a", "local": "SANTA ROSA - 87"},
@@ -112,8 +113,8 @@ def test_apply_operation_types_sets_origin_and_per_stop():
 
 
 def test_apply_operation_types_no_bucket_for_unknown_client():
-    buckets = {"walmart": _bucket_walmart()}
-    trip = {"client_name": "sodimac", "origin": None, "stops": [{"local": "SANTA ROSA - 87"}]}
+    buckets = {"s-walmart": _bucket_walmart()}
+    trip = {"shipper_id": "s-sodimac", "origin": None, "stops": [{"local": "SANTA ROSA - 87"}]}
     _apply_operation_types(trip, buckets)
     assert trip["origin_operation_type"] is None
     assert trip["stops"][0]["operation_type"] is None
@@ -123,15 +124,16 @@ def test_apply_operation_types_no_bucket_for_unknown_client():
 async def test_load_operation_type_buckets_scopes_by_shipper_and_skips_null_operation_type():
     pool = AsyncMock()
     pool.fetch.return_value = [
-        {"shipper_name": "walmart", "name": "Santa Rosa", "site_number": "87", "operation_type": "RM"},
-        {"shipper_name": "walmart", "name": "Linares", "site_number": "171", "operation_type": "Z0"},
-        {"shipper_name": "iansa", "name": "Iansa Chillan", "site_number": None, "operation_type": "Region Sur"},
+        {"shipper_id": "s-walmart", "name": "Santa Rosa", "site_number": "87", "operation_type": "RM"},
+        {"shipper_id": "s-walmart", "name": "Linares", "site_number": "171", "operation_type": "Z0"},
+        {"shipper_id": "s-iansa", "name": "Iansa Chillan", "site_number": None, "operation_type": "Region Sur"},
     ]
-    buckets = await _load_operation_type_buckets(pool, {"walmart", "iansa"})
-    assert _resolve_operation_type(buckets["walmart"], "SANTA ROSA - 87") == "RM"
-    assert _resolve_operation_type(buckets["iansa"], "Iansa Chillan") == "Region Sur"
+    buckets = await _load_operation_type_buckets(pool, {"s-walmart", "s-iansa"})
+    assert _resolve_operation_type(buckets["s-walmart"], "SANTA ROSA - 87") == "RM"
+    assert _resolve_operation_type(buckets["s-iansa"], "Iansa Chillan") == "Region Sur"
     # Nunca cruza entre shippers: un local de Iansa no debe resolver contra el bucket de Walmart
-    assert _resolve_operation_type(buckets["walmart"], "Iansa Chillan") is None
+    assert _resolve_operation_type(buckets["s-walmart"], "Iansa Chillan") is None
+    assert "s.id = ANY($1::uuid[])" in pool.fetch.call_args.args[0]
 
 
 @pytest.mark.asyncio

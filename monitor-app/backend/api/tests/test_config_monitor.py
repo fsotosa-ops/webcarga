@@ -331,12 +331,14 @@ def test_available_assets_busy_trip_counts_multi_day_active_trip():
 def _fleet_row(
     asset_id="a1", tractor_plate="ABCD12", carrier_id="c1", carrier_name="TransCargo",
     is_tractoreo=False, is_equipo_completo=False, trip_id=None, client_name=None, origin_local=None,
+    shipper_id=None,
 ):
     return {
         "asset_id": asset_id, "tractor_plate": tractor_plate,
         "carrier_id": carrier_id, "carrier_name": carrier_name,
         "is_tractoreo": is_tractoreo, "is_equipo_completo": is_equipo_completo,
         "trip_id": trip_id, "client_name": client_name, "origin_local": origin_local,
+        "shipper_id": shipper_id,
     }
 
 
@@ -415,10 +417,10 @@ def test_fleet_daily_overview_client_filter_keeps_idle_equipment_of_enabled_carr
     pool = AsyncMock()
     pool.fetch.side_effect = [
         [_fleet_row(carrier_id="c1")],
-        [{"carrier_id": "c1", "shipper_name": "walmart"}],
+        [{"carrier_id": "c1", "shipper_id": "s1"}],
     ]
     client = make_client(pool, router=trips_router)
-    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&client=Walmart")
+    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&shipper_id=s1")
     assert len(res.json()["equipment"]) == 1
     shipper_query = pool.fetch.call_args_list[1].args[0]
     assert "public.carrier_shippers" in shipper_query
@@ -431,7 +433,7 @@ def test_fleet_daily_overview_client_filter_excludes_unrelated_carrier():
         [],
     ]
     client = make_client(pool, router=trips_router)
-    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&client=Walmart")
+    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&shipper_id=s1")
     assert res.json()["equipment"] == []
 
 
@@ -537,38 +539,34 @@ def test_list_trips_default_sort_falls_back_to_planning_date_when_no_sort_by_sen
     assert "ORDER BY planning_date DESC NULLS LAST, status_reported_at DESC NULLS LAST" in query
 
 
-# ── list_trips — client como lista (multi-select), cargo_type, origin
-#    (2026-08-02, ver AGENTLOG Ronda de filtros del Diario) ──────────────────
+# ── list_trips — cliente por id del directorio (spec 2026-10-11), multi-select ──
 
-def test_list_trips_client_filters_as_list():
+def test_list_trips_filtra_el_cliente_por_id_como_lista():
+    """Antes se comparaba el texto en minúsculas (bug 5.1); ahora el viaje guarda
+    el id del cliente del directorio y el filtro lo usa."""
     pool = AsyncMock()
     pool.fetchval.return_value = 0
     pool.fetch.return_value = []
     client_test = make_client(pool, router=trips_router)
-    res = client_test.get("/api/v1/trips/?view=historial&client=Walmart,Sodimac")
+    res = client_test.get("/api/v1/trips/?view=historial&shipper_id=s1,%20s2%20")
     assert res.status_code == 200
     query = pool.fetch.call_args_list[0].args[0]
     params = pool.fetch.call_args_list[0].args[1:]
-    assert "lower(trim(t.client_name)) = ANY(" in query
-    assert ["walmart", "sodimac"] in params
+    assert "t.shipper_id = ANY(" in query
+    assert "lower(trim(t.client_name))" not in query
+    assert ["s1", "s2"] in params
 
 
-def test_list_trips_client_filter_normalizes_case_and_whitespace():
-    """Root cause del bug 5.1: t.client_name viene crudo del TMS (casing/
-    espacios no garantizados, confirmado contra datos reales — ~100% de los
-    viajes tienen client_name en minúsculas) — el filtro debe normalizar
-    igual que el JOIN con public.shippers (líneas 660-661), no comparar
-    exacto."""
+def test_list_trips_filtra_los_sin_vincular():
     pool = AsyncMock()
     pool.fetchval.return_value = 0
     pool.fetch.return_value = []
     client_test = make_client(pool, router=trips_router)
-    res = client_test.get("/api/v1/trips/?view=historial&client=%20Walmart%20,SODIMAC")
-    assert res.status_code == 200
-    query = pool.fetch.call_args_list[0].args[0]
-    params = pool.fetch.call_args_list[0].args[1:]
-    assert "lower(trim(t.client_name)) = ANY(" in query
-    assert ["walmart", "sodimac"] in params
+    client_test.get("/api/v1/trips/?view=historial&shipper_id=unlinked")
+    assert "t.shipper_id IS NULL" in pool.fetch.call_args_list[0].args[0]
+    pool.fetch.reset_mock()
+    client_test.get("/api/v1/trips/?view=historial&shipper_id=s1,unlinked")
+    assert "(t.shipper_id = ANY(?::uuid[]) OR t.shipper_id IS NULL)".replace("?", "$2") in pool.fetch.call_args_list[0].args[0]
 
 
 def test_list_trips_cargo_type_filters_as_list():
@@ -618,7 +616,7 @@ def test_list_trips_second_leg_plus_filters_against_driver_daily_trip_legs_view(
     assert any("leg_number >= 2" in q for q in queries)
 
 
-def test_trip_select_resolves_shipper_id_live_via_client_name_match():
+def test_trip_select_cruza_el_cliente_por_id():
     pool = AsyncMock()
     pool.fetchrow.return_value = {"id": "trip-1", "client_name": "Walmart", "shipper_id": "s1", "shipper_name": "Walmart"}
     pool.fetch.return_value = []
@@ -627,8 +625,8 @@ def test_trip_select_resolves_shipper_id_live_via_client_name_match():
     assert res.status_code == 200
     assert res.json()["shipper_id"] == "s1"
     query = pool.fetchrow.call_args.args[0]
-    assert "public.shippers" in query
-    assert "lower(trim(" in query
+    assert "LEFT JOIN public.shippers sh ON sh.id = t.shipper_id" in query
+    assert "lower(trim(sh.name))" not in query
 
 
 # ── /config/inventario — qué gobierna cada dominio ──────────────────────────

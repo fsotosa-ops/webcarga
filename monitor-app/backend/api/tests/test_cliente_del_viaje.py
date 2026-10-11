@@ -42,3 +42,26 @@ async def test_sin_cliente_se_rechaza():
     with pytest.raises(HTTPException) as e:
         await resolver_cliente(AsyncMock(), shipper_id=None, client_name="  ")
     assert e.value.detail == "Elige el cliente del viaje"
+
+
+import inspect
+
+import app.routers.trips as trips
+
+
+def test_la_lista_cruza_y_muestra_el_cliente_por_id():
+    assert "sh.id = t.shipper_id" in trips._TRIP_FROM
+    assert "COALESCE(sh.name, t.client_name || ' · sin vincular') AS client_name" in trips._TRIP_SELECT
+    assert "t.client_name AS source_client_name" in trips._TRIP_SELECT
+
+
+def test_el_filtro_de_cliente_es_por_id_y_acepta_los_sin_vincular():
+    fuente = inspect.getsource(trips.list_trips)
+    assert "shipper_id" in inspect.signature(trips.list_trips).parameters
+    assert "client" not in inspect.signature(trips.list_trips).parameters
+    assert "t.shipper_id IS NULL" in fuente and "t.shipper_id = ANY(" in fuente
+
+
+def test_los_tipos_de_operacion_se_indexan_por_id():
+    fuente = inspect.getsource(trips._load_operation_type_buckets)
+    assert "s.id = ANY($1::uuid[])" in fuente and "lower(" not in fuente
