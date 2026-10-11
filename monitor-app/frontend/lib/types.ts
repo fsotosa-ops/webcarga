@@ -804,6 +804,47 @@ export type Urgencia = 'VENCIDO' | 'POR_VENCER' | 'FALTA' | 'AL_DIA'
  *  backend y reproduce el comportamiento anterior a la ficha. */
 export type EstadoDocumental = 'todos' | 'falta' | 'por_vencer' | 'al_dia'
 
+/** El estado de un documento: la definición única del backend
+ *  (`vencimientos.document_state_sql`). */
+export type DocumentState = 'NOT_REQUIRED' | 'UP_TO_DATE' | 'OVERDUE' | 'EXPIRING' | 'MISSING'
+/** Qué trae Pendientes: un estado o los tres que se deben juntos. */
+export type PendingState = 'overdue' | 'expiring' | 'missing' | 'pending' | 'all'
+/** El filtro de la pantalla de Pendientes (un subconjunto de `PendingState`). */
+export type PendingFilter = 'overdue' | 'expiring' | 'missing' | 'all'
+/** Cómo se agrupa la columna izquierda de Pendientes. */
+export type PendingGroupBy = 'requirement' | 'carrier'
+
+export type PendingSummaryRow = {
+  key: string
+  label: string
+  requirement_code: string | null
+  target_entity: 'CARRIER' | 'DRIVER' | 'ASSET' | null
+  expiration_policy: PoliticaVencimiento | null
+  vigencia: ReglaDeVigencia | null
+  overdue: number
+  expiring: number
+  missing: number
+}
+export type PendingSummaryResponse = { rows: PendingSummaryRow[] }
+
+export type PendingMatchCandidate = {
+  record_id: string
+  subject_label: string
+  carrier_name: string
+  confidence: number
+}
+export type PendingMatchFile = {
+  file_name: string
+  status: 'matched' | 'ambiguous' | 'unmatched'
+  record_id: string | null
+  subject_label: string | null
+  carrier_name: string | null
+  reason: 'rut' | 'plate' | 'name' | null
+  confidence: number | null
+  candidates: PendingMatchCandidate[]
+}
+export type PendingMatchResponse = { files: PendingMatchFile[] }
+
 export type PendingComplianceRow = {
   id:                      string
   carrier_id:              string
@@ -833,6 +874,12 @@ export type PendingComplianceRow = {
    *  recalcularlo comparando fechas acá es como dos superficies del mismo
    *  dato terminan discrepando. */
   urgencia:                   Urgencia
+  /** El estado según la definición única del backend. */
+  document_state:             DocumentState
+  /** Cuándo vence o venció (misma fecha que `vence_el`, con el nombre nuevo). */
+  due_on?:                    string | null
+  /** Cargado pero sin la emisión o el período que su tipo necesita. */
+  missing_validity_data?:     boolean
   /** Qué exige su requisito. El renglón lo necesita para pedir la fecha
    *  ANTES de subir; sin él pregunta siempre o no pregunta nunca, y no
    *  preguntar nunca es un 422 con el archivo ya subido. */

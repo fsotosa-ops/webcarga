@@ -59,6 +59,12 @@ export const clavesCertificacion = {
    *  cliente sobre esas filas, sin volver a la red. */
   pendientes: (carrierId?: string, entityId?: string, estado?: string) =>
     ['compliance-pending', carrierId ?? null, entityId ?? null, estado ?? null] as const,
+  /** La cola de Pendientes. Vive bajo la raíz de `pendientes`
+   *  (`['compliance-pending']`), así que invalidar esa raíz la alcanza. */
+  colaPendientes: (state: string, requirementCode?: string, carrierId?: string) =>
+    ['compliance-pending', 'queue', state, requirementCode ?? null, carrierId ?? null] as const,
+  /** Las cifras de la columna izquierda de Pendientes. */
+  resumenPendientes: (groupBy: string) => ['compliance-pending-summary', groupBy] as const,
   /** El catálogo de requisitos de un tipo de entidad. */
   requisitos: (entityType?: string) => ['compliance-requirements', entityType ?? null] as const,
 }
@@ -84,6 +90,9 @@ export const RAICES_DE_CERTIFICACION: readonly string[][] = [
   ['ingest-queue-count'],
   ['compliance-pending'],
   ['compliance-summary'],
+  ['compliance-pending-summary'],
+  // La vista rápida del Cierre: subir un documento cambia lo que muestra.
+  ['entity-summary'],
   ['certification-status'],
   ['certification-status-catalog'],
 ]

@@ -1,7 +1,8 @@
 import type {
   CertificationGroup, CertificationScope, CertificationStatus,
   BulkUploadResult, ComplianceRecordDetail, ComplianceStatus, ComplianceSummaryResponse,
-  DocumentVersion, EstadoDocumental, PendingComplianceListResponse, RequirementOption,
+  DocumentVersion, EstadoDocumental, PendingComplianceListResponse,
+  PendingMatchResponse, PendingState, PendingSummaryResponse, RequirementOption,
   ResultadoDePlanilla, ResumenDePlanilla,
 } from '@/lib/types'
 import type { DatosDelDocumento } from '@/lib/compliance'
@@ -21,6 +22,8 @@ export type ListPendingParams = {
    *  backend asume 'falta' cuando no viaja, así que sólo se manda cuando NO
    *  es el default — mismo criterio que `scope` en `listStatus`. */
   estado?:          EstadoDocumental
+  /** Estado según la definición única del backend; reemplaza a `estado`. */
+  state?:           PendingState
   limit?:           number
   offset?:          number
 }
@@ -173,11 +176,22 @@ export const complianceApi = {
     // Sólo se manda cuando NO es el default: el backend ya asume 'falta', y
     // mandarlo igual ensucia la clave de caché de React Query sin necesidad.
     if (params.estado && params.estado !== 'falta') qs.set('estado', params.estado)
+    if (params.state)            qs.set('state', params.state)
     if (params.limit != null)    qs.set('limit', String(params.limit))
     if (params.offset != null)   qs.set('offset', String(params.offset))
     const suffix = qs.toString() ? `?${qs}` : ''
     return apiFetch<PendingComplianceListResponse>(`/api/v1/compliance-records/pending${suffix}`)
   },
+
+  /** Pendientes: lo que se debe, por documento o por empresa. */
+  pendingSummary: (groupBy: 'requirement' | 'carrier') =>
+    apiFetch<PendingSummaryResponse>(`/api/v1/compliance-records/pending/summary?group_by=${groupBy}`),
+
+  /** Carga en lote: a quién va cada archivo. Solo los NOMBRES; no escribe. */
+  matchPendingFiles: (requirementId: string, fileNames: string[]) =>
+    apiFetch<PendingMatchResponse>('/api/v1/compliance-records/pending/match', {
+      method: 'POST', body: JSON.stringify({ requirement_id: requirementId, file_names: fileNames }),
+    }),
 
   /** La ficha de una empresa, resumida: cuántos requisitos tiene cada
    *  sujeto —la empresa, sus conductores, sus vehículos— y cómo vienen, sin
