@@ -16,6 +16,36 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Pasada visual del detalle del viaje — DESPLEGADA y verificada en dev (`9c447b1d`, `4f98e28e`)
+
+Maqueta aprobada por el usuario ("si estoy ok"): `.superpowers/brainstorm/84727-1791741985/content/detalle-viaje-v3.html`.
+Mismo contenido, mismas acciones; solo estilo, con las primitivas y tokens de la spec 2026-08-16.
+
+- **Hecho:**
+  - `AccordionSection`: título en minúscula gris con botón "Ocultar"/"Mostrar" (antes una flecha suelta junto a
+    MAYÚSCULAS de 10 px). `StopTimeInput` nuevo reemplaza las cuatro copias del input de fecha de la tabla.
+  - `TripDetailView`: encabezado blanco, estado y avisos en `StatusChip`, tabla de paradas con encabezado claro;
+    columna Local de 220 px para que chip, nombre y tipo vayan en línea.
+  - `GestionPanel`: `Section` + `KeyValueList`; avisos con un `Notice` local (tono como prop: urgent/warning);
+    "Ocultar Gestión" / "Mostrar Gestión" con nombre accesible. `IndicatorSwitches` en fila rótulo/switch/"Lo define el TMS".
+  - `TripNotesFeed`: sin texto de 9-10 px; tipo de nota, filtro y Feed/Documentos con un `SegmentedControl`
+    local; chips con `StatusChip`; "Agregar nota" de tamaño normal a la derecha; el pin se ve también con foco.
+  - `StopTimeline` a tokens. Textos de la maqueta: "Planificación", "Tipo de carga", "Cumplimiento",
+    "Sin coincidencias: dar de alta empresa, conductor o equipo".
+  - Trinquetes bajados: color crudo 1.672 → 1.406; tamaños bajo 11 px 260 → 214.
+  - Tests: `components/dashboard` + `lib/ui` + `lib/copy` 721/721; tsc OK. Sin build (no hay rutas nuevas ni
+    código compartido fuera del detalle).
+- **Verificado en dev (Playwright, viaje 2070220):** 1440 px lado a lado con la maqueta y 390 px. Capturas
+  `.playwright-mcp/detalle-real-v3-1440.png` y `-390.png`.
+- **Fuera de alcance a propósito:** `FleetAssignSection` (lo comparten `TripAssignDialog` y `FleetCenterDialog`;
+  todavía con `text-[10px]` y grises crudos) — pasada propia. Las fechas siguen con segundos (`fmtDT` de toda la app).
+
+**Siguiente paso exacto:**
+- [ ] Pasada visual de Configuración (maqueta propia, aprobar antes de implementar).
+- [ ] Pasada de `FleetAssignSection` con las mismas primitivas (afecta tres pantallas).
+- [ ] Minuta: P4 ítem 20 (requisito → titulares + subir), P5 ítem 23 (clientes de una empresa), P6 menores, P7 respuestas a Pablo.
+- [ ] Deuda: `test_padron_conductor.py` contra el padrón completo (Disk IO).
+
 ### 2026-10-11 — Ítem 21: vista rápida de empresa, conductor y equipo desde el Cierre — DESPLEGADO y verificado en dev
 
 HU `monitor-app/docs/user-stories/20261011/01-hu-entity-quick-view.md` (fuera de git a propósito) y maqueta
@@ -47,8 +77,8 @@ teléfono como enlace para llamar). Plan `docs/superpowers/plans/2026-10-11-enti
   `silver.int_habitual_driver_by_tractor`; el mayor escritor es la ingesta (normal).
 
 **Siguiente paso exacto:**
-- [ ] Revisión final de la rama (en curso) y su pasada de correcciones.
-- [ ] Pasada visual del detalle del viaje y de Configuración con las mismas primitivas (aprobada).
+- [x] Revisión final de la rama y su pasada de correcciones (`cc54f2e6`).
+- [x] Pasada visual del detalle del viaje (ver entrada de arriba). Configuración sigue pendiente.
 - [ ] Deuda: `test_padron_conductor.py` no debe correr por defecto contra el padrón completo (marca propia o
       padrón chico armado en el test). Si el Disk IO vuelve a 100 % en Micro, evaluar Small.
 
