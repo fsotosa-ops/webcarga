@@ -4,7 +4,7 @@ de la tabla (init_compliance_engine.sql)."""
 from datetime import date
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from ..authz.permissions import Permission
 
 from .common import ManagementType
@@ -257,3 +257,37 @@ class PendingSummaryRow(BaseModel):
 
 class PendingSummaryResponse(BaseModel):
     rows: list[PendingSummaryRow]
+
+
+# Tope de archivos por pedido. Lo hace cumplir el handler (422 en español, spec
+# §4.3): el mensaje por defecto de Pydantic sale en inglés.
+PENDING_MATCH_MAX_FILES = 200
+
+
+class PendingMatchBody(BaseModel):
+    """Los NOMBRES de los archivos arrastrados sobre un documento. Todavía no
+    se sube nada: esto solo propone a quién va cada uno."""
+    requirement_id: str
+    file_names: list[str] = Field(..., min_length=1)
+
+
+class PendingMatchCandidate(BaseModel):
+    record_id: str
+    subject_label: str
+    carrier_name: str
+    confidence: float
+
+
+class PendingMatchFile(BaseModel):
+    file_name: str
+    status: Literal["matched", "ambiguous", "unmatched"]
+    record_id: Optional[str] = None
+    subject_label: Optional[str] = None
+    carrier_name: Optional[str] = None
+    reason: Optional[Literal["rut", "plate", "name"]] = None
+    confidence: Optional[float] = None
+    candidates: list[PendingMatchCandidate] = []
+
+
+class PendingMatchResponse(BaseModel):
+    files: list[PendingMatchFile]

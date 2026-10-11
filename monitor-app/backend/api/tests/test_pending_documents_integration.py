@@ -632,3 +632,95 @@ async def test_el_resumen_trae_la_regla_del_documento(conexion_revertida):
 
     assert fila["expiration_policy"] == "CALENDAR_PERIOD"
     assert fila["vigencia"]["cutoff_day"] == 18 and fila["vigencia"]["frequency_months"] == 1
+
+
+# ── Match de archivos (carga en lote) ────────────────────────────────────────
+
+from app.routers.compliance import match_pending_files  # noqa: E402
+from app.schemas.compliance import PendingMatchBody  # noqa: E402
+
+
+async def _con_rut(conn, empresa: str) -> str:
+    """Le da a la empresa sintética un RUT válido (DV correcto) y lo devuelve."""
+    base = int(uuid4().int % 9_000_000) + 70_000_000
+    s, m = 0, 2
+    for d in reversed(str(base)):
+        s += int(d) * m
+        m = 2 if m == 7 else m + 1
+    dv = {11: "0", 10: "K"}.get(11 - s % 11, str(11 - s % 11))
+    rut = f"{base}-{dv}"
+    await conn.execute("UPDATE public.carriers SET tax_id = public.canonical_rut($2) WHERE id = $1", empresa, rut)
+    return rut
+
+
+async def _escrituras(conn) -> tuple:
+    """Foto del contenido (no solo el conteo): una subida ACTUALIZA filas."""
+    return (await conn.fetchval(
+        "SELECT count(*) || ':' || coalesce(md5(string_agg(cr::text, '|' ORDER BY cr.id)), '') "
+        "FROM public.compliance_records cr"),
+            await conn.fetchval("SELECT count(*) FROM public.audit_log"))
+
+
+async def test_el_match_propone_solo_entre_quienes_deben_y_no_escribe(conexion_revertida):
+    """Review Focus 4: un archivo de alguien al día queda sin asignar."""
+    conn = conexion_revertida
+    hoy = await _hoy(conn)
+    req = await _requisito(conn, entidad="CARRIER", politica="REQUIRED")
+    debe = await _empresa(conn)
+    al_dia = await _empresa(conn)
+    rut_debe, rut_al_dia = await _con_rut(conn, debe), await _con_rut(conn, al_dia)
+    await _registro(conn, req, "CARRIER", debe)
+    await _registro(conn, req, "CARRIER", al_dia, status="APPROVED_MANUAL", vence=hoy + timedelta(days=400))
+    antes = await _escrituras(conn)
+
+    res = await match_pending_files(
+        PendingMatchBody(requirement_id=req, file_names=[f"doc {rut_debe}.pdf", f"doc {rut_al_dia}.pdf", "scan.pdf"]),
+        pool=PoolDeUnaConexion(conn), _=None)
+
+    estados = {f["file_name"]: f["status"] for f in res["files"]}
+    assert estados == {f"doc {rut_debe}.pdf": "matched", f"doc {rut_al_dia}.pdf": "unmatched", "scan.pdf": "unmatched"}
+    assert await _escrituras(conn) == antes
+
+
+async def test_dos_archivos_para_el_mismo_dueno_quedan_por_elegir(conexion_revertida):
+    """Review Focus 3: ninguno se guarda solo."""
+    conn = conexion_revertida
+    req = await _requisito(conn, entidad="CARRIER")
+    empresa = await _empresa(conn)
+    rut = await _con_rut(conn, empresa)
+    await _registro(conn, req, "CARRIER", empresa)
+
+    res = await match_pending_files(
+        PendingMatchBody(requirement_id=req, file_names=[f"a {rut}.pdf", f"b {rut}.pdf"]),
+        pool=PoolDeUnaConexion(conn), _=None)
+
+    assert [f["status"] for f in res["files"]] == ["ambiguous", "ambiguous"]
+    assert all(f["record_id"] is None for f in res["files"])
+
+
+async def test_un_rut_no_canonico_en_la_base_no_rompe_el_match(conexion_revertida):
+    """Ruling 2: el tax_id llega canónico al matcher; uno inválido no se ofrece."""
+    conn = conexion_revertida
+    req = await _requisito(conn, entidad="CARRIER")
+    empresa = await _empresa(conn)  # tax_id sintético, no es un RUT
+    await _registro(conn, req, "CARRIER", empresa)
+    res = await match_pending_files(
+        PendingMatchBody(requirement_id=req, file_names=["12345678-5.pdf"]),
+        pool=PoolDeUnaConexion(conn), _=None)
+    assert res["files"][0]["status"] == "unmatched"
+
+
+async def test_el_match_no_propone_a_quien_esta_fuera_de_alcance(conexion_revertida):
+    """Review Focus 4: una empresa inactiva con el documento faltante no debe nada."""
+    conn = conexion_revertida
+    req = await _requisito(conn, entidad="CARRIER")
+    activa, inactiva = await _empresa(conn), await _empresa(conn, estado="INACTIVE")
+    rut_activa, rut_inactiva = await _con_rut(conn, activa), await _con_rut(conn, inactiva)
+    await _registro(conn, req, "CARRIER", activa)
+    await _registro(conn, req, "CARRIER", inactiva)
+
+    res = await match_pending_files(
+        PendingMatchBody(requirement_id=req, file_names=[f"x {rut_activa}.pdf", f"x {rut_inactiva}.pdf"]),
+        pool=PoolDeUnaConexion(conn), _=None)
+
+    assert [f["status"] for f in res["files"]] == ["matched", "unmatched"]

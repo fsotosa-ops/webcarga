@@ -1876,3 +1876,21 @@ def test_pending_summary_exige_certification_read():
 def test_pending_summary_rechaza_un_group_by_desconocido():
     res = make_client(AsyncMock()).get("/api/v1/compliance-records/pending/summary?group_by=cliente")
     assert res.status_code == 422
+
+
+def test_pending_match_exige_documents_upload():
+    from tests.conftest import usuario
+    client = make_client(AsyncMock())
+    client.app.dependency_overrides[get_current_user] = lambda: usuario("reader")
+    res = client.post("/api/v1/compliance-records/pending/match",
+                      json={"requirement_id": "00000000-0000-0000-0000-000000000000", "file_names": ["a.pdf"]})
+    assert res.status_code == 403
+
+
+def test_pending_match_rechaza_mas_de_200_archivos():
+    res = make_client(AsyncMock()).post(
+        "/api/v1/compliance-records/pending/match",
+        json={"requirement_id": "00000000-0000-0000-0000-000000000000",
+              "file_names": [f"{i}.pdf" for i in range(201)]})
+    assert res.status_code == 422
+    assert "Máximo 200 archivos" in res.json()["detail"]

@@ -41,8 +41,10 @@ from ..schemas.compliance import (
     ComplianceSummaryResponse,
     PendingComplianceListResponse,
     PendingSummaryResponse,
+    PendingMatchBody, PendingMatchResponse, PENDING_MATCH_MAX_FILES,
 )
 from ..schemas.document_ingest import unclassified_predicate
+from ..services.document_matcher import PendingOwner, match_owner, classify_owner_match
 from ..services.audit import log_change, record_manual_edit
 from ..services.vigencia import regla_base_json_sql
 from ..services.solicitudes import encender_registros
@@ -704,6 +706,71 @@ async def pending_summary(
             fila["vigencia"] = json.loads(fila["vigencia"])
         rows.append(fila)
     return {"rows": rows}
+
+
+# Quienes DEBEN un documento, con lo necesario para reconocerlos en un nombre de
+# archivo. Mismo alcance y misma definición que la cola (`_pending_ctes`,
+# `in_scope`, PENDING_STATES). El RUT sale en forma canónica NNNNNNNN-D, que es
+# la que devuelve `extract_ruts`; uno inválido queda NULL y no se ofrece.
+_PENDING_OWNERS_SQL = f"""
+WITH {_pending_ctes('$2')}
+SELECT r.id::text AS record_id, r.entity_type,
+       COALESCE(r.subject_name, c.business_name) AS label,
+       CASE r.entity_type WHEN 'CARRIER' THEN public.canonical_rut(c.tax_id)
+                          WHEN 'DRIVER'  THEN (SELECT public.canonical_rut(d.tax_id)
+                                               FROM public.drivers d WHERE d.id = r.entity_id)
+       END AS tax_id,
+       c.business_name AS carrier_name
+FROM resolved r
+JOIN public.carriers c ON c.id = r.resolved_carrier_id
+WHERE r.requirement_id = $1::uuid AND r.in_scope AND r.document_state = ANY($3::text[])
+"""
+
+
+@router.post("/pending/match", response_model=PendingMatchResponse)
+async def match_pending_files(
+    body: PendingMatchBody,
+    pool=Depends(get_pool),
+    _=Depends(require(Permission.DOCUMENTS_UPLOAD)),
+):
+    """Pendientes, carga en lote: propone a quién va cada archivo, SOLO entre
+    quienes deben el documento. No escribe nada (spec 2026-10-11, sección 6).
+    Dos archivos para el mismo dueño quedan "por elegir": ninguno se guarda solo."""
+    if len(body.file_names) > PENDING_MATCH_MAX_FILES:
+        raise HTTPException(
+            422, f"Máximo {PENDING_MATCH_MAX_FILES} archivos por carga; recibimos {len(body.file_names)}.")
+    filas = await pool.fetch(_PENDING_OWNERS_SQL, body.requirement_id, "falta", list(PENDING_STATES))
+    owners = [PendingOwner(f["record_id"], f["entity_type"], f["label"], f["tax_id"], f["carrier_name"])
+              for f in filas]
+    por_id = {o.record_id: o for o in owners}
+
+    def _cand(c):
+        o = por_id[c.record_id]
+        return {"record_id": c.record_id, "subject_label": o.label, "carrier_name": o.carrier_name,
+                "confidence": c.confidence}
+
+    files = []
+    for name in body.file_names:
+        cands = match_owner(name, owners)
+        status = classify_owner_match(cands)
+        top = cands[0] if status == "matched" else None
+        files.append({
+            "file_name": name, "status": status,
+            "record_id": top.record_id if top else None,
+            "subject_label": por_id[top.record_id].label if top else None,
+            "carrier_name": por_id[top.record_id].carrier_name if top else None,
+            "reason": top.reason if top else None,
+            "confidence": top.confidence if top else None,
+            "candidates": [_cand(c) for c in cands[:5]],
+        })
+
+    # Dos archivos para el mismo registro: los dos vuelven a "por elegir".
+    usados = Counter(f["record_id"] for f in files if f["status"] == "matched")
+    for f in files:
+        if f["status"] == "matched" and usados[f["record_id"]] > 1:
+            f.update(status="ambiguous", record_id=None, subject_label=None,
+                     carrier_name=None, reason=None, confidence=None)
+    return {"files": files}
 
 
 @router.get("/pending", response_model=PendingComplianceListResponse)
