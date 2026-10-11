@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Search } from 'lucide-react'
 import { Estado } from '@/components/ui/Estado'
 import { Cifra } from '@/components/ui/Cifra'
 import { TmsChip } from '@/components/dashboard/TripTable'
@@ -96,6 +97,13 @@ export function PasoViajesSection({
   grupos, bloquean, cargando = false, motivos, onCerrar, onDeshacer, meta, soloLectura = false,
 }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Buscador (minuta 09/10, ítem 22): filtra todos los grupos a la vez, sobre lo que
+  // ya está en pantalla, por los mismos datos que muestra cada fila.
+  const [q, setQ] = useState('')
+  const qLower = q.trim().toLowerCase()
+  const coincide = (v: ViajeDelCierre) => !qLower || [
+    v.source_system_trip_id, v.client_name, v.tractor_plate, v.driver_name, v.carrier_name, v.origin, ...v.destinations,
+  ].some(x => (x ?? '').toLowerCase().includes(qLower))
   const [motivoId, setMotivoId] = useState('')
   // El motivo elegido en una fila, todavía sin guardar (HU-D3): elegir no
   // cierra el viaje; "Guardar" sí. Antes el cambio del desplegable lo cerraba
@@ -213,9 +221,22 @@ export function PasoViajesSection({
         </div>
       )}
 
+      <div className="relative">
+        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <input
+          type="search"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Buscar Nº de viaje, patente, conductor, empresa o cliente…"
+          aria-label="Buscar viaje"
+          className="w-full pl-8 pr-3 py-2 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 bg-white"
+        />
+      </div>
+
       {ORDEN_GRUPOS.map(grupo => {
         const info = GRUPO_INFO[grupo]
-        const viajes = grupos[grupo]
+        const todos = grupos[grupo]
+        const viajes = todos.filter(coincide)
         return (
           <div key={grupo} className="bg-white rounded-xl border border-border overflow-hidden">
             <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/60">
@@ -223,11 +244,13 @@ export function PasoViajesSection({
                 <p className="text-xs font-bold text-text-primary">{info.titulo}</p>
                 <p className={`text-etiqueta ${TEXTO_APOYO}`}>{info.bajada}</p>
               </div>
-              <span className="text-xs font-semibold text-text-primary tabular-nums">{viajes.length}</span>
+              <span className="text-xs font-semibold text-text-primary tabular-nums">
+                {qLower ? `${viajes.length} de ${todos.length}` : todos.length}
+              </span>
             </div>
 
             {viajes.length === 0 ? (
-              <Estado tipo="vacio" titulo={info.vacio} />
+              <Estado tipo="vacio" titulo={todos.length > 0 ? 'Ningún viaje coincide con la búsqueda' : info.vacio} />
             ) : (
               <table className="w-full text-xs">
                 <thead>

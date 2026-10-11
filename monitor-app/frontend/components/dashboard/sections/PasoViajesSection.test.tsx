@@ -171,4 +171,28 @@ describe('PasoViajesSection', () => {
     expect(screen.getByLabelText('Motivo del viaje 808702', { selector: 'select' })).toBeInTheDocument()
     expect(screen.getAllByRole('checkbox')).toHaveLength(3)
   })
+
+  it('el buscador filtra todos los grupos por Nº de viaje, patente, conductor, empresa o cliente (minuta 09/10, ítem 22)', () => {
+    const conContexto = { ...grupos,
+      hoy: [viaje('t1', '2032999', { tractor_plate: 'LRTD13', driver_name: 'Juan Pérez' })],
+      rezago: [viaje('t2', '2033000', { carrier_name: 'Transportes Uno' })],
+    }
+    render(<PasoViajesSection grupos={conContexto} bloquean={2} motivos={[]} onCerrar={vi.fn()} />)
+
+    fireEvent.change(screen.getByRole('searchbox', { name: /buscar/i }), { target: { value: 'lrtd' } })
+    expect(screen.getByText('2032999')).toBeInTheDocument()
+    expect(screen.queryByText('2033000')).toBeNull()
+    expect(screen.queryByText('2033002')).toBeNull()
+
+    fireEvent.change(screen.getByRole('searchbox', { name: /buscar/i }), { target: { value: 'uno' } })
+    expect(screen.getByText('2033000')).toBeInTheDocument()
+    expect(screen.queryByText('2032999')).toBeNull()
+  })
+
+  it('si la búsqueda no encuentra nada en un grupo, lo dice', () => {
+    render(<PasoViajesSection grupos={grupos} bloquean={2} motivos={[]} onCerrar={vi.fn()} />)
+    fireEvent.change(screen.getByRole('searchbox', { name: /buscar/i }), { target: { value: 'zzzz' } })
+    expect(screen.getAllByText(/ningún viaje coincide/i).length).toBeGreaterThan(0)
+  })
 })
+
