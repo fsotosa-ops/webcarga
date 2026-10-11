@@ -35,11 +35,18 @@ mirror de Mage y en git, no solo aquí.
   rol, Cambiar contraseña y Cerrar sesión; `getDisplayName` en `lib/authz/acceso.ts`; la `Topbar` queda solo en el
   teléfono (`md:hidden`). Tests del área 45/45 con mutación verificada; tsc limpio; sin build local (regla del
   usuario: build solo si se toca código compartido o integraciones).
+- **Hecho (pedido del usuario): la cuenta es un solo botón con menú** (`65365175`). Abre Configuración (solo con
+  `puedeVerConfiguracion`), Cambiar contraseña y Cerrar sesión, con el nombre y el correo arriba. Configuración ya no es
+  una sección del menú lateral (en el teléfono sigue "Admin" en la barra inferior). Menú WAI-ARIA: foco en el primer
+  ítem, flechas, Home/End, Escape, clic afuera y cambio de ruta. `SETTINGS_HREF` es la única ruta de Configuración en
+  la barra. Tests del área 38/38 con mutación; verificado en dev con Playwright (expandida, contraída y teléfono
+  a 390 px; capturas en `.playwright-mcp/cuenta-*.png`).
+- **Regla del usuario (11/10):** `npm run build` local solo si se toca código compartido o integraciones (memoria).
 - **Estándar exigido por el usuario (11/10):** todo nombre nuevo en inglés estándar (componentes, funciones,
   archivos, ids, claves); UI en español; rigor de legibilidad, robustez y patrón de la app. Guardado en la memoria.
 
 **Siguiente paso exacto:**
-- [ ] Verificar P0b en dev con Playwright (escritorio expandido/contraído, teléfono a 390 px).
+- [x] P0b verificado en dev (expandida, contraída y teléfono).
 - [ ] P1, ítem 5: un manual nuevo aparece "no asignado" en Cierre › Viajes hasta la corrida de Mage
       (`routers/trips.py:1917-1927` copia `is_assigned=false`). Brainstorming corto; la regla es "flags solo en dbt".
       Bugs vecinos: `_mirror_manual_trip` con `except Exception: pass` (`trips.py:1989`); editar un manual sube
@@ -49,7 +56,9 @@ mirror de Mage y en git, no solo aquí.
 - [ ] P4, ítem 20: abrir la fila de requisito (`listPending({requirementCode, estado})`, sin llamadores hoy).
 - [ ] P5, ítem 23: editar los clientes de una empresa (`PUT /carriers/{id}/shippers`).
 - [ ] P6: tests rojos conocidos, overflow del reporte en el teléfono, issue #13, historial en la ficha de Certificación.
-- [ ] Deuda menor: `initials` duplicada en `UsersTable.tsx` e `InsurancePolicyModal.tsx` (usar `getInitials`).
+- [ ] Deuda menor: `initials` duplicada en `UsersTable.tsx` e `InsurancePolicyModal.tsx` (usar `getInitials`);
+      el manejo de cerrar con Escape/clic afuera está copiado en `AccionesDeSujeto` y `SidebarAccount` (candidato a
+      un hook `useDismissable` compartido cuando aparezca un tercer menú).
 
 ### 2026-10-11 — Monitor: "En curso" por días sin movimiento (reemplaza la regla de 15 días) — en dev
 
