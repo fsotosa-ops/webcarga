@@ -1738,6 +1738,9 @@ export type StatusReport = {
   /** Las opciones del filtro: los clientes que cargaron ese día, con cuántos
    *  equipos. Opcional: backend y frontend se despliegan por separado. */
   clients?: { client_name: string; assigned: number }[]
+  /** El faltante de dotación con el mismo filtro de cliente que el resto del
+   *  reporte. Opcional por el mismo motivo. */
+  fleet_driver_gap?: FleetDriverGapRow[]
   /** Spec 2026-10-10: cuándo se calcularon las líneas del día, y desde cuándo hay
    *  cambios esperando al ejecutor (null = al día). */
   calculado_a?:     string | null

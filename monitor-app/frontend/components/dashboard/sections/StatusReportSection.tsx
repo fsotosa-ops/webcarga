@@ -2,10 +2,9 @@
 
 import { useRef, useState } from 'react'
 import Link from 'next/link'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Loader2, History, Printer, FileDown, Copy, Check, RotateCw } from 'lucide-react'
 import { statusReportApi } from '@/lib/api/statusReport'
-import { carriersApi } from '@/lib/api/carriers'
 import type { OperationTypeKey } from '@/lib/types'
 import { FleetDriverGapCard } from '../FleetDriverGapCard'
 import { descargarReporteExcel } from '@/lib/reporte/exportarReporte'
@@ -63,15 +62,16 @@ export function StatusReportSection({ fecha }: Props) {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['status-report', fecha, client],
     queryFn: () => statusReportApi.get(fecha, client || undefined),
-    // La lista de clientes no desaparece mientras llega el reporte del cliente nuevo.
-    placeholderData: keepPreviousData,
   })
-  // Mismo queryKey que FleetDriverGapCard: cacheado, no duplica el pedido. Lo usan
-  // el PDF y el Excel, aunque no se haya abierto la pestaña Dotación.
-  const gapQuery = useQuery({
-    queryKey: ['fleet-driver-gap'],
-    queryFn: () => carriersApi.fleetDriverGap(),
-  })
+  // Sin datos de reemplazo mientras carga: mostrar el reporte de otro día o
+  // cliente bajo el encabezado nuevo (y dejar exportarlo) sería afirmar algo
+  // falso. Lo único que se conserva es la lista de clientes, para que el filtro
+  // no desaparezca al elegir. Se guarda durante el render (estado derivado).
+  const [clientesConocidos, setClientesConocidos] = useState(data?.clients)
+  if (data?.clients && data.clients !== clientesConocidos) setClientesConocidos(data.clients)
+  // El faltante de dotación viene en el reporte, con el mismo filtro de cliente:
+  // lo leen la pestaña Dotación, el PDF y el Excel.
+  const faltante = data?.fleet_driver_gap
 
   const porTipo = data?.by_operation_type
   const tipoActual = TIPOS_DE_OPERACION.find(t => t.clave === tipo)!
@@ -80,8 +80,8 @@ export function StatusReportSection({ fecha }: Props) {
   // cantidad. Si el cliente elegido no operó ese día, se conserva con (0) en vez
   // de resetearse en silencio.
   const opcionesDeCliente = [
-    ...(data?.clients ?? []),
-    ...(client && !(data?.clients ?? []).some(c => c.client_name === client)
+    ...(clientesConocidos ?? []),
+    ...(client && !(clientesConocidos ?? []).some(c => c.client_name === client)
       ? [{ client_name: client, assigned: 0 }] : []),
   ]
 
@@ -137,10 +137,10 @@ export function StatusReportSection({ fecha }: Props) {
                 </div>
               ))}
             </div>
-            {gapQuery.data && gapQuery.data.rows.length > 0 && (
+            {faltante && faltante.length > 0 && (
               <>
                 <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">
-                  Inconsistencias de dotación ({gapQuery.data.rows.length} empresas)
+                  Inconsistencias de dotación ({faltante.length} empresas)
                 </p>
                 <table className="w-full text-xs border-collapse mb-6">
                   <thead>
@@ -149,7 +149,7 @@ export function StatusReportSection({ fecha }: Props) {
                     </tr>
                   </thead>
                   <tbody>
-                    {gapQuery.data.rows.map(r => (
+                    {faltante.map(r => (
                       <tr key={r.carrier_id} className="border-b border-gray-100">
                         <td className="py-1">{r.business_name}</td>
                         <td className="py-1 text-right">{r.n_tractos}</td>
@@ -190,7 +190,7 @@ export function StatusReportSection({ fecha }: Props) {
               <Printer size={12} /> Descargar PDF
             </button>
             <button type="button" disabled={!porTipo} className={ACCION}
-                    onClick={() => { if (porTipo) void descargarReporteExcel(porTipo, fecha, gapQuery.data?.rows) }}>
+                    onClick={() => { if (porTipo) void descargarReporteExcel(porTipo, fecha, faltante) }}>
               <FileDown size={12} /> Descargar Excel
             </button>
             <button type="button" onClick={() => { void copiarEstatus() }} disabled={!reporte || seccion === 'dotacion'}
@@ -213,7 +213,7 @@ export function StatusReportSection({ fecha }: Props) {
         </div>
 
         {seccion === 'dotacion' ? (
-          <FleetDriverGapCard />
+          <FleetDriverGapCard rows={faltante} />
         ) : isLoading ? (
           <div className="flex items-center justify-center py-16 text-gray-400">
             <Loader2 size={20} className="animate-spin" />

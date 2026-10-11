@@ -57,9 +57,11 @@ export function PasoViajesSection({
   pestana: pestanaDeLaUrl, onCambiarPestana,
 }: Props) {
   // La pestaña elegida a mano manda; si no hay, la de la URL; si no, la inicial.
-  // La inicial se calcula sobre los datos, pero NO se guarda: así declarar el
-  // último viaje por resolver no hace saltar la pestaña.
+  // La inicial se calcula UNA vez, con los primeros datos, y se congela: si se
+  // recalculara, declarar el último viaje por resolver haría saltar la pestaña.
+  // La página monta este componente con `key={fecha}`: otro día parte de cero.
   const [elegida, setElegida] = useState<PestanaDeViajes | null>(null)
+  const [inicial, setInicial] = useState<PestanaDeViajes | null>(null)
   const [chip, setChip] = useState<GrupoDelCierre | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   // Buscador (minuta 09/10, ítem 22): cubre las tres pestañas.
@@ -86,12 +88,12 @@ export function PasoViajesSection({
 
   // Camino de escritura: si `onCerrar` revienta, la selección y el motivo NO se
   // limpian, para reintentar sin volver a elegir todo.
-  async function handleCerrar() {
-    if (selected.size === 0 || !motivoId) return
+  async function handleCerrar(ids: string[]) {
+    if (ids.length === 0 || !motivoId) return
     setGuardando(true)
     setError(null)
     try {
-      await onCerrar(Array.from(selected), motivoId)
+      await onCerrar(ids, motivoId)
       setSelected(new Set())
       setMotivoId('')
     } catch (e) {
@@ -110,6 +112,12 @@ export function PasoViajesSection({
     setError(null)
     try {
       await onCerrar([tripId], motivo)
+      // Declarado en su fila: ya no puede quedar en el lote con otro motivo.
+      setSelected(prev => {
+        const next = new Set(prev)
+        next.delete(tripId)
+        return next
+      })
       setBorrador(prev => {
         const { [tripId]: _, ...resto } = prev
         return resto
@@ -134,12 +142,16 @@ export function PasoViajesSection({
     }
   }
 
+  // Se guarda durante el render (patrón de React para estado derivado de la
+  // primera respuesta), antes del corte por carga.
+  if (grupos && inicial === null) setInicial(pestanaInicial(grupos))
+
   if (cargando || !grupos) {
     return <Estado tipo="cargando" />
   }
 
   const pestana: PestanaDeViajes = elegida
-    ?? (esPestanaDeViajes(pestanaDeLaUrl ?? null) ? pestanaDeLaUrl! : pestanaInicial(grupos))
+    ?? (esPestanaDeViajes(pestanaDeLaUrl ?? null) ? pestanaDeLaUrl! : inicial ?? pestanaInicial(grupos))
   function cambiarPestana(p: PestanaDeViajes) {
     setElegida(p)
     setChip(null)
@@ -153,18 +165,24 @@ export function PasoViajesSection({
 
   const info = PESTANAS_DE_VIAJES.find(p => p.id === pestana)!
   const { todas, coinciden } = porPestana[pestana]
-  const filas = chip ? coinciden.filter(f => f.grupo === chip) : coinciden
-  const repetidas = viajesPorPatente(todas)
-  const declarar = pestana === 'to_resolve' && !soloLectura
-  const deshacer = pestana === 'resolved' && !soloLectura && !!onDeshacer
   // Los chips aparecen solo si la pestaña junta más de un camino.
   const chips = Object.entries(GRUPOS_DE_VIAJES)
     .filter(([g, p]) => p.pestana === pestana && todas.some(f => f.grupo === g))
     .map(([g, p]) => ({ id: g, etiqueta: p.chip, n: coinciden.filter(f => f.grupo === g).length }))
+  // Un chip que se quedó sin viajes (se declararon todos) deja de filtrar.
+  const chipVigente = chips.some(c => c.id === chip) ? chip : null
+  const filas = chipVigente ? coinciden.filter(f => f.grupo === chipVigente) : coinciden
+  const repetidas = viajesPorPatente(todas)
+  const declarar = pestana === 'to_resolve' && !soloLectura
+  const deshacer = pestana === 'resolved' && !soloLectura && !!onDeshacer
   const otraConResultados = qLower && coinciden.length === 0
     ? PESTANAS_DE_VIAJES.find(p => porPestana[p.id].coinciden.length > 0)
     : undefined
-  const n = selected.size
+  // El lote solo actúa sobre lo que sigue por resolver: un viaje que se declaró,
+  // se deshizo o cambió de grupo sale solo de la selección.
+  const porResolver = new Set(porPestana.to_resolve.todas.map(f => f.trip_id))
+  const seleccion = [...selected].filter(id => porResolver.has(id))
+  const n = soloLectura ? 0 : seleccion.length
 
   return (
     <div className="space-y-4">
@@ -191,7 +209,7 @@ export function PasoViajesSection({
           <button
             type="button"
             disabled={!motivoId || guardando}
-            onClick={handleCerrar}
+            onClick={() => handleCerrar(seleccion)}
             className="text-etiqueta font-semibold bg-accent text-white rounded-lg px-3 py-1 disabled:opacity-50"
           >
             {guardando ? 'Cerrando…' : `No asignado por WebCarga · ${n} viaje${n === 1 ? '' : 's'}`}
@@ -237,7 +255,7 @@ export function PasoViajesSection({
 
       <p className={`text-etiqueta ${TEXTO_APOYO}`}>{info.bajada}</p>
       {chips.length > 1 && (
-        <ChipsDeFiltro opciones={chips} activo={chip} onElegir={id => setChip(id as GrupoDelCierre | null)} />
+        <ChipsDeFiltro opciones={chips} activo={chipVigente} onElegir={id => setChip(id as GrupoDelCierre | null)} />
       )}
 
       {todas.length === 0 ? (

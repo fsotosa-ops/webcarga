@@ -395,6 +395,8 @@ function ClosuresCenterPageInner() {
               </Estado>
             ) : (
               <PasoViajesSection
+                // Otro día, otra selección, búsqueda y pestaña inicial.
+                key={fecha}
                 fecha={fecha}
                 grupos={cierreViajesQuery.data?.grupos}
                 bloquean={cierreViajesQuery.data?.bloquean}

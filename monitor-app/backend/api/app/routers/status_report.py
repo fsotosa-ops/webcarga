@@ -583,6 +583,11 @@ async def get_status_report(fecha: str, client: str | None = None, pool=Depends(
         "business_date": business_date.isoformat(),
         "client_filter": client,
         "clients": _clientes_del_dia(all_rows),
+        # El faltante de dotación con el mismo filtro: lo leen la pestaña Dotación,
+        # el PDF y el Excel, para que todas las cifras digan lo mismo.
+        "fleet_driver_gap": [
+            {k: f[k] for k in ("carrier_id", "business_name", "n_tractos", "n_conductores", "gap")} for f in faltantes
+        ],
         "by_operation_type": {
             clave: _reporte_del_tipo(
                 por_tipo[clave], no_trabajaron=no_trabajaron[clave], catalogo_sin_asignacion=catalogo_sin_asignacion,

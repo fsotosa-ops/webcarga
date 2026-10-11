@@ -184,6 +184,40 @@ describe('PasoViajesSection', () => {
     expect(screen.getByText('Nada por resolver: puedes firmar el día')).toBeInTheDocument()
   })
 
+  it('sin pestaña en la URL, declarar el último por resolver tampoco hace saltar la pestaña', () => {
+    const { rerender } = renderViajes()
+    rerender(<PasoViajesSection fecha="2026-10-10" bloquean={0} motivos={MOTIVOS} onCerrar={vi.fn()}
+                                grupos={{ ...GRUPOS, hoy: [], rezago: [], oferta_sin_declarar: [], abandonado: [] }} />)
+    expect(pestana(/Por resolver/)).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('Nada por resolver: puedes firmar el día')).toBeInTheDocument()
+  })
+
+  it('un chip elegido que se queda sin viajes deja de filtrar, en vez de dejar la tabla vacía', () => {
+    const { rerender } = renderViajes()
+    fireEvent.click(screen.getByRole('button', { name: /^Rezago/ }))
+    rerender(<PasoViajesSection fecha="2026-10-10" bloquean={1} motivos={MOTIVOS} onCerrar={vi.fn()}
+                                grupos={{ ...GRUPOS, rezago: [] }} />)
+    expect(numerosDeViaje()).toEqual(['2033002', '808702', '2032999'])
+  })
+
+  it('un viaje declarado en su fila sale de la selección del lote', async () => {
+    renderViajes()
+    const fila = screen.getByText('2032999').closest('tr')!
+    fireEvent.click(within(fila).getByRole('checkbox'))
+    expect(screen.getByText('1 seleccionado')).toBeInTheDocument()
+    fireEvent.change(within(fila).getByLabelText('Motivo del viaje 2032999', { selector: 'select' }), { target: { value: 'm1' } })
+    fireEvent.click(within(fila).getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(screen.queryByText('1 seleccionado')).toBeNull())
+  })
+
+  it('un viaje seleccionado que deja de estar por resolver no cuenta en el lote', () => {
+    const { rerender } = renderViajes()
+    fireEvent.click(within(screen.getByText('2032999').closest('tr')!).getByRole('checkbox'))
+    rerender(<PasoViajesSection fecha="2026-10-10" bloquean={1} motivos={MOTIVOS} onCerrar={vi.fn()}
+                                grupos={{ ...GRUPOS, hoy: [], con_motivo: [...GRUPOS.con_motivo, GRUPOS.hoy[0]] }} />)
+    expect(screen.queryByText('1 seleccionado')).toBeNull()
+  })
+
   it('el buscador cubre las tres pestañas y cada una dice cuántos coinciden', () => {
     renderViajes()
     fireEvent.change(screen.getByRole('searchbox', { name: /buscar/i }), { target: { value: 'pyst91' } })

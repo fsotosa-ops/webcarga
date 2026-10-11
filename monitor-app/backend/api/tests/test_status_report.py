@@ -440,7 +440,8 @@ def test_get_status_report_devuelve_los_dos_tipos_con_sus_seis_claves():
 
     assert res.status_code == 200
     body = res.json()
-    assert set(body) == {"business_date", "client_filter", "calculado_a", "pendiente_desde", "by_operation_type", "clients"}
+    assert set(body) == {"business_date", "client_filter", "calculado_a", "pendiente_desde", "by_operation_type", "clients",
+                         "fleet_driver_gap"}
     assert set(body["by_operation_type"]) == {"tractoreo", "equipo_completo"}
     for tipo in body["by_operation_type"].values():
         assert set(tipo) == SEIS_CLAVES
@@ -511,6 +512,8 @@ def test_el_filtro_de_cliente_cuadra_todas_las_cifras_y_devuelve_los_clientes_de
     assert [f["carrier_id"] for f in espia.call_args.kwargs["faltantes"]] == ["c1"]
     # La lista sale del día completo, antes del filtro.
     assert body["clients"] == [{"client_name": "Sodimac", "assigned": 1}, {"client_name": "Walmart", "assigned": 1}]
+    # La pestaña Dotación, el PDF y el Excel leen el mismo faltante, ya filtrado.
+    assert [f["carrier_id"] for f in body["fleet_driver_gap"]] == ["c1"]
 
 def test_resumen_cuenta_los_viajes_de_varios_dias_por_dias_atras():
     """Los equipos que siguen en un viaje planificado días antes (se mantienen

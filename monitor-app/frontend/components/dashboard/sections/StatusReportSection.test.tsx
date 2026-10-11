@@ -79,6 +79,7 @@ const REPORT: StatusReport = {
   business_date: '2026-08-02',
   client_filter: null,
   clients: [{ client_name: 'Walmart', assigned: 29 }, { client_name: 'Iansa', assigned: 3 }],
+  fleet_driver_gap: [{ carrier_id: 'c9', business_name: 'Solo Iansa Spa', n_tractos: 2, n_conductores: 1, gap: 1 }],
   by_operation_type: { tractoreo: TRACTOREO, equipo_completo: EQUIPO_COMPLETO },
 }
 
@@ -280,6 +281,24 @@ describe('StatusReportSection', () => {
     fireEvent.change(body.getByRole('combobox', { name: 'Filtrar por cliente' }), { target: { value: 'Iansa' } })
     await waitFor(() => expect(within(body.getByRole('combobox', { name: 'Filtrar por cliente' }))
       .getAllByRole('option').map(o => o.textContent)).toEqual(['Todos los clientes', 'Walmart (29)', 'Iansa (0)']))
+  })
+
+  it('mientras llega el reporte de otro cliente no muestra las cifras del anterior, pero la lista sigue', async () => {
+    const body = renderSection()
+    await body.findByText('Equipos activos')
+    vi.mocked(statusReportApi.get).mockReturnValue(new Promise(() => {}))
+    fireEvent.change(body.getByRole('combobox', { name: 'Filtrar por cliente' }), { target: { value: 'Iansa' } })
+    await waitFor(() => expect(body.queryByText('Equipos activos')).toBeNull())
+    expect(within(body.getByRole('combobox', { name: 'Filtrar por cliente' })).getAllByRole('option')
+      .map(o => o.textContent)).toEqual(['Todos los clientes', 'Walmart (29)', 'Iansa (3)'])
+    expect(body.getByRole('button', { name: /Descargar Excel/ })).toBeDisabled()
+  })
+
+  it('Dotación muestra el faltante del reporte, con el mismo filtro de cliente', async () => {
+    const body = renderSection()
+    await abrir(body, 'Dotación')
+    expect(await body.findByText('Solo Iansa Spa')).toBeInTheDocument()
+    expect(body.queryByText('Transportes Sur')).toBeNull()
   })
 
   it('con un backend que todavía no manda clients, la lista solo ofrece Todos los clientes', async () => {
