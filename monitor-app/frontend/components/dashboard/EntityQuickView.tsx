@@ -64,7 +64,8 @@ export function EntityQuickView({ target, canGoBack, onNavigate, onBack, onClose
             className="rounded-md bg-accent px-3.5 py-2 text-dato font-semibold text-white hover:bg-accent/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
         Abrir ficha completa
       </Link>
-      <span className="ml-auto text-etiqueta text-informativo">Esc para cerrar</span>
+      {/* En el teléfono no hay Esc: ahí se cierra con la ✕ de arriba. */}
+      <span className="ml-auto hidden text-etiqueta text-informativo md:inline">Esc para cerrar</span>
     </div>
   )
 
