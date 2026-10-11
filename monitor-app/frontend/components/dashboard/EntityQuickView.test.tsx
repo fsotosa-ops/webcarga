@@ -111,8 +111,18 @@ describe('EntityQuickView', () => {
   it('"Abrir ficha completa" lleva a la dirección canónica con la vuelta al Cierre', async () => {
     vi.mocked(fetchEntitySummary).mockResolvedValue(DRIVER as never)
     renderView({ kind: 'driver', id: 'd1', label: 'Vidal' })
-    expect(screen.getByRole('link', { name: 'Abrir ficha completa' })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: 'Abrir ficha completa' })).toHaveAttribute(
       'href', `/dashboard/drivers/d1?next=${encodeURIComponent('/dashboard/operations/closures?date=2026-10-08')}`)
+  })
+
+  // Revisión final (11/10): la ficha de un conductor o equipo vive dentro de
+  // la de su empresa; sin empresa, el enlace llevaba a una página que solo
+  // decía "no está asignado a ninguna empresa".
+  it('un conductor sin empresa no ofrece una ficha completa que no existe', async () => {
+    vi.mocked(fetchEntitySummary).mockResolvedValue({ ...DRIVER, carrier: null } as never)
+    renderView({ kind: 'driver', id: 'd1', label: 'Vidal' })
+    expect(await screen.findByText('Sin empresa asignada: no tiene ficha propia.')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Abrir ficha completa' })).not.toBeInTheDocument()
   })
 
   it('con algo atrás ofrece volver', () => {

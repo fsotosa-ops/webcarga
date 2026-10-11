@@ -169,6 +169,51 @@ describe('PanelLateral', () => {
     expect(onCerrar).not.toHaveBeenCalled()
   })
 
+  // Revisión final de la vista rápida (11/10): sin fondo no es modal, así que
+  // atrapar el Tab encerraba a quien navega con teclado en un panel que la
+  // pantalla de atrás sigue usando.
+  it('sin fondo oscuro, Tab en el último sale del panel', () => {
+    render(
+      <PanelLateral titulo="Conductor" onCerrar={vi.fn()} pie={<button>Abrir ficha</button>} overlay="none">
+        <p>cuerpo</p>
+      </PanelLateral>,
+    )
+    const ultimo = screen.getByRole('button', { name: /abrir ficha/i })
+    ultimo.focus()
+
+    const interceptado = !fireEvent.keyDown(ultimo, { key: 'Tab' })
+
+    expect(interceptado).toBe(false)
+  })
+
+  it('sin fondo oscuro, un clic en la barra de desplazamiento de la página no lo cierra', () => {
+    const onCerrar = vi.fn()
+    render(<PanelLateral titulo="Conductor" onCerrar={onCerrar} pie={null} overlay="none"><p>x</p></PanelLateral>)
+    fireEvent.mouseDown(document.documentElement)
+    expect(onCerrar).not.toHaveBeenCalled()
+  })
+
+  it('sin fondo oscuro, un clic en la barra de desplazamiento de una lista de atrás no lo cierra', () => {
+    const onCerrar = vi.fn()
+    render(
+      <>
+        <div data-testid="lista">filas</div>
+        <PanelLateral titulo="Conductor" onCerrar={onCerrar} pie={null} overlay="none"><p>x</p></PanelLateral>
+      </>,
+    )
+    const lista = screen.getByTestId('lista')
+    // Una lista con desplazamiento: 300 px de contenido visible y 900 de alto.
+    Object.defineProperty(lista, 'clientWidth', { value: 300 })
+    Object.defineProperty(lista, 'clientHeight', { value: 200 })
+    Object.defineProperty(lista, 'scrollHeight', { value: 900 })
+    fireEvent.mouseDown(lista, { clientX: 305, clientY: 50 })
+    expect(onCerrar).not.toHaveBeenCalled()
+
+    // Un clic sobre el contenido de esa lista sí lo cierra.
+    fireEvent.mouseDown(lista, { clientX: 120, clientY: 50 })
+    expect(onCerrar).toHaveBeenCalled()
+  })
+
   it('con un título que no es texto, toma su nombre accesible de `label`', () => {
     render(<PanelLateral titulo={<span>Conductor · vista rápida</span>} label="Conductor Vidal" onCerrar={vi.fn()} pie={null} overlay="none"><p>x</p></PanelLateral>)
     expect(screen.getByRole('dialog', { name: 'Conductor Vidal' })).toBeInTheDocument()

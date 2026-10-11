@@ -3,6 +3,19 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 
+/** El clic cayó en una barra de desplazamiento, no en el contenido: la de la
+ *  página llega con el `<html>` como destino, y la de una lista con
+ *  desplazamiento, fuera del área de contenido de esa lista. Mover la barra
+ *  para seguir leyendo no es "hacer clic afuera". */
+function isScrollbarClick(e: MouseEvent, target: Element): boolean {
+  if (target === document.documentElement) return true
+  const scrollable = target.scrollHeight > target.clientHeight || target.scrollWidth > target.clientWidth
+  if (!scrollable) return false
+  const rect = target.getBoundingClientRect()
+  return e.clientX - rect.left >= target.clientLeft + target.clientWidth
+      || e.clientY - rect.top >= target.clientTop + target.clientHeight
+}
+
 /** La cascara de un panel de detalle. La familia ya existe
  *  (TransporterSlideOver, CarrierDrawer, VehicleDetailPanel) y repite estas
  *  mismas cuatro cosas: fondo, Escape, foco y capas.
@@ -54,12 +67,17 @@ export function PanelLateral({
       // Un botón que abre otro panel no cierra éste al presionar: sin esto, el panel
       // desaparecía entre el mousedown y el click y la fila parpadeaba (revisión final).
       if (target.closest?.('[data-panel-trigger]')) return
+      if (isScrollbarClick(e, target)) return
       if (panel.current && !panel.current.contains(target)) onCerrar()
     }
     document.addEventListener('mousedown', alClic)
     return () => document.removeEventListener('mousedown', alClic)
   }, [overlay, onCerrar])
 
+  // Solo el panel modal (`dim`) atrapa el Tab. La vista rápida (`none`) deja
+  // usar la pantalla de atrás, así que encerrar ahí el teclado contradice lo
+  // que el panel es (revisión final de la vista rápida, 11/10).
+  //
   // `aria-modal="true"` es una PROMESA: le dice al lector de pantalla que el
   // resto de la pagina no existe mientras esto esta abierto. Sin atrapar el
   // Tab, la promesa es falsa — tres tabulaciones y quien navega con teclado
@@ -71,7 +89,7 @@ export function PanelLateral({
   // boton Guardar solo existe con cambios sin guardar), asi que una lista
   // capturada al montar se queda vieja.
   function atraparTab(e: React.KeyboardEvent) {
-    if (e.key !== 'Tab' || !panel.current) return
+    if (overlay !== 'dim' || e.key !== 'Tab' || !panel.current) return
     const focoables = panel.current.querySelectorAll<HTMLElement>(
       'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), '
       + 'textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',

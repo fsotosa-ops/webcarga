@@ -58,12 +58,24 @@ export function EntityQuickView({ target, canGoBack, onNavigate, onBack, onClose
     </span>
   )
 
+  // La ficha de un conductor o equipo vive dentro de la de su empresa: sin
+  // empresa no hay ficha a la que ir. Mientras carga no se sabe, y no se ofrece.
+  const data = query.data
+  const fullPage = target.kind === 'carrier' ? 'available'
+    : !data ? 'unknown'
+      : (data as DriverSummary | AssetSummary).carrier ? 'available' : 'none'
+
   const footer = (
     <div className="flex items-center gap-3">
-      <Link href={FULL_PAGE[target.kind](target.id, returnTo)}
-            className="rounded-md bg-accent px-3.5 py-2 text-dato font-semibold text-white hover:bg-accent/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
-        Abrir ficha completa
-      </Link>
+      {fullPage === 'available' && (
+        <Link href={FULL_PAGE[target.kind](target.id, returnTo)}
+              className="rounded-md bg-accent px-3.5 py-2 text-dato font-semibold text-white hover:bg-accent/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+          Abrir ficha completa
+        </Link>
+      )}
+      {fullPage === 'none' && (
+        <span className="text-dato text-informativo">Sin empresa asignada: no tiene ficha propia.</span>
+      )}
       {/* En el teléfono no hay Esc: ahí se cierra con la ✕ de arriba. */}
       <span className="ml-auto hidden text-etiqueta text-informativo md:inline">Esc para cerrar</span>
     </div>
