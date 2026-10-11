@@ -2,6 +2,8 @@
 que se fija es el modelo: el directorio no admite dos nombres que solo difieran
 en mayúsculas, la correspondencia existe para cada cliente del TMS con viajes, y
 el viaje manual apunta al directorio."""
+from uuid import UUID
+
 import asyncpg
 import pytest
 
@@ -80,7 +82,7 @@ async def test_vincular_un_cliente_del_tms_escribe_la_correspondencia(conexion_r
         "SELECT source_client_id::text AS id FROM app.tms_client_shippers LIMIT 1")
     otro = await conexion_revertida.fetchval("SELECT id::text FROM public.shippers WHERE lower(name) = 'hbc'")
     usuario = await _usuario_real(conexion_revertida)
-    res = await vincular(fila["id"], VinculoBody(shipper_id=otro), pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
+    res = await vincular(UUID(fila["id"]), VinculoBody(shipper_id=otro), pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
     assert res["shipper_id"] == otro
 
 
@@ -151,7 +153,7 @@ async def test_cambiar_un_vinculo_queda_registrado_con_quien_y_desde_que_cliente
     otro = await conexion_revertida.fetchval(
         "SELECT id::text FROM public.shippers WHERE id <> $1::uuid AND status = 'ACTIVE' LIMIT 1", fila["antes"])
     usuario = await _usuario_real(conexion_revertida)
-    await vincular(fila["id"], VinculoBody(shipper_id=otro), pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
+    await vincular(UUID(fila["id"]), VinculoBody(shipper_id=otro), pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
     registro = await conexion_revertida.fetchrow(
         "SELECT actor::text, action, field, old_value, new_value FROM public.audit_log "
         "WHERE entity_type = 'TMS_CLIENT' AND entity_id = $1::uuid ORDER BY occurred_at DESC LIMIT 1", fila["id"])

@@ -7,6 +7,8 @@ el texto en minúsculas, y renombrar un cliente los dejaba sin cliente.
 
 `client_name` (el texto del TMS o del alta) se conserva: es parte del ID del
 viaje. Solo se muestra cuando el viaje no tiene cliente vinculado."""
+from uuid import UUID
+
 from fastapi import HTTPException
 
 def join_cliente(t: str = "t", sh: str = "sh", *, solo_vinculados: bool = False) -> str:
@@ -63,3 +65,25 @@ async def texto_del_cliente_en_el_tms(conn, *, source_system: str, shipper_id: s
             422, f"Ese cliente tiene más de un nombre en {source_system} ({', '.join(textos)}); "
                  "regístralo sin TMS o deja uno solo en Configuración › Clientes del TMS")
     return textos[0] if textos else None
+
+
+SIN_VINCULAR = "unlinked"
+
+
+def leer_filtro_de_cliente(valor: str) -> tuple[list[str], bool]:
+    """El filtro `?shipper_id=` (spec 2026-10-11): ids del directorio separados por
+    coma, y `unlinked` para los viajes sin cliente vinculado. Devuelve (ids, si
+    pide los sin vincular). Un id mal formado —un marcador viejo con el nombre—
+    es 422, no un error al llegar a la base."""
+    ids, sin_vincular = [], False
+    for parte in (p.strip() for p in valor.split(",")):
+        if not parte:
+            continue
+        if parte == SIN_VINCULAR:
+            sin_vincular = True
+            continue
+        try:
+            ids.append(str(UUID(parte)))
+        except ValueError:
+            raise HTTPException(422, f"Cliente inválido en el filtro: «{parte}»")
+    return ids, sin_vincular

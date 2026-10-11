@@ -280,7 +280,6 @@ async def leer_senales(conn, fecha: _date) -> Senales:
     ):
         empresas.setdefault(r["clave"], []).append((r["id"], r["business_name"]))
 
-
     ids_empresa = sorted({p.carrier_id for p in patentes if p.carrier_id}
                          | {i for lista in empresas.values() for i, _ in lista})
     vinculos = {(r["carrier_id"], r["shipper_id"]) for r in await conn.fetch(

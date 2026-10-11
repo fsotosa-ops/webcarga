@@ -12,7 +12,9 @@ from pydantic import BaseModel
 from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require, require_fields
 from ..db import get_pool
-from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente, resolver_cliente, texto_del_cliente_en_el_tms
+from ..services.cliente_del_viaje import (
+    join_cliente, leer_filtro_de_cliente, nombre_del_cliente, resolver_cliente, texto_del_cliente_en_el_tms,
+)
 from ..services.vencimientos import pendiente_predicate
 from ..schemas.trip import (
     AsignarConductorBody, TripBulkCloseBody, TripVoidBody, TripVoidRevertBody, TripBulkReopenBody, TripPatch, TripStopPatch,
@@ -859,9 +861,7 @@ async def list_trips(
     if shipper_id:
         # Por id del directorio (spec 2026-10-11). "unlinked" = viajes de un
         # cliente del TMS todavía sin vincular en Configuración.
-        ids = [s.strip() for s in shipper_id.split(',') if s.strip()]
-        reales = [s for s in ids if s != 'unlinked']
-        sin_vincular = 'unlinked' in ids
+        reales, sin_vincular = leer_filtro_de_cliente(shipper_id)
         if reales and sin_vincular:
             add("(t.shipper_id = ANY(?::uuid[]) OR t.shipper_id IS NULL)", reales)
         elif reales:
@@ -1495,8 +1495,8 @@ async def fleet_daily_overview(
     day = _parse_date(fecha)
     if day is None:
         raise HTTPException(422, "fecha requerida (YYYY-MM-DD)")
-    # Por id del directorio (spec 2026-10-11).
-    client_list = [c.strip() for c in shipper_id.split(',') if c.strip()]
+    # Por id del directorio (spec 2026-10-11); "unlinked" = sin cliente vinculado.
+    client_list, sin_vincular = leer_filtro_de_cliente(shipper_id)
     origin_list = [o.strip().lower() for o in origin.split(',') if o.strip()]
 
     rows = await pool.fetch(
@@ -1552,10 +1552,12 @@ async def fleet_daily_overview(
 
     equipment = []
     for r in rows:
-        if client_list:
+        if client_list or sin_vincular:
             today_client_ok = r["shipper_id"] in client_list
             carrier_client_ok = r["carrier_id"] in carriers_for_client
-            if not (today_client_ok or carrier_client_ok):
+            # Sin vincular: con viaje hoy, de un cliente del TMS sin vincular.
+            unlinked_ok = sin_vincular and bool(r["trip_id"]) and not r["shipper_id"]
+            if not (today_client_ok or carrier_client_ok or unlinked_ok):
                 continue
         if origin_list:
             if not r["trip_id"] or (r["origin_local"] or "").strip().lower() not in origin_list:

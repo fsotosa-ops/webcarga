@@ -417,10 +417,10 @@ def test_fleet_daily_overview_client_filter_keeps_idle_equipment_of_enabled_carr
     pool = AsyncMock()
     pool.fetch.side_effect = [
         [_fleet_row(carrier_id="c1")],
-        [{"carrier_id": "c1", "shipper_id": "s1"}],
+        [{"carrier_id": "c1", "shipper_id": "00000000-0000-0000-0000-0000000000a1"}],
     ]
     client = make_client(pool, router=trips_router)
-    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&shipper_id=s1")
+    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&shipper_id=00000000-0000-0000-0000-0000000000a1")
     assert len(res.json()["equipment"]) == 1
     shipper_query = pool.fetch.call_args_list[1].args[0]
     assert "public.carrier_shippers" in shipper_query
@@ -433,7 +433,7 @@ def test_fleet_daily_overview_client_filter_excludes_unrelated_carrier():
         [],
     ]
     client = make_client(pool, router=trips_router)
-    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&shipper_id=s1")
+    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&shipper_id=00000000-0000-0000-0000-0000000000a1")
     assert res.json()["equipment"] == []
 
 
@@ -548,13 +548,13 @@ def test_list_trips_filtra_el_cliente_por_id_como_lista():
     pool.fetchval.return_value = 0
     pool.fetch.return_value = []
     client_test = make_client(pool, router=trips_router)
-    res = client_test.get("/api/v1/trips/?view=historial&shipper_id=s1,%20s2%20")
+    res = client_test.get("/api/v1/trips/?view=historial&shipper_id=00000000-0000-0000-0000-0000000000a1,%2000000000-0000-0000-0000-0000000000a2%20")
     assert res.status_code == 200
     query = pool.fetch.call_args_list[0].args[0]
     params = pool.fetch.call_args_list[0].args[1:]
     assert "t.shipper_id = ANY(" in query
     assert "lower(trim(t.client_name))" not in query
-    assert ["s1", "s2"] in params
+    assert ["00000000-0000-0000-0000-0000000000a1", "00000000-0000-0000-0000-0000000000a2"] in params
 
 
 def test_list_trips_filtra_los_sin_vincular():
@@ -565,7 +565,7 @@ def test_list_trips_filtra_los_sin_vincular():
     client_test.get("/api/v1/trips/?view=historial&shipper_id=unlinked")
     assert "t.shipper_id IS NULL" in pool.fetch.call_args_list[0].args[0]
     pool.fetch.reset_mock()
-    client_test.get("/api/v1/trips/?view=historial&shipper_id=s1,unlinked")
+    client_test.get("/api/v1/trips/?view=historial&shipper_id=00000000-0000-0000-0000-0000000000a1,unlinked")
     assert "(t.shipper_id = ANY(?::uuid[]) OR t.shipper_id IS NULL)".replace("?", "$2") in pool.fetch.call_args_list[0].args[0]
 
 
@@ -734,3 +734,25 @@ def test_un_estado_se_puede_mover_al_grupo_pendiente_de_cierre_tms():
     from app.routers.config import TripStatusPatch
     assert TripStatusPatch(group_id="pendiente_cierre_tms").group_id == "pendiente_cierre_tms"
 
+
+
+def test_un_id_de_cliente_mal_formado_en_el_filtro_es_422():
+    """Revisión final, menor 1: un nombre (un marcador viejo) donde va un id
+    llegaba a `?::uuid[]` y reventaba con 500."""
+    pool = AsyncMock()
+    client = make_client(pool, router=trips_router)
+    assert client.get("/api/v1/trips/?view=historial&shipper_id=walmart").status_code == 422
+    assert client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&shipper_id=walmart").status_code == 422
+
+
+def test_fleet_daily_overview_filtra_los_sin_vincular():
+    """Revisión final, menor 2: el mismo `unlinked` que la lista del Monitor."""
+    pool = AsyncMock()
+    pool.fetch.side_effect = [
+        [_fleet_row(asset_id="a1", trip_id="t1", shipper_id=None, client_name="lider · sin vincular"),
+         _fleet_row(asset_id="a2", trip_id="t2", shipper_id="00000000-0000-0000-0000-000000000002")],
+        [],
+    ]
+    client = make_client(pool, router=trips_router)
+    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&shipper_id=unlinked")
+    assert [e["asset_id"] for e in res.json()["equipment"]] == ["a1"]

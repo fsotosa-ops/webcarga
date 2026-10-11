@@ -2,6 +2,8 @@
 directorio corresponde cada cliente de cada TMS. dbt la lee para
 app.trips.shipper_id; un cambio se aplica a los viajes, incluidos los viejos, en
 la próxima corrida (escotilla OR 7 del modelo trips)."""
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -30,7 +32,9 @@ ORDER BY (m.shipper_id IS NULL) DESC, min(t.source_system), min(t.client_name)
 
 
 class VinculoBody(BaseModel):
-    shipper_id: str
+    # UUID y no str: un id mal formado es 422 de validación, no un 500 al
+    # llegar a `$1::uuid`.
+    shipper_id: UUID
 
 
 @router.get("")
@@ -39,9 +43,9 @@ async def listar(pool=Depends(get_pool), _=Depends(require(Permission.COMMERCIAL
 
 
 @router.put("/{source_client_id}")
-async def vincular(source_client_id: str, body: VinculoBody, pool=Depends(get_pool),
+async def vincular(source_client_id: UUID, body: VinculoBody, pool=Depends(get_pool),
                    user=Depends(require(Permission.COMMERCIAL_EDIT))):
-    shipper_id = body.shipper_id
+    source_client_id, shipper_id = str(source_client_id), str(body.shipper_id)
     async with pool.acquire() as conn:
         cliente = await conn.fetchrow(
             "SELECT id FROM public.shippers WHERE id = $1::uuid AND status = 'ACTIVE'", shipper_id)
@@ -51,7 +55,8 @@ async def vincular(source_client_id: str, body: VinculoBody, pool=Depends(get_po
             "SELECT shipper_id::text FROM app.tms_client_shippers WHERE source_client_id = $1::uuid",
             source_client_id)
         origen = await conn.fetchrow(
-            "SELECT min(source_system) AS source_system, min(client_name) AS source_client "
+            # Normalizado igual que la migración: es el texto del id canónico del viaje.
+            "SELECT min(source_system) AS source_system, min(lower(btrim(client_name))) AS source_client "
             "FROM app.trips WHERE source_client_id = $1::uuid", source_client_id)
         if not origen or origen["source_system"] is None:
             raise HTTPException(404, "Ese cliente del TMS no tiene viajes")

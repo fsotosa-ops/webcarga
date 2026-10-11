@@ -35,6 +35,7 @@ Decisiones:
 """
 from collections.abc import Iterable
 from datetime import date as _date
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -572,8 +573,10 @@ def _reporte_del_tipo(rows: list[dict], *, no_trabajaron: dict, catalogo_sin_asi
 
 
 @router.get("")
-async def get_status_report(fecha: str, shipper_id: str | None = None, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
+async def get_status_report(fecha: str, shipper_id: UUID | None = None, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
     business_date = _parse_business_date(fecha)
+    # UUID en la firma: un id mal formado es 422; de acá en adelante, texto.
+    shipper_id = str(shipper_id) if shipper_id else None
     clientes_por_empresa = {r["carrier_id"]: list(r["clients"]) for r in await pool.fetch(_SQL_CLIENTES_POR_EMPRESA)}
     all_rows = await _build_asset_rows(pool, business_date)
     rows = _filter_by_client(all_rows, shipper_id, clientes_por_empresa)

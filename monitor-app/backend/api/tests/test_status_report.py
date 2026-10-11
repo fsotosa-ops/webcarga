@@ -496,8 +496,8 @@ def test_el_filtro_de_cliente_cuadra_todas_las_cifras_y_devuelve_los_clientes_de
     from app.routers.status_report import _SQL_CLIENTES_POR_EMPRESA
 
     asset_rows = [
-        _row(asset_id="t1", carrier_id="c1", shipper_id="s1"),
-        _row(asset_id="t2", carrier_id="c2", client_name="Sodimac", shipper_id="s3"),
+        _row(asset_id="t1", carrier_id="c1", shipper_id="00000000-0000-0000-0000-0000000000a1"),
+        _row(asset_id="t2", carrier_id="c2", client_name="Sodimac", shipper_id="00000000-0000-0000-0000-0000000000a3"),
         _row(asset_id="t3", carrier_id="c1", con_carga=False, client_name=None, shipper_id=None, category="NO_TRABAJANDO"),
         _row(asset_id="t4", carrier_id="c2", con_carga=False, client_name=None, shipper_id=None, category="NO_TRABAJANDO"),
     ]
@@ -505,7 +505,7 @@ def test_el_filtro_de_cliente_cuadra_todas_las_cifras_y_devuelve_los_clientes_de
 
     async def fetch(sql, *args):
         if sql == _SQL_CLIENTES_POR_EMPRESA:
-            return [{"carrier_id": "c1", "clients": ["s1"]}, {"carrier_id": "c2", "clients": ["s3"]}]
+            return [{"carrier_id": "c1", "clients": ["00000000-0000-0000-0000-0000000000a1"]}, {"carrier_id": "c2", "clients": ["00000000-0000-0000-0000-0000000000a3"]}]
         return []
 
     pool = AsyncMock()
@@ -518,7 +518,7 @@ def test_el_filtro_de_cliente_cuadra_todas_las_cifras_y_devuelve_los_clientes_de
          patch.object(modulo, "_build_driver_rows", AsyncMock(return_value=driver_rows)), \
          patch.object(modulo, "compute_fleet_driver_gap", AsyncMock(return_value=gap)), \
          patch.object(modulo, "_no_trabajaron_por_conductor", wraps=modulo._no_trabajaron_por_conductor) as espia:
-        body = _cliente_http(pool).get("/api/v1/status-report?fecha=2026-08-02&shipper_id=s1").json()
+        body = _cliente_http(pool).get("/api/v1/status-report?fecha=2026-08-02&shipper_id=00000000-0000-0000-0000-0000000000a1").json()
 
     resumen = body["by_operation_type"]["tractoreo"]["summary"]
     assert (resumen["total"], resumen["assigned"]) == (2, 1)
@@ -552,3 +552,9 @@ def test_los_viajes_del_dia_traen_el_cliente_del_directorio_por_id():
     assert "COALESCE(sh.name, t.client_name || ' · sin vincular') AS client_name" in _TODAY_TRIPS_SQL
 
 
+
+
+def test_el_reporte_con_un_id_de_cliente_mal_formado_es_422():
+    """Revisión final, menor 1."""
+    pool = AsyncMock()
+    assert _cliente_http(pool).get("/api/v1/status-report?fecha=2026-08-02&shipper_id=walmart").status_code == 422
