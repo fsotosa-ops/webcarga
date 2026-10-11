@@ -16,6 +16,52 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — El cliente del viaje por ID — en dev
+
+- **Qué se hizo:** spec `docs/superpowers/specs/2026-10-11-cliente-del-viaje-por-id-design.md` y plan del mismo nombre, ejecutado inline con revisión final (opus).
+  - **Migración `20261011120000_cliente_del_viaje_por_id`** (aplicada):
+    - índice único `shippers_name_ci_key (lower(btrim(name)))`;
+    - `app.tms_client_shippers` sembrada con 4 (walmart, iansa, sodimac, colun);
+    - `app.trips_manual.shipper_id` (12 rellenados; 1 de prueba anulado sin cliente).
+  - **dbt (Mage, `trips.sql`):**
+    - `shipper_id` en las dos ramas;
+    - escotilla OR 7, que reprocesa cuando cambia la correspondencia;
+    - índice `idx_trips_shipper`.
+
+    Subido con OK del usuario; la corrida natural dejó 3.361 viajes del TMS con cliente y 0 discrepancias.
+  - **Backend:**
+    - `services/cliente_del_viaje.py` es la única definición: `join_cliente(solo_vinculados=)`, `nombre_del_cliente`, `resolver_cliente`, `texto_del_cliente_en_el_tms`.
+    - Ningún cruce por texto ni copias del nombre: dos tests de grep lo fijan.
+    - Alta manual y CSV con `_preparar_cliente`; el CSV marca todas las filas con cliente fuera del directorio.
+    - El id de un viaje manual de un TMS usa el texto del TMS (de la correspondencia), así renombrar un cliente no lo cambia.
+    - Filtros por `?shipper_id=` (con `unlinked`).
+    - API `GET/PUT /api/v1/tms-clients`; re-vincular queda en `audit_log` (`TMS_CLIENT`/`link_tms_client`).
+  - **Frontend:**
+    - `ClientPicker` devuelve `{id, name}` y queda fijo con "Cambiar"; el alta exige cliente.
+    - Monitor y Reporte filtran por id; la tarjeta ya no tiene `capitalize`.
+    - Configuración › Operaciones › Clientes del TMS (`?section=tms-clients`), con confirmación al re-vincular.
+  - **Tests:** un solo helper `cliente_de_prueba(conn)` en `conftest`.
+- **Verificado en dev:**
+  - el Monitor muestra "Walmart" del directorio, con chips por id y la opción "Sin cliente vinculado";
+  - el filtro Iansa funciona;
+  - Clientes del TMS muestra los 4 bien vinculados.
+- **Hallazgo:** 2 viajes del TMS huérfanos que el pipeline ya no produce (add6d7dc Sodimac 01/07; c79be64d Walmart sin fecha) quedan "sin vincular". No se parchean a mano.
+- **Pendientes menores** (revisión final):
+  - un UUID malformado da 500 en vez de 422 (`tms-clients`, `list_trips`);
+  - `fleet_daily_overview` no tiene quién lo llame;
+  - se ofrecen clientes inactivos;
+  - el texto del aviso en Configuración;
+  - falta manejar la carga y el error de la lista del directorio en Configuración;
+  - falta el `aria-label` de "Cambiar";
+  - faltan tests 403/404 de `tms-clients`;
+  - `source_client` queda en minúsculas o crudo según el camino.
+- **Deuda:** el `?fecha=` de la API del backend.
+- **Siguiente paso exacto:**
+  - [ ] Que Pablo revise en dev (Monitor, Cierre, Reporte, Configuración › Clientes del TMS).
+  - [ ] Spec del reporte por período: falta que el usuario defina si el mes solo se ve o también se firma.
+  - [ ] Ítem 5, decisión A (15 días), ítems 21 y 23, y lo que falta del 20.
+  - [ ] Detalle del viaje (en pausa).
+
 ### 2026-10-11 — Cierre › Viajes en tres pestañas, filtro de cliente coherente y URL en inglés — en dev
 
 - **Qué se hizo:** spec `docs/superpowers/specs/2026-10-11-cierre-viajes-por-estado-y-filtro-de-cliente-design.md` y plan del mismo nombre, ejecutado inline con revisión final (opus).
