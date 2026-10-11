@@ -47,7 +47,7 @@ def _row(**overrides):
         # (agrupa el volumen). Antes eran el mismo campo, con la adivinanza
         # tapando el hueco de quien no salio.
         "home_cd": "CD Lo Aguirre", "origin_cd": "CD Lo Aguirre", "client_name": "Walmart",
-        "destination_zone": "RM", "driver_name": "Juan Pérez", "vueltas": 1, "unassigned_reason_label": None,
+        "destination_zone": "RM", "driver_name": "Juan Pérez", "dias_en_curso": 0, "vueltas": 1, "unassigned_reason_label": None,
         "category": "ASIGNADO",
     }
     base.update(overrides)
@@ -438,3 +438,25 @@ def test_el_filtro_de_cliente_deja_a_los_sin_carga_y_saca_a_los_de_otro_cliente(
 
     resumen = body["by_operation_type"]["tractoreo"]["summary"]
     assert (resumen["total"], resumen["assigned"]) == (2, 1)
+
+
+def test_resumen_cuenta_los_viajes_de_varios_dias_por_dias_atras():
+    """Los equipos que siguen en un viaje planificado días antes (se mantienen
+    en el reporte, pedido del usuario 11/10)."""
+    rows = [
+        _row(asset_id="a1", dias_en_curso=0),
+        _row(asset_id="a2", dias_en_curso=1),
+        _row(asset_id="a3", dias_en_curso=1),
+        _row(asset_id="a4", dias_en_curso=3),
+        # Sin carga no está en ningún viaje, aunque arrastre un número.
+        _row(asset_id="a5", con_carga=False, dias_en_curso=None, category="NO_TRABAJANDO"),
+    ]
+    assert _resumen_del_tipo(rows)["multi_day"] == {"total": 3, "by_days_back": {"1": 2, "3": 1}}
+
+
+def test_los_viajes_del_dia_traen_el_cliente_con_el_nombre_del_directorio():
+    """El TMS manda "walmart" o "WALMART"; el reporte muestra "Walmart", como
+    el resto del Cierre (mismo cruce con public.shippers que daily_closures)."""
+    from app.routers.status_report import _TODAY_TRIPS_SQL
+    assert "COALESCE(sh.name, t.client_name) AS client_name" in _TODAY_TRIPS_SQL
+    assert "lower(trim(sh.name)) = lower(trim(t.client_name))" in _TODAY_TRIPS_SQL

@@ -10,28 +10,26 @@ equipo-céntrico del Cierre del Día. Reusa:
     fuente de verdad, no una copia nueva de esa lógica en SQL.
   - las vueltas (Fase 0.3, app.v_driver_daily_trip_legs — ya unificado
     conductor O tracto).
-  - el pre-cierre (HU-02) y la cuadratura por equipo (HU-03), corridos
-    primero para que el reporte refleje el directorio ya corregido y los
-    motivos ya capturados.
+  - las líneas del día (app.closure_lines), que mantiene el ejecutor de la
+    cola del cierre: de ahí salen la categoría, el motivo y el origen
+    habitual declarado (HU-28). Este reporte solo las lee.
 
-Decisiones documentadas donde la HU es ambigua o depende de un insumo que
-todavía no llega (ver docs/casuistica-negocio-diario.md y AGENTLOG.md):
-  - Sección 2 (Tractoreo asignado): la HU lista una columna "Se retiró sin
-    carga" junto a RM/Z0/Región. Es un motivo, no un tipo de destino: va como
-    columnas aparte ("sin carga"), una por cada motivo del grupo "trabajando
-    sin asignación" del catálogo, contando los tractos sin viaje de esa
-    categoría (la calcula cierre_lineas). Minuta 09/10: no aparecía en
-    ninguna sección, porque la 4 solo muestra a los que no trabajaron.
-  - "CD de origen" para equipos SIN CARGA: no existe un CD habitual por
-    equipo/empresa en el modelo hoy (mismo gap de Fase 2/4) — mejor
-    esfuerzo: el origen de su viaje más reciente, cualquiera sea la fecha.
-  - Un viaje puede tener más de un destino; se usa el ÚLTIMO (el de
-    entrega real) para la clasificación RM/Z0/Región de ese viaje, acorde
-    a "la comuna DEL DESTINO (local de entrega)" — singular en la HU.
-  - Una empresa con AMBOS tipos de operación seleccionados cuenta sus
-    equipos en ambas secciones (Tractoreo y Equipos Completos) — mismo
-    criterio que Fase 2/4, no se fuerza una sola categoría.
-
+Decisiones:
+  - Asignados va por el ORIGEN REAL del viaje (minuta 09/10, decisión B); la
+    asistencia (enrolados vs asignados) por el origen habitual DECLARADO. Un
+    equipo sin carga no salió a ningún lado: cuenta en su origen habitual, o
+    en "Sin origen". Nunca se le atribuye el origen de un viaje viejo.
+  - Quien trabajó sin asignación (Se retira sin carga, Esperando carga…) va
+    aparte, en `worked_without_assignment`: ni es asignado ni "no trabajó".
+  - Las columnas de motivo son solo las que ocurrieron, en el orden del
+    catálogo; una línea sin motivo cuenta en "Sin motivo".
+  - Un viaje puede tener más de un destino; se usa el ÚLTIMO (el de entrega
+    real) para la clasificación RM/Z0/Región, acorde a "la comuna DEL DESTINO
+    (local de entrega)" — singular en la HU.
+  - Cada equipo tiene un solo tipo de operación (`code` de su taxonomía): cuenta
+    en Tractoreo o en Equipo Completo, nunca en los dos. Los sin tipo no entran.
+  - El cliente se muestra con el nombre del directorio (public.shippers), no
+    con el texto crudo del TMS, igual que el resto del Cierre.
 """
 from collections.abc import Iterable
 from datetime import date as _date
@@ -82,13 +80,15 @@ WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
 """
 
 # "Con carga hoy" — app.trips_del_dia(), el mismo criterio del Cierre, para
-# todos los TMS. Trae también el conductor resuelto (para "Segundas vueltas")
-# y el último destino (para clasificar RM/Z0/Región, §7.6).
+# todos los TMS. Trae también planning_date (para los viajes de varios días),
+# el conductor resuelto (para "Segundas vueltas") y el último destino (para clasificar RM/Z0/Región, §7.6).
 _TODAY_TRIPS_SQL = f"""
 SELECT
     t.id AS trip_id,
     vfr.resolved_tractor_asset_id AS asset_id,
-    t.client_name,
+    -- El nombre del directorio: el TMS manda "walmart" o "WALMART".
+    COALESCE(sh.name, t.client_name) AS client_name,
+    t.planning_date,
     d.full_name AS driver_name,
     t.status_reported_at,
     {origen_del_viaje('t')} AS origin_cd,
@@ -100,6 +100,7 @@ SELECT
 FROM app.trips t
 JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
 LEFT JOIN public.drivers d ON d.id = vfr.resolved_driver_id
+LEFT JOIN public.shippers sh ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE'
 WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
   AND vfr.resolved_tractor_asset_id IS NOT NULL
 """
@@ -207,11 +208,14 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
         status_row = status_by_asset.get(asset_id)
 
         destination_zone = None
+        dias_en_curso = None
         if latest:
             shipper_key = (latest["client_name"] or "").strip().lower()
             bucket = buckets.get(shipper_key)
             op_type = _resolve_operation_type(bucket, latest["last_destination_local"])
             destination_zone = _zone_bucket(op_type)
+            if latest["planning_date"]:
+                dias_en_curso = (business_date - latest["planning_date"]).days
 
         rows.append({
             "asset_id": asset_id,
@@ -229,6 +233,7 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
             "client_name": latest["client_name"] if latest else None,
             "destination_zone": destination_zone,
             "driver_name": latest["driver_name"] if latest else None,
+            "dias_en_curso": dias_en_curso,
             "vueltas": max((leg_by_trip.get(t["trip_id"], 1) for t in asset_trips), default=0),
             "unassigned_reason_label": status_row["unassigned_reason_label"] if status_row else None,
             # La categoría de la línea, tal como la calcula cierre_lineas: el
@@ -353,7 +358,12 @@ def _resumen_del_tipo(rows: list[dict]) -> dict:
     assigned = sum(1 for r in rows if r["con_carga"])
     por_cliente: dict = {}
     por_origen: dict = {}
+    # Los que siguen en un viaje planificado días antes: cuántos, por días atrás.
+    varios_dias: dict = {}
     for r in rows:
+        if r["con_carga"] and (r["dias_en_curso"] or 0) > 0:
+            dias = str(r["dias_en_curso"])
+            varios_dias[dias] = varios_dias.get(dias, 0) + 1
         if r["con_carga"]:
             cliente = r["client_name"] or "Sin cliente"
             por_cliente[cliente] = por_cliente.get(cliente, 0) + 1
@@ -368,6 +378,8 @@ def _resumen_del_tipo(rows: list[dict]) -> dict:
         "utilization_pct": round(assigned / total * 100, 1) if total else 0.0,
         "by_client": [{"client_name": k, "assigned": v} for k, v in sorted(por_cliente.items())],
         "by_home_origin": [por_origen[k] for k in sorted(por_origen)],
+        "multi_day": {"total": sum(varios_dias.values()),
+                      "by_days_back": dict(sorted(varios_dias.items(), key=lambda kv: int(kv[0])))},
     }
 
 
