@@ -66,15 +66,15 @@ export function IndicatorSwitches({ trip, onSaved }: Props) {
   }
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-2">
       {INDICATORS.map(ind => {
         const active = optimistic[ind.field] ?? trip[ind.field]
         const frozen = trip.manually_edited_fields?.includes(ind.field) ?? false
         const delTms = trip.source_system !== 'manual' && DEL_TMS.includes(ind.field)
         return (
           <div key={ind.field}>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-700">{ind.label}</span>
+            <div className="flex items-center gap-3">
+              <span className="w-[8.5rem] shrink-0 text-dato text-informativo">{ind.label}</span>
               <button
                 type="button"
                 role="switch"
@@ -82,26 +82,26 @@ export function IndicatorSwitches({ trip, onSaved }: Props) {
                 aria-label={ind.label}
                 disabled={delTms || !!pending[ind.field]}
                 onClick={() => toggle(ind.field)}
-                className={`relative w-8 h-4 rounded-full transition-colors disabled:opacity-50 ${
-                  active ? 'bg-accent' : 'bg-gray-300'
+                className={`relative h-5 w-9 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50 ${
+                  active ? 'bg-accent' : 'bg-informativo/30'
                 }`}
               >
                 <span
-                  className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${
+                  className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
                     active ? 'translate-x-4' : 'translate-x-0'
                   }`}
                 />
               </button>
+              {delTms && <span className="text-etiqueta text-informativo">Lo define el TMS</span>}
             </div>
-            {delTms && <p className="text-[11px] text-informativo mt-1">Lo define el TMS</p>}
             {frozen && (
-              <p className="text-[10px] text-gray-400 mt-1">
+              <p className="mt-1 text-etiqueta text-informativo">
                 Editado manualmente {trip.edited_by ? `por ${trip.edited_by} ` : ''}el {fmtDT(trip.edited_at)} ·{' '}
                 <button
                   type="button"
                   disabled={!!reverting[ind.field]}
                   onClick={() => revert(ind.field)}
-                  className="text-accent hover:text-accent/80 underline disabled:opacity-50"
+                  className="font-semibold text-accion hover:underline disabled:opacity-50"
                 >
                   Revertir a automático
                 </button>
@@ -110,7 +110,7 @@ export function IndicatorSwitches({ trip, onSaved }: Props) {
           </div>
         )
       })}
-      {error && <p className="text-[11px] text-red-500 mt-1">{error}</p>}
+      {error && <p className="mt-1 text-etiqueta text-status-incidente">{error}</p>}
     </div>
   )
 }

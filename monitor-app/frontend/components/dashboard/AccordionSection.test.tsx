@@ -29,12 +29,12 @@ describe('AccordionSection', () => {
     expect(button).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('accepts a ReactNode title (icon + dynamic text), not just a string', () => {
-    render(
-      <AccordionSection title={<span>Ruta (3 paradas)</span>}>
-        <p>contenido</p>
-      </AccordionSection>,
-    )
-    expect(screen.getByText('Ruta (3 paradas)')).toBeInTheDocument()
+  it('el título es un encabezado y el botón dice lo que hace (Ocultar / Mostrar)', () => {
+    render(<AccordionSection title="Ruta (3 paradas)"><p>contenido</p></AccordionSection>)
+    expect(screen.getByRole('heading', { name: 'Ruta (3 paradas)' })).toBeInTheDocument()
+    const toggle = screen.getByRole('button', { name: 'Ocultar Ruta (3 paradas)' })
+    expect(toggle).toHaveTextContent('Ocultar')
+    fireEvent.click(toggle)
+    expect(screen.getByRole('button', { name: 'Mostrar Ruta (3 paradas)' })).toHaveTextContent('Mostrar')
   })
 })

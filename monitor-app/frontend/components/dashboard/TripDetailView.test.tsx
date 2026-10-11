@@ -195,7 +195,7 @@ describe('TripDetailView — layout y a11y', () => {
 
   it('shows Datos operativos always visible, no accordion, without EETT TMS', () => {
     renderDetailView({ ...baseTrip, carrier_name_tms: 'Transportes ACME (texto TMS)' })
-    expect(screen.getByText('Fecha planificación')).toBeInTheDocument()
+    expect(screen.getByText('Planificación')).toBeInTheDocument()
     expect(screen.queryByText('EETT TMS')).not.toBeInTheDocument()
   })
 
@@ -270,7 +270,7 @@ describe('TripDetailView — Conductor y flota (FleetAssignSection, driver-first
     vi.mocked(driversApi.fuzzyMatch).mockResolvedValue([])
     renderDetailView({ ...baseTrip, driver_name_tms: 'NOMBRE SIN CRUCE' })
 
-    expect(await screen.findByText(/Sin coincidencias — dar de alta empresa\/conductor\/equipo/)).toBeInTheDocument()
+    expect(await screen.findByText(/Sin coincidencias: dar de alta empresa, conductor o equipo/)).toBeInTheDocument()
   })
 
   // Ronda 43 (Hallazgo F): el link de alta pre-carga los 3 datos que ya
@@ -284,7 +284,7 @@ describe('TripDetailView — Conductor y flota (FleetAssignSection, driver-first
       tractor_plate_tms: 'XYZW12',
     })
 
-    const link = await screen.findByText(/Sin coincidencias — dar de alta empresa\/conductor\/equipo/)
+    const link = await screen.findByText(/Sin coincidencias: dar de alta empresa, conductor o equipo/)
     const href = link.closest('a')!.getAttribute('href')!
     const params = new URLSearchParams(href.split('?')[1])
     expect(params.get('create')).toBe('1')
@@ -408,14 +408,14 @@ describe('TripDetailView — indicadores (switches, Fase 2 Plan 5)', () => {
 describe('TripDetailView — Gestión colapsable (página inmersiva, 2026-07-29)', () => {
   it('shows a collapse toggle button for the Gestión panel', () => {
     renderDetailView(baseTrip)
-    expect(screen.getByTitle('Colapsar Gestión')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ocultar Gestión' })).toBeInTheDocument()
   })
 
   it('collapsing Gestión hides its content and shows an expand toggle instead', () => {
     renderDetailView(baseTrip)
-    fireEvent.click(screen.getByTitle('Colapsar Gestión'))
+    fireEvent.click(screen.getByRole('button', { name: 'Ocultar Gestión' }))
     expect(screen.queryByText('+ Establecer estado operativo manual')).not.toBeInTheDocument()
-    expect(screen.getByTitle('Expandir Gestión')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mostrar Gestión' })).toBeInTheDocument()
   })
 })
 
@@ -587,7 +587,7 @@ describe('TripDetailView — campos híbridos de fecha (Carga/Desc. Inicio-Fin) 
     const stops = [makeStop({ stop_id: 's1', local: 'Local 1', desc_manual: true })]
     renderDetailView({ ...baseTrip, stops })
     const input = screen.getByLabelText('Desc. inicio de Local 1') as HTMLInputElement
-    expect(input.className).toMatch(/text-accent/)
+    expect(input.className).toMatch(/border-accion\/40/)
   })
 
   it('shows a visible "Carga inicio"/"Carga fin" micro-label for the origin row (not just aria-label)', () => {
@@ -615,21 +615,21 @@ describe('TripDetailView — campos híbridos de fecha (Carga/Desc. Inicio-Fin) 
     const stops = [makeStop({ stop_id: 's1', arrival_date: '2026-07-02 10:00:00', temperature: 11, temp_status: 'out_of_range' })]
     renderDetailView({ ...baseTrip, stops, temp_status: null })
     const badges = screen.getAllByText('11°C')
-    expect(badges.some(el => el.className.includes('text-red-700'))).toBe(true)
+    expect(badges.some(el => el.className.includes('text-status-incidente'))).toBe(true)
   })
 
   it('colors the per-stop temperature cell green when the stop\'s temp_status is ok', () => {
     const stops = [makeStop({ stop_id: 's1', arrival_date: '2026-07-02 10:00:00', temperature: -20, temp_status: 'ok' })]
     renderDetailView({ ...baseTrip, stops, temp_status: null })
     const badges = screen.getAllByText('-20°C')
-    expect(badges.some(el => el.className.includes('text-green-700'))).toBe(true)
+    expect(badges.some(el => el.className.includes('text-resuelto'))).toBe(true)
   })
 
   it('leaves the per-stop temperature cell uncolored when the stop has not been classified yet', () => {
     const stops = [makeStop({ stop_id: 's1', arrival_date: '2026-07-02 10:00:00', temperature: 4, temp_status: null })]
     renderDetailView({ ...baseTrip, stops, temp_status: null })
     const badges = screen.getAllByText('4°C')
-    expect(badges.some(el => el.className.includes('text-blue-600'))).toBe(true)
+    expect(badges.some(el => el.className.includes('text-informativo'))).toBe(true)
   })
 })
 
@@ -667,8 +667,8 @@ describe('TripDetailView — GPS Llegada/Salida inamovibles, Llegada TR/Salida T
       arrival_manual: true, departure_manual: true,
     })]
     renderDetailView({ ...baseTrip, stops })
-    expect((screen.getByLabelText('Llegada TR de Local 1') as HTMLInputElement).className).toMatch(/text-accent/)
-    expect((screen.getByLabelText('Salida TR de Local 1') as HTMLInputElement).className).toMatch(/text-accent/)
+    expect((screen.getByLabelText('Llegada TR de Local 1') as HTMLInputElement).className).toMatch(/border-accion\/40/)
+    expect((screen.getByLabelText('Salida TR de Local 1') as HTMLInputElement).className).toMatch(/border-accion\/40/)
   })
 
   it('always displays GPS/TR and Desc. Inicio/Fin values in 24h format, matching Plan.', () => {

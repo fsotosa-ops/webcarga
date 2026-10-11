@@ -139,7 +139,7 @@ describe('StopTimeline — temperatura fuera de rango', () => {
   it('colorea en rojo la lectura de una parada visitada con temp_status out_of_range', () => {
     const stops = [makeStop({ stop_id: 'a', local: 'Parada A', arrival_date: '2026-07-02 10:00:00', temperature: 11, temp_status: 'out_of_range' })]
     const { container } = render(<StopTimeline stops={stops} />)
-    const flagged = container.querySelector('.text-red-600')
+    const flagged = container.querySelector('.text-status-incidente')
     expect(flagged).not.toBeNull()
     expect(flagged?.textContent).toContain('11°C')
   })
@@ -147,7 +147,7 @@ describe('StopTimeline — temperatura fuera de rango', () => {
   it('no colorea la lectura cuando la parada está dentro de rango', () => {
     const stops = [makeStop({ stop_id: 'a', local: 'Parada A', arrival_date: '2026-07-02 10:00:00', temperature: -20, temp_status: 'ok' })]
     const { container } = render(<StopTimeline stops={stops} />)
-    expect(container.querySelector('.text-red-600')).toBeNull()
+    expect(container.querySelector('.text-status-incidente')).toBeNull()
     expect(container.textContent).toContain('-20°C')
   })
 })

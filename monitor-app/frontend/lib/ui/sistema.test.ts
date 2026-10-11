@@ -98,7 +98,11 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 1.685 -> 1.672 en HU-C1 entrega 2c (2026-10-08): la tabla de documentos
     // de Configuración paso a tokens al volverse editable en el lugar, y se
     // retiraron CeldaVigencia, CeldaNivel y AplicarEnLaFila.
-    const DEUDA = 1672
+    // 1.672 -> 1.406 el 2026-10-11: la pasada visual del detalle del viaje
+    // (encabezado, tabla de paradas, Gestión, Bitácora, línea de paradas) y la
+    // vista rápida nacieron o pasaron a tokens; el tope no se había bajado
+    // desde la entrega 2c.
+    const DEUDA = 1406
 
     const total = usosDeColorCrudo()
     expect(

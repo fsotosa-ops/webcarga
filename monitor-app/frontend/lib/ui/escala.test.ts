@@ -64,7 +64,10 @@ describe('la escala tipografica', () => {
     // —el tipo de operacion, y el de baja— no podia nacer a 9px, y dejarlo
     // solo a 11px entre hermanos de 9px se veia desparejo.
     // 262 -> 260 en la Ronda 155, por el mismo cambio.
-    const DEUDA = 260
+    // 260 -> 214 el 2026-10-11: la Bitácora y los indicadores del detalle del
+    // viaje dejaron los 9-10 px (pasada visual del detalle), más bajas previas
+    // que no se habían descontado.
+    const DEUDA = 214
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

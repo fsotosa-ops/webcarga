@@ -1,12 +1,12 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { X, Copy, Check, Truck, User, Phone, Hash, MapPin, Ban, ArrowLeft } from 'lucide-react'
+import { X, Copy, Check, Truck, User, Phone, Hash, Ban, ArrowLeft } from 'lucide-react'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { tripsApi } from '@/lib/api/trips'
 import { getLatestTemp, stopWasVisited, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { getStopStates } from '@/lib/utils/stopState'
-import { fmtDT, formatRelativeTime, toDatetimeLocalValue } from '@/lib/utils/datetime'
+import { fmtDT, formatRelativeTime } from '@/lib/utils/datetime'
 import { TMS_LOGIN_URLS } from '@/lib/utils/tmsLinks'
 import { StopTimeline } from './StopTimeline'
 import { TripNotesFeed } from './TripNotesFeed'
@@ -16,6 +16,8 @@ import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { AccordionSection } from './AccordionSection'
 import { GestionPanel } from './GestionPanel'
 import { AnularViaje } from './AnularViaje'
+import { StopTimeInput } from './StopTimeInput'
+import { StatusChip } from '@/components/ui/StatusChip'
 
 interface Props {
   trip:        Trip
@@ -81,17 +83,18 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
 
   return (
     <div className="flex flex-col h-full bg-white overflow-hidden">
-      {/* ── Header — 1 fila compacta: identidad del viaje ── */}
-      <div className="bg-slate-900 px-4 py-2.5 md:px-6 shrink-0 flex items-center gap-3 flex-wrap">
+      {/* ── Header — 1 fila compacta: identidad del viaje. Blanca con borde, como la
+          barra de la app (pasada visual 11/10); el azul solo en lo que se puede hacer clic. ── */}
+      <div className="border-b border-border px-4 py-2.5 md:px-6 shrink-0 flex items-center gap-3 flex-wrap">
         {/* Dice adónde vuelve (spec 2026-10-10 §4): el ✕ de la derecha se queda,
             pero un ícono suelto no dice a qué pantalla lleva. */}
         {etiquetaVolver && (
           <button
             type="button"
             onClick={onDismiss}
-            className="flex items-center gap-1 text-etiqueta font-semibold text-white/70 hover:text-white shrink-0 rounded px-1.5 py-1 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/40"
+            className="flex items-center gap-1 text-dato font-semibold text-accion hover:underline shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           >
-            <ArrowLeft size={13} /> {etiquetaVolver}
+            <ArrowLeft size={14} aria-hidden="true" /> {etiquetaVolver}
           </button>
         )}
         {tmsLoginUrl ? (
@@ -101,18 +104,14 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
             rel="noopener noreferrer"
             title={`Abrir en ${tmsMeta?.label ?? tmsLabel}`}
             className="text-etiqueta font-bold px-2 py-0.5 rounded-full shrink-0 hover:opacity-80 transition-opacity"
-            style={tmsMeta
-              ? { backgroundColor: tmsMeta.bg_color, color: tmsMeta.text_color }
-              : { backgroundColor: '#334155', color: '#94a3b8' }}
+            style={tmsMeta ? { backgroundColor: tmsMeta.bg_color, color: tmsMeta.text_color } : undefined}
           >
             {tmsLabel}
           </a>
         ) : (
           <span
-            className="text-etiqueta font-bold px-2 py-0.5 rounded-full shrink-0"
-            style={tmsMeta
-              ? { backgroundColor: tmsMeta.bg_color, color: tmsMeta.text_color }
-              : { backgroundColor: '#334155', color: '#94a3b8' }}
+            className={`text-etiqueta font-bold px-2 py-0.5 rounded-full shrink-0 ${tmsMeta ? '' : 'bg-informativo/10 text-informativo'}`}
+            style={tmsMeta ? { backgroundColor: tmsMeta.bg_color, color: tmsMeta.text_color } : undefined}
           >
             {tmsLabel}
           </span>
@@ -120,15 +119,16 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
 
         {trip.source_system_trip_id && (
           <span className="flex items-center gap-1.5 min-w-0">
-            <Hash size={11} className="text-white/40 shrink-0" />
-            <span className="font-identificador text-dato text-white/60 truncate">{trip.source_system_trip_id}</span>
+            <Hash size={12} className="text-informativo shrink-0" aria-hidden="true" />
+            <span className="font-identificador text-dato font-bold tabular-nums text-text-primary truncate">{trip.source_system_trip_id}</span>
             <button
               type="button"
               onClick={() => handleCopy('external', trip.source_system_trip_id!)}
               title="Copiar ID externo"
-              className="text-white/40 hover:text-white/80 transition-colors shrink-0"
+              aria-label="Copiar ID externo"
+              className="text-informativo hover:text-text-primary transition-colors shrink-0 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             >
-              {copiedField === 'external' ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+              {copiedField === 'external' ? <Check size={12} className="text-resuelto" /> : <Copy size={12} />}
             </button>
           </span>
         )}
@@ -141,33 +141,33 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
             direcciones. */}
 
         <span className="flex items-center gap-1.5 shrink-0">
-          <Truck size={13} className="text-white/40" />
-          <span className="font-identificador text-sm font-bold text-white">
+          <Truck size={14} className="text-informativo" aria-hidden="true" />
+          <span className="font-identificador text-dato font-bold tabular-nums text-text-primary">
             {trip.tractor_plate ?? trip.trailer_plate ?? 'Sin patente'}
           </span>
           {trip.tractor_plate && trip.trailer_plate && (
-            <span className="font-identificador text-etiqueta text-white/40">/ {trip.trailer_plate}</span>
+            <span className="font-identificador text-etiqueta tabular-nums text-informativo">/ {trip.trailer_plate}</span>
           )}
         </span>
 
         <span className="flex items-center gap-1.5 min-w-0">
-          <User size={11} className="text-white/40 shrink-0" />
-          <span className="text-dato text-white/80 truncate">{trip.driver_name ?? '—'}</span>
+          <User size={12} className="text-informativo shrink-0" aria-hidden="true" />
+          <span className="text-dato text-text-primary truncate">{trip.driver_name ?? '—'}</span>
         </span>
 
         {trip.driver_phone && (
           <a
             href={`tel:${trip.driver_phone}`}
-            className="flex items-center gap-1 text-etiqueta font-identificador text-accent/80 hover:text-accent shrink-0"
+            className="flex items-center gap-1 text-dato font-identificador tabular-nums text-accion hover:underline shrink-0"
             onClick={e => e.stopPropagation()}
           >
-            <Phone size={10} />
+            <Phone size={11} aria-hidden="true" />
             {trip.driver_phone}
           </a>
         )}
 
         {trip.client_name && (
-          <span className="text-etiqueta text-white/35 truncate hidden sm:inline">· {trip.client_name}</span>
+          <span className="text-dato text-informativo truncate hidden sm:inline">· {trip.client_name}</span>
         )}
 
         <span className="ml-auto" />
@@ -175,10 +175,10 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
         <AnularViaje trip={trip} />
         <button
           onClick={onDismiss}
-          className="text-white/50 hover:text-white transition-colors shrink-0 p-1 rounded-lg hover:bg-white/10"
+          className="text-informativo hover:text-text-primary transition-colors shrink-0 p-1.5 rounded-md border border-border hover:bg-bg-main focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
           aria-label="Cerrar detalle"
         >
-          <X size={18} />
+          <X size={16} />
         </button>
       </div>
 
@@ -196,43 +196,41 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
       )}
 
       {/* ── Hero — la historia del viaje ── */}
-      <div data-testid="hero" className="px-4 py-3 md:px-6 border-b border-border bg-gray-50/80 shrink-0 space-y-2">
+      <div data-testid="hero" className="px-4 py-3 md:px-6 border-b border-border shrink-0 space-y-1.5">
         <div className="flex items-center gap-2.5 flex-wrap">
           <StatusBadge status={currentStatus} meta={meta} size="md" fallbackLabel="Sin estado" />
-          {trip.manual_status && (
-            <span className="text-etiqueta font-semibold text-accent bg-accent/10 px-1.5 py-0.5 rounded-full">manual</span>
-          )}
+          {trip.manual_status && <StatusChip tone="action">manual</StatusChip>}
           {activeStop && (
-            <span className="text-sm text-text-primary min-w-0">
-              <span className="text-gray-400">→</span>{' '}
+            <span className="text-lectura text-text-primary min-w-0">
+              <span className="text-informativo">→</span>{' '}
               <span className="font-semibold">{activeStop.local ?? activeStop.destination_city ?? 'próxima parada'}</span>
-              {activeTiming && <span className="text-gray-500"> · {activeTiming}</span>}
+              {activeTiming && <span className="text-informativo"> · {activeTiming}</span>}
             </span>
           )}
           {!activeStop && stops.length === 0 && (
-            <span className="text-sm text-gray-400">Sin paradas registradas</span>
+            <span className="text-dato text-informativo">Sin paradas registradas</span>
           )}
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap text-etiqueta text-gray-500">
+        <div className="flex items-center gap-2.5 flex-wrap text-etiqueta text-informativo">
           {destinationStops.length > 0 && (
-            <span>{doneCount}/{destinationStops.length} paradas</span>
+            <span className="tabular-nums">{doneCount}/{destinationStops.length} paradas</span>
           )}
           {openIncidents > 0 && (
-            <span className="font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full text-etiqueta">
+            <StatusChip tone="urgent">
               {openIncidents} incidente{openIncidents === 1 ? '' : 's'} abierto{openIncidents === 1 ? '' : 's'}
-            </span>
+            </StatusChip>
           )}
           {temp != null && (
             tempStatus === 'out_of_range'
-              ? <span className="font-semibold px-1.5 py-0.5 rounded-full text-etiqueta bg-red-50 text-red-700">{temp}°C</span>
-              : <span>{temp}°C</span>
+              ? <StatusChip tone="urgent">{temp}°C</StatusChip>
+              : <span className="tabular-nums">{temp}°C</span>
           )}
-          <span className="text-gray-400">
+          <span>
             TMS reportó {tmsSince}{syncSince !== '—' ? ` · sync ${syncSince}` : ''}
           </span>
           {trip.created_at && (
-            <span className="text-gray-400">· en el Diario desde {fmtDT(trip.created_at)}</span>
+            <span>· en el Diario desde {fmtDT(trip.created_at)}</span>
           )}
         </div>
       </div>
@@ -246,18 +244,16 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
 
         <div className="order-2 md:order-1 flex-1 min-w-0 md:overflow-y-auto p-4 md:p-6 space-y-5">
           {stops.length > 0 && (
-            <AccordionSection
-              title={<><MapPin size={11} /> Ruta ({stops.length} parada{stops.length === 1 ? '' : 's'})</>}
-              defaultOpen
-            >
+            <AccordionSection title={`Ruta (${stops.length} parada${stops.length === 1 ? '' : 's'})`} defaultOpen>
               <StopTimeline stops={stops} />
 
               <div className="overflow-x-auto mt-3 -mx-4 md:-mx-6">
                 <div className="min-w-[860px] px-4 md:px-6">
-                  <table className="w-full text-dato border border-border/80 rounded-lg overflow-hidden">
+                  {/* Encabezado claro, como las tablas del Cierre: el negro pesaba más que el dato. */}
+                  <table className="w-full text-dato border border-border rounded-lg overflow-hidden">
                     <thead>
-                      <tr className="bg-slate-800 text-etiqueta font-bold text-slate-300 uppercase tracking-wide">
-                        <th className="px-3 py-2 text-left sticky left-0 bg-slate-800 z-10 min-w-[120px]">Local</th>
+                      <tr className="bg-bg-main text-etiqueta font-semibold text-informativo uppercase tracking-wide">
+                        <th className="px-3 py-2 text-left sticky left-0 bg-bg-main z-10 min-w-[120px]">Local</th>
                         <th className="px-3 py-2 text-left min-w-[82px]">Plan.</th>
                         <th className="px-3 py-2 text-left min-w-[82px]">GPS Llegada</th>
                         <th className="px-3 py-2 text-left min-w-[82px]">GPS Salida</th>
@@ -269,25 +265,27 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
                         <th className="px-3 py-2 text-center min-w-[52px]">°C</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border/50">
+                    <tbody className="divide-y divide-border">
                       {stops.map((stop, i) => {
                         const isOrigin = stop.stop_type === 'ORIGIN'
-                        const rowBg =
-                          isOrigin ? 'bg-slate-50' :
-                          i % 2 === 1 ? 'bg-gray-50/40' : 'bg-white'
                         const opLabel = isOrigin ? 'Carga' : 'Desc.'
+                        const place = stop.local ?? 'parada'
+                        const saving = stopSaving === stop.stop_id
+                        const commit = (field: 'desc_inicio' | 'desc_fin' | 'arrival' | 'departure') =>
+                          (value: string) => { if (stop.stop_id) void handleStopFieldChange(stop.stop_id, field, value) }
+                        const readOnlyCell = (value: string | null | undefined) => (
+                          <td className="px-3 py-2 font-identificador text-etiqueta tabular-nums text-informativo whitespace-nowrap">{fmtDT(value)}</td>
+                        )
                         return (
-                          <tr key={stop.stop_id ?? i} className={rowBg}>
-                            <td className={`px-3 py-2 sticky left-0 z-10 ${rowBg}`}>
-                              <p className="font-medium text-text-primary leading-snug flex items-center gap-1">
-                                {isOrigin && (
-                                  <span className="text-etiqueta font-bold px-1 py-0.5 rounded bg-slate-700 text-white shrink-0">ORIGEN</span>
-                                )}
+                          <tr key={stop.stop_id ?? i} className="bg-white">
+                            <td className="px-3 py-2 sticky left-0 z-10 bg-white">
+                              <p className="font-medium text-text-primary leading-snug flex items-center gap-1.5 flex-wrap">
+                                {isOrigin && <StatusChip tone="action">Origen</StatusChip>}
                                 {stop.local ?? '—'}
                                 <OperationTypeBadge operationType={stop.operation_type} meta={meta} />
                               </p>
                               {stop.destination_city && (
-                                <p className="text-etiqueta text-gray-400 mt-0.5">
+                                <p className="text-etiqueta text-informativo mt-0.5">
                                   {stop.destination_city}{stop.destination_region ? `, ${stop.destination_region}` : ''}
                                 </p>
                               )}
@@ -299,97 +297,55 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
                                   todas: el caso de uso es cruzarlas contra un
                                   documento, un "+2" obligaría a otra vista. */}
                               {stop.delivery_numbers && stop.delivery_numbers.length > 0 && (
-                                <p className="text-etiqueta text-gray-500 mt-0.5">
-                                  <span className="text-gray-400">
-                                    {stop.delivery_numbers.length === 1 ? 'Entrega ' : 'Entregas '}
-                                  </span>
-                                  <span className="font-identificador">{stop.delivery_numbers.join(' · ')}</span>
+                                <p className="text-etiqueta text-informativo mt-0.5">
+                                  {stop.delivery_numbers.length === 1 ? 'Entrega ' : 'Entregas '}
+                                  <span className="font-identificador tabular-nums text-text-primary">{stop.delivery_numbers.join(' · ')}</span>
                                 </p>
                               )}
                             </td>
-                            <td className="px-3 py-2 font-identificador text-etiqueta text-gray-500 whitespace-nowrap">{fmtDT(stop.planning_date)}</td>
+                            {readOnlyCell(stop.planning_date)}
                             {/* GPS Llegada/GPS Salida: inamovibles (minuta 29/07 §4.2, dato
                                 sagrado para disputas comerciales/seguros) — siempre de solo
                                 lectura, origen y destino por igual, nunca un <input>. */}
-                            <td className="px-3 py-2 font-identificador text-etiqueta text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_arrival_date)}</td>
-                            <td className="px-3 py-2 font-identificador text-etiqueta text-gray-500 whitespace-nowrap">{fmtDT(stop.gps_departure_date)}</td>
-                            {isOrigin ? (
-                              <td className="px-3 py-2 font-identificador text-etiqueta text-gray-500 whitespace-nowrap">{fmtDT(stop.arrival_date)}</td>
-                            ) : (
+                            {readOnlyCell(stop.gps_arrival_date)}
+                            {readOnlyCell(stop.gps_departure_date)}
+                            {isOrigin ? readOnlyCell(stop.arrival_date) : (
                               <td className="px-2 py-1">
-                                <div className="relative">
-                                  <input
-                                    key={`${stop.stop_id}-arrival-${stop.arrival_date ?? ''}`}
-                                    type="datetime-local"
-                                    aria-label={`Llegada TR de ${stop.local ?? 'parada'}`}
-                                    defaultValue={toDatetimeLocalValue(stop.arrival_date)}
-                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'arrival', e.target.value)}
-                                    disabled={stopSaving === stop.stop_id}
-                                    className={`peer w-full text-etiqueta font-identificador border rounded px-1 py-0.5 text-transparent focus:text-inherit focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.arrival_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
-                                  />
-                                  <span className="absolute inset-0 flex items-center px-1 text-etiqueta font-identificador pointer-events-none peer-focus:opacity-0 truncate">{fmtDT(stop.arrival_date)}</span>
-                                </div>
+                                <StopTimeInput key={`${stop.stop_id}-arrival-${stop.arrival_date ?? ''}`}
+                                               label={`Llegada TR de ${place}`} value={stop.arrival_date}
+                                               manual={!!stop.arrival_manual} disabled={saving} onCommit={commit('arrival')} />
                               </td>
                             )}
-                            {isOrigin ? (
-                              <td className="px-3 py-2 font-identificador text-etiqueta text-gray-500 whitespace-nowrap">{fmtDT(stop.departure_date)}</td>
-                            ) : (
+                            {isOrigin ? readOnlyCell(stop.departure_date) : (
                               <td className="px-2 py-1">
-                                <div className="relative">
-                                  <input
-                                    key={`${stop.stop_id}-departure-${stop.departure_date ?? ''}`}
-                                    type="datetime-local"
-                                    aria-label={`Salida TR de ${stop.local ?? 'parada'}`}
-                                    defaultValue={toDatetimeLocalValue(stop.departure_date)}
-                                    onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'departure', e.target.value)}
-                                    disabled={stopSaving === stop.stop_id}
-                                    className={`peer w-full text-etiqueta font-identificador border rounded px-1 py-0.5 text-transparent focus:text-inherit focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.departure_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
-                                  />
-                                  <span className="absolute inset-0 flex items-center px-1 text-etiqueta font-identificador pointer-events-none peer-focus:opacity-0 truncate">{fmtDT(stop.departure_date)}</span>
-                                </div>
+                                <StopTimeInput key={`${stop.stop_id}-departure-${stop.departure_date ?? ''}`}
+                                               label={`Salida TR de ${place}`} value={stop.departure_date}
+                                               manual={!!stop.departure_manual} disabled={saving} onCommit={commit('departure')} />
                               </td>
                             )}
                             <td className="px-2 py-1">
-                              <span className="text-etiqueta text-gray-400 block leading-none mb-0.5">{opLabel} inicio</span>
-                              <div className="relative">
-                              <input
-                                key={`${stop.stop_id}-desc_inicio-${stop.unload_start ?? ''}`}
-                                type="datetime-local"
-                                aria-label={`${opLabel} inicio de ${stop.local ?? 'parada'}`}
-                                defaultValue={toDatetimeLocalValue(stop.unload_start)}
-                                onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'desc_inicio', e.target.value)}
-                                disabled={stopSaving === stop.stop_id}
-                                className={`peer w-full text-etiqueta font-identificador border rounded px-1 py-0.5 text-transparent focus:text-inherit focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.desc_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
-                              />
-                              <span className="absolute inset-0 flex items-center px-1 text-etiqueta font-identificador pointer-events-none peer-focus:opacity-0 truncate">{fmtDT(stop.unload_start)}</span>
-                              </div>
+                              <span className="block text-etiqueta text-informativo leading-none mb-1">{opLabel} inicio</span>
+                              <StopTimeInput key={`${stop.stop_id}-desc_inicio-${stop.unload_start ?? ''}`}
+                                             label={`${opLabel} inicio de ${place}`} value={stop.unload_start}
+                                             manual={!!stop.desc_manual} disabled={saving} onCommit={commit('desc_inicio')} />
                             </td>
                             <td className="px-2 py-1">
-                              <span className="text-etiqueta text-gray-400 block leading-none mb-0.5">{opLabel} fin</span>
-                              <div className="relative">
-                              <input
-                                key={`${stop.stop_id}-desc_fin-${stop.unload_end ?? ''}`}
-                                type="datetime-local"
-                                aria-label={`${opLabel} fin de ${stop.local ?? 'parada'}`}
-                                defaultValue={toDatetimeLocalValue(stop.unload_end)}
-                                onBlur={e => e.target.value && stop.stop_id && handleStopFieldChange(stop.stop_id, 'desc_fin', e.target.value)}
-                                disabled={stopSaving === stop.stop_id}
-                                className={`peer w-full text-etiqueta font-identificador border rounded px-1 py-0.5 text-transparent focus:text-inherit focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white disabled:opacity-50 ${stop.desc_manual ? 'border-accent/40 text-accent' : 'border-border text-gray-500'}`}
-                              />
-                              <span className="absolute inset-0 flex items-center px-1 text-etiqueta font-identificador pointer-events-none peer-focus:opacity-0 truncate">{fmtDT(stop.unload_end)}</span>
-                              </div>
+                              <span className="block text-etiqueta text-informativo leading-none mb-1">{opLabel} fin</span>
+                              <StopTimeInput key={`${stop.stop_id}-desc_fin-${stop.unload_end ?? ''}`}
+                                             label={`${opLabel} fin de ${place}`} value={stop.unload_end}
+                                             manual={!!stop.desc_manual} disabled={saving} onCommit={commit('desc_fin')} />
                             </td>
                             <td className="px-3 py-2 text-center">
-                              {stop.s2s ? <span className="text-etiqueta font-identificador bg-slate-100 text-gray-500 px-1.5 py-0.5 rounded">{stop.s2s}</span> : <span className="text-gray-400">—</span>}
+                              {stop.s2s
+                                ? <span className="text-etiqueta font-identificador tabular-nums bg-bg-main text-informativo px-1.5 py-0.5 rounded">{stop.s2s}</span>
+                                : <span className="text-informativo">—</span>}
                             </td>
                             <td className="px-3 py-2 text-center">
                               {stopWasVisited(stop) && stop.temperature != null ? (
-                                <span className={`text-sm font-identificador font-semibold ${
-                                  stop.temp_status === 'out_of_range' ? 'text-red-700 bg-red-50 px-1.5 py-0.5 rounded'
-                                  : stop.temp_status === 'ok' ? 'text-green-700 bg-green-50 px-1.5 py-0.5 rounded'
-                                  : 'text-blue-600'
-                                }`}>{stop.temperature}°C</span>
-                              ) : <span className="text-gray-400">—</span>}
+                                <StatusChip tone={stop.temp_status === 'out_of_range' ? 'urgent' : stop.temp_status === 'ok' ? 'resolved' : 'neutral'}>
+                                  {stop.temperature}°C
+                                </StatusChip>
+                              ) : <span className="text-informativo">—</span>}
                             </td>
                           </tr>
                         )

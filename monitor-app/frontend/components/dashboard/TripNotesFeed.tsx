@@ -2,20 +2,57 @@
 
 import { useRef, useState } from 'react'
 import {
-  Loader2, Send, Paperclip, X, Pin, PinOff,
+  Loader2, Paperclip, X, Pin, PinOff,
   Phone, MessageCircle, AlertTriangle, StickyNote, Activity,
   FileText, ImageIcon, FolderOpen, ListOrdered,
 } from 'lucide-react'
 import type { Trip, TripNote, TripNoteAttachment, TripNoteType } from '@/lib/types'
 import { useTripNotes, useAddTripNote, usePinTripNote, useResolveTripNote } from '@/hooks/useTripNotes'
 import { formatRelativeTime, fmtDT } from '@/lib/utils/datetime'
+import { StatusChip, type StatusTone } from '@/components/ui/StatusChip'
 
-const NOTE_TYPES: { id: Exclude<TripNoteType, 'sistema'>; label: string; Icon: typeof Phone; cls: string }[] = [
-  { id: 'observacion', label: 'Observación', Icon: StickyNote,    cls: 'text-slate-600 bg-slate-100'  },
-  { id: 'llamada',     label: 'Llamada',     Icon: Phone,         cls: 'text-blue-600 bg-blue-50'     },
-  { id: 'whatsapp',    label: 'WhatsApp',    Icon: MessageCircle, cls: 'text-green-600 bg-green-50'   },
-  { id: 'incidente',   label: 'Incidente',   Icon: AlertTriangle, cls: 'text-red-600 bg-red-50'       },
+const NOTE_TYPES: { id: Exclude<TripNoteType, 'sistema'>; label: string; Icon: typeof Phone; tone: StatusTone }[] = [
+  { id: 'observacion', label: 'Observación', Icon: StickyNote,    tone: 'neutral'  },
+  { id: 'llamada',     label: 'Llamada',     Icon: Phone,         tone: 'action'   },
+  { id: 'whatsapp',    label: 'WhatsApp',    Icon: MessageCircle, tone: 'resolved' },
+  { id: 'incidente',   label: 'Incidente',   Icon: AlertTriangle, tone: 'urgent'   },
 ]
+
+/** Un control segmentado: opciones del mismo grupo, una sola marcada (o
+ *  ninguna, en el filtro). Lo usan el tipo de la nota, el filtro del feed y
+ *  Feed/Documentos — antes eran tres juegos de pastillas de 9 px distintos. */
+function SegmentedControl<T extends string>({
+  label, options, value, onChange,
+}: {
+  label:    string
+  options:  { id: T; label: string; Icon: typeof Phone; badge?: string }[]
+  value:    T | null
+  onChange: (id: T) => void
+}) {
+  return (
+    <div role="group" aria-label={label} className="inline-flex w-fit max-w-full flex-wrap overflow-hidden rounded-md border border-border bg-white">
+      {options.map(o => {
+        const on = value === o.id
+        return (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => onChange(o.id)}
+            title={o.label}
+            aria-pressed={on}
+            className={`flex items-center gap-1.5 border-r border-border px-2.5 py-1 text-etiqueta transition-colors last:border-r-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40 ${
+              on ? 'bg-accion/10 font-semibold text-accion' : 'text-informativo hover:text-text-primary'
+            }`}
+          >
+            <o.Icon size={12} aria-hidden />
+            {o.label}
+            {o.badge && <span className="tabular-nums">{o.badge}</span>}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 // Espejo de ALLOWED_ATTACHMENT_MIMES del backend (routers/trips.py)
 const ACCEPTED_FILES = '.pdf,image/png,image/jpeg,image/webp,image/heic,image/heif,.doc,.docx,.xls,.xlsx'
@@ -42,16 +79,16 @@ function AttachmentCard({ att }: { att: TripNoteAttachment }) {
       href={att.url ?? undefined}
       target="_blank"
       rel="noreferrer"
-      className={`block border border-border/70 rounded-md overflow-hidden bg-white hover:border-accent/40 hover:shadow-sm transition-all ${att.url ? '' : 'opacity-50 pointer-events-none'}`}
+      className={`block overflow-hidden rounded-md border border-border bg-white transition-colors hover:border-accion/40 ${att.url ? '' : 'pointer-events-none opacity-50'}`}
       title={att.file_name}
     >
       {inner}
       <span className="flex items-center gap-1.5 px-2 py-1.5">
         {isImage
-          ? <ImageIcon size={11} className="text-gray-400 shrink-0" />
-          : <FileText size={11} className="text-red-400 shrink-0" />}
-        <span className="text-[10px] text-slate-600 truncate">{att.file_name}</span>
-        <span className="text-[9px] text-gray-300 shrink-0 ml-auto">{fmtBytes(att.size_bytes)}</span>
+          ? <ImageIcon size={12} className="shrink-0 text-informativo" aria-hidden />
+          : <FileText size={12} className="shrink-0 text-informativo" aria-hidden />}
+        <span className="truncate text-etiqueta text-text-primary">{att.file_name}</span>
+        <span className="ml-auto shrink-0 text-etiqueta tabular-nums text-informativo">{fmtBytes(att.size_bytes)}</span>
       </span>
     </a>
   )
@@ -70,23 +107,19 @@ function NoteCard({
   const isIncident = note.note_type === 'incidente'
   const resolved = !!note.resolved_at
   return (
-    <div className={`group bg-white border rounded-lg px-3 py-2 shadow-sm ${note.pinned ? 'border-amber-300 bg-amber-50/40' : 'border-border/60'}`}>
-      <p className="flex items-center gap-1.5 mb-1 flex-wrap">
-        <span className={`inline-flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded ${meta.cls}`}>
-          <meta.Icon size={9} />
+    <div className={`group rounded-md border px-3 py-2 ${note.pinned ? 'border-warning/30 bg-warning/5' : 'border-border bg-white'}`}>
+      <div className="mb-1 flex flex-wrap items-center gap-1.5">
+        <StatusChip tone={meta.tone}>
+          <meta.Icon size={11} className="mr-1" aria-hidden />
           {meta.label}
-        </span>
+        </StatusChip>
         {isIncident && (
-          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
-            resolved ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
-          }`}>
-            {resolved ? 'Resuelto' : 'Abierto'}
-          </span>
+          <StatusChip tone={resolved ? 'resolved' : 'urgent'}>{resolved ? 'Resuelto' : 'Abierto'}</StatusChip>
         )}
-        <span className="text-[10px] font-semibold text-slate-600 truncate">
+        <span className="truncate text-etiqueta font-semibold text-text-primary">
           {note.author_name ?? 'Usuario'}
         </span>
-        <span className="text-[9px] text-gray-300 whitespace-nowrap" title={fmtDT(note.created_at)}>
+        <span className="whitespace-nowrap text-etiqueta text-informativo" title={fmtDT(note.created_at)}>
           {formatRelativeTime(note.created_at)}
         </span>
         {isIncident && (
@@ -94,7 +127,7 @@ function NoteCard({
             type="button"
             onClick={() => onResolve(note)}
             disabled={resolvePending}
-            className="text-[9px] font-semibold text-accent hover:text-accent/80 disabled:opacity-50"
+            className="text-etiqueta font-semibold text-accion hover:underline disabled:opacity-50"
           >
             {resolved ? 'Reabrir' : 'Marcar resuelto'}
           </button>
@@ -104,14 +137,15 @@ function NoteCard({
           onClick={() => onPin(note)}
           disabled={pinPending}
           title={note.pinned ? 'Quitar destacado' : 'Destacar nota'}
-          className={`ml-auto shrink-0 transition-all disabled:opacity-40 ${
-            note.pinned ? 'text-amber-500 hover:text-amber-600' : 'text-gray-200 opacity-0 group-hover:opacity-100 hover:text-amber-500'
+          aria-label={note.pinned ? 'Quitar destacado' : 'Destacar nota'}
+          className={`ml-auto shrink-0 rounded transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-40 ${
+            note.pinned ? 'text-warning' : 'text-informativo opacity-0 group-hover:opacity-100 hover:text-warning'
           }`}
         >
-          {note.pinned ? <PinOff size={12} /> : <Pin size={12} />}
+          {note.pinned ? <PinOff size={13} /> : <Pin size={13} />}
         </button>
-      </p>
-      {note.body && <p className="text-xs text-slate-700 whitespace-pre-wrap">{note.body}</p>}
+      </div>
+      {note.body && <p className="whitespace-pre-wrap text-dato text-text-primary">{note.body}</p>}
       {note.attachments.length > 0 && (
         <div className="grid grid-cols-2 gap-1.5 mt-1.5">
           {note.attachments.map(att => <AttachmentCard key={att.id} att={att} />)}
@@ -177,34 +211,22 @@ export function TripNotesFeed({ trip }: Props) {
     <div className="space-y-3">
       {/* Toggle Feed | Documentos — solo cuando hay adjuntos (si no, es ruido) */}
       {allAttachments.length > 0 && (
-        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 w-fit">
-          {([
+        <SegmentedControl
+          label="Vista de la bitácora"
+          value={view}
+          onChange={setView}
+          options={[
             { id: 'feed',       label: 'Feed',       Icon: ListOrdered },
-            { id: 'documentos', label: 'Documentos', Icon: FolderOpen  },
-          ] as const).map(t => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setView(t.id)}
-              className={`flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-md transition-colors ${
-                view === t.id ? 'bg-white text-slate-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              <t.Icon size={10} />
-              {t.label}
-              {t.id === 'documentos' && (
-                <span className="text-[9px] text-gray-400">({allAttachments.length})</span>
-              )}
-            </button>
-          ))}
-        </div>
+            { id: 'documentos', label: 'Documentos', Icon: FolderOpen, badge: `(${allAttachments.length})` },
+          ]}
+        />
       )}
 
       {view === 'documentos' ? (
         /* ── Vista Documentos: todos los adjuntos del viaje ── */
         <div className="space-y-1.5">
           {allAttachments.length === 0 && (
-            <p className="text-[10px] text-gray-300 italic">Sin documentos adjuntos</p>
+            <p className="text-dato text-informativo">Sin documentos adjuntos.</p>
           )}
           {allAttachments.map(({ att, author, created_at }) => (
             <a
@@ -212,14 +234,14 @@ export function TripNotesFeed({ trip }: Props) {
               href={att.url ?? undefined}
               target="_blank"
               rel="noreferrer"
-              className={`flex items-center gap-2 border border-border/70 rounded-lg bg-white px-3 py-2 hover:border-accent/40 hover:shadow-sm transition-all ${att.url ? '' : 'opacity-50 pointer-events-none'}`}
+              className={`flex items-center gap-2 rounded-md border border-border bg-white px-3 py-2 transition-colors hover:border-accion/40 ${att.url ? '' : 'pointer-events-none opacity-50'}`}
             >
               {att.mime_type.startsWith('image/')
-                ? <ImageIcon size={14} className="text-gray-400 shrink-0" />
-                : <FileText size={14} className="text-red-400 shrink-0" />}
+                ? <ImageIcon size={14} className="shrink-0 text-informativo" aria-hidden />
+                : <FileText size={14} className="shrink-0 text-informativo" aria-hidden />}
               <span className="min-w-0">
-                <span className="block text-xs text-slate-700 truncate">{att.file_name}</span>
-                <span className="block text-[9px] text-gray-400">
+                <span className="block truncate text-dato text-text-primary">{att.file_name}</span>
+                <span className="block text-etiqueta text-informativo">
                   {author ?? 'Usuario'} · {formatRelativeTime(created_at)} · {fmtBytes(att.size_bytes)}
                 </span>
               </span>
@@ -230,21 +252,12 @@ export function TripNotesFeed({ trip }: Props) {
         <>
           {/* Filtro por tipo */}
           {notes.length > 0 && (
-            <div className="flex items-center gap-1 flex-wrap">
-              {NOTE_TYPES.map(t => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setFilter(prev => (prev === t.id ? null : t.id))}
-                  className={`flex items-center gap-1 text-[9px] font-semibold px-1.5 py-0.5 rounded-full border transition-all ${
-                    filter === t.id ? `${t.cls} border-current` : 'text-gray-400 border-gray-200 bg-white hover:border-gray-300'
-                  }`}
-                >
-                  <t.Icon size={9} />
-                  {t.label}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              label="Filtrar por tipo"
+              value={filter}
+              onChange={id => setFilter(prev => (prev === id ? null : id))}
+              options={NOTE_TYPES}
+            />
           )}
 
           {/* Feed — ya no vive en un sidebar angosto (Fase 2, Plan 4), sin
@@ -253,8 +266,8 @@ export function TripNotesFeed({ trip }: Props) {
             {/* Destacadas arriba */}
             {pinned.length > 0 && (
               <div className="space-y-2">
-                <p className="flex items-center gap-1 text-[9px] font-bold text-amber-600 uppercase tracking-wide">
-                  <Pin size={9} /> Destacadas
+                <p className="flex items-center gap-1 text-etiqueta font-semibold text-warning">
+                  <Pin size={11} aria-hidden /> Destacadas
                 </p>
                 {pinned.map(n => (
                   <NoteCard key={n.id} note={n} onPin={handlePin} pinPending={pinNote.isPending} onResolve={handleResolve} resolvePending={resolveNote.isPending} />
@@ -266,32 +279,32 @@ export function TripNotesFeed({ trip }: Props) {
               /* Skeleton pulsante en vez de texto de carga */
               <div className="space-y-2" aria-label="Cargando bitácora">
                 {[0, 1].map(i => (
-                  <div key={i} className="bg-white border border-border/60 rounded-lg px-3 py-2 animate-pulse">
-                    <div className="h-2.5 w-28 bg-gray-100 rounded mb-2" />
-                    <div className="h-2.5 w-full bg-gray-100 rounded" />
+                  <div key={i} className="animate-pulse rounded-md border border-border bg-white px-3 py-2">
+                    <div className="mb-2 h-2.5 w-28 rounded bg-bg-main" />
+                    <div className="h-2.5 w-full rounded bg-bg-main" />
                   </div>
                 ))}
               </div>
             )}
             {notesQuery.error && (
-              <p className="text-[10px] text-red-500">
+              <p role="alert" className="text-etiqueta text-status-incidente">
                 {notesQuery.error instanceof Error ? notesQuery.error.message : 'Error cargando la bitácora'}
               </p>
             )}
             {!notesQuery.isPending && notes.length === 0 && (
-              <p className="text-[10px] text-gray-300 italic">Sin novedades registradas</p>
+              <p className="text-dato text-informativo">Sin novedades registradas.</p>
             )}
 
             {visible.map(note =>
               note.note_type === 'sistema' ? (
                 /* Evento del sistema: línea compacta, sin card */
-                <p key={note.id} className="flex items-center gap-1.5 text-[10px] text-gray-400 px-1">
-                  <Activity size={9} className="shrink-0" />
+                <p key={note.id} className="flex items-center gap-1.5 px-1 text-etiqueta text-informativo">
+                  <Activity size={11} className="shrink-0" aria-hidden />
                   <span className="truncate">
-                    <span className="font-medium text-gray-500">{note.author_name ?? 'Sistema'}</span>{' '}
+                    <span className="font-semibold">{note.author_name ?? 'Sistema'}</span>{' '}
                     {note.body.charAt(0).toLowerCase() + note.body.slice(1)}
                   </span>
-                  <span className="text-gray-300 whitespace-nowrap shrink-0 ml-auto" title={fmtDT(note.created_at)}>
+                  <span className="ml-auto shrink-0 whitespace-nowrap" title={fmtDT(note.created_at)}>
                     {formatRelativeTime(note.created_at)}
                   </span>
                 </p>
@@ -300,37 +313,20 @@ export function TripNotesFeed({ trip }: Props) {
               ),
             )}
             {pinNote.error && (
-              <p className="text-[10px] text-red-500">
+              <p role="alert" className="text-etiqueta text-status-incidente">
                 {pinNote.error instanceof Error ? pinNote.error.message : 'Error al destacar'}
               </p>
             )}
             {resolveNote.error && (
-              <p className="text-[10px] text-red-500">
+              <p role="alert" className="text-etiqueta text-status-incidente">
                 {resolveNote.error instanceof Error ? resolveNote.error.message : 'Error al actualizar el incidente'}
               </p>
             )}
           </div>
 
           {/* Composer */}
-          <div className="space-y-1.5">
-            {/* Selector de tipo — solo el activo muestra su label (menos ruido) */}
-            <div className="flex items-center gap-1">
-              {NOTE_TYPES.map(t => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setDraftType(t.id)}
-                  title={t.label}
-                  aria-pressed={draftType === t.id}
-                  className={`flex items-center gap-1 text-[9px] font-semibold px-1.5 py-1 rounded-md border transition-all ${
-                    draftType === t.id ? `${t.cls} border-current` : 'text-gray-400 border-gray-200 bg-white hover:border-gray-300'
-                  }`}
-                >
-                  <t.Icon size={10} />
-                  {draftType === t.id && <span>{t.label}</span>}
-                </button>
-              ))}
-            </div>
+          <div className="space-y-2">
+            <SegmentedControl label="Tipo de nota" value={draftType} onChange={setDraftType} options={NOTE_TYPES} />
 
             <div className="relative">
               <textarea
@@ -341,15 +337,16 @@ export function TripNotesFeed({ trip }: Props) {
                   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleSubmit() }
                 }}
                 placeholder="Registrar novedad… (⌘↵ para enviar)"
-                className="w-full text-sm border border-border rounded-lg px-3 py-2 pr-9 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 resize-none"
+                className="w-full resize-none rounded-md border border-border bg-white px-3 py-2 pr-9 text-dato text-text-primary placeholder:text-informativo focus:outline-none focus:ring-2 focus:ring-accent/30"
               />
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 title="Adjuntar archivo (PDF, imagen, Word o Excel, máx 10MB)"
-                className="absolute right-2 top-2 text-gray-300 hover:text-accent transition-colors"
+                aria-label="Adjuntar archivo"
+                className="absolute right-2 top-2 rounded text-informativo transition-colors hover:text-accion focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               >
-                <Paperclip size={14} />
+                <Paperclip size={14} aria-hidden />
               </button>
               <input
                 ref={fileInputRef}
@@ -366,38 +363,40 @@ export function TripNotesFeed({ trip }: Props) {
             {draftFiles.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {draftFiles.map((f, i) => (
-                  <span key={`${f.name}-${i}`} className="flex items-center gap-1 text-[9px] bg-gray-100 text-slate-600 px-1.5 py-0.5 rounded-full">
-                    {f.type.startsWith('image/') ? <ImageIcon size={9} /> : <FileText size={9} />}
+                  <span key={`${f.name}-${i}`} className="flex items-center gap-1 rounded-full bg-informativo/10 px-2 py-0.5 text-etiqueta text-text-primary">
+                    {f.type.startsWith('image/') ? <ImageIcon size={11} aria-hidden /> : <FileText size={11} aria-hidden />}
                     <span className="max-w-[120px] truncate">{f.name}</span>
-                    <span className="text-gray-400">{fmtBytes(f.size)}</span>
+                    <span className="tabular-nums text-informativo">{fmtBytes(f.size)}</span>
                     <button
                       type="button"
                       onClick={() => setDraftFiles(prev => prev.filter((_, j) => j !== i))}
-                      className="hover:text-red-500"
+                      className="text-informativo hover:text-status-incidente"
                       aria-label={`Quitar ${f.name}`}
                     >
-                      <X size={9} />
+                      <X size={11} />
                     </button>
                   </span>
                 ))}
               </div>
             )}
-            {fileErr && <p className="text-[10px] text-red-500">{fileErr}</p>}
+            {fileErr && <p role="alert" className="text-etiqueta text-status-incidente">{fileErr}</p>}
             {addNote.error && (
-              <p className="text-[10px] text-red-500">
+              <p role="alert" className="text-etiqueta text-status-incidente">
                 {addNote.error instanceof Error ? addNote.error.message : 'Error al guardar la nota'}
               </p>
             )}
 
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={addNote.isPending || (!draft.trim() && draftFiles.length === 0)}
-              className="w-full flex items-center justify-center gap-1.5 bg-accent text-white text-xs font-semibold px-3 py-2 rounded-lg hover:bg-accent/90 disabled:opacity-50 transition-colors"
-            >
-              {addNote.isPending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-              Agregar nota
-            </button>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={addNote.isPending || (!draft.trim() && draftFiles.length === 0)}
+                className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-dato font-semibold text-white transition-colors hover:bg-accent/90 disabled:opacity-50"
+              >
+                {addNote.isPending && <Loader2 size={13} className="animate-spin" aria-hidden />}
+                Agregar nota
+              </button>
+            </div>
           </div>
         </>
       )}

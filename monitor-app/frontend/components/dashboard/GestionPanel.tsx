@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useId, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  Loader2, Check, RotateCcw, ClipboardList, ShieldAlert, Search,
-  FileWarning, AlertTriangle, User, MapPin, ChevronLeft, ChevronRight,
+  Loader2, Check, RotateCcw, ShieldAlert, Search,
+  FileWarning, AlertTriangle, PanelRightOpen,
 } from 'lucide-react'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch } from '@/lib/api/trips'
@@ -17,21 +17,21 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
 import { PendingDocsBadge } from '@/components/ui/PendingDocsBadge'
+import { Section } from '@/components/ui/Section'
+import { KeyValueList } from '@/components/ui/KeyValueList'
 
-// Movido de TripSlideOver.tsx — único consumidor.
-function MetaField({
-  label, value, highlight = false,
-}: {
-  label: string
-  value: string
-  highlight?: boolean
-}) {
+const NOTICE_TONE = {
+  urgent:  'border-status-incidente/20 bg-status-incidente/5 text-status-incidente',
+  warning: 'border-warning/25 bg-warning/10 text-warning',
+} as const
+
+/** Un aviso dentro del panel: algo que el operador tiene que mirar antes de
+ *  seguir (póliza vencida, conductor de otra empresa, dato del TMS distinto). */
+function Notice({ tone, icon, children }: { tone: keyof typeof NOTICE_TONE; icon?: ReactNode; children: ReactNode }) {
   return (
-    <div>
-      <p className="text-etiqueta font-bold text-gray-400 uppercase tracking-wide mb-0.5">{label}</p>
-      <p className={`text-dato leading-snug ${highlight ? 'font-semibold text-accent' : 'text-text-primary'}`}>
-        {value}
-      </p>
+    <div className={`flex items-start gap-2 rounded-md border px-3 py-2 text-etiqueta font-medium ${NOTICE_TONE[tone]}`}>
+      {icon}
+      <div className="min-w-0 space-y-1">{children}</div>
     </div>
   )
 }
@@ -75,6 +75,8 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
   const [fleetDraft, setFleetDraft]             = useState<FleetAssignValue>(EMPTY_FLEET_ASSIGN_VALUE)
   const [assigningFleet, setAssigningFleet]     = useState(false)
   const [fleetErr, setFleetErr]                 = useState<string | null>(null)
+
+  const headingId = useId()
 
   const fuzzyMatchQuery = useQuery({
     queryKey: ['drivers', 'fuzzy-match', trip.id, trip.driver_name_tms],
@@ -176,59 +178,66 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
 
   return (
     <aside
-      className={`order-1 md:order-2 shrink-0 md:overflow-y-auto md:border-l border-border bg-accent/[0.03] transition-[width] duration-200 ease-out ${collapsed ? 'md:w-[56px]' : 'md:w-[360px]'}`}
+      className={`order-1 md:order-2 shrink-0 md:overflow-y-auto md:border-l border-border bg-white transition-[width] duration-200 ease-out ${collapsed ? 'md:w-[56px]' : 'md:w-[360px]'}`}
     >
-      <button
-        type="button"
-        onClick={() => setCollapsed(c => !c)}
-        title={collapsed ? 'Expandir Gestión' : 'Colapsar Gestión'}
-        className="flex items-center justify-center w-full h-10 text-accent hover:bg-accent/10 transition-colors"
-      >
-        {collapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
-      </button>
-
       {collapsed ? (
-        <div className="flex flex-col items-center gap-3 pt-2">
-          <ClipboardList size={14} className="text-accent" />
+        <div className="flex justify-center pt-3">
+          <button
+            type="button"
+            onClick={() => setCollapsed(false)}
+            aria-label="Mostrar Gestión"
+            title="Mostrar Gestión"
+            className="grid h-8 w-8 place-items-center rounded-md border border-border text-informativo transition-colors hover:text-accion focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+          >
+            <PanelRightOpen size={16} aria-hidden />
+          </button>
         </div>
       ) : (
-      <div className="p-4 md:p-5 space-y-5">
-        <h4 className="text-etiqueta font-bold text-accent uppercase tracking-widest flex items-center gap-1.5">
-          <ClipboardList size={11} /> Gestión
-        </h4>
-
+      <div className="px-4 md:px-5">
         {/* Estado operativo */}
-        <div>
-          <div className="flex items-center gap-2 flex-wrap mb-1.5">
-            <span className="text-etiqueta text-gray-400">TMS reporta:</span>
-            <StatusBadge status={trip.current_status} meta={meta} />
+        <section aria-labelledby={headingId} className="py-4">
+          <div className="mb-2 flex items-center gap-2">
+            <h3 id={headingId} className="text-dato font-semibold text-informativo">Gestión</h3>
+            <button
+              type="button"
+              onClick={() => setCollapsed(true)}
+              aria-label="Ocultar Gestión"
+              className="ml-auto rounded text-dato font-semibold text-accion hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            >
+              Ocultar
+            </button>
           </div>
+          <KeyValueList items={[{ label: 'TMS reporta', value: <StatusBadge status={trip.current_status} meta={meta} /> }]} />
 
+          <div className="mt-2">
           {trip.manual_status ? (
             <div className="flex items-center gap-2 flex-wrap">
               {(() => {
                 const opState = meta?.operational_states.find(s => s.id === trip.manual_status)
                 const label = opState?.label ?? trip.manual_status
-                return (
+                return opState ? (
                   <span
-                    className="inline-flex px-2.5 py-1 rounded-full text-etiqueta font-semibold"
-                    style={opState
-                      ? { backgroundColor: opState.bg_color, color: opState.text_color }
-                      : { backgroundColor: '#f3f4f6', color: '#6b7280' }}
+                    className="inline-flex px-2 py-0.5 rounded-full text-etiqueta font-semibold"
+                    style={{ backgroundColor: opState.bg_color, color: opState.text_color }}
                   >
+                    {label}
+                  </span>
+                ) : (
+                  <span className="inline-flex px-2 py-0.5 rounded-full text-etiqueta font-semibold bg-informativo/10 text-informativo">
                     {label}
                   </span>
                 )
               })()}
-              <span className="text-etiqueta text-gray-400">
+              <span className="text-etiqueta text-informativo">
                 confirmado manualmente {trip.edited_by ? `por ${trip.edited_by} ` : ''}el {fmtDT(trip.edited_at)}
               </span>
               <button
                 type="button"
                 title="Revertir a valor del TMS"
+                aria-label="Revertir a valor del TMS"
                 onClick={handleClearOverride}
                 disabled={clearingOverride}
-                className="text-gray-400 hover:text-accent transition-colors disabled:opacity-50"
+                className="text-informativo hover:text-accion transition-colors disabled:opacity-50"
               >
                 {clearingOverride ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />}
               </button>
@@ -239,7 +248,8 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
                 autoFocus
                 value={estadoDraft}
                 onChange={e => setEstadoDraft(e.target.value)}
-                className="text-dato border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
+                aria-label="Estado operativo manual"
+                className="text-dato border border-border rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
               >
                 <option value="">— Seleccionar estado…</option>
                 {(meta?.operational_states ?? []).map(s => (
@@ -247,11 +257,12 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
                 ))}
               </select>
               <button type="button" onClick={handleSetOverride} disabled={saving || !estadoDraft}
-                className="p-1.5 text-accent disabled:opacity-40">
+                aria-label="Guardar estado operativo"
+                className="p-1.5 text-accion disabled:opacity-40">
                 {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
               </button>
               <button type="button" onClick={() => { setShowEstadoSelect(false); setEstadoDraft('') }}
-                className="text-etiqueta text-gray-400 hover:text-gray-500">
+                className="text-etiqueta text-informativo hover:text-text-primary">
                 Cancelar
               </button>
             </div>
@@ -260,34 +271,32 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
               <button
                 type="button"
                 onClick={() => setShowEstadoSelect(true)}
-                className="text-dato text-accent hover:text-accent/80 transition-colors"
+                className="text-dato font-semibold text-accion hover:underline"
               >
                 + Establecer estado operativo manual
               </button>
-              <p className="text-etiqueta text-gray-400 mt-1">
+              <p className="text-etiqueta text-informativo mt-1">
                 Es el mismo estado que se muestra en el encabezado — aquí puedes confirmarlo manualmente si hace falta.
               </p>
             </>
           )}
+          </div>
 
           {err && (
-            <p className="text-dato text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-2">{err}</p>
+            <p role="alert" className="mt-2 rounded-md border border-status-incidente/20 bg-status-incidente/5 px-3 py-2 text-dato text-status-incidente">{err}</p>
           )}
-        </div>
+        </section>
 
-        {/* Indicadores — switches con etiqueta completa */}
-        <div>
-          <p className="text-etiqueta font-bold text-gray-400 uppercase tracking-wide mb-2">Indicadores</p>
+        <Section title="Indicadores">
           <IndicatorSwitches trip={trip} onSaved={onSaved} />
-        </div>
+        </Section>
 
-        {/* Motivo de no asignación */}
         {!trip.is_assigned && (motivosDeViaje.data?.length ?? 0) > 0 && (
-          <div>
-            <p className="text-etiqueta font-bold text-gray-400 uppercase tracking-wide mb-1.5">Motivo de no asignación</p>
+          <Section title="Motivo de no asignación">
             <select
               value={trip.unassigned_reason_id ?? ''}
               disabled={reasonSaving}
+              aria-label="Motivo de no asignación"
               onChange={async e => {
                 const value = e.target.value
                 setReasonSaving(true)
@@ -300,24 +309,21 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
                   setReasonSaving(false)
                 }
               }}
-              className="w-full text-dato border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
+              className="w-full text-dato border border-border rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
             >
               <option value="">— Sin especificar —</option>
               {(motivosDeViaje.data ?? []).map(r => (
                 <option key={r.id} value={r.id}>{r.label}</option>
               ))}
             </select>
-          </div>
+          </Section>
         )}
 
         {/* Conductor y flota — driver-first */}
-        <div>
-          <p className="text-etiqueta font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1">
-            <User size={10} /> Conductor y flota
-          </p>
+        <Section title="Conductor y flota">
           {trip.carrier_id ? (
             <div className="space-y-2">
-              <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2.5 border border-border/80 shadow-sm">
+              <div className="flex items-center justify-between rounded-md border border-border bg-white px-3 py-2.5">
                 <div className="min-w-0 flex items-center gap-2 flex-wrap">
                   <p className="text-dato font-semibold text-text-primary truncate">{trip.carrier_name ?? '—'}</p>
                   <InsuranceAlertBadge alert={trip.insurance_alert} />
@@ -329,83 +335,74 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
                   type="button"
                   disabled={unlinking}
                   onClick={handleUnlink}
-                  className="text-etiqueta text-gray-400 hover:text-red-400 transition-colors disabled:opacity-50 shrink-0 ml-2"
+                  className="ml-2 shrink-0 text-etiqueta font-semibold text-informativo transition-colors hover:text-status-incidente disabled:opacity-50"
                 >
                   {unlinking ? <Loader2 size={12} className="animate-spin" /> : 'Desvincular'}
                 </button>
               </div>
-              {unlinkErr && <p className="text-dato text-red-500 mt-1">{unlinkErr}</p>}
+              {unlinkErr && <p role="alert" className="text-dato text-status-incidente">{unlinkErr}</p>}
               {(trip.insurance_alert === 'EXPIRED' || trip.insurance_alert === 'OVERDUE_INSTALLMENTS') && (
-                <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-2">
-                  <ShieldAlert size={13} className="text-red-600 shrink-0" />
-                  <p className="text-etiqueta text-red-700 font-medium">
+                <Notice tone="urgent" icon={<ShieldAlert size={13} className="mt-px shrink-0" aria-hidden />}>
+                  <p>
                     {trip.insurance_alert === 'EXPIRED' ? 'Póliza vencida para esta empresa — ' : 'Cuotas críticas impagas para esta empresa — '}
-                    <a href={`/dashboard/carriers/${trip.carrier_id}?tab=seguros`} className="underline hover:text-red-900">
+                    <a href={`/dashboard/carriers/${trip.carrier_id}?tab=seguros`} className="font-semibold underline">
                       revisar en Seguros
                     </a>.
                   </p>
-                </div>
+                </Notice>
               )}
               {trip.driver_pending_docs_critical && (
-                <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-center gap-2">
-                  <FileWarning size={13} className="text-red-600 shrink-0" />
-                  <p className="text-etiqueta text-red-700 font-medium">
+                <Notice tone="urgent" icon={<FileWarning size={13} className="mt-px shrink-0" aria-hidden />}>
+                  <p>
                     Falta Licencia de Conducir o Carnet del conductor —{' '}
-                    <a href={`/dashboard/carriers/${trip.carrier_id}?tab=conductores`} className="underline hover:text-red-900">
+                    <a href={`/dashboard/carriers/${trip.carrier_id}?tab=conductores`} className="font-semibold underline">
                       revisar en Empresas
                     </a>.
                   </p>
-                </div>
+                </Notice>
               )}
               {trip.fleet_match_status === 'MISMATCH' && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1">
-                  <p className="text-etiqueta text-amber-700">
+                <Notice tone="warning">
+                  <p>
                     El conductor pertenece a <span className="font-semibold">{trip.fleet_match_driver_home_carrier}</span>, distinta de la empresa de este viaje —{' '}
-                    <a href={`/dashboard/carriers/${trip.carrier_id}?tab=conductores`} className="underline hover:text-amber-900">
+                    <a href={`/dashboard/carriers/${trip.carrier_id}?tab=conductores`} className="font-semibold underline">
                       revisar en Empresas
                     </a>.
                   </p>
-                </div>
+                </Notice>
               )}
               {hasReconciliationDivergence && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-1">
+                <Notice tone="warning">
                   {carrierDiverges && (
-                    <p className="text-etiqueta text-amber-700">
-                      TMS reporta empresa: <span className="font-semibold">{trip.carrier_name_tms}</span>
-                    </p>
+                    <p>TMS reporta empresa: <span className="font-semibold">{trip.carrier_name_tms}</span></p>
                   )}
                   {driverDiverges && (
-                    <p className="text-etiqueta text-amber-700">
-                      TMS reporta conductor: <span className="font-semibold">{trip.driver_name_tms}</span>
-                    </p>
+                    <p>TMS reporta conductor: <span className="font-semibold">{trip.driver_name_tms}</span></p>
                   )}
                   {tractorDiverges && (
-                    <p className="text-etiqueta text-amber-700">
-                      TMS reporta patente: <span className="font-semibold">{trip.tractor_plate_tms}</span>
-                    </p>
+                    <p>TMS reporta patente: <span className="font-semibold">{trip.tractor_plate_tms}</span></p>
                   )}
                   <button
                     type="button"
                     disabled={unlinking}
                     onClick={handleUnlink}
-                    className="text-etiqueta font-semibold text-amber-700 hover:text-amber-900 underline disabled:opacity-50"
+                    className="font-semibold underline disabled:opacity-50"
                   >
                     {unlinking ? 'Revirtiendo…' : 'Usar dato del TMS'}
                   </button>
-                </div>
+                </Notice>
               )}
             </div>
           ) : (
             <div className="space-y-2">
               {trip.fleet_match_status === 'UNMATCHED' && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-2">
-                  <AlertTriangle size={13} className="text-amber-600 shrink-0" />
-                  <p className="text-etiqueta text-amber-700 font-medium">Sin identificar — sin cruce contra ninguna empresa todavía.</p>
-                </div>
+                <Notice tone="warning" icon={<AlertTriangle size={13} className="mt-px shrink-0" aria-hidden />}>
+                  <p>Sin identificar: no cruza con ninguna empresa todavía.</p>
+                </Notice>
               )}
               {trip.driver_name_tms && (
-                <p className="text-etiqueta text-gray-400">
-                  TMS reportó: <span className="font-semibold text-gray-500">{trip.driver_name_tms}</span>
+                <p className="text-etiqueta text-informativo">
+                  TMS reportó: <span className="font-semibold text-text-primary">{trip.driver_name_tms}</span>
                 </p>
               )}
               <FleetAssignSection
@@ -415,18 +412,22 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
                 suggested={fuzzyMatchQuery.data ?? []}
                 suggestedLabel="Posibles coincidencias (nombre TMS)"
                 notFoundHint={
-                  <p className="text-etiqueta text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-2">
-                    Si no aparece en la lista, hay que darlo de alta primero en{' '}
-                    <a href={empresasHandoffHref} className="underline font-semibold">Empresas</a>.
-                  </p>
+                  <div className="mt-2">
+                    <Notice tone="warning">
+                      <p>
+                        Si no aparece en la lista, hay que darlo de alta primero en{' '}
+                        <a href={empresasHandoffHref} className="font-semibold underline">Empresas</a>.
+                      </p>
+                    </Notice>
+                  </div>
                 }
               />
               {trip.driver_name_tms && !fuzzyMatchQuery.isLoading && (fuzzyMatchQuery.data?.length ?? 0) === 0 && (
                 <a
                   href={empresasHandoffHref}
-                  className="flex items-center gap-1.5 text-etiqueta font-semibold text-accent hover:underline"
+                  className="flex items-center gap-1.5 text-etiqueta font-semibold text-accion hover:underline"
                 >
-                  <Search size={11} /> Sin coincidencias — dar de alta empresa/conductor/equipo
+                  <Search size={12} aria-hidden /> Sin coincidencias: dar de alta empresa, conductor o equipo
                 </a>
               )}
               {fleetDraft.driver_id && (
@@ -434,39 +435,31 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
                   type="button"
                   disabled={assigningFleet || !fleetDraft.carrier_id}
                   onClick={handleAssignFleet}
-                  className="w-full text-dato font-semibold bg-accent text-white rounded-lg py-1.5 hover:bg-accent/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  className="w-full text-dato font-semibold bg-accent text-white rounded-md py-1.5 hover:bg-accent/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
                 >
                   {assigningFleet ? <Loader2 size={12} className="animate-spin" /> : 'Vincular'}
                 </button>
               )}
-              {fleetErr && <p className="text-etiqueta text-red-500">{fleetErr}</p>}
+              {fleetErr && <p role="alert" className="text-etiqueta text-status-incidente">{fleetErr}</p>}
             </div>
           )}
-        </div>
+        </Section>
 
-        {/* Ubicación de origen — solo operation_type */}
-        <div>
-          <p className="text-etiqueta font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-            <MapPin size={10} /> Ubicación de origen
-          </p>
+        <Section title="Ubicación de origen">
           {trip.origin_operation_type ? (
             <OperationTypeBadge operationType={trip.origin_operation_type} meta={meta} size="md" />
           ) : (
-            <span className="text-etiqueta text-gray-400">Sin clasificar</span>
+            <span className="text-dato text-informativo">Sin clasificar</span>
           )}
-        </div>
+        </Section>
 
-        {/* Datos operativos */}
-        <div>
-          <p className="text-etiqueta font-bold text-gray-400 uppercase tracking-wide mb-2">Datos operativos</p>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
-            <MetaField label="Fecha planificación" value={fmtDate(trip.planning_date)} />
-            <MetaField label="Tipo carga" value={trip.cargo_type ?? '—'} />
-            {trip.milestone_status && (
-              <MetaField label="Estado cumplimiento" value={trip.milestone_status} highlight />
-            )}
-          </div>
-        </div>
+        <Section title="Datos operativos">
+          <KeyValueList items={[
+            { label: 'Planificación', value: <span className="font-identificador tabular-nums">{fmtDate(trip.planning_date)}</span> },
+            { label: 'Tipo de carga', value: trip.cargo_type ?? <span className="text-informativo">Sin dato</span> },
+            ...(trip.milestone_status ? [{ label: 'Cumplimiento', value: trip.milestone_status }] : []),
+          ]} />
+        </Section>
       </div>
       )}
     </aside>
