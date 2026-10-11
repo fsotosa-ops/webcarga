@@ -2406,6 +2406,9 @@ async def cierre_viajes(
             "unassigned_reason_id": str(r["unassigned_reason_id"]) if r["unassigned_reason_id"] else None,
             "unassigned_reason_label": r["unassigned_reason_label"],
             "missing_fleet": list(r["missing_fleet"] or []),
+            "carrier_id": r["carrier_id"],
+            "driver_id": r["driver_id"],
+            "tractor_asset_id": r["tractor_asset_id"],
         })
 
     # Una asignación incompleta bloquea solo si es del día (decisión del 11/10).

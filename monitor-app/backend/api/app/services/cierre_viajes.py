@@ -54,6 +54,11 @@ SQL_BASE = f"""    SELECT t.id AS trip_id, t.planning_date,
            COALESCE(ta.license_plate, fl.tractor_plate, t.fleet->>'tractor_plate') AS tractor_plate,
            COALESCE(d.full_name, fl.driver_name_raw, t.fleet->>'driver_name_tms')  AS driver_name,
            COALESCE(c.business_name, t.fleet->>'transporter_name_tms')             AS carrier_name,
+           -- Las entidades resueltas contra el directorio, para abrirlas en la vista
+           -- rápida (HU 20261011/01). NULL = lo que se ve viene del TMS sin cruzar.
+           vfr.resolved_carrier_id::text      AS carrier_id,
+           vfr.resolved_driver_id::text       AS driver_id,
+           vfr.resolved_tractor_asset_id::text AS tractor_asset_id,
            -- D4 (minuta 02/10): la reconciliación diaria marcó que el TMS ya no lo
            -- trae (dbt: stg_tms_presence → app.trips), y el catálogo de estados
            -- dice qué significa:
@@ -116,6 +121,7 @@ WITH base AS (
 SELECT trip_id, planning_date, client_name, source_system_trip_id, trip_status,
        unassigned_reason_id, dias_sin_novedad,
        source_system, tractor_plate, driver_name, carrier_name, missing_fleet,
+       carrier_id, driver_id, tractor_asset_id,
        CASE
            WHEN oferta_retirada THEN 'oferta_sin_declarar'
            -- Minuta 09/10 §2.4 (decisiones del usuario del 11/10): asignado pero sin
@@ -173,6 +179,7 @@ SQL_CON_MOTIVO = f"""
 SELECT b.trip_id, b.planning_date, b.client_name, b.source_system_trip_id, b.trip_status,
        b.unassigned_reason_id, b.dias_sin_novedad,
        b.source_system, b.tractor_plate, b.driver_name, b.carrier_name, b.missing_fleet,
+       b.carrier_id, b.driver_id, b.tractor_asset_id,
        'con_motivo' AS grupo
 FROM ({SQL_BASE}) b
 WHERE b.unassigned_reason_id IS NOT NULL

@@ -127,3 +127,21 @@ async def test_waiting_for_tms_closure_is_completed_first(conexion_revertida):
 
     await link(conn, trip_id, tractor=await any_tractor_id(conn), driver=await any_driver_id(conn))
     assert (await groups(conn))[trip_id]["grupo"] == "pendiente_cierre_tms"
+
+
+async def test_rows_carry_the_resolved_entity_ids(conexion_revertida):
+    """La vista rápida (HU 20261011/01) abre la entidad por su id: la fila los trae
+    resueltos contra el directorio, o null si no hay."""
+    conn = conexion_revertida
+    linked = await insert_trip(conn, planning_date=DAY)
+    tractor, driver = await any_tractor_id(conn), await any_driver_id(conn)
+    await link(conn, linked, tractor=tractor, driver=None)
+    bare = await insert_trip(conn, planning_date=DAY)
+
+    response = await cierre_viajes(fecha=DAY.isoformat(), pool=PoolDeUnaConexion(conn), _=None)
+    rows = {v["trip_id"]: v for group in response["grupos"].values() for v in group}
+
+    assert rows[str(linked)]["tractor_asset_id"] == str(tractor)
+    assert rows[str(linked)]["driver_id"] is None
+    assert (rows[str(bare)]["carrier_id"], rows[str(bare)]["driver_id"], rows[str(bare)]["tractor_asset_id"]) == (
+        None, None, None)
