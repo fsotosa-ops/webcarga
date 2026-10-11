@@ -346,3 +346,143 @@ async def test_la_ultima_asignacion_abierta_a_una_empresa_de_baja_deja_fuera(con
         "VALUES ($1, $2, 'INACTIVE', public.hoy_chile() - 5, NULL)", d, de_baja)
     req = await _requisito(conn, entidad="DRIVER", exigible_on="ON_ENTITY_END")
     assert await _en_alcance(conn, await _registro(conn, req, "DRIVER", d)) is False
+
+
+# ── GET /compliance-records/pending: state, alcance, orden ───────────────────
+
+from app.routers.compliance import list_pending_compliance_records  # noqa: E402
+from tests.conftest import PoolDeUnaConexion  # noqa: E402
+
+
+async def _listar(conn, *, requirement_code=None, carrier_id=None, state=None, estado="falta"):
+    """El handler con TODOS sus parámetros explícitos (los defaults son Query())."""
+    return await list_pending_compliance_records(
+        carrier_id=carrier_id, category=None, requirement_code=requirement_code, q="",
+        operation_type=None, entity_id=None, limit=500, offset=0, estado=estado, state=state,
+        pool=PoolDeUnaConexion(conn), _=None)
+
+
+async def _codigo(conn, req: str) -> str:
+    return await conn.fetchval("SELECT requirement_code FROM public.compliance_requirements WHERE id = $1", req)
+
+
+async def _equipo(conn, empresa: str | None, *, asignacion: str = "ACTIVE") -> str:
+    a = str(await conn.fetchval(
+        "INSERT INTO public.assets (license_plate, asset_type) VALUES ($1, 'TRACTOCAMION') RETURNING id",
+        f"ZZ{_suf()[:4].upper()}"))
+    if empresa:
+        await conn.execute(
+            "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, $3)",
+            a, empresa, asignacion)
+    return a
+
+
+async def test_pending_con_state_trae_el_estado_y_ordena_vencido_por_vencer_falta(conexion_revertida):
+    conn = conexion_revertida
+    hoy = await _hoy(conn)
+    req = await _requisito(conn, entidad="CARRIER", politica="REQUIRED")
+    falta = await _empresa(conn)
+    por_vencer = await _empresa(conn)
+    vencida = await _empresa(conn)
+    await _registro(conn, req, "CARRIER", falta)
+    await _registro(conn, req, "CARRIER", por_vencer, status="APPROVED_MANUAL", vence=hoy + timedelta(days=5))
+    await _registro(conn, req, "CARRIER", vencida, status="APPROVED_MANUAL", vence=hoy - timedelta(days=5))
+
+    res = await _listar(conn, requirement_code=await _codigo(conn, req), state="pending")
+
+    assert [r["document_state"] for r in res["rows"]] == ["OVERDUE", "EXPIRING", "MISSING"]
+    assert [r["carrier_id"] for r in res["rows"]] == [vencida, por_vencer, falta]
+
+
+async def test_pending_state_overdue_trae_solo_los_vencidos(conexion_revertida):
+    conn = conexion_revertida
+    hoy = await _hoy(conn)
+    req = await _requisito(conn, entidad="CARRIER", politica="REQUIRED")
+    await _registro(conn, req, "CARRIER", await _empresa(conn))
+    vencida = await _empresa(conn)
+    await _registro(conn, req, "CARRIER", vencida, status="APPROVED_MANUAL", vence=hoy - timedelta(days=1))
+
+    res = await _listar(conn, requirement_code=await _codigo(conn, req), state="overdue")
+
+    assert [r["carrier_id"] for r in res["rows"]] == [vencida]
+
+
+async def test_pending_state_all_trae_tambien_lo_que_esta_al_dia(conexion_revertida):
+    conn = conexion_revertida
+    hoy = await _hoy(conn)
+    req = await _requisito(conn, entidad="CARRIER", politica="REQUIRED")
+    al_dia = await _empresa(conn)
+    await _registro(conn, req, "CARRIER", al_dia, status="APPROVED_MANUAL", vence=hoy + timedelta(days=400))
+
+    res = await _listar(conn, requirement_code=await _codigo(conn, req), state="all")
+
+    assert [(r["carrier_id"], r["document_state"]) for r in res["rows"]] == [(al_dia, "UP_TO_DATE")]
+
+
+async def test_pending_global_no_trae_a_un_conductor_inactivo_pero_la_ficha_si(conexion_revertida):
+    """Review Focus 2: el alcance se aplica a la cola, no a la ficha."""
+    conn = conexion_revertida
+    empresa = await _empresa(conn)
+    activo = await _conductor(conn, empresa)
+    inactivo = await _conductor(conn, empresa, estado="INACTIVE")
+    req = await _requisito(conn, entidad="DRIVER")
+    await _registro(conn, req, "DRIVER", activo)
+    await _registro(conn, req, "DRIVER", inactivo)
+    codigo = await _codigo(conn, req)
+
+    cola = await _listar(conn, requirement_code=codigo, state="pending")
+    por_empresa = await _listar(conn, requirement_code=codigo, carrier_id=empresa, state="pending")
+    ficha = await _listar(conn, requirement_code=codigo, carrier_id=empresa)  # sin state: la ficha de hoy
+
+    assert [r["entity_id"] for r in cola["rows"]] == [activo]
+    assert [r["entity_id"] for r in por_empresa["rows"]] == [activo]
+    assert {r["entity_id"] for r in ficha["rows"]} == {activo, inactivo}
+
+
+async def test_pending_un_equipo_sin_asignacion_vigente_no_sale_con_state(conexion_revertida):
+    conn = conexion_revertida
+    empresa = await _empresa(conn)
+    con_asignacion = await _equipo(conn, empresa)
+    sin_asignacion = await _equipo(conn, empresa, asignacion="INACTIVE")
+    req = await _requisito(conn, entidad="ASSET")
+    await _registro(conn, req, "ASSET", con_asignacion)
+    await _registro(conn, req, "ASSET", sin_asignacion)
+    codigo = await _codigo(conn, req)
+
+    cola = await _listar(conn, requirement_code=codigo, carrier_id=empresa, state="pending")
+    ficha = await _listar(conn, requirement_code=codigo, carrier_id=empresa)
+
+    assert [r["entity_id"] for r in cola["rows"]] == [con_asignacion]
+    # Sin state el equipo sin asignacion vigente no se resuelve a empresa: hoy tampoco sale.
+    assert {r["entity_id"] for r in ficha["rows"]} == {con_asignacion}
+
+
+async def test_pending_una_empresa_inactiva_no_sale_con_state_pero_su_ficha_si(conexion_revertida):
+    conn = conexion_revertida
+    empresa = await _empresa(conn, estado="INACTIVE")
+    req = await _requisito(conn, entidad="CARRIER")
+    await _registro(conn, req, "CARRIER", empresa)
+    codigo = await _codigo(conn, req)
+
+    con_state = await _listar(conn, requirement_code=codigo, carrier_id=empresa, state="pending")
+    ficha = await _listar(conn, requirement_code=codigo, carrier_id=empresa)
+
+    assert con_state["rows"] == []
+    assert [r["carrier_id"] for r in ficha["rows"]] == [empresa]
+
+
+async def test_pending_sin_state_responde_como_antes(conexion_revertida):
+    """Compatibilidad: `estado` (default 'falta') y `urgencia` no cambian."""
+    conn = conexion_revertida
+    hoy = await _hoy(conn)
+    req = await _requisito(conn, entidad="CARRIER", politica="REQUIRED")
+    empresa = await _empresa(conn)
+    await _registro(conn, req, "CARRIER", empresa, status="APPROVED_MANUAL", vence=hoy - timedelta(days=2))
+
+    res = await _listar(conn, requirement_code=await _codigo(conn, req))
+
+    fila = res["rows"][0]
+    assert [r["urgencia"] for r in res["rows"]] == ["VENCIDO"]
+    assert fila["document_state"] == "OVERDUE"
+    assert fila["due_on"] == fila["vence_el"] == hoy - timedelta(days=2)
+    assert fila["missing_validity_data"] is fila["falta_dato_de_vigencia"] is False

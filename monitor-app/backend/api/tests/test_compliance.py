@@ -426,7 +426,8 @@ def _pending_row(**overrides):
         # saber si pedir la fecha ANTES de subir.
         "urgencia": "FALTA", "exigible_desde": None, "expiration_policy": "REQUIRED",
         "vence_el": None, "falta_dato_de_vigencia": False, "issue_date": None, "period_start": None,
-        "a_pedido": False,
+        "a_pedido": False, "document_state": "MISSING",
+        "due_on": None, "missing_validity_data": False,
         # Si la fila tiene un archivo cargado. Sale de `file_url`, no de una
         # lectura de `status` — ver el test de mas abajo.
         "tiene_archivo": False,
@@ -576,13 +577,18 @@ def test_la_urgencia_cuenta_lo_marcado_vencido_igual_que_el_embudo():
     las dos. Hoy hay 0 filas asi en produccion; el test existe para que la
     primera no reabra el desfase."""
     from app.routers.compliance import _PENDING_ROWS_SQL
-    from app.services.vencimientos import vencido_predicate
+    from app.services.vencimientos import document_state_sql, vencido_predicate
 
     # Se busca la rama entera y no un corte por "CASE": desde HU-C1 (entrega 2)
-    # el predicado de vencido trae CASE anidados.
-    rama = f"WHEN r.status = 'EXPIRED' OR {vencido_predicate('r')} THEN 'VENCIDO'"
-    assert rama in _PENDING_ROWS_SQL.split("AS urgencia")[0], (
-        "la urgencia dejo de contar lo marcado vencido a mano; el embudo si lo cuenta"
+    # el predicado de vencido trae CASE anidados. La definicion unica es
+    # `document_state_sql`; `urgencia`/`state` la traducen, no la repiten.
+    estado = document_state_sql('cr')
+    rama = f"WHEN cr.status = 'EXPIRED' OR {vencido_predicate('cr')} THEN 'OVERDUE'"
+    assert rama in estado, (
+        "el estado dejo de contar lo marcado vencido a mano; el embudo si lo cuenta"
+    )
+    assert estado in _PENDING_ROWS_SQL, (
+        "/pending dejo de usar la definicion unica del estado del documento"
     )
 
 
@@ -774,14 +780,14 @@ def test_pending_rechaza_un_estado_inventado():
 
 
 def test_el_sql_de_pending_bindea_exactamente_lo_que_referencia():
-    """El SQL pasa de 9 a 10 placeholders. Un $n de mas o de menos no falla al
+    """El SQL pasa de 10 a 12 placeholders. Un $n de mas o de menos no falla al
     desplegar: asyncpg tira un error de binding en la primera consulta real."""
     import re
     from app.routers.compliance import _PENDING_ROWS_SQL
 
     referenciados = {int(n) for n in re.findall(r"\$(\d+)", _PENDING_ROWS_SQL)}
-    assert referenciados == set(range(1, 11)), (
-        f"el SQL referencia {sorted(referenciados)}; se esperaban 1..10"
+    assert referenciados == set(range(1, 13)), (
+        f"el SQL referencia {sorted(referenciados)}; se esperaban 1..12"
     )
 
 
@@ -1722,6 +1728,7 @@ async def _pedir_pending(conn, carrier_id, estado="todos", limit=500):
     respuesta = await list_pending_compliance_records(
         carrier_id=str(carrier_id), category=None, requirement_code=None, q="",
         operation_type=None, entity_id=None, limit=limit, offset=0, estado=estado,
+        state=None,
         pool=PoolDeUnaConexion(conn), _=USER,
     )
     return respuesta["rows"]

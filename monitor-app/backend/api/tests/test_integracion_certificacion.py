@@ -722,6 +722,7 @@ async def test_pending_todos_marca_al_dia_una_fila_cubierta_sin_problema_de_fech
     respuesta = await list_pending_compliance_records(
         carrier_id=str(empresa), category=None, requirement_code=None, q="",
         operation_type=None, entity_id=None, limit=50, offset=0, estado="todos",
+        state=None,
         pool=PoolDeUnaConexion(conn), _=USER,
     )
 
@@ -756,6 +757,7 @@ async def test_pending_proyecta_tiene_archivo_desde_file_url(conexion_revertida)
         respuesta = await list_pending_compliance_records(
             carrier_id=str(empresa), category=None, requirement_code=None, q="",
             operation_type=None, entity_id=None, limit=50, offset=0, estado="todos",
+            state=None,
             pool=PoolDeUnaConexion(conn), _=USER,
         )
         return next(f for f in respuesta["rows"] if f["id"] == str(registro["id"]))
@@ -963,6 +965,7 @@ async def test_la_sabana_global_sigue_sin_traer_empresas_dadas_de_baja(
         respuesta = await list_pending_compliance_records(
             carrier_id=None, category=None, requirement_code=None, q=PREFIJO,
             operation_type=None, entity_id=None, limit=200, offset=0, estado="todos",
+            state=None,
             pool=PoolDeUnaConexion(conn), _=USER,
         )
         return any(f["id"] == str(registro["id"]) for f in respuesta["rows"])

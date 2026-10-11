@@ -91,6 +91,7 @@ async def _fila_de_la_cola(conn, empresa, requisito, estado="todos"):
     respuesta = await list_pending_compliance_records(
         carrier_id=str(empresa), category=None, requirement_code=None, q="",
         operation_type=None, entity_id=None, limit=200, offset=0, estado=estado,
+        state=None,
         pool=PoolDeUnaConexion(conn), _=USER)
     filas = [f for f in respuesta["rows"] if f["requirement_id"] == str(requisito)]
     return filas[0] if filas else None

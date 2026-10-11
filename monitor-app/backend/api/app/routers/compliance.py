@@ -64,6 +64,9 @@ from ..services.vencimientos import (
     falta_para_aprobar,
     nombre_del_periodo,
     cubierto_predicate,
+    document_state_sql,
+    in_scope_sql,
+    PENDING_STATES,
     exigible_desde_sql,
     exigible_sql,
     pendiente_predicate,
@@ -451,8 +454,14 @@ def _estado_de_empresa_a_mostrar(carrier_id: Optional[str]) -> Optional[str]:
     return None if carrier_id else ACTIVE_OPERATIONAL_STATUS
 
 
-_PENDING_ROWS_SQL = f"""
-WITH pending AS (
+def _pending_ctes(estado_param: str) -> str:
+    """Las CTE `pending` y `resolved` de Pendientes, una sola vez. Las usan
+    la lista (/pending) y el resumen (/pending/summary): si cada uno las
+    escribiera, las cifras de la izquierda y la lista de la derecha podrían
+    dejar de coincidir. `estado_param` es el placeholder del filtro viejo
+    (`estado`), que cada consulta numera a su manera."""
+    return f"""
+pending AS (
     SELECT cr.id, cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
            -- Las lee la urgencia de abajo (`pendiente_predicate('r')`): el
            -- predicado calcula el vencimiento con ellas (contrato del alias en
@@ -472,9 +481,12 @@ WITH pending AS (
            -- deduccion, la ficha escondia el documento cargado de todo lo
            -- vencido, que es justo lo que esa pantalla vino a hacer visible.
            cr.file_url IS NOT NULL AS tiene_archivo,
-           req.id AS requirement_id,
+           req.id AS requirement_id, req.target_entity,
            req.requirement_code, req.name AS document_name, req.requirement_level,
-           req.expiration_policy
+           req.expiration_policy,
+           -- La definición única (services/vencimientos.py, spec 2026-10-11).
+           {document_state_sql('cr')} AS document_state,
+           {in_scope_sql('cr')} AS in_scope
     FROM public.compliance_records cr
     JOIN public.compliance_requirements req ON req.id = cr.requirement_id
     WHERE cr.is_current = true
@@ -482,7 +494,7 @@ WITH pending AS (
       -- exactamente el predicado anterior, para que ningun llamador actual
       -- cambie de comportamiento. `todos` es lo que hace posible la ficha:
       -- ver lo que la empresa TIENE y no solo lo que le falta.
-      AND CASE $10::text
+      AND CASE {estado_param}::text
             WHEN 'todos'      THEN true
             WHEN 'por_vencer' THEN {exigible_sql('cr')} AND {por_vencer_predicate('cr')}
             WHEN 'al_dia'     THEN {cubierto_predicate('cr')}
@@ -528,7 +540,25 @@ resolved AS (
     -- ya trae bg_color/text_color por fila y es lo que ya leen las otras
     -- pantallas de flota (assets.py, equipment_closures.py, status_report.py).
     LEFT JOIN app.status_taxonomies fst ON fst.id = a.fleet_service_type_id
-),
+)"""
+
+
+# Pendientes (spec 2026-10-11): qué estados trae cada valor de `state`.
+STATE_FILTERS: dict[str, tuple[str, ...] | None] = {
+    "overdue":  ("OVERDUE",),
+    "expiring": ("EXPIRING",),
+    "missing":  ("MISSING",),
+    "pending":  PENDING_STATES,
+    "all":      None,
+}
+
+
+# Orden de la cola con `state`: vencido, por vencer, falta, y al final lo demás.
+_order_list = ", ".join(f"'{x}'" for x in (*PENDING_STATES, "NOT_REQUIRED", "UP_TO_DATE"))
+_urgent_list = ", ".join(f"'{x}'" for x in PENDING_STATES if x != "MISSING")
+
+_PENDING_ROWS_SQL = f"""
+WITH {_pending_ctes('$10')},
 -- Tipo de Operación (Tractoreo/Equipo Completo) a nivel EMPRESA: no existe
 -- como columna propia de carriers — se agrega desde los vehículos activos
 -- de la empresa (public.assets.webcarga_operation_type_id). Una empresa
@@ -554,47 +584,14 @@ SELECT
     -- Mismo motivo que `tiene_archivo`: sin nombrarlas aca no salen de la CTE.
     r.asset_type,
     r.fleet_service_type_label, r.fleet_service_type_bg_color, r.fleet_service_type_text_color,
-    -- Por que esta fila esta pendiente. El orden de las ramas importa: se
-    -- pregunta primero por lo vencido, porque `por_vencer` ya lo excluye pero
-    -- leerlo al reves invitaria a alguien a "simplificar" el predicado y
-    -- volver a mezclarlos.
-    --
-    -- `status = 'EXPIRED'` va en la MISMA rama que la fecha, igual que en el
-    -- embudo (ver `vencido` en get_certification_status): sin eso, un registro
-    -- marcado vencido a mano y sin fecha saldria como 'FALTA' en el cajon
-    -- mientras el embudo lo cuenta como vencido, que es exactamente el desfase
-    -- de dos lecturas que este modulo ya tuvo una vez. Hoy son 0 filas —se
-    -- midio—, y se escribe asi para que sigan siendo 0 problemas cuando
-    -- aparezca la primera.
-    --
-    -- 'AL_DIA' (Task 4, ronda de arreglo 1): con `estado='falta'` (el default
-    -- de siempre) esta rama nunca se alcanzaba porque TODAS las filas que
-    -- llegaban aca ya eran pendientes. Desde que `estado='todos'` existe, una
-    -- fila cubierta cae en el `CASE` igual que cualquier otra, y sin esta
-    -- rama terminaba en el `ELSE 'FALTA'` de abajo — 'FALTA' pasaba a
-    -- significar dos cosas a la vez ("falta de verdad" y "no entro en
-    -- ninguna de las anteriores"), la misma clase de bug que este modulo ya
-    -- tuvo cinco veces con un valor cargando dos sentidos.
-    --
-    -- Es la MISMA definicion de "al dia" que ya usa la rama 'al_dia' del
-    -- `CASE $10::text` de arriba (`NOT pendiente_predicate`) — no una lista
-    -- de estados escrita a mano, que es como el embudo y el cajon ya se
-    -- desincronizaron una vez. Va PRIMERO, aunque el orden no cambia el
-    -- resultado: `pendiente_predicate` arma sus tres vias (`status IN
-    -- ('MISSING','EXPIRED')`, `vencido_predicate`, `por_vencer_predicate`)
-    -- con OR, asi que si cualquiera de las tres ramas de abajo fuera
-    -- verdadera, `pendiente_predicate` ya seria verdadero y esta rama jamas
-    -- se cumpliria — son mutuamente excluyentes por construccion. Ponerla
-    -- primera es sobre legibilidad: el `CASE` se lee como la particion que
-    -- es, "al dia o no", antes de entrar al detalle de POR QUE no lo esta.
-    CASE
-        -- Primero lo que todavía no se exige (HU-C1, entrega 2b, I5): no es
-        -- falta ni al día, y sin esta rama caería en 'AL_DIA' porque
-        -- `pendiente_predicate` ya es falso para lo no exigible.
-        WHEN NOT {exigible_sql('r')} THEN 'NO_EXIGIBLE'
-        WHEN NOT {pendiente_predicate('r')} THEN 'AL_DIA'
-        WHEN r.status = 'EXPIRED' OR {vencido_predicate('r')} THEN 'VENCIDO'
-        WHEN {por_vencer_predicate('r')} THEN 'POR_VENCER'
+    r.document_state,
+    -- `urgencia` sigue para los llamadores de hoy (contract en los bloques 2-3):
+    -- ya no es otra definición, es el nombre viejo del mismo estado.
+    CASE r.document_state
+        WHEN 'NOT_REQUIRED' THEN 'NO_EXIGIBLE'
+        WHEN 'UP_TO_DATE'   THEN 'AL_DIA'
+        WHEN 'OVERDUE'      THEN 'VENCIDO'
+        WHEN 'EXPIRING'     THEN 'POR_VENCER'
         ELSE 'FALTA'
     END AS urgencia,
     {exigible_desde_sql('r')} AS exigible_desde,
@@ -602,6 +599,8 @@ SELECT
     -- fecha que mostrar, es un dato que falta.
     NULLIF(r.vence_calculado, '-infinity') AS vence_el,
     COALESCE(r.vence_calculado = '-infinity', false) AS falta_dato_de_vigencia,
+    NULLIF(r.vence_calculado, '-infinity') AS due_on,
+    COALESCE(r.vence_calculado = '-infinity', false) AS missing_validity_data,
     r.issue_date, r.period_start, r.a_pedido,
     c.id::text AS carrier_id, c.business_name AS carrier_name, c.tax_id AS carrier_tax_id,
     COALESCE(cot.operation_types, ARRAY[]::text[]) AS carrier_operation_types,
@@ -625,7 +624,17 @@ WHERE ($8::text IS NULL OR c.operational_status = $8)
   -- (hay empresas con 381 pendientes), así que el filtro del cliente opera
   -- sobre una muestra truncada y no lo dice. Se filtra donde están los datos.
   AND ($9::uuid IS NULL OR r.entity_id = $9)
-ORDER BY c.business_name, r.entity_type, r.subject_name
+  -- Pendientes (llega con `state`): los estados pedidos y solo lo que está en
+  -- alcance, también al ver una empresa. La ficha de una empresa no manda
+  -- `state` y no se acota: ahí se ve también lo inactivo (archivar no es ocultar).
+  AND ($11::text[] IS NULL OR r.document_state = ANY($11::text[]))
+  AND ($12::boolean IS NOT TRUE OR r.in_scope)
+ORDER BY
+    CASE WHEN $11::text[] IS NULL THEN 0
+         ELSE array_position(ARRAY[{_order_list}], r.document_state) END,
+    CASE WHEN $11::text[] IS NOT NULL AND r.document_state IN ({_urgent_list})
+         THEN r.vence_calculado END ASC NULLS LAST,
+    c.business_name, r.entity_type, r.subject_name
 LIMIT $6 OFFSET $7
 """
 
@@ -658,6 +667,11 @@ async def list_pending_compliance_records(
         description="Qué mostrar. `falta` (default) reproduce el comportamiento "
                     "anterior; `todos` es lo que usa la ficha de empresa.",
     ),
+    state: Optional[Literal["overdue", "expiring", "missing", "pending", "all"]] = Query(
+        None,
+        description="Pendientes: por estado del documento. Cuando viene, manda "
+                    "sobre `estado`, y la cola global se acota a lo activo.",
+    ),
     pool=Depends(get_pool),
     _=Depends(require(Permission.CERTIFICATION_READ)),
 ):
@@ -668,10 +682,16 @@ async def list_pending_compliance_records(
     Solo empresas activas (bug 5.4): antes traía también LEGACY_INACTIVE/
     INACTIVE/ONBOARDING — confirmado contra datos reales que eran más de la
     mitad del volumen mostrado."""
+    estados = list(STATE_FILTERS[state]) if state and STATE_FILTERS[state] else None
+    # Con `state` manda sobre `estado`. Si pide estados concretos, se prefiltra
+    # por lo pendiente (barato, y la lista y el resumen cuentan igual); `all`
+    # conserva el comportamiento de "todos".
+    estado_efectivo = ("falta" if estados else "todos") if state else estado
     rows = await pool.fetch(
         _PENDING_ROWS_SQL,
         carrier_id, category, requirement_code, q or None, operation_type, limit, offset,
-        _estado_de_empresa_a_mostrar(carrier_id), entity_id, estado,
+        _estado_de_empresa_a_mostrar(carrier_id), entity_id, estado_efectivo,
+        estados, state is not None,
     )
     total = rows[0]["total_count"] if rows else 0
     result_rows = [
@@ -698,9 +718,12 @@ async def list_pending_compliance_records(
             # subir (sin ella el renglon preguntaria siempre, y /file
             # rechazaria con 422 despues de haber subido).
             "urgencia": r["urgencia"],
+            "document_state": r["document_state"],
             "exigible_desde": r["exigible_desde"],
             "vence_el": r["vence_el"],
             "falta_dato_de_vigencia": r["falta_dato_de_vigencia"],
+            "due_on": r["due_on"],
+            "missing_validity_data": r["missing_validity_data"],
             "issue_date": r["issue_date"],
             "period_start": r["period_start"],
             "a_pedido": r["a_pedido"],
@@ -793,6 +816,7 @@ async def get_compliance_summary(
         _SUMMARY_SQL,
         carrier_id, None, None, None, None, SUMMARY_LIMIT, 0,
         _estado_de_empresa_a_mostrar(carrier_id), None, "todos",
+        None, False,
     )
     sujetos = [
         {

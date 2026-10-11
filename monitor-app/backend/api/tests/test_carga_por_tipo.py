@@ -169,6 +169,7 @@ async def test_la_cola_trae_el_vencimiento_calculado(conexion_revertida):
     respuesta = await list_pending_compliance_records(
         carrier_id=str(empresa), category=None, requirement_code=None, q="",
         operation_type=None, entity_id=None, limit=200, offset=0, estado="todos",
+        state=None,
         pool=PoolDeUnaConexion(conn), _=USER)
     fila = next(f for f in respuesta["rows"] if f["requirement_id"] == str(requisito))
     assert fila["vence_el"] == D(2026, 11, 18)

@@ -136,6 +136,7 @@ async def test_la_cola_y_la_ficha_cuentan_el_mensual_vencido(conexion_revertida)
     cola = await list_pending_compliance_records(
         carrier_id=str(empresa), category=None, requirement_code=None, q="",
         operation_type=None, entity_id=None, limit=50, offset=0, estado="todos",
+        state=None,
         pool=pool, _=USER,
     )
     # Al crear la empresa, la siembra le agrega los requisitos activos del

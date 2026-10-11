@@ -90,6 +90,9 @@ class PendingComplianceRow(BaseModel):
     # estado='todos' si, y sin el una fila cubierta salia 'FALTA' igual que
     # una que de verdad falta.
     urgencia: Literal["VENCIDO", "POR_VENCER", "FALTA", "AL_DIA", "NO_EXIGIBLE"]
+    # La definición única (services/vencimientos.document_state_sql). `urgencia`
+    # es su nombre viejo y se retira cuando migren los llamadores (bloques 2-3).
+    document_state: Literal["NOT_REQUIRED", "UP_TO_DATE", "OVERDUE", "EXPIRING", "MISSING"]
     # Desde cuándo se exige, si todavía no (MONTH_AFTER_START).
     exigible_desde: Optional[date] = None
     # El vencimiento calculado según su tipo y la regla de cada cliente
@@ -97,6 +100,9 @@ class PendingComplianceRow(BaseModel):
     # emisión o el período que su tipo necesita.
     vence_el: Optional[date] = None
     falta_dato_de_vigencia: bool = False
+    # Mismos valores con el nombre nuevo (spec §4.1); los viejos siguen por compatibilidad.
+    due_on: Optional[date] = None
+    missing_validity_data: bool = False
     issue_date: Optional[date] = None
     period_start: Optional[date] = None
     # Existe porque alguien lo solicitó (exigible_on = ON_REQUEST).
