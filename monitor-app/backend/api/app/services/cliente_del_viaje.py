@@ -43,3 +43,20 @@ async def resolver_cliente(conn, *, shipper_id: str | None, client_name: str | N
     if not fila:
         raise HTTPException(422, f"El cliente «{nombre}» no está en el directorio")
     return fila["id"], fila["name"]
+
+
+async def texto_del_cliente_en_el_tms(conn, *, source_system: str, shipper_id: str) -> str | None:
+    """Cómo escribe ese TMS al cliente del directorio, según la correspondencia.
+    El id canónico de un viaje (md5(tms|cliente|nº), stg_*_trips) usa ese texto:
+    un viaje manual que se va a reconciliar con el TMS tiene que calcularlo igual,
+    aunque el cliente se haya renombrado en el directorio. None si ese TMS todavía
+    no tiene a ese cliente; 422 si lo tiene con más de un nombre, porque no hay
+    forma de saber cuál va a reportar."""
+    textos = [r["source_client"] for r in await conn.fetch(
+        "SELECT source_client FROM app.tms_client_shippers WHERE source_system = $1 AND shipper_id = $2::uuid",
+        source_system, shipper_id)]
+    if len(textos) > 1:
+        raise HTTPException(
+            422, f"Ese cliente tiene más de un nombre en {source_system} ({', '.join(textos)}); "
+                 "regístralo sin TMS o deja uno solo en Configuración › Clientes del TMS")
+    return textos[0] if textos else None

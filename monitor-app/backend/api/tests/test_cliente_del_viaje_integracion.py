@@ -82,3 +82,28 @@ async def test_vincular_un_cliente_del_tms_escribe_la_correspondencia(conexion_r
     usuario = await _usuario_real(conexion_revertida)
     res = await vincular(fila["id"], VinculoBody(shipper_id=otro), pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
     assert res["shipper_id"] == otro
+
+
+async def test_renombrar_el_cliente_no_cambia_el_id_canonico_del_viaje_manual(conexion_revertida):
+    """Revisión final, Importante 1: el id de un viaje manual de un TMS integrado
+    debe calzar con el que ese TMS va a reportar (md5(tms|texto del TMS|nº)). El
+    texto del TMS sale de la correspondencia, no del nombre del directorio: si
+    se usara el nombre, renombrar "Walmart" duplicaría los viajes."""
+    import hashlib
+    from datetime import date
+    from uuid import UUID
+
+    from app.routers.trips import TripCreateBody, _insert_trip
+    from tests.conftest import _usuario_real
+
+    walmart = await conexion_revertida.fetchval("SELECT id::text FROM public.shippers WHERE lower(name) = 'walmart'")
+    await conexion_revertida.execute("UPDATE public.shippers SET name = 'Walmart Chile' WHERE id = $1::uuid", walmart)
+    usuario = await _usuario_real(conexion_revertida)
+    body = TripCreateBody(planning_date=date(2099, 1, 5), origin_tms="qanalytics", shipper_id=walmart,
+                          source_system_trip_id="ZZ-REN-1")
+    trip_id = await _insert_trip(conexion_revertida, body, usuario, valid_statuses=set())
+    esperado = str(UUID(hashlib.md5(b"qanalytics|walmart|ZZ-REN-1").hexdigest()))
+    assert trip_id == esperado
+    fila = await conexion_revertida.fetchrow(
+        "SELECT client_name, shipper_id::text FROM app.trips_manual WHERE id = $1", trip_id)
+    assert (fila["client_name"], fila["shipper_id"]) == ("walmart", walmart)

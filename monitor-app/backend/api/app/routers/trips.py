@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require, require_fields
 from ..db import get_pool
-from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente, resolver_cliente
+from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente, resolver_cliente, texto_del_cliente_en_el_tms
 from ..services.vencimientos import pendiente_predicate
 from ..schemas.trip import (
     AsignarConductorBody, TripBulkCloseBody, TripVoidBody, TripVoidRevertBody, TripBulkReopenBody, TripPatch, TripStopPatch,
@@ -1841,6 +1841,12 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
     # nombre del directorio es el que entra al id canónico del viaje.
     shipper_id, nombre_cliente = await resolver_cliente(
         conn, shipper_id=body.shipper_id, client_name=body.client_name)
+    # Un viaje de un TMS integrado guarda el cliente como lo escribe ese TMS: es
+    # el texto del id canónico, y así calza cuando el TMS lo reporte aunque el
+    # cliente se haya renombrado en el directorio (revisión final, Importante 1).
+    if body.origin_tms in MAPPED_TMS_IDS:
+        nombre_cliente = await texto_del_cliente_en_el_tms(
+            conn, source_system=body.origin_tms, shipper_id=shipper_id) or nombre_cliente
     body = body.model_copy(update={"client_name": nombre_cliente, "shipper_id": shipper_id})
 
     trip_id = _manual_trip_id(body)
