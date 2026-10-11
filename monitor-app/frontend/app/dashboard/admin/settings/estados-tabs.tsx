@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, Loader2, AlertTriangle } from 'lucide-react'
 import { taxonomiesApi, type Direccion, type TaxonomyRow, type TaxonomyDomain } from '@/lib/api/config'
 import {
@@ -62,6 +63,11 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
   // condiciones apuntándoles, así que en las demás secciones esto nunca se dibuja.
   const [avisoUso, setAvisoUso] = useState<number | null>(null)
   const fb = useRowFeedback()
+  // Otras pantallas leen este vocabulario con react-query (el motivo de anulación del
+  // Monitor, el de no asignación del Cierre): un cambio acá las refresca, en vez de
+  // dejarlas ofreciendo por cinco minutos un valor que ya no existe.
+  const queryClient = useQueryClient()
+  const avisarCambio = () => { void queryClient.invalidateQueries({ queryKey: ['taxonomies', domain] }) }
 
   const visibles = items.filter(s => s.active)
   const merged = (row: TaxonomyRow) => ({ ...row, ...drafts[row.id] })
@@ -80,6 +86,7 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
       setDrafts(d => { const n = { ...d }; delete n[row.id]; return n })
       // Guardar cuenta como revisar, y lo registró el servidor.
       revisiones.invalidar()
+      avisarCambio()
     })
   }
 
@@ -93,6 +100,7 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
     if (!quien) return
     await fb.run(quien.id, async () => {
       setItems(await taxonomiesApi.move(quien.id, direccion))
+      avisarCambio()
     })
   }
 
@@ -105,6 +113,7 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
       // para entonces.
       setAvisoUso(r.en_uso_por > 0 ? r.en_uso_por : null)
       setItems(prev => prev.filter(r2 => r2.id !== row.id))
+      avisarCambio()
     })
   }
 
@@ -116,6 +125,7 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
       setItems(prev => [...prev, created])
       setNuevo(null)
       revisiones.invalidar()
+      avisarCambio()
     } catch (e) {
       setCreateErr(e instanceof Error ? e.message : 'Error al crear')
     } finally {

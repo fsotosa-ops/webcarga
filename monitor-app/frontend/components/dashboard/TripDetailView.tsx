@@ -239,6 +239,9 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
 
       {/* ── Body ── */}
       <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
+        {/* Un anulado es de solo lectura (la API responde 409): para editarlo se
+            deshace la anulación, desde la barra de arriba. `contents` no altera el flex. */}
+        <fieldset disabled={!!trip.voided_at} className="contents">
         <GestionPanel trip={trip} meta={meta} onSaved={onSaved} />
 
         <div className="order-2 md:order-1 flex-1 min-w-0 md:overflow-y-auto p-4 md:p-6 space-y-5">
@@ -404,6 +407,7 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
             </AccordionSection>
           </section>
         </div>
+        </fieldset>
       </div>
     </div>
   )

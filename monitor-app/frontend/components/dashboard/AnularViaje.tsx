@@ -7,6 +7,7 @@ import { tripsApi } from '@/lib/api/trips'
 import type { Trip } from '@/lib/types'
 import { CLAVES_AFECTADAS, mensajeDeRechazo } from '@/hooks/useAnularViajes'
 import { eleccionCompleta, useMotivosDeAnulacion, type EleccionDeMotivo } from '@/hooks/useMotivosDeAnulacion'
+import { CamposDeMotivo } from '@/components/ui/CamposDeMotivo'
 
 interface Props {
   trip:     Trip
@@ -24,7 +25,7 @@ interface Props {
 export function AnularViaje({ trip, onCambio }: Props) {
   const queryClient = useQueryClient()
   const [confirmando, setConfirmando] = useState(false)
-  const { motivos } = useMotivosDeAnulacion()
+  const { motivos, cargando } = useMotivosDeAnulacion()
   const [eleccion, setEleccion] = useState<EleccionDeMotivo>({ motivoId: '', nota: '' })
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -58,26 +59,14 @@ export function AnularViaje({ trip, onCambio }: Props) {
         </button>
       ) : confirmando ? (
         <>
-          <label className="flex items-center gap-1.5 text-etiqueta text-white/70">
-            Motivo
-            <select
-              value={eleccion.motivoId}
-              onChange={e => setEleccion(prev => ({ ...prev, motivoId: e.target.value }))}
-              autoFocus
-              className="rounded bg-white/10 px-2 py-1 text-etiqueta text-white focus:outline-none focus:ring-2 focus:ring-white/40"
-            >
-              <option value="" className="text-text-primary">Elige…</option>
-              {motivos.map(m => <option key={m.id} value={m.id} className="text-text-primary">{m.label}</option>)}
-            </select>
-          </label>
-          <label className="flex items-center gap-1.5 text-etiqueta text-white/70">
-            {motivos.find(m => m.id === eleccion.motivoId)?.pideNota ? 'Comentario (obligatorio)' : 'Comentario'}
-            <input
-              value={eleccion.nota}
-              onChange={e => setEleccion(prev => ({ ...prev, nota: e.target.value }))}
-              className="rounded bg-white/10 px-2 py-1 text-etiqueta text-white focus:outline-none focus:ring-2 focus:ring-white/40"
-            />
-          </label>
+          <CamposDeMotivo
+            variante="detalle"
+            motivos={motivos}
+            cargando={cargando}
+            eleccion={eleccion}
+            onChange={setEleccion}
+            deshabilitado={ocupado}
+          />
           <button
             type="button"
             disabled={ocupado || !eleccionCompleta(motivos, eleccion)}

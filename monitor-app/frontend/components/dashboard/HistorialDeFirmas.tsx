@@ -1,4 +1,5 @@
 import type { FirmaDelDia } from '@/lib/types'
+import { fmtDT } from '@/lib/utils/datetime'
 
 interface Props {
   /** De la más reciente a la más antigua (GET /closures/{fecha}/signatures). */
@@ -17,7 +18,7 @@ export function HistorialDeFirmas({ firmas }: Props) {
           <li key={f.version} className="flex flex-wrap gap-x-3 text-text-secondary">
             <span className="font-semibold text-text-primary">Versión {f.version}</span>
             <span>{f.signed_by_name ?? '—'}</span>
-            <span className="tabular-nums">{new Date(f.signed_at).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })}</span>
+            <span className="tabular-nums">{fmtDT(f.signed_at)}</span>
             {f.totals.viajes !== undefined && <span className="tabular-nums">{f.totals.viajes} viajes</span>}
           </li>
         ))}

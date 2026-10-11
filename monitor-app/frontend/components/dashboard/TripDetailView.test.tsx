@@ -792,3 +792,11 @@ describe('TripDetailView — vuelta visible', () => {
     expect(onDismiss).toHaveBeenCalled()
   })
 })
+
+describe('TripDetailView — anulado de solo lectura', () => {
+  it('un viaje anulado no ofrece editar: se deshace la anulación primero', () => {
+    renderDetailView({ ...baseTrip, source_system: 'manual', voided_at: '2026-10-10T20:00:00Z', void_reason_label: 'Duplicado' })
+    expect(screen.getByRole('button', { name: /establecer estado operativo manual/i })).toBeDisabled()
+  })
+})
+

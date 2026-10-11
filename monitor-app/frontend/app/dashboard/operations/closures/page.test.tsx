@@ -117,7 +117,8 @@ describe('ClosuresCenterPage', () => {
     })
     renderPage()
     expect(await screen.findByRole('button', { name: /2 ajustes posteriores al cierre/i })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /viajes.*2/i })).toBeInTheDocument()
+    // El número dice qué cuenta: "Viajes 2" a secas no lo dice para un lector de pantalla.
+    expect(screen.getByRole('tab', { name: /viajes.*2 ajustes posteriores/i })).toBeInTheDocument()
     expect(screen.queryByText(/después de la firma/i)).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: /2 ajustes posteriores al cierre/i }))

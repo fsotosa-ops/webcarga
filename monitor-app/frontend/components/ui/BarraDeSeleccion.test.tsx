@@ -48,4 +48,33 @@ describe('BarraDeSeleccion con motivo de catálogo', () => {
     await waitFor(() => expect(screen.getByLabelText(/comentario/i)).toHaveValue('por correo'))
     expect(screen.getByLabelText(/motivo/i)).toHaveValue('otro')
   })
+
+  it('mientras corre no se puede cambiar el motivo ni cancelar', () => {
+    const barra = (ocupado: boolean) => (
+      <BarraDeSeleccion seleccionados={2} ayuda="marca" onLimpiar={() => {}}
+        destructiva={{ etiqueta: 'Anular 2 viajes', advertencia: 'Quedan anulados', confirmacion: 'Sí, anular 2',
+                       motivos: { etiqueta: 'Motivo', opciones }, onConfirmar: vi.fn(), ocupado }} />
+    )
+    const { rerender } = render(barra(false))
+    fireEvent.click(screen.getByRole('button', { name: /anular 2 viajes/i }))
+    rerender(barra(true))
+    expect(screen.getByLabelText(/motivo/i)).toBeDisabled()
+    expect(screen.getByLabelText(/comentario/i)).toBeDisabled()
+    expect(screen.getByRole('button', { name: /cancelar/i })).toBeDisabled()
+  })
+
+  it('sin motivos activos lo dice, en vez de dejar un botón muerto', () => {
+    render(
+      <BarraDeSeleccion seleccionados={2} ayuda="marca" onLimpiar={() => {}}
+        destructiva={{ etiqueta: 'Anular 2 viajes', advertencia: 'Quedan anulados', confirmacion: 'Sí, anular 2',
+                       motivos: { etiqueta: 'Motivo', opciones: [] }, onConfirmar: vi.fn() }} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /anular 2 viajes/i }))
+    expect(screen.getByText(/no hay motivos de anulación activos/i)).toBeInTheDocument()
+  })
+
+  it('el comentario tiene un largo máximo', () => {
+    montar()
+    expect(screen.getByLabelText(/comentario/i)).toHaveAttribute('maxLength', '500')
+  })
 })

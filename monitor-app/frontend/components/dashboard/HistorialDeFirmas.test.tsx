@@ -24,4 +24,10 @@ describe('HistorialDeFirmas', () => {
     expect(screen.getByText(/ana pérez/i)).toBeInTheDocument()
     expect(screen.getByText(/cristian castillo/i)).toBeInTheDocument()
   })
+
+  it('la hora es la de Chile, como en el resto de la app (fmtDT), no la del navegador', () => {
+    render(<HistorialDeFirmas firmas={[firma({ version: 2 }), firma({ version: 1, signed_at: '2026-09-24T01:51:08Z' })]} />)
+    expect(screen.getAllByText(/23\/09 22:51:08/).length).toBeGreaterThan(0)
+  })
 })
+

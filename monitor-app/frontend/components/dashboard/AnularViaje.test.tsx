@@ -65,4 +65,11 @@ describe('AnularViaje', () => {
     fireEvent.click(screen.getByRole('button', { name: /deshacer anulación/i }))
     await waitFor(() => expect(revertVoid).toHaveBeenCalledWith(['t1']))
   })
+
+  it('el comentario tiene un largo máximo', () => {
+    montar({ can_void: true })
+    fireEvent.click(screen.getByRole('button', { name: /anular viaje/i }))
+    expect(screen.getByLabelText(/comentario/i)).toHaveAttribute('maxLength', '500')
+  })
 })
+

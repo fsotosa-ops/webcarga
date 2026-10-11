@@ -60,6 +60,22 @@ describe('TaxonomyTab', () => {
     expect(taxonomiesApi.patch).not.toHaveBeenCalled()
   })
 
+  // Revisión final 10/10: los selectores de otras pantallas (motivos de anulación,
+  // de no asignación) leen el mismo vocabulario con react-query; si Configuración
+  // no los invalida, ofrecen por cinco minutos un valor ya cambiado.
+  it('un cambio en el vocabulario refresca a quien lo lee en otras pantallas', async () => {
+    const invalidar = vi.spyOn(QueryClient.prototype, 'invalidateQueries')
+    vi.mocked(taxonomiesApi.list).mockResolvedValue([UNO, DOS])
+    vi.mocked(taxonomiesApi.move).mockResolvedValue([DOS, UNO])
+    render(<TaxonomyTab domain="TRIP_VOID_REASON" title="t" hint="hint" newLabel="motivo" />)
+    await screen.findByDisplayValue('Uno')
+
+    fireEvent.click(screen.getByRole('button', { name: /subir dos/i }))
+
+    await waitFor(() => expect(invalidar).toHaveBeenCalledWith({ queryKey: ['taxonomies', 'TRIP_VOID_REASON'] }))
+    invalidar.mockRestore()
+  })
+
   // El servidor devuelve el dominio completo ya ordenado: la pantalla lo toma
   // tal cual en vez de recalcularlo, que es de donde salían las dos verdades.
   it('la lista queda en el orden que devolvió el servidor', async () => {

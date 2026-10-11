@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react'
 import { Trash2, X, type LucideIcon } from 'lucide-react'
 import { eleccionCompleta, type EleccionDeMotivo, type MotivoDeAnulacion } from '@/hooks/useMotivosDeAnulacion'
+import { CamposDeMotivo } from './CamposDeMotivo'
 
 interface AccionDestructiva {
   /** Texto del botón en reposo: "Descartar los 3", "Eliminar 1 viaje". */
@@ -13,7 +14,7 @@ interface AccionDestructiva {
   confirmacion: string
   /** Si la acción exige un motivo de catálogo: la etiqueta y las opciones. El
    *  comentario aparece al lado y es obligatorio si la opción lo pide. */
-  motivos?:     { etiqueta: string; opciones: MotivoDeAnulacion[] }
+  motivos?:     { etiqueta: string; opciones: MotivoDeAnulacion[]; cargando?: boolean }
   /** Devuelve `false` si el backend rechazó: la barra conserva lo elegido para
    *  reintentar. Sin motivo, se llama sin argumentos. */
   onConfirmar:  (eleccion?: EleccionDeMotivo) => void | boolean | Promise<boolean | void>
@@ -76,31 +77,14 @@ export function BarraDeSeleccion({ seleccionados, ayuda, onLimpiar, destructiva,
         <>
           <span className="text-[11px] text-amber-200">{destructiva.advertencia}</span>
           {destructiva.motivos && (
-            <>
-              <label className="flex items-center gap-1.5 text-[11px] text-white/80">
-                {destructiva.motivos.etiqueta}
-                <select
-                  value={eleccion.motivoId}
-                  onChange={e => setEleccion(prev => ({ ...prev, motivoId: e.target.value }))}
-                  className="rounded bg-white/10 px-2 py-1 text-[11px] text-white focus:outline-none focus:ring-2 focus:ring-white/40"
-                  autoFocus
-                >
-                  <option value="" className="text-text-primary">Elige…</option>
-                  {destructiva.motivos.opciones.map(o => (
-                    <option key={o.id} value={o.id} className="text-text-primary">{o.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center gap-1.5 text-[11px] text-white/80">
-                {destructiva.motivos.opciones.find(o => o.id === eleccion.motivoId)?.pideNota
-                  ? 'Comentario (obligatorio)' : 'Comentario'}
-                <input
-                  value={eleccion.nota}
-                  onChange={e => setEleccion(prev => ({ ...prev, nota: e.target.value }))}
-                  className="rounded bg-white/10 px-2 py-1 text-[11px] text-white focus:outline-none focus:ring-2 focus:ring-white/40"
-                />
-              </label>
-            </>
+            <CamposDeMotivo
+              variante="barra"
+              motivos={destructiva.motivos.opciones}
+              cargando={destructiva.motivos.cargando}
+              eleccion={eleccion}
+              onChange={setEleccion}
+              deshabilitado={destructiva.ocupado}
+            />
           )}
           <button
             type="button"
@@ -116,6 +100,7 @@ export function BarraDeSeleccion({ seleccionados, ayuda, onLimpiar, destructiva,
           </button>
           <button
             type="button"
+            disabled={destructiva.ocupado}
             onClick={reiniciar}
             className="text-[11px] font-semibold text-white/60 hover:text-white transition-colors"
           >

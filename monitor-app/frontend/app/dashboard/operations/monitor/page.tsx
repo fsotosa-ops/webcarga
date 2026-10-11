@@ -244,7 +244,7 @@ export default function DiarioPage() {
   // Anular viajes manuales con motivo, uno o varios (spec 2026-10-10). La
   // selección vive sobre lo que se ve: un viaje que sale de la vista se desmarca solo.
   const anulacion = useAnularViajes(visibleTrips)
-  const { motivos: motivosDeAnulacion } = useMotivosDeAnulacion()
+  const { motivos: motivosDeAnulacion, cargando: cargandoMotivos } = useMotivosDeAnulacion()
 
   // PERSONAS, no viajes. 27 personas explican 208 viajes: contar viajes
   // exagera el trabajo por 7,7 y hace que la tarea parezca infinita.
@@ -628,7 +628,7 @@ export default function DiarioPage() {
                       destructiva={{
                         etiqueta:     `Anular ${cuantos(anulacion.seleccion.ids.size, 'viaje')}`,
                         advertencia:  'Quedan anulados con su motivo; no se borran',
-                        motivos:      { etiqueta: 'Motivo', opciones: motivosDeAnulacion },
+                        motivos:      { etiqueta: 'Motivo', opciones: motivosDeAnulacion, cargando: cargandoMotivos },
                         icono:        Ban,
                         confirmacion: `Sí, anular ${anulacion.seleccion.ids.size}`,
                         onConfirmar:  eleccion => anulacion.anularSeleccion(eleccion!),

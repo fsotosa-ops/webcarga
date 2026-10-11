@@ -344,6 +344,10 @@ function ClosuresCenterPageInner() {
                 type="button"
                 role="tab"
                 aria-selected={isActive}
+                // El número de la pestaña dice qué cuenta: "Viajes 12" a secas no lo dice.
+                aria-label={t.id === 'viajes' && ajustes.length > 0
+                  ? `Viajes, ${ajustes.length} ${ajustes.length === 1 ? 'ajuste posterior' : 'ajustes posteriores'} al cierre`
+                  : undefined}
                 onClick={() => setTab(t.id)}
                 className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl whitespace-nowrap transition-colors ${
                   isActive ? 'bg-white text-accent shadow-sm' : 'text-gray-500 hover:text-text-primary hover:bg-white/60'
