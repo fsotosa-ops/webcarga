@@ -1,0 +1,176 @@
+# Auditoría del módulo de Certificación — plan
+
+> Pedido del usuario (11/10): "toca varias cosas, partiendo por los varios clicks que se tiene por conductor,
+> vehículo, empresa. Hay hartos gaps a nivel de UX/UI y desalineados con el estándar de la industria. […] que
+> sea readible, robusto, escalable, mantenible, sin parches y basado en la arquitectura de la app backend y
+> frontend. Intuyo que tenemos un frankenstein."
+
+**Qué produce esta auditoría:** un diagnóstico medido y una arquitectura objetivo con su hoja de ruta de
+migración. **No produce código.** La implementación sale después, por el ciclo habitual: brainstorming → spec →
+plan, uno por cada bloque de la hoja de ruta.
+
+**Entregable:** `docs/superpowers/specs/2026-10-XX-certification-audit.md`, con estas secciones: diagnóstico,
+arquitectura objetivo, decisiones, hoja de ruta y preguntas para el cliente.
+
+## 0. Punto de partida (relevado el 11/10, sin medir todavía)
+
+**La voz del cliente.** Fuentes: minutas del 14/08, 21/08, 25/08, 04/09, 02/10 y 09/10, y las HU 20260814 y 20261006.
+Quejas que se repiten (dos o más veces):
+1. Demasiados clics para saber qué venció o dónde cargar (14/08, 04/09, 02/10, 09/10). Cita de la llamada del
+   02/10: *"me tira toda la empresa… tengo que entrar a la empresa… al conductor… no te muestra al tiro que es la
+   licencia"*.
+2. Empresas inactivas o dadas de baja que no aparecen donde se espera (5 veces).
+3. Preferencia por cargar en lote desde Excel (3 veces).
+4. La póliza se carga dos veces (en Certificación y en Seguros) y Seguros no da confianza (3 veces).
+5. "Opcional" frente a "crítico" sin definir (3 veces).
+6. Vencimiento al crear un documento (2 veces). Ya está hecho en HU-C1.
+
+Pedido abierto más concreto: el ítem 20 / C3. Elegir un tipo de documento, ver quién lo tiene vencido o por
+vencer y cargarlo ahí mismo. Pablo lo llamó "cubo"; dijo que la función "existe pero no es práctica".
+
+**El mapa técnico: indicios del Frankenstein.**
+1. **Dos fichas de empresa** con documentos:
+   - `compliance/[carrierId]`, 1.076 líneas;
+   - `carriers/[id]`, 964 líneas.
+   Usan listas, vocabularios y caminos de carga distintos, y no se enlazan entre sí.
+2. **Seis o más definiciones del estado de un documento.**
+   - En el backend:
+     - los predicados de `services/vencimientos.py`;
+     - el CASE de `/pending`;
+     - `entity_summary`;
+     - el alcance LEGAL_MANDATORY de `carriers.py` y de `trips.py`/`daily_closures.py`;
+     - las vistas materializadas por `status`.
+   - En el frontend, otras 6 más.
+   Consecuencia: el badge del viaje puede contar como pendiente un documento que Certificación considera NO_EXIGIBLE.
+3. **La pestaña Documentos del Directorio** pone primero el triage de "subir y clasificar después", el
+   antipatrón que el drawer ya había retirado.
+4. **"Por requisito" no lleva a ningún lado**, aunque `/pending?requirement_code=` ya lo soporta.
+5. **Cada escritura sobre empresas, equipos o asignaciones refresca 5 vistas materializadas.** Ese refresco
+   alimenta 2 columnas y una tabla que la app no lee.
+6. **La póliza vive dos veces:** como requisitos SEGURO_* y en `insurance_policies`, cada una con su carga, su
+   firma y su alerta.
+7. **Cinco componentes que listan documentos** y dos vocabularios (`urgencia` contra `status`+`is_expired`).
+   Cuatro zonas de arrastre independientes.
+8. **Una URL firmada por documento**, con llamadas síncronas a Supabase dentro de handlers async (N+1 HTTP), y
+   tres consultas de documentos casi copiadas (empresa, conductor, equipo).
+9. **La API mezcla español e inglés.** Hay además un endpoint huérfano (`bulk-file`), un router que importa
+   helpers privados de otro, y los requisitos se piden desde dos módulos del frontend.
+10. **Residuos:** las redirecciones `/certification` y `?vista=documentos`, `carrier_compliance_status` (solo lo
+    usa Mage) y los componentes `Transporter*`, con nombres del modelo viejo.
+
+## 1. Método: cuatro lentes y una síntesis
+
+Cada lente termina en una tabla de hallazgos con la misma forma:
+
+| campo | contenido |
+|---|---|
+| id | identificador del hallazgo |
+| lente | cuál de las cuatro |
+| evidencia | archivo:línea, consulta o captura |
+| efecto para el usuario | qué ve o qué le pasa |
+| causa raíz | por qué ocurre |
+| severidad | en una de tres categorías: bloquea / confunde / costo interno |
+
+Un hallazgo sin evidencia no entra.
+
+### Lente A — Tareas y clics (UX medido, no opinado)
+1. **Lista cerrada de los trabajos del cliente**, sacada de la voz del cliente:
+   - J1: cargar un documento a un conductor, a un equipo o a una empresa;
+   - J2: reemplazar uno vencido;
+   - J3: ver qué está por vencer;
+   - J4: cubrir un requisito en todas las empresas (el "cubo");
+   - J5: clasificar archivos sueltos;
+   - J6: pedir un documento a pedido;
+   - J7: ver el historial de un documento;
+   - J8: saber si una empresa, un conductor o un equipo está habilitado para operar;
+   - J9: corregir una fecha;
+   - J10: cargar fechas en lote.
+2. **Medir cada trabajo en dev con Playwright**, partiendo desde el sidebar y por cada camino que hoy existe
+   (Certificación, Directorio, Cierre). Se registran clics, pantallas o capas y campos a llenar. Las capturas
+   se toman a 1440 px y a 390 px.
+3. **Una matriz trabajo × camino** que marca los duplicados: el mismo trabajo hecho en dos lugares de dos formas.
+
+### Lente B — Estándar de la industria
+1. **Comparar cada trabajo con productos reales del rubro**, nombrados:
+   - gestión de contratistas: Avetta, ISNetworld, Pronexo (la plataforma que usa el cliente);
+   - documentos de flota: Samsara, Fleetio;
+   - evidencias por control: Vanta, Drata, como modelo de "requisito → quién cumple".
+   Para cada producto: ¿cuál es la unidad de navegación (la entidad o el requisito)? ¿Dónde se carga el archivo?
+   ¿Cómo se muestra el vencimiento?
+2. **Evaluar las pantallas** con las heurísticas de Nielsen, el checklist de `ui-ux-pro-max` y los trinquetes
+   del sistema visual (colores crudos y texto bajo 11 px por archivo).
+3. **Concluir con una propuesta de modelo de navegación**, mostrada en una maqueta del visual companion para
+   que el usuario la vea y elija.
+
+### Lente C — Dominio y datos (backend)
+1. **Una sola definición del estado.** Inventariar cada definición del estado de un documento (backend y
+   frontend) y **medir con SQL contra la base real** cuántos documentos o entidades clasifica distinto cada una
+   frente a `vencimientos.py`. Las consultas van parametrizadas, son de solo lectura y ninguna recorre el padrón.
+2. **El modelo:**
+   - las solicitudes, que hoy son filas de `compliance_records` con ON_REQUEST;
+   - la superposición de la póliza (SEGURO_* contra `insurance_policies`);
+   - las vistas materializadas y sus triggers: quién las lee, cuánto cuesta cada refresco (pg_stat_statements)
+     y el lock de `trg_refresh_compliance_on_carriers_update`.
+3. **El rendimiento:** medir el tiempo de p50/p95 de los endpoints de cada trabajo (`/status`, `/pending`, la
+   ficha, `/summary`, la cola), con reglas activas. La última medición fue con 0 reglas.
+
+### Lente D — Arquitectura de código (API y frontend)
+1. **La API:** inventario de unos 40 endpoints, con columnas consumidor, nombre (estándar en inglés), forma
+   REST, huérfanos, acoplamiento entre routers, N+1 de URLs firmadas y consultas copiadas.
+2. **El frontend:**
+   - las superficies y sus componentes;
+   - los duplicados (5 renderers, 6 cálculos de estado, 4 zonas de arrastre, 5 inputs de archivo);
+   - las claves de React Query y qué invalida cada mutación, incluida la sincronía con el Directorio, el Cierre,
+     la vista rápida y los badges del viaje;
+   - los archivos de más de 400 líneas;
+   - los nombres en español en el código nuevo.
+3. **Los tests:** qué protege cada definición y qué test fija un defecto en vez de protegerlo.
+
+### Síntesis — arquitectura objetivo y hoja de ruta
+1. **La arquitectura objetivo:**
+   - **Un dominio `documents` en el backend:** un servicio de estado (la única definición), un read model y una
+     API con nombres estándar.
+   - **Un solo componente de documentos de una entidad en el frontend**, usado por Certificación, el Directorio
+     y la vista rápida.
+   - **Una vista por requisito**, para el "cubo".
+   - **Una sola ficha por entidad**, o un criterio explícito de qué vive en cada una.
+   Se comparan 2 o 3 alternativas, cada una con sus costos, y se recomienda una.
+2. **La hoja de ruta:**
+   - en bloques que se pueden desplegar solos, con expand → deploy → contract en la base, rutas viejas y nuevas
+     conviviendo, y cada bloque con sus tests;
+   - ordenados por efecto para el usuario.
+   Candidato a primer bloque: el estado único más el "cubo", porque resuelve la queja más repetida y el pedido
+   abierto.
+3. **Las preguntas para el cliente**, juntas y no una por una:
+   - ¿qué significa "opcional"?
+   - ¿un mismo F30 le sirve a dos clientes?
+   - ¿la póliza va en Certificación o en Seguros?
+   - las 11 dudas de la planilla;
+   - historial o pisar el archivo anterior.
+
+## 2. Ejecución
+
+| Paso | Quién | Toca la base | Duración estimada |
+|---|---|---|---|
+| A. Clics y capturas en dev | yo, con Playwright | no (solo lectura de UI) | 1 sesión corta |
+| B. Comparación con la industria | yo, con un agente de investigación web para los productos nombrados | no | en paralelo con A |
+| C. Dominio y datos | agente de solo lectura + mis consultas SQL parametrizadas | solo SELECT, sin padrón | en paralelo |
+| D. API y frontend | agente Explore de solo lectura | no | en paralelo |
+| Síntesis | yo; la maqueta de navegación va en el visual companion | no | después de A-D |
+
+**Reglas:**
+- solo lectura de punta a punta;
+- Mage no se toca;
+- nombres nuevos en inglés y la UI en español neutral;
+- toda afirmación lleva evidencia;
+- las cifras se dan vivas (las del 11/10 son las de este documento, no las del AGENTLOG).
+
+**Cierre:** el documento de auditoría queda commiteado, con la arquitectura objetivo y la hoja de ruta, y la
+decisión del usuario sobre la alternativa queda registrada. Recién entonces se escribe la spec del primer bloque.
+
+## 3. Fuera de alcance de la auditoría
+- La auditoría no corrige bugs. Los menores M1-M11 de la entrega 2b se verifican dentro de la lente C/D y entran
+  a la hoja de ruta con su severidad.
+- No toca Seguros más allá de la superposición con Certificación (su auditoría propia es C6).
+- No define el rediseño del detalle del viaje, que es otra sesión. Solo registra qué del badge de documentos
+  depende de esto.
