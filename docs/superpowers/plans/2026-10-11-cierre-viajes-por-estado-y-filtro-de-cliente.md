@@ -40,7 +40,7 @@ cifras por igual.
 
 1. **Cambiar de pestaña con viajes seleccionados.** La selección se conserva y la barra de lote sigue a la vista con su
    cantidad. Volver a "Por resolver" muestra las mismas casillas marcadas. Test en Task 2.
-2. **URL con una pestaña que no existe** (`?viajes=xyz`, o una vieja). Cae en la pestaña inicial, sin pantalla en blanco.
+2. **URL con una pestaña que no existe** (`?trips=xyz`). Cae en la pestaña inicial, sin pantalla en blanco.
    Test en Task 2.
 3. **Declarar el último viaje por resolver.** La pestaña no salta sola: queda en "Por resolver" con "Nada por resolver:
    puedes firmar el día". Test en Task 2.
@@ -55,7 +55,7 @@ cifras por igual.
   Un solo módulo (`lib/navegacion/cierre.ts`) la lee y la escribe, y lee también la forma vieja en español. Los
   `?fecha=` de la API del backend quedan fuera (deuda aparte).
 
-- **Pestaña inicial.** Si la URL no trae `?viajes=`, se abre "Por resolver" cuando tiene viajes, y si no, "En
+- **Pestaña inicial.** Si la URL no trae `?trips=`, se abre "Por resolver" cuando tiene viajes, y si no, "En
   seguimiento". La elección queda en la URL solo cuando la persona cambia de pestaña, igual que `?tab=`.
 - **La selección en lote** existe solo en "Por resolver" y no se limpia al cambiar de pestaña.
 - **La cifra grande** pasa a decir "bloquean la firma del día", con el mismo `bloquean` de la API.
@@ -802,7 +802,7 @@ interface Props {
   meta?:      TripsMeta | null
   /** Día firmado: nada se declara ni se deshace (el backend también lo rechaza). */
   soloLectura?: boolean
-  /** La pestaña que trae la URL (`?viajes=`); la página es dueña de la URL. */
+  /** La pestaña que trae la URL (`?trips=`); la página es dueña de la URL. */
   pestana?:         PestanaDeViajes | null
   onCambiarPestana?: (p: PestanaDeViajes) => void
 }
