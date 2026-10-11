@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
   Truck, Users, LogOut, BookUser,
-  ChevronLeft, ChevronDown, Shield, Settings, Receipt, BadgeCheck,
+  ChevronLeft, ChevronDown, Shield, Receipt, BadgeCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -15,7 +15,7 @@ import { documentIngestApi } from '@/lib/api/documentIngest'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { getDisplayName, puedeVerConfiguracion, type Acceso } from '@/lib/authz/acceso'
 import LogoWebCarga from '@/components/brand/LogoWebCarga'
-import SidebarAccount from './SidebarAccount'
+import SidebarAccount, { SETTINGS_HREF } from './SidebarAccount'
 
 // "Operaciones" agrupa Monitor bajo un solo item expandible —
 // Empresas/Seguros no tienen esa profundidad todavía, se quedan planos.
@@ -250,7 +250,6 @@ export default function Sidebar({ acceso }: SidebarProps) {
   }
 
   const isAdmin       = pathname.startsWith('/dashboard/admin')
-  const isConfig      = pathname.startsWith('/dashboard/admin/settings')
   // Configuración: quien administra o configura alguna área (misma regla que
   // el layout de admin, lib/authz/acceso.ts).
   const canAdmin      = puedeVerConfiguracion(acceso)
@@ -330,41 +329,14 @@ export default function Sidebar({ acceso }: SidebarProps) {
               </Link>
             )
           })}
-
-          {/* ── Admin section ── */}
-          {canAdmin && (
-            <div className={`mt-auto pt-3 ${!collapsed ? 'border-t border-white/8' : ''}`}>
-              {!collapsed && (
-                <p className="px-3 text-[9px] font-bold text-white/20 uppercase tracking-[0.12em] mb-1.5">
-                  Administración
-                </p>
-              )}
-              <Link
-                href="/dashboard/admin/settings"
-                title={collapsed ? 'Configuración' : undefined}
-                className={`group relative flex items-center rounded-xl text-[13px] transition-all duration-150 ${
-                  collapsed ? 'justify-center h-10 w-10 mx-auto' : 'gap-3 px-3 py-2.5'
-                } ${isConfig
-                  ? 'bg-white/12 text-white'
-                  : 'text-white/40 hover:bg-white/6 hover:text-white/75'
-                }`}
-              >
-                {isConfig && (
-                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent rounded-full" />
-                )}
-                <Settings size={16} className={`shrink-0 ${isConfig ? 'text-accent' : 'group-hover:text-white/65'}`} />
-                {!collapsed && (
-                  <span className={`font-medium truncate ${isConfig ? 'text-white' : ''}`}>Configuración</span>
-                )}
-              </Link>
-            </div>
-          )}
         </nav>
 
         <SidebarAccount
           displayName={getDisplayName(acceso)}
+          email={acceso.email}
           roleName={acceso.role_names[0] ?? null}
           collapsed={collapsed}
+          canConfigure={canAdmin}
           onSignOut={signOut}
         />
       </aside>
@@ -391,7 +363,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
 
         {canAdmin && (
           <Link
-            href="/dashboard/admin/settings"
+            href={SETTINGS_HREF}
             prefetch={false}
             className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors ${
               isAdmin ? 'text-white' : 'text-white/40 hover:text-white/70'

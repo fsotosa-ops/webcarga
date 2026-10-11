@@ -12,8 +12,9 @@ vi.mock('next/navigation', () => ({
   usePathname: () => nav.ruta,
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }))
+const auth = vi.hoisted(() => ({ signOut: vi.fn() }))
 vi.mock('@/lib/supabase/client', () => ({
-  createClient: () => ({ auth: { signOut: vi.fn() } }),
+  createClient: () => ({ auth }),
 }))
 vi.mock('@/lib/api/documentIngest', () => ({
   documentIngestApi: { listQueue: vi.fn() },
@@ -21,12 +22,16 @@ vi.mock('@/lib/api/documentIngest', () => ({
 
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import Sidebar from './Sidebar'
+import type { Acceso } from '@/lib/authz/acceso'
 
-function setup(fullName: string | null = null) {
+function setup(
+  fullName: string | null = null,
+  permissions: Acceso['permissions'] = ['users.manage', 'operations.read'],
+) {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <Sidebar acceso={{ id: 'u', email: 'a@b.c', full_name: fullName, roles: ['admin'], role_names: ['Administración'],
-                         permissions: ['users.manage', 'operations.read'], aal: 'aal2' }} />
+                         permissions, aal: 'aal2' }} />
     </QueryClientProvider>,
   )
 }
@@ -185,7 +190,9 @@ describe('Sidebar — Usuarios se mudo a Configuracion', () => {
     setup()
     await screen.findAllByText('Certificación')
     expect(screen.queryByRole('link', { name: /usuarios/i })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /configuración/i })).toBeInTheDocument()
+    // Configuración se abre desde el menú de la cuenta (11/10), no desde el menú.
+    fireEvent.click(within(document.querySelector('aside')!).getByRole('button', { name: /^cuenta de/i }))
+    expect(screen.getByRole('menuitem', { name: 'Configuración' })).toBeInTheDocument()
   })
 })
 
@@ -205,31 +212,93 @@ describe('barra contraída', () => {
 })
 
 
-// Quién está conectado vive al pie de la barra, junto a sus acciones de cuenta,
-// y no en una barra superior aparte (pedido del usuario, 11/10).
+// La cuenta es un solo botón al pie de la barra: abre el menú con
+// Configuración, Cambiar contraseña y Cerrar sesión (pedido del usuario, 11/10).
 describe('cuenta al pie de la barra', () => {
   beforeEach(() => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+    auth.signOut.mockReset()
   })
 
-  it('expandida, muestra el nombre, el rol y las acciones de cuenta', async () => {
+  const desktop = () => document.querySelector('aside')!
+  const trigger = () => within(desktop()).getByRole('button', { name: 'Cuenta de Cristian Castillo, Administración' })
+
+  it('el botón muestra el nombre y el rol, con el menú cerrado', async () => {
     setup('Cristian Castillo')
-    const aside = (await screen.findByRole('img', { name: 'Cristian Castillo, Administración' })).closest('aside')!
-    expect(within(aside).getByText('CC')).toBeInTheDocument()
-    expect(within(aside).getByText('Cristian Castillo')).toBeInTheDocument()
-    expect(within(aside).getByText('Administración', { selector: 'p.text-xs' })).toBeInTheDocument()
-    expect(within(aside).getByRole('link', { name: 'Cambiar contraseña' })).toHaveAttribute('href', '/auth/reset-password')
-    expect(within(aside).getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument()
+    await screen.findAllByText('Certificación')
+    expect(within(trigger()).getByText('CC')).toBeInTheDocument()
+    expect(within(trigger()).getByText('Cristian Castillo')).toBeInTheDocument()
+    expect(within(trigger()).getByText('Administración')).toBeInTheDocument()
+    expect(trigger()).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  it('contraída, deja solo las iniciales y nombra cada acción', async () => {
+  it('Configuración ya no es una entrada del menú de la barra', async () => {
+    setup('Cristian Castillo')
+    await screen.findAllByText('Certificación')
+    expect(within(desktop()).queryByRole('link', { name: /configuración/i })).not.toBeInTheDocument()
+  })
+
+  it('al abrirse ofrece Configuración, Cambiar contraseña y Cerrar sesión, con el foco en la primera', async () => {
+    setup('Cristian Castillo')
+    await screen.findAllByText('Certificación')
+    fireEvent.click(trigger())
+    const menu = screen.getByRole('menu', { name: 'Cuenta' })
+    const items = within(menu).getAllByRole('menuitem')
+    expect(items.map(i => i.textContent)).toEqual(['Configuración', 'Cambiar contraseña', 'Cerrar sesión'])
+    expect(items[0]).toHaveAttribute('href', '/dashboard/admin/settings')
+    expect(items[1]).toHaveAttribute('href', '/auth/reset-password')
+    expect(within(menu).getByText('a@b.c')).toBeInTheDocument()
+    await waitFor(() => expect(items[0]).toHaveFocus())
+  })
+
+  it('sin permiso de configurar, el menú no ofrece Configuración', async () => {
+    setup('Cristian Castillo', ['operations.read'])
+    await screen.findAllByText('Certificación')
+    fireEvent.click(trigger())
+    const items = within(screen.getByRole('menu')).getAllByRole('menuitem')
+    expect(items.map(i => i.textContent)).toEqual(['Cambiar contraseña', 'Cerrar sesión'])
+  })
+
+  it('las flechas recorren el menú y Escape lo cierra devolviendo el foco al botón', async () => {
+    setup('Cristian Castillo')
+    await screen.findAllByText('Certificación')
+    fireEvent.click(trigger())
+    const menu = screen.getByRole('menu')
+    const items = within(menu).getAllByRole('menuitem')
+    await waitFor(() => expect(items[0]).toHaveFocus())
+    fireEvent.keyDown(menu, { key: 'ArrowUp' })
+    expect(items[2]).toHaveFocus()
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(items[0]).toHaveFocus()
+    fireEvent.keyDown(menu, { key: 'Escape' })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(trigger()).toHaveFocus()
+  })
+
+  it('un clic afuera lo cierra', async () => {
+    setup('Cristian Castillo')
+    await screen.findAllByText('Certificación')
+    fireEvent.click(trigger())
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('Cerrar sesión cierra la sesión', async () => {
+    setup('Cristian Castillo')
+    await screen.findAllByText('Certificación')
+    fireEvent.click(trigger())
+    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Cerrar sesión' }))
+    await waitFor(() => expect(auth.signOut).toHaveBeenCalledTimes(1))
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('contraída, el botón deja solo las iniciales y conserva su nombre accesible', async () => {
     localStorage.setItem('sidebar-collapsed', 'true')
     setup('Cristian Castillo')
-    const avatar = await screen.findByRole('img', { name: 'Cristian Castillo, Administración' })
-    const aside = avatar.closest('aside')!
-    expect(within(aside).queryByText('Cristian Castillo')).not.toBeInTheDocument()
-    expect(within(aside).getByRole('link', { name: 'Cambiar contraseña' })).toBeInTheDocument()
-    expect(within(aside).getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument()
+    await screen.findByRole('button', { name: 'Expandir barra lateral' })
+    expect(trigger()).toHaveAttribute('title', 'Cristian Castillo, Administración')
+    expect(within(trigger()).queryByText('Cristian Castillo')).not.toBeInTheDocument()
     localStorage.removeItem('sidebar-collapsed')
   })
 })
