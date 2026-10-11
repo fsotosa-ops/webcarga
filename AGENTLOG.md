@@ -16,6 +16,54 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Auditoría de Certificación: simulación en copia local + bugs L1-L5 cerrados
+
+Plan y hallazgos en `docs/superpowers/plans/2026-10-11-certification-audit.md` (secciones 4 y 5).
+
+**La copia local** vive en `.superpowers/local-sim/` (fuera de git):
+- Supabase local con el esquema de producción, solo estructura, en los puertos 5532x.
+- Datos 100 % ficticios. La API corre en :8100 y la web en :3100.
+- Usuarios: `cert@sim.local` / `ops@sim.local` / `owner@sim.local`, contraseña `Simulacion-2026`.
+- Para levantarla: `supabase start` en esa carpeta. Después la API con `api.env` (llave service_role en formato JWT) y `next dev -p 3100` con las variables `NEXT_PUBLIC_*` y `FASTAPI_URL` locales.
+
+**Hecho:**
+- L1 `b5375bd8`: la portada de Configuración leía `profiles.role`, que ya no existe.
+- L2 y L4 (backend) en `21b20217`:
+  - L2: `/pending` ya no cae si la empresa no tiene RUT.
+  - L4: el alta crea los documentos con `requires_file = true`.
+- L3, L4 (frontend) y L5 en `9f947b8f`:
+  - L3: el cajón de Certificación muestra el error con "Reintentar" en vez de "No le falta ningún documento".
+  - L4: el checklist del Directorio carga con archivo por defecto.
+  - L5: en el Directorio, subir y reasignar exigen `documents.upload` y `documents.review`.
+- Tests: backend 124 y frontend del área 951, todos en verde; tsc OK. Comprobado en la copia local: el supervisor de Operaciones solo ve "Ver".
+
+**L6 NO se tocó (ruling):** a las entidades inactivas se les siembran pendientes a propósito, porque la siembra de una
+entidad solo corre al crearla y reactivar a alguien la dejaría sin pendientes. El defecto es de lectura:
+- el alcance del catálogo, la vista previa del efecto y las listas por conductor y por vehículo no filtran a los
+  activos;
+- la portada sí los filtra.
+
+Arreglarlo consulta por consulta sería un parche. Va en el primer bloque del rediseño: **una sola definición de
+alcance y de estado.**
+
+**Decisiones del usuario (11/10):**
+- **Operaciones ve los documentos y puede "Pedir a Certificación".** Esa acción funciona como notificación o
+  disparador hacia el equipo de Certificación: crea una solicitud en su cola, con el contexto del viaje o del Cierre.
+  No sube documentos.
+- **El rediseño de Configuración y de Certificación (documentos) va junto**, alineado con las primitivas y el layout
+  del detalle del viaje y la vista rápida. Se hace por brainstorming → maqueta → spec → plan, sin código antes de
+  aprobar.
+
+**Siguiente paso exacto:**
+- [ ] Brainstorming del rediseño de Certificación y Configuración:
+  - un panel único de documentos por entidad;
+  - un solo estado y un solo alcance (incluye L6);
+  - el "cubo" por documento;
+  - "Pedir a Certificación";
+  - un solo flujo para activar;
+  - L7 (taxonomía vacía → lista vacía).
+- [ ] Rediseño del detalle del viaje, opción (b) (ver la entrada de abajo).
+
 ### 2026-10-11 — Cierre de bugs pendientes (B1-B5) + diagnóstico para la próxima sesión
 
 Pedido del usuario: "solo los bugs; el resto lo abordamos en otra sesión". Inventario hecho con tres
