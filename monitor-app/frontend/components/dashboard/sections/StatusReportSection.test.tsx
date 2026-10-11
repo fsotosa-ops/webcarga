@@ -161,7 +161,8 @@ describe('StatusReportSection', () => {
     await body.findByText('Equipos activos')
     fireEvent.click(body.getByRole('button', { name: 'Equipo Completo' }))
     fireEvent.click(body.getByRole('button', { name: 'Asignados' }))
-    expect(body.getByText('Hoy no hubo equipos de Equipo Completo asignados')).toBeInTheDocument()
+    // Sin "Hoy": el cierre casi siempre se mira para el día anterior.
+    expect(body.getByText('No hubo equipos de Equipo Completo asignados')).toBeInTheDocument()
     expect(body.queryByRole('table')).not.toBeInTheDocument()
   })
 
@@ -265,6 +266,10 @@ describe('StatusReportSection', () => {
     expect(texto).toContain('Estatus del día 02/08 · Tractoreo · Asignados')
     expect(texto).toContain('CD Quilicura')
     expect(texto).not.toContain('Norte Spa')
+    // En el correo no van controles: ni botones del árbol ni el ícono.
+    const html = await item.items['text/html'].text()
+    expect(html).toContain('Walmart')
+    expect(html).not.toMatch(/<button|<svg/)
     expect(await body.findByText(/copiado/i)).toBeInTheDocument()
     vi.unstubAllGlobals()
   })

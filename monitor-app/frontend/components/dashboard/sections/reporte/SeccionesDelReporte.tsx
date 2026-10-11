@@ -47,14 +47,14 @@ export function CuatroCifras({ reporte }: { reporte: OperationTypeReport }) {
 
 export function SeccionResumen({ reporte, tipo }: Props) {
   const s = reporte.summary
-  if (s.total === 0) return <Vacio>Hoy no hay equipos de {tipo.etiqueta} enrolados</Vacio>
+  if (s.total === 0) return <Vacio>No hay equipos de {tipo.etiqueta} enrolados</Vacio>
   return (
     <div className="space-y-4">
       <CuatroCifras reporte={reporte} />
       <div className="grid sm:grid-cols-2 gap-4">
         <div>
           <Titulo>Asignados por cliente</Titulo>
-          {s.by_client.length === 0 ? <Vacio>Hoy no hubo equipos de {tipo.etiqueta} asignados</Vacio> : (
+          {s.by_client.length === 0 ? <Vacio>No hubo equipos de {tipo.etiqueta} asignados</Vacio> : (
             <div className="bg-white rounded-xl border border-border overflow-x-auto">
               <table className="w-full text-xs">
                 <thead><tr className={CABECERA}><th className={`text-left ${TH}`}>Cliente</th><th className={`text-right ${TH}`}>Asignados</th></tr></thead>
@@ -137,7 +137,7 @@ export function SeccionAsignados({ reporte, tipo }: Props) {
       {/* Decisión B (minuta 09/10): "lo importante es de dónde salió realmente". */}
       <p className="text-dato text-gray-500">Por el origen real del viaje.</p>
       {rows.length === 0
-        ? <Vacio>Hoy no hubo equipos de {tipo.etiqueta} asignados</Vacio>
+        ? <Vacio>No hubo equipos de {tipo.etiqueta} asignados</Vacio>
         : <TablaDeAsignados rows={rows} plegado={plegado} />}
       {sinAsignacion.rows.length > 0 && (
         <div>
@@ -177,7 +177,7 @@ export function SeccionAsignados({ reporte, tipo }: Props) {
 }
 
 export function SeccionSegundasVueltas({ reporte, tipo }: Props) {
-  if (reporte.second_legs.length === 0) return <Vacio>Hoy ningún equipo de {tipo.etiqueta} hizo una segunda vuelta</Vacio>
+  if (reporte.second_legs.length === 0) return <Vacio>Ningún equipo de {tipo.etiqueta} hizo una segunda vuelta</Vacio>
   return (
     <div className="bg-white rounded-xl border border-border overflow-x-auto">
       <table className="w-full text-xs">
@@ -209,7 +209,7 @@ export function SeccionNoTrabajaron({ reporte, tipo }: Props) {
   const nw = reporte.not_working
   const porConductor = tipo.clave === 'tractoreo'
   if (nw.by_reason.length === 0) {
-    return <Vacio>Hoy no hay {porConductor ? 'conductores' : 'equipos'} de {tipo.etiqueta} sin trabajar</Vacio>
+    return <Vacio>No hay {porConductor ? 'conductores' : 'equipos'} de {tipo.etiqueta} sin trabajar</Vacio>
   }
   return (
     <div className="space-y-4">
@@ -251,7 +251,7 @@ export function SeccionNoTrabajaron({ reporte, tipo }: Props) {
 }
 
 export function SeccionEmpresas({ reporte, tipo }: Props) {
-  if (reporte.carriers.length === 0) return <Vacio>Hoy no hay empresas de {tipo.etiqueta} enroladas</Vacio>
+  if (reporte.carriers.length === 0) return <Vacio>No hay empresas de {tipo.etiqueta} enroladas</Vacio>
   return (
     <div className="bg-white rounded-xl border border-border overflow-x-auto">
       <table className="w-full text-xs">

@@ -35,6 +35,15 @@ const ACCION = 'flex items-center gap-1 text-[11px] font-semibold text-gray-500 
 /** 2026-08-02 → 02/08, como lo escribe Operaciones en el correo del día. */
 const diaYMes = (fecha: string) => `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`
 
+/** El HTML a la vista, sin controles: en un correo, los botones del árbol se verían
+ *  como botones y el chevron como un ícono suelto. Queda el texto de cada fila. */
+function htmlParaPegar(nodo: HTMLElement): string {
+  const copia = nodo.cloneNode(true) as HTMLElement
+  copia.querySelectorAll('svg').forEach(svg => svg.remove())
+  copia.querySelectorAll('button').forEach(boton => boton.replaceWith(boton.textContent ?? ''))
+  return copia.innerHTML
+}
+
 interface Props {
   fecha:      string
   shippers?:  Shipper[]
@@ -73,7 +82,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
     if (!nodo) return
     const nombre = SECCIONES.find(s => s.id === seccion)?.label ?? ''
     const encabezado = `Estatus del día ${diaYMes(fecha)} · ${tipoActual.etiqueta} · ${nombre}`
-    const html = `<p><b>${encabezado}</b></p>${nodo.innerHTML}`
+    const html = `<p><b>${encabezado}</b></p>${htmlParaPegar(nodo)}`
     const texto = `${encabezado}\n\n${nodo.innerText ?? nodo.textContent ?? ''}`
     if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
       await navigator.clipboard.write([new ClipboardItem({
