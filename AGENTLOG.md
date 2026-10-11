@@ -16,6 +16,41 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Auditoría de la minuta 09/10 contra código, Mage y despliegues + cuenta al pie del sidebar
+
+Plan: `~/.claude/plans/necesito-que-revises-completamente-synchronous-fog.md`. Cada ítem se verificó en código, en el
+mirror de Mage y en git, no solo aquí.
+
+- **Corrección al AGENTLOG:** la minuta 2.3 (Publicada de Sodimac fuera del Cierre) NO estaba hecha. c73d7127 solo
+  saca las ofertas *retiradas*. **Decisión del usuario (D1): la Publicada viva queda en Por resolver**, a propósito.
+- **Todo está solo en `dev`.** `main` sigue en el 01/08 (789 commits detrás); los dos stacks comparten la base.
+  **D4: el Go Live del 15/10 corre sobre dev.** El merge a main queda como deuda (RBAC, scheduler y env vars de prod).
+- **D2:** el grupo "Asignación incompleta" (solo patente o solo conductor) va en Por resolver, sin motivo.
+- **D3:** anular sigue como está: el operador anula lo suyo, el admin todo.
+- **Respuestas para Pablo (sin código):** 2.5, el historial de documentos SÍ existe (archivo nuevo por carga +
+  `audit_log document_replace`), pero solo se ve desde Directorio; 3.4, la póliza NO se comparte entre Certificación
+  y Seguros (hay que cargarla dos veces); 3.2, los ajustes posteriores no ven una asignación tardía de flota sobre un
+  viaje ya firmado.
+- **Hecho (P0b, pedido del usuario): cuenta al pie del sidebar** (`159421bc`). `SidebarAccount` reúne avatar, nombre,
+  rol, Cambiar contraseña y Cerrar sesión; `getDisplayName` en `lib/authz/acceso.ts`; la `Topbar` queda solo en el
+  teléfono (`md:hidden`). Tests del área 45/45 con mutación verificada; tsc limpio; sin build local (regla del
+  usuario: build solo si se toca código compartido o integraciones).
+- **Estándar exigido por el usuario (11/10):** todo nombre nuevo en inglés estándar (componentes, funciones,
+  archivos, ids, claves); UI en español; rigor de legibilidad, robustez y patrón de la app. Guardado en la memoria.
+
+**Siguiente paso exacto:**
+- [ ] Verificar P0b en dev con Playwright (escritorio expandido/contraído, teléfono a 390 px).
+- [ ] P1, ítem 5: un manual nuevo aparece "no asignado" en Cierre › Viajes hasta la corrida de Mage
+      (`routers/trips.py:1917-1927` copia `is_assigned=false`). Brainstorming corto; la regla es "flags solo en dbt".
+      Bugs vecinos: `_mirror_manual_trip` con `except Exception: pass` (`trips.py:1989`); editar un manual sube
+      `status_reported_at` y lo vuelve a contar en días nuevos.
+- [ ] P2: grupo `incomplete_assignment` en `services/cierre_viajes.py` + `lib/cierre/gruposDeViajes.ts`.
+- [ ] P3, ítem 21: enlaces del Cierre (Flota y Viajes) a la empresa / `?driver=` / `?asset=`.
+- [ ] P4, ítem 20: abrir la fila de requisito (`listPending({requirementCode, estado})`, sin llamadores hoy).
+- [ ] P5, ítem 23: editar los clientes de una empresa (`PUT /carriers/{id}/shippers`).
+- [ ] P6: tests rojos conocidos, overflow del reporte en el teléfono, issue #13, historial en la ficha de Certificación.
+- [ ] Deuda menor: `initials` duplicada en `UsersTable.tsx` e `InsurancePolicyModal.tsx` (usar `getInitials`).
+
 ### 2026-10-11 — Monitor: "En curso" por días sin movimiento (reemplaza la regla de 15 días) — en dev
 
 **Decisión del usuario:** la regla de 15 días no aplica (el Cierre ya muestra Pendientes / Por resolver). En el
