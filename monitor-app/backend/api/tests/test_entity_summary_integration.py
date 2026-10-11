@@ -148,3 +148,21 @@ async def test_carrier_summary_counts_active_fleet(conexion_revertida):
     assert (summary["active_drivers"], summary["active_assets"]) == (2, 1)
     assert summary["shippers"] == []
     assert summary["primary_contact"] is None
+
+
+async def test_with_several_active_tractors_the_usual_one_is_the_latest(conexion_revertida):
+    """Un conductor puede tener varios tractos activos (el índice único es por tracto):
+    el habitual es el de la asignación más reciente, no uno cualquiera."""
+    conn = conexion_revertida
+    carrier = await new_carrier(conn)
+    driver = await new_driver(conn, carrier)
+    older, newer = await new_asset(conn, carrier), await new_asset(conn, carrier)
+    for asset, start in ((older, date.today() - timedelta(days=90)), (newer, date.today() - timedelta(days=3))):
+        await conn.execute(
+            "INSERT INTO public.vehicle_driver_assignments "
+            "(asset_id, driver_id, status, source, is_manual_override, start_date) "
+            "VALUES ($1, $2, 'ACTIVE', 'manual', true, $3)", asset, driver, start)
+
+    for _ in range(3):
+        summary = await get_driver_summary(driver, pool=PoolDeUnaConexion(conn), _=None)
+        assert summary["usual_tractor"]["id"] == str(newer)

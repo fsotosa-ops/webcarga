@@ -84,8 +84,16 @@ async def driver_summary(conn, driver_id: UUID) -> dict | None:
         LEFT JOIN public.carriers c ON c.id = da.carrier_id
         LEFT JOIN public.locations hl ON hl.id = d.home_location_id
         LEFT JOIN public.shippers hs ON hs.id = hl.entity_id AND hl.entity_type = 'SHIPPER'
-        LEFT JOIN public.vehicle_driver_assignments vda ON vda.driver_id = d.id AND vda.status = 'ACTIVE'
-        LEFT JOIN public.assets a ON a.id = vda.asset_id
+        -- Un conductor puede tener varios tractos activos (el índice único es por
+        -- tracto): el habitual es el de la asignación más reciente, siempre el mismo.
+        LEFT JOIN LATERAL (
+            SELECT a.id, a.license_plate
+            FROM public.vehicle_driver_assignments vda
+            JOIN public.assets a ON a.id = vda.asset_id
+            WHERE vda.driver_id = d.id AND vda.status = 'ACTIVE'
+            ORDER BY vda.start_date DESC NULLS LAST, vda.created_at DESC, a.id
+            LIMIT 1
+        ) a ON true
         WHERE d.id = $1
         LIMIT 1
         """,

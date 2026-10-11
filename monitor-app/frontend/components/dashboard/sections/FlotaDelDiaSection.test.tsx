@@ -1047,4 +1047,25 @@ describe('FlotaDelDiaSection', () => {
     await screen.findByText('FCCP42')
     expect(screen.queryByRole('button', { name: /^Ver (equipo|conductor|empresa) / })).toBeNull()
   })
+
+  it('en una fila fusionada, la empresa que se ve es la que se abre', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...DRIVERS_STATUS,
+      drivers: [driverRow({ driver_id: 'dx', full_name: 'Rita Mora', carrier_id: 'cDriver', carrier_name: 'Empresa del conductor' })],
+    })
+    vi.mocked(equipmentClosuresApi.get).mockResolvedValue({
+      ...EQUIPMENT_STATUS,
+      tractoreo: { ...EQUIPMENT_STATUS.tractoreo, equipment: [equipmentRow({
+        asset_id: 'tx', tractor_plate: 'RRMM11', carrier_id: 'cTractor', carrier_name: 'Empresa del tracto',
+        status: 'UNASSIGNED', requires_motivo: true, driver_id: 'dx', driver_name: 'Rita Mora',
+      })] },
+    })
+    const onOpenQuickView = vi.fn()
+    renderSection({ onOpenQuickView })
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver empresa Empresa del tracto' }))
+    expect(onOpenQuickView).toHaveBeenCalledWith(
+      { kind: 'carrier', id: 'cTractor', label: 'Empresa del tracto' }, 'asset:tx')
+  })
 })

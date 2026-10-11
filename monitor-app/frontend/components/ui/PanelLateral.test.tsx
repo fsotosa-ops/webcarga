@@ -154,5 +154,24 @@ describe('PanelLateral', () => {
     fireEvent.mouseDown(screen.getByText('afuera'))
     expect(onCerrar).toHaveBeenCalled()
   })
+
+  it('presionar un botón que abre otro panel no lo cierra (sin parpadeo)', () => {
+    const onCerrar = vi.fn()
+    render(
+      <>
+        <button data-panel-trigger>otra fila</button>
+        <PanelLateral titulo={<span>Conductor</span>} label="Conductor Vidal" onCerrar={onCerrar} pie={null} overlay="none">
+          <p>cuerpo</p>
+        </PanelLateral>
+      </>,
+    )
+    fireEvent.mouseDown(screen.getByText('otra fila'))
+    expect(onCerrar).not.toHaveBeenCalled()
+  })
+
+  it('con un título que no es texto, toma su nombre accesible de `label`', () => {
+    render(<PanelLateral titulo={<span>Conductor · vista rápida</span>} label="Conductor Vidal" onCerrar={vi.fn()} pie={null} overlay="none"><p>x</p></PanelLateral>)
+    expect(screen.getByRole('dialog', { name: 'Conductor Vidal' })).toBeInTheDocument()
+  })
 })
 

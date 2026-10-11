@@ -122,3 +122,11 @@ describe('EntityQuickView', () => {
     expect(onBack).toHaveBeenCalled()
   })
 })
+
+describe('EntityQuickView accesible', () => {
+  it('el panel se anuncia con el tipo y el nombre de la entidad', () => {
+    vi.mocked(fetchEntitySummary).mockReturnValue(new Promise(() => {}))
+    renderView({ kind: 'driver', id: 'd1', label: 'Vidal Gallardo' })
+    expect(screen.getByRole('dialog', { name: 'Conductor Vidal Gallardo' })).toBeInTheDocument()
+  })
+})

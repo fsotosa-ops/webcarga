@@ -70,7 +70,7 @@ export function EntityQuickView({ target, canGoBack, onNavigate, onBack, onClose
   )
 
   return (
-    <PanelLateral titulo={title} onCerrar={onClose} pie={footer} overlay="none">
+    <PanelLateral titulo={title} label={`${KIND_LABEL[target.kind]} ${target.label}`} onCerrar={onClose} pie={footer} overlay="none">
       <Body target={target} query={query} onNavigate={onNavigate} />
     </PanelLateral>
   )

@@ -361,7 +361,9 @@ export function FlotaDelDiaSection({
         key: base.key,
         secondary: e.tractor_plate,
         assetId: e.asset_id,
+        // Nombre e id de la MISMA empresa: la que se ve es la que se abre (revisión final, 11/10).
         carrierName: e.carrier_name ?? d.carrier_name,
+        carrierId: e.carrier_name ? e.carrier_id : d.carrier_id,
         cd: e.home_cd_name ?? d.home_cd_name,
         tractoPropio: propio ? { assetId: e.asset_id, reasonId: e.unassigned_reason_id } : null,
       })

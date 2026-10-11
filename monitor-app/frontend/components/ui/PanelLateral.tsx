@@ -11,9 +11,11 @@ import { X } from 'lucide-react'
  *  los mismos que ya usa TransporterSlideOver. Un `z-[9999]` suelto convierte
  *  el apilado en algo que se descubre a los golpes. */
 export function PanelLateral({
-  titulo, onCerrar, pie, children, overlay = 'dim',
+  titulo, onCerrar, pie, children, overlay = 'dim', label,
 }: {
   titulo:   ReactNode
+  /** Nombre accesible del panel cuando `titulo` no es un texto. */
+  label?:   string
   onCerrar: () => void
   pie:      ReactNode
   children: ReactNode
@@ -48,7 +50,11 @@ export function PanelLateral({
   useEffect(() => {
     if (overlay !== 'none') return
     const alClic = (e: MouseEvent) => {
-      if (panel.current && !panel.current.contains(e.target as Node)) onCerrar()
+      const target = e.target as Element
+      // Un botón que abre otro panel no cierra éste al presionar: sin esto, el panel
+      // desaparecía entre el mousedown y el click y la fila parpadeaba (revisión final).
+      if (target.closest?.('[data-panel-trigger]')) return
+      if (panel.current && !panel.current.contains(target)) onCerrar()
     }
     document.addEventListener('mousedown', alClic)
     return () => document.removeEventListener('mousedown', alClic)
@@ -94,7 +100,7 @@ export function PanelLateral({
         ref={panel}
         role="dialog"
         aria-modal={overlay === 'dim' ? 'true' : undefined}
-        aria-label={typeof titulo === 'string' ? titulo : undefined}
+        aria-label={typeof titulo === 'string' ? titulo : label}
         tabIndex={-1}
         onKeyDown={atraparTab}
         className={`fixed right-0 top-0 z-50 h-full w-full bg-white shadow-xl flex flex-col focus-visible:outline-none ${

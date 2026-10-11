@@ -25,7 +25,7 @@ export function EntityCell({ kind, id, label, onOpen, unresolved = false, empty 
   if (!label) return <span className="text-informativo">{empty}</span>
   if (id && onOpen) {
     return (
-      <button type="button" onClick={() => onOpen({ kind, id, label })} aria-label={`Ver ${NOUN[kind]} ${label}`}
+      <button type="button" data-panel-trigger onClick={() => onOpen({ kind, id, label })} aria-label={`Ver ${NOUN[kind]} ${label}`}
               className={`text-left text-accion underline decoration-dotted underline-offset-2 hover:decoration-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded ${font}`}>
         {label}
       </button>
