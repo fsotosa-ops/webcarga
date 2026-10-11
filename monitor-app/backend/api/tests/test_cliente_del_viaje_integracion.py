@@ -70,3 +70,15 @@ async def test_renombrar_un_cliente_no_saca_sus_viajes_del_monitor(conexion_reve
     res = await list_trips(pool=PoolDeUnaConexion(conexion_revertida), user=usuario, shipper_id=colun, view="historial", limit=5)
     assert res["count"] > 0
     assert {d["client_name"] for d in res["data"]} == {"Colun Renombrada"}
+
+
+async def test_vincular_un_cliente_del_tms_escribe_la_correspondencia(conexion_revertida):
+    from app.routers.tms_clients import VinculoBody, vincular
+    from tests.conftest import PoolDeUnaConexion, _usuario_real
+
+    fila = await conexion_revertida.fetchrow(
+        "SELECT source_client_id::text AS id FROM app.tms_client_shippers LIMIT 1")
+    otro = await conexion_revertida.fetchval("SELECT id::text FROM public.shippers WHERE lower(name) = 'hbc'")
+    usuario = await _usuario_real(conexion_revertida)
+    res = await vincular(fila["id"], VinculoBody(shipper_id=otro), pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
+    assert res["shipper_id"] == otro
