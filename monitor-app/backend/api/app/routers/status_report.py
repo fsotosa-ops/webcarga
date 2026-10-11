@@ -28,6 +28,8 @@ Decisiones:
     (local de entrega)" — singular en la HU.
   - Cada equipo tiene un solo tipo de operación (`code` de su taxonomía): cuenta
     en Tractoreo o en Equipo Completo, nunca en los dos. Los sin tipo no entran.
+  - El filtro de cliente aplica una sola regla a todas las cifras (_clientes_de_la_fila):
+    con carga, el cliente del viaje; sin carga, los clientes de su empresa en el directorio.
   - El cliente se muestra con el nombre del directorio (public.shippers), no
     con el texto crudo del TMS, igual que el resto del Cierre.
 """
@@ -48,6 +50,9 @@ from ..services.driver_roster import TRACTOREO_ROSTER_CTE
 from .trips import _load_operation_type_buckets, _resolve_operation_type
 
 router = APIRouter(prefix="/status-report", tags=["status-report"])
+
+# Los dos tipos del reporte: clave de la API → código estable de la taxonomía.
+_TIPOS = {"tractoreo": "TRACTOREO", "equipo_completo": "EQUIPO_COMPLETO"}
 
 
 def _parse_business_date(fecha: str) -> _date:
@@ -271,6 +276,7 @@ async def _build_driver_rows(pool, business_date: _date) -> list[dict]:
             "driver_id": driver_id,
             "full_name": r["full_name"],
             "carrier_name": r["carrier_name"],
+            "carrier_id": r["carrier_id"],
             "status": status_row.get("status"),
             "category": status_row.get("category"),
             "unassigned_reason_label": status_row.get("unassigned_reason_label"),
@@ -288,11 +294,49 @@ async def _build_driver_rows(pool, business_date: _date) -> list[dict]:
     return [r for r in rows if r["category"] in ("NO_TRABAJANDO", "SIN_RESOLVER")]
 
 
-def _filter_by_client(rows: list[dict], client: str | None) -> list[dict]:
+# Los clientes de cada empresa, del directorio: el mismo cruce que daily_closures.py.
+_SQL_CLIENTES_POR_EMPRESA = """
+SELECT cs.carrier_id, array_agg(DISTINCT sh.name ORDER BY sh.name) AS clients
+FROM public.carrier_shippers cs
+JOIN public.shippers sh ON sh.id = cs.shipper_id AND sh.status = 'ACTIVE'
+WHERE cs.status = 'ACTIVE'
+GROUP BY cs.carrier_id
+"""
+
+
+def _clientes_de_la_fila(fila: dict, clientes_por_empresa: dict) -> list[str]:
+    """A qué clientes pertenece una fila del reporte (spec 2026-10-11). Es la
+    única regla de pertenencia, y la usan por igual equipos, conductores y
+    faltante de dotación:
+      - con carga: al cliente de su viaje del día;
+      - sin carga, o sin noción de carga (conductor que no trabajó, faltante de
+        dotación): a cada cliente de su empresa en el directorio.
+    Así, con "Walmart" elegido, el reporte habla de la flota que trabaja para
+    Walmart, haya cargado o no."""
+    if fila.get("con_carga"):
+        return [fila["client_name"]] if fila["client_name"] else []
+    return list(clientes_por_empresa.get(fila["carrier_id"], []))
+
+
+def _filter_by_client(rows: list[dict], client: str | None, clientes_por_empresa: dict) -> list[dict]:
     if not client:
         return rows
-    client_lower = client.strip().lower()
-    return [r for r in rows if not r["con_carga"] or (r["client_name"] or "").strip().lower() == client_lower]
+    buscado = client.strip().lower()
+    return [
+        r for r in rows
+        if any(c.strip().lower() == buscado for c in _clientes_de_la_fila(r, clientes_por_empresa))
+    ]
+
+
+def _clientes_del_dia(rows: list[dict]) -> list[dict]:
+    """Las opciones del filtro: los clientes con al menos un equipo de los tipos
+    del reporte cargado ese día, con cuántos. Sale del día completo, antes del
+    filtro, para que la lista no cambie al elegir."""
+    acc: dict = {}
+    for r in rows:
+        if r["con_carga"] and r["client_name"] and any(c in _TIPOS.values() for c in r["categories"]):
+            acc[r["client_name"]] = acc.get(r["client_name"], 0) + 1
+    return [{"client_name": k, "assigned": v} for k, v in sorted(acc.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
 # Las columnas de motivo salen del catálogo, no de una lista escrita a mano:
@@ -317,7 +361,6 @@ _SIN_MOTIVO = "Sin motivo"
 _TRABAJO_SIN_ASIGNACION = "TRABAJANDO_SIN_ASIGNACION"
 # Quien no trabajó, y quien todavía no tiene motivo: no se sabe si trabajó.
 _NO_TRABAJO = ("NO_TRABAJANDO", "SIN_RESOLVER")
-_TIPOS = {"tractoreo": "TRACTOREO", "equipo_completo": "EQUIPO_COMPLETO"}
 _ZONA_A_CLAVE = {"RM": "rm", "Z0": "z0", "Región": "region", "Sin clasificar": "unclassified"}
 
 
@@ -518,18 +561,20 @@ def _reporte_del_tipo(rows: list[dict], *, no_trabajaron: dict, catalogo_sin_asi
 @router.get("")
 async def get_status_report(fecha: str, client: str | None = None, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
     business_date = _parse_business_date(fecha)
-    rows = _filter_by_client(await _build_asset_rows(pool, business_date), client)
+    clientes_por_empresa = {r["carrier_id"]: list(r["clients"]) for r in await pool.fetch(_SQL_CLIENTES_POR_EMPRESA)}
+    all_rows = await _build_asset_rows(pool, business_date)
+    rows = _filter_by_client(all_rows, client, clientes_por_empresa)
     por_tipo = {clave: [r for r in rows if codigo in r["categories"]] for clave, codigo in _TIPOS.items()}
-    # Los conductores que no trabajaron no tienen cliente: el filtro de cliente
-    # no les aplica, igual que a los equipos sin carga en _filter_by_client.
-    driver_rows = await _build_driver_rows(pool, business_date)
+    # Conductores y faltante de dotación, con la misma regla de pertenencia.
+    driver_rows = _filter_by_client(await _build_driver_rows(pool, business_date), client, clientes_por_empresa)
+    faltantes = _filter_by_client(await compute_fleet_driver_gap(pool), client, clientes_por_empresa)
     catalogo_no_trabajo = [r["label"] for r in await pool.fetch(_SQL_MOTIVOS_DEL_GRUPO, GRUPO_NO_TRABAJANDO)]
     catalogo_sin_asignacion = [
         r["label"] for r in await pool.fetch(_SQL_MOTIVOS_DEL_GRUPO, GRUPO_TRABAJANDO_SIN_ASIGNACION)
     ]
     no_trabajaron = {
         "tractoreo": _no_trabajaron_por_conductor(
-            driver_rows, catalogo_no_trabajo, faltantes=await compute_fleet_driver_gap(pool),
+            driver_rows, catalogo_no_trabajo, faltantes=faltantes,
             sin_conductor=await pool.fetchval(_SQL_ETIQUETA_SIN_CONDUCTOR),
         ),
         "equipo_completo": _no_trabajaron_por_equipo(por_tipo["equipo_completo"], catalogo_no_trabajo),
@@ -537,6 +582,7 @@ async def get_status_report(fecha: str, client: str | None = None, pool=Depends(
     return {
         "business_date": business_date.isoformat(),
         "client_filter": client,
+        "clients": _clientes_del_dia(all_rows),
         "by_operation_type": {
             clave: _reporte_del_tipo(
                 por_tipo[clave], no_trabajaron=no_trabajaron[clave], catalogo_sin_asignacion=catalogo_sin_asignacion,

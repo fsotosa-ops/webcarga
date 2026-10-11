@@ -15,6 +15,8 @@ from app.routers.status_report import (
     _asignados,
     _build_driver_rows,
     _cargaron_en_otro_origen,
+    _clientes_de_la_fila,
+    _clientes_del_dia,
     _empresas,
     _filter_by_client,
     _motivos_que_ocurrieron,
@@ -59,7 +61,7 @@ def _row(**overrides):
 # compatibilidad": son, por definición, conductores sin carga.
 def _driver_row(**overrides):
     base = {
-        "driver_id": "d1", "full_name": "Juan Pérez", "carrier_name": "Transportes Sur",
+        "driver_id": "d1", "full_name": "Juan Pérez", "carrier_name": "Transportes Sur", "carrier_id": "c1",
         "status": "UNASSIGNED", "unassigned_reason_label": "Panne",
         # Un conductor de esta lista NO trabajo, asi que no tiene origen real:
         # su CD es el declarado y nada mas.
@@ -79,15 +81,53 @@ def test_zone_bucket_maps_region_norte_y_sur_a_region():
     assert _zone_bucket("algo raro") == "Sin clasificar"
 
 
-def test_filter_by_client_mantiene_equipos_sin_carga_y_filtra_los_con_carga_de_otro_cliente():
+CLIENTES_POR_EMPRESA = {"c1": ["Walmart"], "c2": ["Iansa", "Sodimac"]}
+
+
+def test_un_equipo_con_carga_pertenece_al_cliente_de_su_viaje():
+    assert _clientes_de_la_fila(_row(client_name="Walmart"), CLIENTES_POR_EMPRESA) == ["Walmart"]
+
+
+def test_un_equipo_sin_carga_pertenece_a_los_clientes_de_su_empresa():
+    """Con "Sodimac" elegido, "Equipos activos" no puede seguir sumando los
+    tractos de Walmart que no cargaron (spec 2026-10-11, filtro coherente)."""
+    fila = _row(carrier_id="c2", con_carga=False, client_name=None, category="NO_TRABAJANDO")
+    assert _clientes_de_la_fila(fila, CLIENTES_POR_EMPRESA) == ["Iansa", "Sodimac"]
+
+
+def test_el_faltante_de_dotacion_pertenece_a_los_clientes_de_su_empresa():
+    """La fila de faltante no tiene con_carga: es por definición sin carga."""
+    assert _clientes_de_la_fila(_faltante("c1", 3, 1) | {"carrier_id": "c1"}, CLIENTES_POR_EMPRESA) == ["Walmart"]
+
+
+def test_el_filtro_aplica_la_misma_regla_a_cargados_y_sin_carga():
     rows = [
-        _row(asset_id="a1", con_carga=True, client_name="Walmart"),
-        _row(asset_id="a2", con_carga=True, client_name="Sodimac"),
-        _row(asset_id="a3", con_carga=False, client_name=None),
+        _row(asset_id="a1", carrier_id="c1", client_name="Walmart"),
+        _row(asset_id="a2", carrier_id="c2", client_name="Sodimac"),
+        _row(asset_id="a3", carrier_id="c1", con_carga=False, client_name=None, category="NO_TRABAJANDO"),
+        _row(asset_id="a4", carrier_id="c2", con_carga=False, client_name=None, category="NO_TRABAJANDO"),
     ]
-    result = _filter_by_client(rows, "walmart")
-    ids = {r["asset_id"] for r in result}
-    assert ids == {"a1", "a3"}
+    assert [r["asset_id"] for r in _filter_by_client(rows, "Walmart", CLIENTES_POR_EMPRESA)] == ["a1", "a3"]
+    assert [r["asset_id"] for r in _filter_by_client(rows, "Iansa", CLIENTES_POR_EMPRESA)] == ["a4"]
+    assert _filter_by_client(rows, None, CLIENTES_POR_EMPRESA) == rows
+
+
+def test_el_filtro_no_distingue_mayusculas():
+    rows = [_row(asset_id="a1", carrier_id="c9", con_carga=False, client_name=None, category="NO_TRABAJANDO")]
+    assert _filter_by_client(rows, "walmart", {"c9": ["WALMART"]}) == rows
+
+
+def test_los_clientes_del_dia_son_los_que_cargaron_con_su_cantidad():
+    rows = [
+        _row(asset_id="a1", client_name="Walmart"), _row(asset_id="a2", client_name="Walmart"),
+        _row(asset_id="a3", client_name="Iansa", categories=["EQUIPO_COMPLETO"]),
+        _row(asset_id="a4", con_carga=False, client_name=None, category="NO_TRABAJANDO"),
+        # Un equipo sin tipo no está en el reporte: no hace aparecer a su cliente.
+        _row(asset_id="a5", client_name="Colun", categories=["SIN_CLASIFICAR"]),
+    ]
+    assert _clientes_del_dia(rows) == [
+        {"client_name": "Walmart", "assigned": 2}, {"client_name": "Iansa", "assigned": 1},
+    ]
 
 
 def test_get_status_report_requires_valid_fecha():
@@ -152,6 +192,7 @@ async def test_build_driver_rows_deja_solo_a_quien_no_trabajo_o_no_se_sabe():
     assert row["home_cd"] == "CD Lo Aguirre"
     assert row["tractor_plate"] == "ABCD12"
     assert row["operation_type"] == "Tractoreo"
+    assert row["carrier_id"] == "c1"
     assert row["con_carga"] is False
 
 
@@ -399,7 +440,7 @@ def test_get_status_report_devuelve_los_dos_tipos_con_sus_seis_claves():
 
     assert res.status_code == 200
     body = res.json()
-    assert set(body) == {"business_date", "client_filter", "calculado_a", "pendiente_desde", "by_operation_type"}
+    assert set(body) == {"business_date", "client_filter", "calculado_a", "pendiente_desde", "by_operation_type", "clients"}
     assert set(body["by_operation_type"]) == {"tractoreo", "equipo_completo"}
     for tipo in body["by_operation_type"].values():
         assert set(tipo) == SEIS_CLAVES
@@ -436,23 +477,40 @@ def test_cada_equipo_cuenta_solo_en_su_tipo_y_los_asignados_cuadran_con_el_resum
     assert tractoreo["not_working"]["detail"] == []
 
 
-def test_el_filtro_de_cliente_deja_a_los_sin_carga_y_saca_a_los_de_otro_cliente():
+def test_el_filtro_de_cliente_cuadra_todas_las_cifras_y_devuelve_los_clientes_del_dia():
+    from app.routers.status_report import _SQL_CLIENTES_POR_EMPRESA
+
     asset_rows = [
-        _row(asset_id="t1", client_name="Walmart"),
-        _row(asset_id="t2", client_name="Sodimac"),
-        _row(asset_id="t3", con_carga=False, client_name=None, category="NO_TRABAJANDO"),
+        _row(asset_id="t1", carrier_id="c1", client_name="Walmart"),
+        _row(asset_id="t2", carrier_id="c2", client_name="Sodimac"),
+        _row(asset_id="t3", carrier_id="c1", con_carga=False, client_name=None, category="NO_TRABAJANDO"),
+        _row(asset_id="t4", carrier_id="c2", con_carga=False, client_name=None, category="NO_TRABAJANDO"),
     ]
+    driver_rows = [_driver_row(driver_id="d1", carrier_id="c1"), _driver_row(driver_id="d2", carrier_id="c2")]
+
+    async def fetch(sql, *args):
+        if sql == _SQL_CLIENTES_POR_EMPRESA:
+            return [{"carrier_id": "c1", "clients": ["Walmart"]}, {"carrier_id": "c2", "clients": ["Sodimac"]}]
+        return []
+
     pool = AsyncMock()
-    pool.fetch.return_value = []
+    pool.fetch.side_effect = fetch
     pool.fetchval.return_value = None
-    with patch("app.routers.status_report._build_asset_rows", AsyncMock(return_value=asset_rows)), \
-         patch("app.routers.status_report._build_driver_rows", AsyncMock(return_value=[])), \
-         patch("app.routers.status_report.compute_fleet_driver_gap", AsyncMock(return_value=[])):
+    gap = [{"carrier_id": "c1", "business_name": "Transportes Sur", "n_tractos": 3, "n_conductores": 1, "gap": 2},
+           {"carrier_id": "c2", "business_name": "Otra", "n_tractos": 2, "n_conductores": 1, "gap": 1}]
+    import app.routers.status_report as modulo
+    with patch.object(modulo, "_build_asset_rows", AsyncMock(return_value=asset_rows)), \
+         patch.object(modulo, "_build_driver_rows", AsyncMock(return_value=driver_rows)), \
+         patch.object(modulo, "compute_fleet_driver_gap", AsyncMock(return_value=gap)), \
+         patch.object(modulo, "_no_trabajaron_por_conductor", wraps=modulo._no_trabajaron_por_conductor) as espia:
         body = _cliente_http(pool).get("/api/v1/status-report?fecha=2026-08-02&client=Walmart").json()
 
     resumen = body["by_operation_type"]["tractoreo"]["summary"]
     assert (resumen["total"], resumen["assigned"]) == (2, 1)
-
+    assert [d["driver_id"] for d in espia.call_args.args[0]] == ["d1"]
+    assert [f["carrier_id"] for f in espia.call_args.kwargs["faltantes"]] == ["c1"]
+    # La lista sale del día completo, antes del filtro.
+    assert body["clients"] == [{"client_name": "Sodimac", "assigned": 1}, {"client_name": "Walmart", "assigned": 1}]
 
 def test_resumen_cuenta_los_viajes_de_varios_dias_por_dias_atras():
     """Los equipos que siguen en un viaje planificado días antes (se mantienen

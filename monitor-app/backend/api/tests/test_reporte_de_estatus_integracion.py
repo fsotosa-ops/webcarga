@@ -17,3 +17,10 @@ async def test_los_viajes_del_dia_traen_el_conductor_resuelto(conexion_revertida
     # Los viajes de varios días se cuentan desde la fecha de planificación.
     assert "planning_date" in columnas
     assert "client_name" in columnas
+
+
+async def test_los_clientes_de_cada_empresa_salen_del_directorio(conexion_revertida):
+    from app.routers.status_report import _SQL_CLIENTES_POR_EMPRESA
+
+    sentencia = await conexion_revertida.prepare(_SQL_CLIENTES_POR_EMPRESA)
+    assert [a.name for a in sentencia.get_attributes()] == ["carrier_id", "clients"]
