@@ -16,6 +16,38 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Motivos de anulación de catálogo, ajustes sin ruido y vuelta visible: DESPLEGADO en dev
+
+- **Hecho:**
+  - Spec `docs/superpowers/specs/2026-10-10-cierre-motivos-de-anulacion-y-ajustes-design.md` y su plan, en commits fd382b11..95b4c0e3, desplegados 00:43 UTC.
+  - **Motivo de anulación de catálogo:**
+    - dominio `TRIP_VOID_REASON` en `status_taxonomies`, con los valores Duplicado, Cargado por error, Datos incorrectos y Otro; Otro exige comentario, regla por `code`;
+    - columnas `void_reason_id` y `void_note`; el texto libre `void_reason` quedó retirado;
+    - sección Configuración › Operaciones › Motivos de anulación;
+    - los 6 del 23/09 quedaron con DUPLICADO.
+  - **Ajustes en el Cierre:** se fue el bloque fijo de arriba. Queda un indicador "N ajustes posteriores al cierre" en el pie del día cerrado, que abre Viajes y desplaza hasta la sección. La pestaña Viajes muestra N y la sección "Después de la firma".
+  - **Vuelta visible:** "← Volver al Cierre" o "← Volver al Monitor" en el detalle del viaje (`etiquetaDeVuelta`).
+  - **Producción:** las migraciones `motivos_de_anulacion` (expand) y `motivos_de_anulacion_contract` están aplicadas. Mage corrió bien con el modelo nuevo en las dos fases (23:38 y 00:53 UTC).
+  - **Verificación:** Playwright en dev, todo verificado. La suite de backend dio 1385/1386; la única roja es la preexistente de catálogo. Frontend 1605/1605.
+- **Decisiones:**
+  - Expand → deploy → contract, para no romper el listado del Monitor con la API vieja desplegada.
+  - En cada ventana, el orden que no borra columnas: en el expand, primero Mage; en el contract, `IF EXISTS`.
+  - Un dominio aparte de los motivos de no asignación: anular corrige un registro, no es un resultado de negocio.
+  - Los ajustes van como indicador más sección, no como banner, siguiendo el estándar de cierre de período.
+- **Diferidos (revisión final):**
+  - la lista de motivos queda en caché 5 min tras editar Configuración, y no tiene estado vacío;
+  - el número de la pestaña no tiene aria-label;
+  - void_note no tiene largo máximo;
+  - un test cuenta datos reales del 23/09;
+  - la barra sigue editable mientras anula.
+  - Más los 9 menores de la ronda anterior (anular↔firmar, totals en dos sentencias, admin puro, anulado editable, conteo-activos, fmtDT).
+- **Siguiente paso exacto:**
+  - [ ] Probar en vivo la barra del Monitor con motivo, con un viaje manual de prueba autorizado por el usuario.
+  - [ ] Ronda de minors diferidos (si el usuario la pide).
+  - [ ] Contract de closure_periods (columnas de firma + CHECK) y de las 4 tablas viejas, con respaldo; issue #13.
+  - [ ] Test preexistente rojo: test_cargar_catalogo_webcarga (dato real CERTIFICADO_DE_VIGENCIA_DE_LA_SOCIEDAD).
+  - [ ] Decisión A del usuario (regla de 15 días).
+
 ### 2026-10-10 — Anulación con motivo y firma versionada del Cierre: DESPLEGADO en dev
 
 - **Hecho** (plan `docs/superpowers/plans/2026-10-10-cierre-anulacion-y-firma-versionada.md`, commits c82c936f..68f4b2bd, deploy 23:19 UTC verde):
