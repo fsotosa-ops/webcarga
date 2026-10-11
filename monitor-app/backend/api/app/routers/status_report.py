@@ -1,6 +1,7 @@
-"""Fase 5 (HU-04): Reporte de estatus del día — 6 secciones, construidas
-sobre el mismo modelo equipo-céntrico de las Fases 2-4 (Vista de Flota,
-Cierre del Día). Reusa:
+"""Reporte de estatus del día (HU-04), por tipo de operación (spec 2026-10-11,
+minuta 09/10 ítems 8 y 14): `by_operation_type.{tractoreo,equipo_completo}`
+con las mismas seis claves cada uno. Se construye sobre el mismo modelo
+equipo-céntrico del Cierre del Día. Reusa:
   - la clasificación Tractoreo/Equipo Completo/Sin clasificar de Fase 1/2.
   - el criterio "con carga hoy": app.trips_del_dia(), el mismo del Cierre.
   - la resolución RM/Z0/Región por COMUNA DEL DESTINO (§7.6 de la HU) vía
@@ -31,17 +32,8 @@ todavía no llega (ver docs/casuistica-negocio-diario.md y AGENTLOG.md):
     equipos en ambas secciones (Tractoreo y Equipos Completos) — mismo
     criterio que Fase 2/4, no se fuerza una sola categoría.
 
-Tarea 6 (plan 2.3, minuta 2026-08-03): la Sección 4 ("Tractoreo no
-trabajando") pasa a agruparse por CONDUCTOR, no por tracto — decisión de
-negocio confirmada por el usuario, porque el roster de Tractoreo (ver
-TRACTOREO_ROSTER_CTE) se arma a nivel EMPRESA, así que el conductor puede
-tener como tracto habitual uno clasificado Equipo Completo aunque él mismo
-esté en el roster de Tractoreo. Para no perder la forma de tabla cruzada
-CD×motivo de la HU-04 literal, la sección expone ambas cosas: los mismos
-`por_cd`/`por_empresa_y_cd` de siempre (ahora contando conductores) MÁS
-`driver_detail`, una fila plana por conductor con su tipo de operación.
-Las Secciones 1, 2, 3, 5, 6 siguen 100% tracto-céntricas — no cambian.
 """
+from collections.abc import Iterable
 from datetime import date as _date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -90,14 +82,14 @@ WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
 """
 
 # "Con carga hoy" — app.trips_del_dia(), el mismo criterio del Cierre, para
-# todos los TMS. Trae también planning_date (para "días en curso" de la
-# Sección 1) y el último destino (para clasificar RM/Z0/Región, §7.6).
+# todos los TMS. Trae también el conductor resuelto (para "Segundas vueltas")
+# y el último destino (para clasificar RM/Z0/Región, §7.6).
 _TODAY_TRIPS_SQL = f"""
 SELECT
     t.id AS trip_id,
     vfr.resolved_tractor_asset_id AS asset_id,
     t.client_name,
-    t.planning_date,
+    d.full_name AS driver_name,
     t.status_reported_at,
     {origen_del_viaje('t')} AS origin_cd,
     (
@@ -107,6 +99,7 @@ SELECT
     ) AS last_destination_local
 FROM app.trips t
 JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+LEFT JOIN public.drivers d ON d.id = vfr.resolved_driver_id
 WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
   AND vfr.resolved_tractor_asset_id IS NOT NULL
 """
@@ -159,7 +152,7 @@ ORDER BY vfr.resolved_driver_id, t.status_reported_at DESC NULLS LAST
 
 async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
     """Una fila enriquecida por equipo activo — insumo único del que se
-    derivan las 6 secciones (mismo patrón que fleet_daily_overview/
+    derivan las secciones de cada tipo (mismo patrón que fleet_daily_overview/
     equipment_closures: calcular una vez, derivar todo en Python)."""
     roster_rows = await pool.fetch(_ROSTER_SQL)
 
@@ -214,14 +207,11 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
         status_row = status_by_asset.get(asset_id)
 
         destination_zone = None
-        dias_en_curso = None
         if latest:
             shipper_key = (latest["client_name"] or "").strip().lower()
             bucket = buckets.get(shipper_key)
             op_type = _resolve_operation_type(bucket, latest["last_destination_local"])
             destination_zone = _zone_bucket(op_type)
-            if latest["planning_date"]:
-                dias_en_curso = (business_date - latest["planning_date"]).days
 
         rows.append({
             "asset_id": asset_id,
@@ -238,7 +228,7 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
             "home_cd": (status_row or {}).get("home_cd"),
             "client_name": latest["client_name"] if latest else None,
             "destination_zone": destination_zone,
-            "dias_en_curso": dias_en_curso,
+            "driver_name": latest["driver_name"] if latest else None,
             "vueltas": max((leg_by_trip.get(t["trip_id"], 1) for t in asset_trips), default=0),
             "unassigned_reason_label": status_row["unassigned_reason_label"] if status_row else None,
             # La categoría de la línea, tal como la calcula cierre_lineas: el
@@ -253,9 +243,8 @@ async def _build_driver_rows(pool, business_date: _date) -> list[dict]:
     del roster Tractoreo (TRACTOREO_ROSTER_CTE) que hoy está UNASSIGNED —
     ASSIGNED no entra (tiene carga) y MISMATCH tampoco (inconsistencia de
     datos que se resuelve en Pendientes/pre-cierre, no es parte de este
-    reporte). con_carga queda fijo en False: es un campo "de compatibilidad"
-    para que _cross_tab_by_motivo (que ya filtra internamente con
-    `if r["con_carga"]: continue`) acepte todas las filas sin modificarla."""
+    reporte). con_carga queda fijo en False: estas filas son, por definición,
+    conductores sin carga."""
     # Las líneas del día ya están calculadas (las mantiene el ejecutor de la
     # cola, services/cola_del_cierre.py): este reporte solo las lee.
     roster_rows = await pool.fetch(_DRIVER_ROSTER_SQL)
@@ -301,103 +290,6 @@ def _filter_by_client(rows: list[dict], client: str | None) -> list[dict]:
     return [r for r in rows if not r["con_carga"] or (r["client_name"] or "").strip().lower() == client_lower]
 
 
-def _summary(rows: list[dict]) -> dict:
-    assigned = sum(1 for r in rows if r["con_carga"])
-    total = len(rows)
-    return {
-        "total": total, "assigned": assigned, "unassigned": total - assigned,
-        "utilization_pct": round(assigned / total * 100, 1) if total else 0.0,
-    }
-
-
-def _section1_resumen(all_rows: list[dict]) -> dict:
-    tractoreo = [r for r in all_rows if "TRACTOREO" in r["categories"]]
-    equipos_completos = [r for r in all_rows if "EQUIPO_COMPLETO" in r["categories"]]
-    multi_dia = [r for r in all_rows if r["con_carga"] and (r["dias_en_curso"] or 0) > 0]
-    por_dias: dict[str, int] = {}
-    for r in multi_dia:
-        key = str(r["dias_en_curso"])
-        por_dias[key] = por_dias.get(key, 0) + 1
-    return {
-        "total_equipos_activos": len(all_rows),
-        "tractoreo": _summary(tractoreo),
-        "equipos_completos": _summary(equipos_completos),
-        "multi_dia_activos": {"total": len(multi_dia), "por_dias_atras": por_dias},
-    }
-
-
-def _cross_tab_by_zone(rows: list[dict], key_fn) -> list[dict]:
-    """Filas = key_fn(row) (CD, o (CD, empresa)); columnas = RM/Z0/Región/
-    Sin clasificar + Total — para Sección 2 (asignados por tipo de destino)."""
-    buckets: dict = {}
-    for r in rows:
-        if not r["con_carga"]:
-            continue
-        key = key_fn(r)
-        if key is None:
-            continue
-        b = buckets.setdefault(key, {"RM": 0, "Z0": 0, "Región": 0, "Sin clasificar": 0, "total": 0})
-        b[r["destination_zone"]] += 1
-        b["total"] += 1
-    return buckets
-
-
-def _origen_de_la_fila(r: dict) -> str:
-    """El origen REAL del viaje para quien cargó (minuta 09/10, decisión B: "lo
-    importante es de dónde salió realmente"). Quien no cargó no salió a ningún
-    lado: va en su origen habitual declarado."""
-    origen = r["origin_cd"] if r["con_carga"] else r["home_cd"]
-    return origen or "Sin origen"
-
-
-def _section2_tractoreo_asignado(rows: list[dict], motivos_sin_carga: list[str]) -> dict:
-    """Asignados por el ORIGEN REAL del viaje (decisión B, 10/10). Antes iba por
-    el habitual para cuadrar por CD con la Sección 7; ahora las dos miden cosas
-    distintas a propósito —volumen por origen real, asistencia por el
-    declarado— y la diferencia se ve en "Cargaron en otro origen".
-
-    `total` son los asignados. `sin_carga` cuenta aparte, por motivo, a los que
-    trabajaron sin asignación (minuta 09/10), en su origen habitual."""
-    tractoreo = [r for r in rows if "TRACTOREO" in r["categories"]]
-    sin_carga = [r for r in tractoreo if not r["con_carga"] and r["category"] == "TRABAJANDO_SIN_ASIGNACION"]
-
-    def tabla(key_fn) -> dict:
-        buckets = _cross_tab_by_zone(tractoreo, key_fn)
-        for r in sin_carga:
-            buckets.setdefault(key_fn(r), {"RM": 0, "Z0": 0, "Región": 0, "Sin clasificar": 0, "total": 0})
-        for b in buckets.values():
-            b["sin_carga"] = {m: 0 for m in motivos_sin_carga}
-        for r in sin_carga:
-            motivo = r["unassigned_reason_label"]
-            if motivo in buckets[key_fn(r)]["sin_carga"]:
-                buckets[key_fn(r)]["sin_carga"][motivo] += 1
-        return buckets
-
-    por_cd = tabla(_origen_de_la_fila)
-    por_empresa_y_cd = tabla(lambda r: (_origen_de_la_fila(r), r["carrier_name"]))
-    return {
-        "motivos_sin_carga": motivos_sin_carga,
-        "por_cd": [{"cd": k, **v} for k, v in sorted(por_cd.items())],
-        "por_empresa_y_cd": [
-            {"cd": k[0], "carrier_name": k[1], **v} for k, v in sorted(por_empresa_y_cd.items())
-        ],
-    }
-
-
-def _section3_vueltas(rows: list[dict]) -> list[dict]:
-    """Una fila por PATENTE con 2+ vueltas: la vuelta es del tracto (minuta
-    09/10), así que dos tractos de una empresa son dos filas, no la empresa
-    repetida."""
-    return [
-        {
-            "tractor_plate": r["tractor_plate"],
-            "carrier_name": r["carrier_name"], "cd_origen": r["origin_cd"],
-            "tipo_destino": r["destination_zone"], "vueltas": r["vueltas"],
-        }
-        for r in rows if r["con_carga"] and r["vueltas"] >= 2
-    ]
-
-
 # Las columnas de motivo salen del catálogo, no de una lista escrita a mano:
 # la que había (y su copia en StatusReportSection.tsx) dejaba fuera 9 motivos
 # que sólo sumaban al total. $1 es el grupo; un motivo sin grupo se lee como
@@ -416,209 +308,220 @@ ORDER BY sort_order, label
 """
 
 
-def _columnas_de_motivo(catalogo: list[str], rows: list[dict]) -> list[str]:
-    """Los motivos activos del catálogo, más los que aparezcan en las filas
-    aunque ya estén desactivados: un día pasado puede tener uno retirado."""
-    columnas = list(catalogo)
-    for r in rows:
-        label = r["unassigned_reason_label"]
-        if label and label not in columnas:
-            columnas.append(label)
-    return columnas
+_SIN_MOTIVO = "Sin motivo"
+_TRABAJO_SIN_ASIGNACION = "TRABAJANDO_SIN_ASIGNACION"
+# Quien no trabajó, y quien todavía no tiene motivo: no se sabe si trabajó.
+_NO_TRABAJO = ("NO_TRABAJANDO", "SIN_RESOLVER")
+_TIPOS = {"tractoreo": "TRACTOREO", "equipo_completo": "EQUIPO_COMPLETO"}
+_ZONA_A_CLAVE = {"RM": "rm", "Z0": "z0", "Región": "region", "Sin clasificar": "unclassified"}
 
 
-def _cross_tab_by_motivo(rows: list[dict], key_fn, motivos: list[str]) -> dict:
-    """Igual forma que _cross_tab_by_zone (dict keyed por key_fn(row)) —
-    columnas = una por cada motivo + total."""
-    buckets: dict = {}
+def _motivo(label: str | None) -> str:
+    """Una línea sin motivo cuenta en "Sin motivo": sin esa columna, el total de
+    la fila no cuadraría con la suma de las que se ven."""
+    return label or _SIN_MOTIVO
+
+
+def _motivos_que_ocurrieron(catalogo: list[str], ocurridos: Iterable[str]) -> list[str]:
+    """Las columnas de motivo: solo las que tuvieron casos ese día (spec 2026-10-11),
+    en el orden del catálogo de Configuración. Después, las retiradas que
+    aparezcan (un día pasado puede tener una), y "Sin motivo" al final."""
+    vistos = set(ocurridos)
+    columnas = [m for m in catalogo if m in vistos]
+    columnas += sorted(vistos - set(catalogo) - {_SIN_MOTIVO})
+    return columnas + ([_SIN_MOTIVO] if _SIN_MOTIVO in vistos else [])
+
+
+def _por_motivo(filas: list[dict]) -> list[dict]:
+    """Origen × empresa, con un conteo por motivo. `filas` trae
+    {origin, carrier_name, reason, n}: n es 1 por persona o equipo, o el
+    faltante de dotación entero."""
+    acc: dict = {}
+    for f in filas:
+        b = acc.setdefault((f["origin"], f["carrier_name"]),
+                           {"origin": f["origin"], "carrier_name": f["carrier_name"], "counts": {}, "total": 0})
+        b["counts"][f["reason"]] = b["counts"].get(f["reason"], 0) + f["n"]
+        b["total"] += f["n"]
+    return [acc[k] for k in sorted(acc, key=lambda k: (k[0], k[1] or ""))]
+
+
+def _resumen_del_tipo(rows: list[dict]) -> dict:
+    """Las cuatro cifras del tipo, asignados por cliente y la asistencia por
+    origen habitual. La asistencia va por el origen DECLARADO: "enrolados"
+    incluye a los que no salieron, y esos no tienen origen real (HU-28)."""
+    total = len(rows)
+    assigned = sum(1 for r in rows if r["con_carga"])
+    por_cliente: dict = {}
+    por_origen: dict = {}
     for r in rows:
         if r["con_carga"]:
-            continue
-        key = key_fn(r)
-        if key is None:
-            continue
-        b = buckets.setdefault(key, {m: 0 for m in motivos} | {"total": 0})
-        label = r["unassigned_reason_label"]
-        if label in b:
-            b[label] += 1
-        b["total"] += 1
-    return buckets
-
-
-def _section4_tractoreo_no_trabajando(
-    driver_rows: list[dict], motivos: list[str], *, faltantes: list[dict], sin_conductor: str | None,
-) -> dict:
-    """Tarea 6 (plan 2.3): agrupada por CONDUCTOR — el caller (_build_driver_rows)
-    ya acota a Tractoreo + UNASSIGNED por construcción, no se filtra de
-    nuevo acá. `driver_detail` es la lista plana que permite ver el tipo de
-    operación del tracto habitual de cada conductor (puede diferir del
-    roster, que se arma a nivel empresa).
-
-    Minuta 09/10, ítem 13: la columna "Sin conductor" (`sin_conductor`, la
-    etiqueta del motivo SIN_CONDUCTOR) suma el faltante de la dotación de cada
-    empresa: `faltantes` es compute_fleet_driver_gap, la misma definición de la
-    pestaña Dotación. Esos conductores no existen, así que no tienen origen
-    declarado: van en "Sin origen"."""
-    # Por el CD BASE: son conductores que NO trabajaron, así que no hay origen
-    # real que agrupar. Antes se les atribuía el de su viaje más reciente, de
-    # cualquier fecha.
-    por_cd = _cross_tab_by_motivo(driver_rows, lambda r: r["home_cd"] or "Sin origen", motivos)
-    por_empresa_y_cd = _cross_tab_by_motivo(
-        driver_rows, lambda r: (r["home_cd"] or "Sin origen", r["carrier_name"]), motivos,
-    )
-    if sin_conductor in motivos:
-        for f in faltantes:
-            if f["gap"] <= 0:
-                continue
-            for tabla, clave in ((por_cd, "Sin origen"), (por_empresa_y_cd, ("Sin origen", f["business_name"]))):
-                b = tabla.setdefault(clave, {m: 0 for m in motivos} | {"total": 0})
-                b[sin_conductor] += f["gap"]
-                b["total"] += f["gap"]
-    driver_detail = [
-        {
-            "driver_id": str(r["driver_id"]), "full_name": r["full_name"], "carrier_name": r["carrier_name"],
-            "cd_origen": r["home_cd"], "unassigned_reason_label": r["unassigned_reason_label"],
-            "tractor_plate": r["tractor_plate"], "operation_type": r["operation_type"],
-        }
-        for r in driver_rows
-    ]
+            cliente = r["client_name"] or "Sin cliente"
+            por_cliente[cliente] = por_cliente.get(cliente, 0) + 1
+        origen = r["home_cd"] or "Sin origen"
+        b = por_origen.setdefault(origen, {"origin": origen, "enrolled": 0, "assigned": 0})
+        b["enrolled"] += 1
+        b["assigned"] += 1 if r["con_carga"] else 0
     return {
-        "por_cd": [{"cd": k, **v} for k, v in sorted(por_cd.items())],
-        "por_empresa_y_cd": [
-            {"cd": k[0], "carrier_name": k[1], **v} for k, v in sorted(por_empresa_y_cd.items())
-        ],
-        "driver_detail": driver_detail,
-        # El orden de las columnas de motivo: el frontend las dibuja de acá, no
-        # de una lista propia.
-        "motivos": motivos,
+        "total": total,
+        "assigned": assigned,
+        "not_working": sum(1 for r in rows if not r["con_carga"] and r["category"] in _NO_TRABAJO),
+        "utilization_pct": round(assigned / total * 100, 1) if total else 0.0,
+        "by_client": [{"client_name": k, "assigned": v} for k, v in sorted(por_cliente.items())],
+        "by_home_origin": [por_origen[k] for k in sorted(por_origen)],
     }
 
 
-def _carrier_utilization_table(rows: list[dict], category: str) -> list[dict]:
-    """Tabla Empresa/Enrolados/Asignados/No asignados/% utilización para una
-    categoría (TRACTOREO o EQUIPO_COMPLETO) — mismo shape para ambas
-    (paridad pedida por el usuario 2026-08-04: la tab "por empresa" solo
-    existía para Equipo Completo, Sección 5; Tractoreo no tenía
-    equivalente pese a tener tabs 2/4 organizadas por CD/motivo, no por
-    empresa así de simple)."""
-    items = [r for r in rows if category in r["categories"]]
-    by_carrier: dict = {}
-    for r in items:
-        b = by_carrier.setdefault(r["carrier_name"], {"carrier_name": r["carrier_name"], "enrolled": 0, "assigned": 0, "unassigned": 0})
-        b["enrolled"] += 1
-        b["assigned" if r["con_carga"] else "unassigned"] += 1
-    result = []
-    for b in by_carrier.values():
-        pct = round(b["assigned"] / b["enrolled"] * 100, 1) if b["enrolled"] else 0.0
-        result.append({**b, "utilization_pct": pct})
-    return sorted(result, key=lambda b: b["utilization_pct"], reverse=True)
+def _asignados(rows: list[dict]) -> list[dict]:
+    """Cliente × origen REAL del viaje × empresa, por tipo de destino: la tabla
+    del CSV de Pablo (minuta 09/10, ítem 14). Una fila por hoja del árbol; los
+    subtotales los arma el frontend (lib/reporte/arbolDeAsignados.ts)."""
+    acc: dict = {}
+    for r in rows:
+        if not r["con_carga"]:
+            continue
+        clave = (r["client_name"] or "Sin cliente", r["origin_cd"] or "Sin origen", r["carrier_name"] or "Sin empresa")
+        b = acc.setdefault(clave, {"client_name": clave[0], "origin": clave[1], "carrier_name": clave[2],
+                                   "rm": 0, "z0": 0, "region": 0, "unclassified": 0, "total": 0})
+        b[_ZONA_A_CLAVE[r["destination_zone"] or "Sin clasificar"]] += 1
+        b["total"] += 1
+    return [acc[k] for k in sorted(acc)]
 
 
-def _section5_equipos_completos(rows: list[dict]) -> list[dict]:
-    return _carrier_utilization_table(rows, "EQUIPO_COMPLETO")
-
-
-def _section_tractoreo_por_empresa(rows: list[dict]) -> list[dict]:
-    return _carrier_utilization_table(rows, "TRACTOREO")
-
-
-def _section_desvios_de_cd(rows: list[dict]) -> list[dict]:
-    """Los que cargaron en un CD distinto al suyo (HU-28, ola 4.1).
-
-    Es la mitad del valor del estandar: declarar el origen habitual no sirve para que
-    todos calcen, sino para poder VER cuando no calzan. Medido el 2026-09-17:
-    el 35% de los conductores de Walmart cargan en mas de un CD, con el
-    dominante en 90,5% — o sea el desvio es real y regular, y hasta ahora se
-    perdia porque el reporte agrupaba por el origen adivinado y nunca podia
-    contradecirse a si mismo.
-
-    Sale de datos que ya estan en la fila: no cuesta ni una consulta mas."""
+def _cargaron_en_otro_origen(rows: list[dict]) -> list[dict]:
+    """Los que cargaron en un origen distinto al habitual (HU-28, ola 4.1).
+    Declarar el origen habitual sirve para VER cuándo no calza. Sin origen
+    habitual no hay con qué comparar, y sin carga no hay origen."""
     return sorted(
         (
-            {
-                "tractor_plate": r["tractor_plate"],
-                "carrier_name": r["carrier_name"],
-                "home_cd": r["home_cd"],
-                "origin_cd": r["origin_cd"],
-                "client_name": r["client_name"],
-            }
+            {"tractor_plate": r["tractor_plate"], "carrier_name": r["carrier_name"],
+             "home_origin": r["home_cd"], "origin": r["origin_cd"], "client_name": r["client_name"]}
             for r in rows
-            # Los tres tienen que existir: sin origen habitual no hay con que comparar,
-            # y sin carga no hay origen. Ninguno de los dos casos es un desvio.
-            if r["con_carga"] and r["home_cd"] and r["origin_cd"]
-            and r["home_cd"] != r["origin_cd"]
+            if r["con_carga"] and r["home_cd"] and r["origin_cd"] and r["home_cd"] != r["origin_cd"]
         ),
-        key=lambda d: (d["home_cd"], d["origin_cd"], d["tractor_plate"] or ""),
+        key=lambda d: (d["home_origin"], d["origin"], d["tractor_plate"] or ""),
     )
 
 
-def _section6_resumen_general(rows: list[dict]) -> dict:
-    tractoreo = [r for r in rows if "TRACTOREO" in r["categories"]]
-    equipos_completos = [r for r in rows if "EQUIPO_COMPLETO" in r["categories"]]
+def _trabajaron_sin_asignacion(rows: list[dict], catalogo: list[str]) -> dict:
+    """Los que trabajaron sin viaje (Se retira sin carga, Esperando carga…),
+    en su origen habitual: no salieron a ningún lado (minuta 09/10)."""
+    filas = [
+        {"origin": r["home_cd"] or "Sin origen", "carrier_name": r["carrier_name"],
+         "reason": _motivo(r["unassigned_reason_label"]), "n": 1}
+        for r in rows if not r["con_carga"] and r["category"] == _TRABAJO_SIN_ASIGNACION
+    ]
+    return {"reasons": _motivos_que_ocurrieron(catalogo, (f["reason"] for f in filas)), "rows": _por_motivo(filas)}
 
-    def _by_cd(items: list[dict]) -> list[dict]:
-        """Enrolados vs asignados por CD: ES la asistencia por CD que pidió
-        Operaciones. Va por el CD declarado porque "enrolados" incluye a los que
-        no salieron, y esos no tienen origen."""
-        acc: dict = {}
-        for r in items:
-            key = r["home_cd"] or "Sin origen"
-            b = acc.setdefault(key, {"cd": key, "enrolled": 0, "assigned": 0})
-            b["enrolled"] += 1
-            if r["con_carga"]:
-                b["assigned"] += 1
-        return sorted(acc.values(), key=lambda b: b["cd"])
 
-    def _by_client(items: list[dict]) -> list[dict]:
-        acc: dict = {}
-        for r in items:
-            if not r["con_carga"]:
-                continue
-            key = r["client_name"] or "Sin cliente"
-            acc[key] = acc.get(key, 0) + 1
-        return [{"client_name": k, "assigned": v} for k, v in sorted(acc.items())]
+def _segundas_vueltas(rows: list[dict]) -> list[dict]:
+    """Una fila por PATENTE con 2+ vueltas: la vuelta es del tracto (minuta
+    09/10). El conductor es el del último viaje del día."""
+    return [
+        {"tractor_plate": r["tractor_plate"], "carrier_name": r["carrier_name"], "driver_name": r["driver_name"],
+         "origin": r["origin_cd"], "destination_zone": r["destination_zone"], "legs": r["vueltas"]}
+        for r in rows if r["con_carga"] and r["vueltas"] >= 2
+    ]
 
+
+def _no_trabajaron_por_conductor(
+    driver_rows: list[dict], catalogo: list[str], *, faltantes: list[dict], sin_conductor: str | None,
+) -> dict:
+    """Tractoreo: por CONDUCTOR (plan 2.3, Tarea 6), en su origen habitual.
+    "Sin conductor" suma además el faltante de la dotación de cada empresa
+    (minuta 09/10, ítem 13; la misma cuenta de la pestaña Dotación). Esos
+    conductores no existen, así que van en "Sin origen". Si el motivo no está
+    activo en el catálogo, no se inventa la columna."""
+    filas = [
+        {"origin": d["home_cd"] or "Sin origen", "carrier_name": d["carrier_name"],
+         "reason": _motivo(d["unassigned_reason_label"]), "n": 1}
+        for d in driver_rows
+    ]
+    if sin_conductor in catalogo:
+        filas += [
+            {"origin": "Sin origen", "carrier_name": f["business_name"], "reason": sin_conductor, "n": f["gap"]}
+            for f in faltantes if f["gap"] > 0
+        ]
+    detail = sorted(
+        ({"name": d["full_name"], "carrier_name": d["carrier_name"], "home_origin": d["home_cd"],
+          "reason": _motivo(d["unassigned_reason_label"]), "tractor_plate": d["tractor_plate"]}
+         for d in driver_rows),
+        key=lambda d: (d["carrier_name"] or "", d["name"]),
+    )
+    return {"reasons": _motivos_que_ocurrieron(catalogo, (f["reason"] for f in filas)),
+            "by_reason": _por_motivo(filas), "detail": detail}
+
+
+def _no_trabajaron_por_equipo(rows: list[dict], catalogo: list[str]) -> dict:
+    """Equipo Completo: por EQUIPO sin carga en el grupo "no trabajó", con el
+    motivo de su línea del cierre."""
+    sin_trabajar = [r for r in rows if not r["con_carga"] and r["category"] in _NO_TRABAJO]
+    filas = [
+        {"origin": r["home_cd"] or "Sin origen", "carrier_name": r["carrier_name"],
+         "reason": _motivo(r["unassigned_reason_label"]), "n": 1}
+        for r in sin_trabajar
+    ]
+    detail = sorted(
+        ({"name": r["tractor_plate"], "carrier_name": r["carrier_name"], "home_origin": r["home_cd"],
+          "reason": _motivo(r["unassigned_reason_label"]), "tractor_plate": r["tractor_plate"]}
+         for r in sin_trabajar),
+        key=lambda d: (d["carrier_name"] or "", d["name"] or ""),
+    )
+    return {"reasons": _motivos_que_ocurrieron(catalogo, (f["reason"] for f in filas)),
+            "by_reason": _por_motivo(filas), "detail": detail}
+
+
+def _empresas(rows: list[dict]) -> list[dict]:
+    """Utilización por empresa del tipo, la de mayor utilización primero."""
+    acc: dict = {}
+    for r in rows:
+        b = acc.setdefault(r["carrier_name"], {"carrier_name": r["carrier_name"], "enrolled": 0, "assigned": 0,
+                                               "unassigned": 0})
+        b["enrolled"] += 1
+        b["assigned" if r["con_carga"] else "unassigned"] += 1
+    return sorted(
+        ({**b, "utilization_pct": round(b["assigned"] / b["enrolled"] * 100, 1)} for b in acc.values()),
+        key=lambda b: b["utilization_pct"], reverse=True,
+    )
+
+
+def _reporte_del_tipo(rows: list[dict], *, no_trabajaron: dict, catalogo_sin_asignacion: list[str]) -> dict:
     return {
-        "tractoreo": _summary(tractoreo),
-        "equipos_completos": _summary(equipos_completos),
-        "por_cd": _by_cd(rows),
-        "por_cliente": _by_client(rows),
+        "summary": _resumen_del_tipo(rows),
+        "assigned": {"rows": _asignados(rows), "other_origin": _cargaron_en_otro_origen(rows)},
+        "worked_without_assignment": _trabajaron_sin_asignacion(rows, catalogo_sin_asignacion),
+        "second_legs": _segundas_vueltas(rows),
+        "not_working": no_trabajaron,
+        "carriers": _empresas(rows),
     }
 
 
 @router.get("")
 async def get_status_report(fecha: str, client: str | None = None, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
     business_date = _parse_business_date(fecha)
-    all_rows = await _build_asset_rows(pool, business_date)
-    # Tarea 6 (plan 2.3): la Sección 4 pasa a agruparse por conductor — su
-    # insumo es driver_rows, no rows/all_rows (tracto-céntrico). No se le
-    # aplica _filter_by_client: ese filtro es "asignado a ese cliente", y
-    # todo conductor de driver_rows es por definición UNASSIGNED (sin
-    # cliente) — mismo criterio que ya deja pasar siempre a los equipos
-    # idle en _filter_by_client.
+    rows = _filter_by_client(await _build_asset_rows(pool, business_date), client)
+    por_tipo = {clave: [r for r in rows if codigo in r["categories"]] for clave, codigo in _TIPOS.items()}
+    # Los conductores que no trabajaron no tienen cliente: el filtro de cliente
+    # no les aplica, igual que a los equipos sin carga en _filter_by_client.
     driver_rows = await _build_driver_rows(pool, business_date)
-    motivos = _columnas_de_motivo(
-        [r["label"] for r in await pool.fetch(_SQL_MOTIVOS_DEL_GRUPO, GRUPO_NO_TRABAJANDO)], driver_rows,
-    )
-    rows = _filter_by_client(all_rows, client)
-    motivos_sin_carga = _columnas_de_motivo(
-        [r["label"] for r in await pool.fetch(_SQL_MOTIVOS_DEL_GRUPO, GRUPO_TRABAJANDO_SIN_ASIGNACION)],
-        [r for r in rows if r["category"] == "TRABAJANDO_SIN_ASIGNACION"],
-    )
-
+    catalogo_no_trabajo = [r["label"] for r in await pool.fetch(_SQL_MOTIVOS_DEL_GRUPO, GRUPO_NO_TRABAJANDO)]
+    catalogo_sin_asignacion = [
+        r["label"] for r in await pool.fetch(_SQL_MOTIVOS_DEL_GRUPO, GRUPO_TRABAJANDO_SIN_ASIGNACION)
+    ]
+    no_trabajaron = {
+        "tractoreo": _no_trabajaron_por_conductor(
+            driver_rows, catalogo_no_trabajo, faltantes=await compute_fleet_driver_gap(pool),
+            sin_conductor=await pool.fetchval(_SQL_ETIQUETA_SIN_CONDUCTOR),
+        ),
+        "equipo_completo": _no_trabajaron_por_equipo(por_tipo["equipo_completo"], catalogo_no_trabajo),
+    }
     return {
         "business_date": business_date.isoformat(),
         "client_filter": client,
-        "section1_resumen": _section1_resumen(rows),
-        "section2_tractoreo_asignado": _section2_tractoreo_asignado(rows, motivos_sin_carga),
-        "section3_vueltas": _section3_vueltas(rows),
-        "section4_tractoreo_no_trabajando": _section4_tractoreo_no_trabajando(
-            driver_rows, motivos, faltantes=await compute_fleet_driver_gap(pool),
-            sin_conductor=await pool.fetchval(_SQL_ETIQUETA_SIN_CONDUCTOR),
-        ),
-        "section_tractoreo_por_empresa": _section_tractoreo_por_empresa(rows),
-        "section5_equipos_completos": _section5_equipos_completos(rows),
-        "section6_resumen_general": _section6_resumen_general(rows),
-        "section7_desvios_de_cd": _section_desvios_de_cd(rows),
+        "by_operation_type": {
+            clave: _reporte_del_tipo(
+                por_tipo[clave], no_trabajaron=no_trabajaron[clave], catalogo_sin_asignacion=catalogo_sin_asignacion,
+            )
+            for clave in _TIPOS
+        },
         **await frescura_del_dia(pool, business_date),
     }

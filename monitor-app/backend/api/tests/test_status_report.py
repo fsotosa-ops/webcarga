@@ -12,17 +12,17 @@ from fastapi.testclient import TestClient
 from app.auth import get_current_user
 from app.db import get_pool
 from app.routers.status_report import (
+    _asignados,
     _build_driver_rows,
-    _section_desvios_de_cd,
+    _cargaron_en_otro_origen,
+    _empresas,
     _filter_by_client,
-    _section1_resumen,
-    _section2_tractoreo_asignado,
-    _section3_vueltas,
-    _section4_tractoreo_no_trabajando,
-    _section5_equipos_completos,
-    _section6_resumen_general,
-    _section_tractoreo_por_empresa,
-    _summary,
+    _motivos_que_ocurrieron,
+    _no_trabajaron_por_conductor,
+    _no_trabajaron_por_equipo,
+    _resumen_del_tipo,
+    _segundas_vueltas,
+    _trabajaron_sin_asignacion,
     _zone_bucket,
     router,
 )
@@ -47,7 +47,7 @@ def _row(**overrides):
         # (agrupa el volumen). Antes eran el mismo campo, con la adivinanza
         # tapando el hueco de quien no salio.
         "home_cd": "CD Lo Aguirre", "origin_cd": "CD Lo Aguirre", "client_name": "Walmart",
-        "destination_zone": "RM", "dias_en_curso": 0, "vueltas": 1, "unassigned_reason_label": None,
+        "destination_zone": "RM", "driver_name": "Juan Pérez", "vueltas": 1, "unassigned_reason_label": None,
         "category": "ASIGNADO",
     }
     base.update(overrides)
@@ -56,7 +56,7 @@ def _row(**overrides):
 
 # Tarea 6 (plan 2.3, minuta 2026-08-03): fila de _build_driver_rows — la
 # Sección 4 pasa a agruparse por CONDUCTOR. con_carga siempre False acá "de
-# compatibilidad" con _cross_tab_by_motivo (ver brief de la tarea).
+# compatibilidad": son, por definición, conductores sin carga.
 def _driver_row(**overrides):
     base = {
         "driver_id": "d1", "full_name": "Juan Pérez", "carrier_name": "Transportes Sur",
@@ -77,182 +77,6 @@ def test_zone_bucket_maps_region_norte_y_sur_a_region():
     assert _zone_bucket("Region Sur") == "Región"
     assert _zone_bucket(None) == "Sin clasificar"
     assert _zone_bucket("algo raro") == "Sin clasificar"
-
-
-def test_summary_computa_utilization_pct_y_maneja_lista_vacia():
-    assert _summary([_row(con_carga=True), _row(asset_id="a2", con_carga=False)]) == {
-        "total": 2, "assigned": 1, "unassigned": 1, "utilization_pct": 50.0,
-    }
-    assert _summary([]) == {"total": 0, "assigned": 0, "unassigned": 0, "utilization_pct": 0.0}
-
-
-def test_section1_resumen_separa_tractoreo_y_equipo_completo_y_cuenta_multidia():
-    rows = [
-        _row(asset_id="a1", categories=["TRACTOREO"], con_carga=True, dias_en_curso=0),
-        _row(asset_id="a2", categories=["TRACTOREO"], con_carga=True, dias_en_curso=2),
-        _row(asset_id="a3", categories=["EQUIPO_COMPLETO"], con_carga=False, dias_en_curso=None, unassigned_reason_label=None),
-    ]
-    result = _section1_resumen(rows)
-    assert result["total_equipos_activos"] == 3
-    assert result["tractoreo"]["assigned"] == 2
-    assert result["equipos_completos"]["unassigned"] == 1
-    assert result["multi_dia_activos"] == {"total": 1, "por_dias_atras": {"2": 1}}
-
-
-def test_section2_cruza_por_cd_y_por_empresa_y_cd_sin_incluir_sin_carga():
-    rows = [
-        _row(asset_id="a1", home_cd="CD Lo Aguirre", destination_zone="RM"),
-        _row(asset_id="a2", home_cd="CD Lo Aguirre", destination_zone="Z0", carrier_name="Otra Spa"),
-        _row(asset_id="a3", home_cd="CD Lo Aguirre", con_carga=False, destination_zone=None),
-    ]
-    result = _section2_tractoreo_asignado(rows, [])
-    assert result["por_cd"] == [{"cd": "CD Lo Aguirre", "RM": 1, "Z0": 1, "Región": 0, "Sin clasificar": 0, "total": 2,
-                                 "sin_carga": {}}]
-    assert {"cd": "CD Lo Aguirre", "carrier_name": "Otra Spa", "RM": 0, "Z0": 1, "Región": 0, "Sin clasificar": 0,
-            "total": 1, "sin_carga": {}} in result["por_empresa_y_cd"]
-
-
-def test_section3_vueltas_solo_incluye_equipos_con_2_o_mas_viajes_hoy():
-    rows = [
-        _row(asset_id="a1", vueltas=1),
-        _row(asset_id="a2", vueltas=2),
-        _row(asset_id="a3", vueltas=3, carrier_name="Otra Spa"),
-        _row(asset_id="a4", con_carga=False, vueltas=0),
-    ]
-    result = _section3_vueltas(rows)
-    assert len(result) == 2
-    # La patente va en la fila (minuta 09/10, ítem 7): dos tractos de la misma
-    # empresa son dos filas distintas, no la empresa repetida.
-    assert {"tractor_plate": "ABCD12", "carrier_name": "Transportes Sur", "cd_origen": "CD Lo Aguirre",
-            "tipo_destino": "RM", "vueltas": 2} in result
-    assert {"tractor_plate": "ABCD12", "carrier_name": "Otra Spa", "cd_origen": "CD Lo Aguirre",
-            "tipo_destino": "RM", "vueltas": 3} in result
-
-
-# Tarea 6 (plan 2.3, minuta 2026-08-03): _section4_tractoreo_no_trabajando
-# cambia de contrato — antes recibía filas de tracto (_build_asset_rows) y
-# filtraba internamente por categories; ahora recibe directamente filas de
-# conductor (_build_driver_rows), ya acotadas a Tractoreo+UNASSIGNED por
-# construcción. El viejo test con filas de tracto (asset_id/categories)
-# quedó reemplazado por los de abajo, que verifican el mismo cross-tab por
-# motivo pero contra el contrato nuevo.
-
-# ── Tarea 6 (plan 2.3, minuta 2026-08-03): Sección 4 pasa a agruparse por
-# CONDUCTOR — decisión de negocio confirmada, ya no se reabre acá. El
-# caller (_build_driver_rows) ya acota a Tractoreo + UNASSIGNED por
-# construcción, así que la función deja de filtrar por categories. ──────
-
-def test_section4_por_conductor_cruza_por_motivo_y_arma_driver_detail():
-    driver_rows = [
-        _driver_row(driver_id="d1", full_name="Juan Pérez", carrier_name="Transportes Sur",
-                    home_cd="CD El Peñón", unassigned_reason_label="Panne", operation_type="Tractoreo"),
-        _driver_row(driver_id="d2", full_name="Ana Soto", carrier_name="Transportes Sur",
-                    home_cd="CD El Peñón", unassigned_reason_label="Panne", operation_type="Tractoreo"),
-        _driver_row(driver_id="d3", full_name="Luis Rojas", carrier_name="Otra Spa",
-                    home_cd="CD El Peñón", unassigned_reason_label="A confirmar", operation_type="Tractoreo"),
-    ]
-    result = _section4_tractoreo_no_trabajando(driver_rows, ["Panne", "A confirmar"], faltantes=[], sin_conductor=None)
-
-    cd_row = next(r for r in result["por_cd"] if r["cd"] == "CD El Peñón")
-    assert cd_row["Panne"] == 2
-    assert cd_row["A confirmar"] == 1
-    assert cd_row["total"] == 3
-    empresa_row = next(r for r in result["por_empresa_y_cd"] if r["carrier_name"] == "Otra Spa")
-    assert empresa_row["A confirmar"] == 1
-    assert empresa_row["total"] == 1
-
-    assert result["driver_detail"] == [
-        {
-            "driver_id": "d1", "full_name": "Juan Pérez", "carrier_name": "Transportes Sur",
-            "cd_origen": "CD El Peñón", "unassigned_reason_label": "Panne",
-            "tractor_plate": "ABCD12", "operation_type": "Tractoreo",
-        },
-        {
-            "driver_id": "d2", "full_name": "Ana Soto", "carrier_name": "Transportes Sur",
-            "cd_origen": "CD El Peñón", "unassigned_reason_label": "Panne",
-            "tractor_plate": "ABCD12", "operation_type": "Tractoreo",
-        },
-        {
-            "driver_id": "d3", "full_name": "Luis Rojas", "carrier_name": "Otra Spa",
-            "cd_origen": "CD El Peñón", "unassigned_reason_label": "A confirmar",
-            "tractor_plate": "ABCD12", "operation_type": "Tractoreo",
-        },
-    ]
-
-
-def test_section4_driver_detail_muestra_operation_type_del_tracto_habitual_no_del_roster():
-    """El roster se arma a nivel EMPRESA (Tractoreo) pero el tracto habitual
-    del conductor puede venir clasificado Equipo Completo si la empresa
-    opera flota mixta — driver_detail no debe "corregir" ese valor."""
-    driver_rows = [
-        _driver_row(driver_id="d1", carrier_name="Transportes Mixta", operation_type="Equipo Completo"),
-    ]
-    result = _section4_tractoreo_no_trabajando(driver_rows, ["Panne", "A confirmar"], faltantes=[], sin_conductor=None)
-    assert result["driver_detail"][0]["operation_type"] == "Equipo Completo"
-
-
-def test_section4_driver_sin_cd_base_cae_en_sin_cd():
-    """"Sin origen" cambio de significado con HU-28: antes era "no pudimos
-    adivinar"; ahora es "este conductor no tiene CD asignado", que es un
-    pendiente accionable del directorio."""
-    driver_rows = [
-        _driver_row(driver_id="d1", home_cd=None, tractor_plate=None, operation_type=None,
-                    unassigned_reason_label="A confirmar"),
-    ]
-    result = _section4_tractoreo_no_trabajando(driver_rows, ["Panne", "A confirmar"], faltantes=[], sin_conductor=None)
-
-    cd_row = next(r for r in result["por_cd"] if r["cd"] == "Sin origen")
-    assert cd_row["A confirmar"] == 1
-    assert cd_row["total"] == 1
-    detail = result["driver_detail"][0]
-    assert detail["cd_origen"] is None
-    assert detail["tractor_plate"] is None
-    assert detail["operation_type"] is None
-
-
-def test_section5_equipos_completos_ordena_desc_por_utilizacion():
-    rows = [
-        _row(asset_id="a1", categories=["EQUIPO_COMPLETO"], carrier_name="Baja Utilización", con_carga=False),
-        _row(asset_id="a2", categories=["EQUIPO_COMPLETO"], carrier_name="Baja Utilización", con_carga=False),
-        _row(asset_id="a3", categories=["EQUIPO_COMPLETO"], carrier_name="Alta Utilización", con_carga=True),
-    ]
-    result = _section5_equipos_completos(rows)
-    assert result[0]["carrier_name"] == "Alta Utilización"
-    assert result[0]["utilization_pct"] == 100.0
-    assert result[1]["carrier_name"] == "Baja Utilización"
-    assert result[1]["utilization_pct"] == 0.0
-
-
-def test_section_tractoreo_por_empresa_ordena_desc_por_utilizacion():
-    """Paridad con Sección 5 (pedido explícito del usuario 2026-08-04): la
-    tab "por empresa" ahora existe también para Tractoreo, mismo shape."""
-    rows = [
-        _row(asset_id="a1", categories=["TRACTOREO"], carrier_name="Baja Utilización", con_carga=False),
-        _row(asset_id="a2", categories=["TRACTOREO"], carrier_name="Baja Utilización", con_carga=False),
-        _row(asset_id="a3", categories=["TRACTOREO"], carrier_name="Alta Utilización", con_carga=True),
-        # Un equipo Equipo Completo no debe colarse en la tabla de Tractoreo
-        _row(asset_id="a4", categories=["EQUIPO_COMPLETO"], carrier_name="Alta Utilización", con_carga=False),
-    ]
-    result = _section_tractoreo_por_empresa(rows)
-    assert result[0]["carrier_name"] == "Alta Utilización"
-    assert result[0]["utilization_pct"] == 100.0
-    assert result[0]["enrolled"] == 1
-    assert result[1]["carrier_name"] == "Baja Utilización"
-    assert result[1]["utilization_pct"] == 0.0
-
-
-def test_section6_resumen_general_por_cd_y_por_cliente():
-    rows = [
-        _row(asset_id="a1", categories=["TRACTOREO"], home_cd="CD Lo Aguirre", client_name="Walmart", con_carga=True),
-        _row(asset_id="a2", categories=["TRACTOREO"], home_cd="CD Lo Aguirre", con_carga=False, client_name=None),
-        _row(asset_id="a3", categories=["EQUIPO_COMPLETO"], home_cd="CD El Peñón", client_name="Sodimac", con_carga=True),
-    ]
-    result = _section6_resumen_general(rows)
-    assert result["tractoreo"]["total"] == 2
-    assert result["equipos_completos"]["total"] == 1
-    assert {"cd": "CD Lo Aguirre", "enrolled": 2, "assigned": 1} in result["por_cd"]
-    assert {"client_name": "Walmart", "assigned": 1} in result["por_cliente"]
-    assert {"client_name": "Sodimac", "assigned": 1} in result["por_cliente"]
 
 
 def test_filter_by_client_mantiene_equipos_sin_carga_y_filtra_los_con_carga_de_otro_cliente():
@@ -280,37 +104,6 @@ def test_get_status_report_requires_valid_fecha():
     res = client.get("/api/v1/status-report?fecha=no-es-una-fecha")
 
     assert res.status_code == 422
-
-
-def test_get_status_report_returns_all_sections_with_empty_roster():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    conn.fetch.return_value = []
-    wire_transactional_conn(pool, conn)
-    pool.fetch.return_value = []  # roster vacío -> el resto de queries no importan
-    app = FastAPI()
-    app.include_router(router, prefix="/api/v1")
-    app.dependency_overrides[get_pool] = lambda: pool
-    app.dependency_overrides[get_current_user] = lambda: USER
-    client = TestClient(app)
-
-    res = client.get("/api/v1/status-report?fecha=2026-08-02")
-
-    assert res.status_code == 200
-    body = res.json()
-    assert set(body.keys()) == {
-        "business_date", "client_filter",
-        "section1_resumen", "section2_tractoreo_asignado", "section3_vueltas",
-        "section4_tractoreo_no_trabajando", "section_tractoreo_por_empresa",
-        "section5_equipos_completos", "section6_resumen_general",
-        # HU-28 (ola 4.1): los que cargaron en un CD distinto al suyo. Declarar
-        # el origen habitual no sirve para que todos calcen, sino para poder VER cuando
-        # no calzan.
-        "section7_desvios_de_cd",
-        # Spec 2026-10-10: cuándo se calculó el día y desde cuándo hay cambios por entrar.
-        "calculado_a", "pendiente_desde",
-    }
-    assert body["section1_resumen"]["total_equipos_activos"] == 0
 
 
 # ── Tarea 6 (plan 2.3, minuta 2026-08-03): _build_driver_rows — roster
@@ -359,7 +152,7 @@ async def test_build_driver_rows_deja_solo_a_quien_no_trabajo_o_no_se_sabe():
     assert row["home_cd"] == "CD Lo Aguirre"
     assert row["tractor_plate"] == "ABCD12"
     assert row["operation_type"] == "Tractoreo"
-    assert row["con_carga"] is False  # compatibilidad con _cross_tab_by_motivo
+    assert row["con_carga"] is False
 
 
 async def test_build_driver_rows_sin_historial_no_rompe():
@@ -382,44 +175,6 @@ async def test_build_driver_rows_sin_historial_no_rompe():
     assert result[0]["operation_type"] is None
 
 
-# ── Integración: get_status_report agrega driver_rows a la Sección 4 sin
-# aplicar _filter_by_client (esos conductores son por definición sin
-# cliente). ──────────
-
-def test_get_status_report_includes_section4_driver_detail():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    conn.fetch.return_value = []
-    wire_transactional_conn(pool, conn)
-    pool.fetch.return_value = []  # roster de equipo vacío -> las demás secciones no aportan
-    driver_rows = [
-        {
-            "driver_id": "d1", "full_name": "Juan Pérez", "carrier_name": "Transportes Sur",
-            "status": "UNASSIGNED", "unassigned_reason_label": "Panne",
-            "home_cd": "CD Lo Aguirre", "tractor_plate": "ABCD12", "operation_type": "Tractoreo",
-            "con_carga": False,
-        },
-    ]
-    app = FastAPI()
-    app.include_router(router, prefix="/api/v1")
-    app.dependency_overrides[get_pool] = lambda: pool
-    app.dependency_overrides[get_current_user] = lambda: USER
-    client = TestClient(app)
-
-    with patch("app.routers.status_report._build_driver_rows", AsyncMock(return_value=driver_rows)):
-        res = client.get("/api/v1/status-report?fecha=2026-08-02")
-
-    assert res.status_code == 200
-    detail = res.json()["section4_tractoreo_no_trabajando"]["driver_detail"]
-    assert detail == [
-        {
-            "driver_id": "d1", "full_name": "Juan Pérez", "carrier_name": "Transportes Sur",
-            "cd_origen": "CD Lo Aguirre", "unassigned_reason_label": "Panne",
-            "tractor_plate": "ABCD12", "operation_type": "Tractoreo",
-        },
-    ]
-
-
 # ── FIX 2026-08-18: la Sección 4 decidía Tractoreo/Equipo Completo
 # comparando contra la ETIQUETA visible ('Tractoreo'), así que renombrarla
 # desde Configuración vaciaba el roster en silencio. Pasa a leer `code`, el
@@ -430,114 +185,6 @@ def test_roster_sql_lee_el_codigo_no_la_etiqueta():
     from app.routers.status_report import _ROSTER_SQL
     assert "wot.code AS webcarga_operation_type_code" in _ROSTER_SQL
     assert "wot.label AS webcarga_operation_type_label" not in _ROSTER_SQL
-
-
-def test_las_columnas_de_motivo_salen_del_catalogo_y_suman_las_retiradas_que_aparecen():
-    """Antes eran una lista escrita a mano en dos lugares, y 9 motivos del
-    catálogo sólo sumaban al total."""
-    from app.routers.status_report import _columnas_de_motivo
-
-    filas = [{"unassigned_reason_label": "Panne"}, {"unassigned_reason_label": "En abstención"},
-             {"unassigned_reason_label": None}]
-
-    assert _columnas_de_motivo(["Panne", "Vacaciones"], filas) == ["Panne", "Vacaciones", "En abstención"]
-
-
-# ── HU-28 (ola 4): la asistencia se agrupa por el CD DECLARADO, y el desvío
-# contra el origen real deja de perderse. ───────────────────────────────────
-
-def test_la_asistencia_agrupa_por_el_cd_declarado_y_no_por_donde_cargo():
-    """El caso que antes era invisible: alguien de Peñón que hoy cargó en
-    Quilicura cuenta como asistencia de PEÑÓN, no de Quilicura. Agruparlo por
-    dónde cargó infla el CD ajeno y vacía el propio."""
-    rows = [
-        _row(asset_id="a1", home_cd="CD El Peñón", origin_cd="CD Quilicura", con_carga=True),
-        _row(asset_id="a2", home_cd="CD El Peñón", origin_cd="CD El Peñón", con_carga=True),
-        _row(asset_id="a3", home_cd="CD El Peñón", origin_cd=None, con_carga=False),
-    ]
-
-    resumen = _section6_resumen_general(rows)
-
-    assert {"cd": "CD El Peñón", "enrolled": 3, "assigned": 2} in resumen["por_cd"]
-    assert all(b["cd"] != "CD Quilicura" for b in resumen["por_cd"])
-
-
-def test_quien_no_trabajo_cuenta_en_su_cd_aunque_no_tenga_viaje():
-    """La mitad que la adivinanza tapaba: sin viaje no hay origen, y aun así
-    hay que poder decir de qué CD es su ausencia."""
-    rows = [_row(asset_id="a1", home_cd="CD Lo Aguirre", origin_cd=None, con_carga=False)]
-
-    resumen = _section6_resumen_general(rows)
-
-    assert {"cd": "CD Lo Aguirre", "enrolled": 1, "assigned": 0} in resumen["por_cd"]
-
-
-def test_el_desvio_se_reporta_solo_cuando_hay_con_que_comparar():
-    rows = [
-        # Desvío real: declarado Peñón, cargó en Quilicura.
-        _row(asset_id="a1", tractor_plate="AAAA11", home_cd="CD El Peñón",
-             origin_cd="CD Quilicura", con_carga=True),
-        # Calza: no es desvío.
-        _row(asset_id="a2", tractor_plate="BBBB22", home_cd="CD El Peñón",
-             origin_cd="CD El Peñón", con_carga=True),
-        # Sin Origen habitual: no hay contra qué comparar, no es un desvío.
-        _row(asset_id="a3", tractor_plate="CCCC33", home_cd=None,
-             origin_cd="CD Quilicura", con_carga=True),
-        # Sin carga: no hay origen, tampoco es un desvío.
-        _row(asset_id="a4", tractor_plate="DDDD44", home_cd="CD El Peñón",
-             origin_cd=None, con_carga=False),
-    ]
-
-    desvios = _section_desvios_de_cd(rows)
-
-    assert [d["tractor_plate"] for d in desvios] == ["AAAA11"]
-    assert desvios[0]["home_cd"] == "CD El Peñón"
-    assert desvios[0]["origin_cd"] == "CD Quilicura"
-
-
-def test_sin_cd_base_ya_no_significa_no_pudimos_adivinar():
-    """Cambió de significado: ahora es un pendiente accionable del directorio,
-    y por eso se agrupa aparte en vez de repartirse entre los demás CD."""
-    rows = [
-        _row(asset_id="a1", home_cd=None, origin_cd="CD El Peñón", con_carga=True),
-        _row(asset_id="a2", home_cd="CD El Peñón", origin_cd="CD El Peñón", con_carga=True),
-    ]
-
-    resumen = _section6_resumen_general(rows)
-
-    assert {"cd": "Sin origen", "enrolled": 1, "assigned": 1} in resumen["por_cd"]
-    assert {"cd": "CD El Peñón", "enrolled": 1, "assigned": 1} in resumen["por_cd"]
-
-
-# ── Minuta 09/10, ítem 12: "Se retira sin carga" no aparecía en ninguna parte ─
-# Un tracto que trabajó sin asignación (Se retira sin carga, Esperando carga…)
-# no tiene viaje y tampoco es "no trabajando": quedaba fuera de las Secciones
-# 2 y 4. La HU-04 lo pedía como columna junto a RM/Z0/Región. La categoría la
-# calcula cierre_lineas (`category`); el reporte no vuelve a deducirla.
-
-MOTIVOS_SIN_CARGA = ["Se retira sin carga", "Esperando carga"]
-
-
-def test_seccion2_cuenta_los_tractos_que_trabajaron_sin_asignacion_por_motivo():
-    rows = [
-        _row(asset_id="a1"),
-        _row(asset_id="a2", con_carga=False, category="TRABAJANDO_SIN_ASIGNACION",
-             unassigned_reason_label="Se retira sin carga"),
-        _row(asset_id="a3", con_carga=False, category="NO_TRABAJANDO", unassigned_reason_label="Panne"),
-    ]
-    seccion = _section2_tractoreo_asignado(rows, MOTIVOS_SIN_CARGA)
-    cd = next(f for f in seccion["por_cd"] if f["cd"] == "CD Lo Aguirre")
-    assert cd["total"] == 1, "el total sigue siendo los asignados: cuadra con la Sección 7"
-    assert cd["sin_carga"] == {"Se retira sin carga": 1, "Esperando carga": 0}
-    assert seccion["motivos_sin_carga"] == MOTIVOS_SIN_CARGA
-
-
-def test_un_origen_con_solo_tractos_sin_carga_igual_aparece():
-    rows = [_row(asset_id="a1", home_cd="CD Quilicura", con_carga=False,
-                 category="TRABAJANDO_SIN_ASIGNACION", unassigned_reason_label="Esperando carga")]
-    seccion = _section2_tractoreo_asignado(rows, MOTIVOS_SIN_CARGA)
-    assert seccion["por_cd"] == [{"cd": "CD Quilicura", "RM": 0, "Z0": 0, "Región": 0, "Sin clasificar": 0,
-                                  "total": 0, "sin_carga": {"Se retira sin carga": 0, "Esperando carga": 1}}]
 
 
 # ── Minuta 09/10, ítem 13: "Sin conductor" no marcaba nada ──────────────────
@@ -552,43 +199,242 @@ def _faltante(carrier, n_tractos, n_conductores):
             "n_conductores": n_conductores, "gap": n_tractos - n_conductores}
 
 
-def test_seccion4_suma_el_faltante_de_dotacion_en_sin_conductor():
-    driver_rows = [_driver_row(driver_id="d1", carrier_name="Transportes Sur", home_cd="CD El Peñón",
-                               unassigned_reason_label="Panne")]
-    result = _section4_tractoreo_no_trabajando(
-        driver_rows, ["Panne", "Sin conductor"],
-        faltantes=[_faltante("Transportes Sur", 3, 1), _faltante("Sobra Spa", 1, 2)],
-        sin_conductor="Sin conductor")
+# ── Spec 2026-10-11: el reporte por tipo de operación ────────────────────────
+# Cada tipo trae las mismas seis claves y se arma con las mismas funciones; el
+# endpoint solo decide qué filas le tocan a cada uno.
 
-    empresa = next(r for r in result["por_empresa_y_cd"] if r["carrier_name"] == "Transportes Sur"
-                   and r["cd"] == "Sin origen")
-    assert empresa["Sin conductor"] == 2 and empresa["total"] == 2
-    assert not any(r["carrier_name"] == "Sobra Spa" for r in result["por_empresa_y_cd"]), \
-        "una empresa con más conductores que tractos no tiene faltante"
-    sin_origen = next(r for r in result["por_cd"] if r["cd"] == "Sin origen")
-    assert sin_origen["Sin conductor"] == 2
-    peñon = next(r for r in result["por_cd"] if r["cd"] == "CD El Peñón")
-    assert peñon["Panne"] == 1 and peñon["total"] == 1
+def test_los_motivos_son_solo_los_que_ocurrieron_en_el_orden_del_catalogo():
+    """Antes salían todos los del catálogo: 16 columnas, casi todas en 0."""
+    assert _motivos_que_ocurrieron(
+        ["Panne", "Vacaciones", "Licencia"], ["Licencia", "Panne", "Panne"],
+    ) == ["Panne", "Licencia"]
 
 
-def test_sin_el_motivo_en_el_catalogo_no_inventa_la_columna():
-    result = _section4_tractoreo_no_trabajando(
-        [], ["Panne"], faltantes=[_faltante("Transportes Sur", 3, 1)], sin_conductor=None)
-    assert result["por_cd"] == [] and result["por_empresa_y_cd"] == []
+def test_un_motivo_retirado_que_ocurrio_va_despues_y_sin_motivo_al_final():
+    assert _motivos_que_ocurrieron(
+        ["Panne"], ["Sin motivo", "En abstención", "Panne"],
+    ) == ["Panne", "En abstención", "Sin motivo"]
 
 
-# ── Minuta 09/10, decisión B: la tabla de asignados va por ORIGEN REAL ──────
-# Pablo: "lo importante es de dónde salió realmente". Los que no cargaron no
-# salieron a ningún lado: sus columnas "sin carga" quedan en el origen habitual.
-
-def test_seccion2_agrupa_los_asignados_por_el_origen_real_del_viaje():
+def test_resumen_del_tipo_separa_asignados_de_los_que_no_trabajaron():
     rows = [
-        _row(asset_id="a1", home_cd="CD El Peñón", origin_cd="CD Puerto Santiago 1"),
-        _row(asset_id="a2", home_cd="CD El Peñón", origin_cd="CD El Peñón"),
-        _row(asset_id="a3", home_cd="CD El Peñón", origin_cd=None, con_carga=False,
-             category="TRABAJANDO_SIN_ASIGNACION", unassigned_reason_label="Se retira sin carga"),
+        _row(asset_id="a1"),
+        _row(asset_id="a2", con_carga=False, category="TRABAJANDO_SIN_ASIGNACION",
+             unassigned_reason_label="Esperando carga"),
+        _row(asset_id="a3", con_carga=False, category="NO_TRABAJANDO", unassigned_reason_label="Panne"),
+        _row(asset_id="a4", con_carga=False, category="SIN_RESOLVER", unassigned_reason_label=None),
     ]
-    por_cd = {f["cd"]: f for f in _section2_tractoreo_asignado(rows, ["Se retira sin carga"])["por_cd"]}
-    assert por_cd["CD Puerto Santiago 1"]["total"] == 1
-    assert por_cd["CD El Peñón"]["total"] == 1
-    assert por_cd["CD El Peñón"]["sin_carga"] == {"Se retira sin carga": 1}
+    resumen = _resumen_del_tipo(rows)
+    assert {k: resumen[k] for k in ("total", "assigned", "not_working", "utilization_pct")} == {
+        "total": 4, "assigned": 1, "not_working": 2, "utilization_pct": 25.0,
+    }
+    assert resumen["by_client"] == [{"client_name": "Walmart", "assigned": 1}]
+
+
+def test_resumen_agrupa_la_asistencia_por_el_origen_habitual_y_no_por_donde_cargo():
+    """Alguien de Peñón que hoy cargó en Quilicura es asistencia de PEÑÓN."""
+    rows = [
+        _row(asset_id="a1", home_cd="CD El Peñón", origin_cd="CD Quilicura"),
+        _row(asset_id="a2", home_cd="CD El Peñón", origin_cd=None, con_carga=False, category="NO_TRABAJANDO"),
+        _row(asset_id="a3", home_cd=None, origin_cd="CD El Peñón"),
+    ]
+    assert _resumen_del_tipo(rows)["by_home_origin"] == [
+        {"origin": "CD El Peñón", "enrolled": 2, "assigned": 1},
+        {"origin": "Sin origen", "enrolled": 1, "assigned": 1},
+    ]
+
+
+def test_resumen_de_un_tipo_sin_equipos_no_divide_por_cero():
+    assert _resumen_del_tipo([])["utilization_pct"] == 0.0
+
+
+def test_asignados_cruza_cliente_origen_real_y_empresa_por_zona():
+    rows = [
+        _row(asset_id="a1", client_name="Walmart", origin_cd="CD Lo Aguirre", destination_zone="RM"),
+        _row(asset_id="a2", client_name="Walmart", origin_cd="CD Lo Aguirre", destination_zone="Región"),
+        _row(asset_id="a3", client_name="Walmart", origin_cd="CD Quilicura", destination_zone="Z0"),
+        _row(asset_id="a4", client_name=None, origin_cd=None, destination_zone="Sin clasificar"),
+        # Sin carga: no entra en asignados.
+        _row(asset_id="a5", con_carga=False, category="NO_TRABAJANDO"),
+    ]
+    assert _asignados(rows) == [
+        {"client_name": "Sin cliente", "origin": "Sin origen", "carrier_name": "Transportes Sur",
+         "rm": 0, "z0": 0, "region": 0, "unclassified": 1, "total": 1},
+        {"client_name": "Walmart", "origin": "CD Lo Aguirre", "carrier_name": "Transportes Sur",
+         "rm": 1, "z0": 0, "region": 1, "unclassified": 0, "total": 2},
+        {"client_name": "Walmart", "origin": "CD Quilicura", "carrier_name": "Transportes Sur",
+         "rm": 0, "z0": 1, "region": 0, "unclassified": 0, "total": 1},
+    ]
+
+
+def test_cargaron_en_otro_origen_solo_cuando_hay_con_que_comparar():
+    rows = [
+        _row(asset_id="a1", tractor_plate="AAAA11", home_cd="CD El Peñón", origin_cd="CD Quilicura"),
+        _row(asset_id="a2", tractor_plate="BBBB22", home_cd="CD El Peñón", origin_cd="CD El Peñón"),
+        _row(asset_id="a3", tractor_plate="CCCC33", home_cd=None, origin_cd="CD Quilicura"),
+        _row(asset_id="a4", tractor_plate="DDDD44", home_cd="CD El Peñón", origin_cd=None, con_carga=False),
+    ]
+    assert _cargaron_en_otro_origen(rows) == [{
+        "tractor_plate": "AAAA11", "carrier_name": "Transportes Sur", "home_origin": "CD El Peñón",
+        "origin": "CD Quilicura", "client_name": "Walmart",
+    }]
+
+
+def test_trabajaron_sin_asignacion_por_origen_habitual_y_motivo():
+    rows = [
+        _row(asset_id="a1"),
+        _row(asset_id="a2", home_cd="CD Quilicura", con_carga=False, category="TRABAJANDO_SIN_ASIGNACION",
+             unassigned_reason_label="Se retira sin carga"),
+        _row(asset_id="a3", con_carga=False, category="NO_TRABAJANDO", unassigned_reason_label="Panne"),
+    ]
+    seccion = _trabajaron_sin_asignacion(rows, ["Esperando carga", "Se retira sin carga"])
+    assert seccion == {
+        "reasons": ["Se retira sin carga"],
+        "rows": [{"origin": "CD Quilicura", "carrier_name": "Transportes Sur",
+                  "counts": {"Se retira sin carga": 1}, "total": 1}],
+    }
+
+
+def test_segundas_vueltas_por_patente_con_su_conductor():
+    rows = [
+        _row(asset_id="a1", tractor_plate="AAAA11", vueltas=2, driver_name="Ana Soto", destination_zone="Z0"),
+        _row(asset_id="a2", tractor_plate="BBBB22", vueltas=1),
+        _row(asset_id="a3", tractor_plate="CCCC33", vueltas=0, con_carga=False),
+    ]
+    assert _segundas_vueltas(rows) == [{
+        "tractor_plate": "AAAA11", "carrier_name": "Transportes Sur", "driver_name": "Ana Soto",
+        "origin": "CD Lo Aguirre", "destination_zone": "Z0", "legs": 2,
+    }]
+
+
+def test_no_trabajaron_en_tractoreo_va_por_conductor_y_suma_el_faltante_en_sin_conductor():
+    driver_rows = [
+        _driver_row(driver_id="d1", home_cd="CD El Peñón", unassigned_reason_label="Panne"),
+        _driver_row(driver_id="d2", full_name="Eva Ríos", home_cd=None, unassigned_reason_label=None),
+    ]
+    seccion = _no_trabajaron_por_conductor(
+        driver_rows, ["Panne", "Vacaciones", "Sin conductor"],
+        faltantes=[_faltante("Transportes Sur", 3, 1), _faltante("Sobra Spa", 1, 2)],
+        sin_conductor="Sin conductor",
+    )
+    assert seccion["reasons"] == ["Panne", "Sin conductor", "Sin motivo"]
+    assert seccion["by_reason"] == [
+        {"origin": "CD El Peñón", "carrier_name": "Transportes Sur", "counts": {"Panne": 1}, "total": 1},
+        {"origin": "Sin origen", "carrier_name": "Transportes Sur",
+         "counts": {"Sin motivo": 1, "Sin conductor": 2}, "total": 3},
+    ]
+    assert seccion["detail"] == [
+        {"name": "Eva Ríos", "carrier_name": "Transportes Sur", "home_origin": None,
+         "reason": "Sin motivo", "tractor_plate": "ABCD12"},
+        {"name": "Juan Pérez", "carrier_name": "Transportes Sur", "home_origin": "CD El Peñón",
+         "reason": "Panne", "tractor_plate": "ABCD12"},
+    ]
+
+
+def test_sin_el_motivo_sin_conductor_activo_no_inventa_la_columna():
+    seccion = _no_trabajaron_por_conductor(
+        [], ["Panne"], faltantes=[_faltante("Transportes Sur", 3, 1)], sin_conductor="Sin conductor")
+    assert seccion == {"reasons": [], "by_reason": [], "detail": []}
+
+
+def test_no_trabajaron_en_equipo_completo_lista_equipos():
+    rows = [
+        _row(asset_id="a1", tractor_plate="EQUI01", con_carga=False, category="NO_TRABAJANDO",
+             unassigned_reason_label="Panne", home_cd="CD Lo Aguirre"),
+        # Trabajó sin asignación: no es "no trabajó".
+        _row(asset_id="a2", tractor_plate="EQUI02", con_carga=False, category="TRABAJANDO_SIN_ASIGNACION",
+             unassigned_reason_label="Esperando carga"),
+        _row(asset_id="a3", tractor_plate="EQUI03"),
+    ]
+    seccion = _no_trabajaron_por_equipo(rows, ["Panne"])
+    assert seccion["reasons"] == ["Panne"]
+    assert seccion["detail"] == [{"name": "EQUI01", "carrier_name": "Transportes Sur",
+                                  "home_origin": "CD Lo Aguirre", "reason": "Panne", "tractor_plate": "EQUI01"}]
+
+
+def test_empresas_ordena_por_utilizacion():
+    rows = [
+        _row(asset_id="a1", carrier_name="Norte"), _row(asset_id="a2", carrier_name="Norte", con_carga=False),
+        _row(asset_id="a3", carrier_name="Sur"),
+    ]
+    assert _empresas(rows) == [
+        {"carrier_name": "Sur", "enrolled": 1, "assigned": 1, "unassigned": 0, "utilization_pct": 100.0},
+        {"carrier_name": "Norte", "enrolled": 2, "assigned": 1, "unassigned": 1, "utilization_pct": 50.0},
+    ]
+
+
+SEIS_CLAVES = {"summary", "assigned", "worked_without_assignment", "second_legs", "not_working", "carriers"}
+
+
+def _cliente_http(pool):
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+    app.dependency_overrides[get_pool] = lambda: pool
+    app.dependency_overrides[get_current_user] = lambda: USER
+    return TestClient(app)
+
+
+def test_get_status_report_devuelve_los_dos_tipos_con_sus_seis_claves():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    conn.fetch.return_value = []
+    wire_transactional_conn(pool, conn)
+    pool.fetch.return_value = []
+
+    res = _cliente_http(pool).get("/api/v1/status-report?fecha=2026-08-02")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert set(body) == {"business_date", "client_filter", "calculado_a", "pendiente_desde", "by_operation_type"}
+    assert set(body["by_operation_type"]) == {"tractoreo", "equipo_completo"}
+    for tipo in body["by_operation_type"].values():
+        assert set(tipo) == SEIS_CLAVES
+
+
+def test_cada_equipo_cuenta_solo_en_su_tipo_y_los_asignados_cuadran_con_el_resumen():
+    from app.services.cierre_lineas import GRUPO_NO_TRABAJANDO
+
+    asset_rows = [
+        _row(asset_id="t1", tractor_plate="TRAC01", categories=["TRACTOREO"]),
+        _row(asset_id="t2", tractor_plate="TRAC02", categories=["TRACTOREO"], client_name="Sodimac"),
+        _row(asset_id="e1", tractor_plate="EQUI01", categories=["EQUIPO_COMPLETO"], con_carga=False,
+             category="NO_TRABAJANDO", unassigned_reason_label="Panne"),
+        _row(asset_id="s1", tractor_plate="SINC01", categories=["SIN_CLASIFICAR"]),
+    ]
+
+    async def catalogo(sql, *args):
+        return [{"label": "Panne"}, {"label": "Vacaciones"}] if args and args[0] == GRUPO_NO_TRABAJANDO else []
+
+    pool = AsyncMock()
+    pool.fetch.side_effect = catalogo
+    pool.fetchval.return_value = None
+    with patch("app.routers.status_report._build_asset_rows", AsyncMock(return_value=asset_rows)), \
+         patch("app.routers.status_report._build_driver_rows", AsyncMock(return_value=[])), \
+         patch("app.routers.status_report.compute_fleet_driver_gap", AsyncMock(return_value=[])):
+        body = _cliente_http(pool).get("/api/v1/status-report?fecha=2026-08-02").json()
+
+    tractoreo = body["by_operation_type"]["tractoreo"]
+    equipo = body["by_operation_type"]["equipo_completo"]
+    assert tractoreo["summary"]["total"] == 2 and equipo["summary"]["total"] == 1
+    assert sum(r["total"] for r in tractoreo["assigned"]["rows"]) == tractoreo["summary"]["assigned"] == 2
+    assert [d["name"] for d in equipo["not_working"]["detail"]] == ["EQUI01"]
+    assert equipo["not_working"]["reasons"] == ["Panne"]
+    assert tractoreo["not_working"]["detail"] == []
+
+
+def test_el_filtro_de_cliente_deja_a_los_sin_carga_y_saca_a_los_de_otro_cliente():
+    asset_rows = [
+        _row(asset_id="t1", client_name="Walmart"),
+        _row(asset_id="t2", client_name="Sodimac"),
+        _row(asset_id="t3", con_carga=False, client_name=None, category="NO_TRABAJANDO"),
+    ]
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    pool.fetchval.return_value = None
+    with patch("app.routers.status_report._build_asset_rows", AsyncMock(return_value=asset_rows)), \
+         patch("app.routers.status_report._build_driver_rows", AsyncMock(return_value=[])), \
+         patch("app.routers.status_report.compute_fleet_driver_gap", AsyncMock(return_value=[])):
+        body = _cliente_http(pool).get("/api/v1/status-report?fecha=2026-08-02&client=Walmart").json()
+
+    resumen = body["by_operation_type"]["tractoreo"]["summary"]
+    assert (resumen["total"], resumen["assigned"]) == (2, 1)
