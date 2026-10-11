@@ -25,6 +25,7 @@ import { IndicadorDeAjustes } from '@/components/dashboard/IndicadorDeAjustes'
 import { AvisoDeActualizacion } from '@/components/dashboard/AvisoDeActualizacion'
 import { Estado } from '@/components/ui/Estado'
 import { urlDelViaje } from '@/lib/navegacion/viaje'
+import { esUrlVieja, leerUrlDelCierre, urlDelCierre } from '@/lib/navegacion/cierre'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import type { PeriodoDeCierre, TripsMeta } from '@/lib/types'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
@@ -35,10 +36,11 @@ function todayISO() {
 }
 
 const TABS = [
-  { id: 'flota',       label: 'Flota del día',  icon: Truck },
-  { id: 'viajes',      label: 'Viajes',         icon: Route },
-  { id: 'pendientes',  label: 'Pendientes',     icon: AlertTriangle },
-  { id: 'reporte',     label: 'Reporte',        icon: FileBarChart2 },
+  // Los id viajan en la URL (?tab=): en inglés, como las rutas. La etiqueta, en español.
+  { id: 'fleet',   label: 'Flota del día',  icon: Truck },
+  { id: 'trips',   label: 'Viajes',         icon: Route },
+  { id: 'pending', label: 'Pendientes',     icon: AlertTriangle },
+  { id: 'report',  label: 'Reporte',        icon: FileBarChart2 },
 ] as const
 type TabId = (typeof TABS)[number]['id']
 
@@ -71,7 +73,8 @@ function ClosuresCenterPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
-  const fecha = searchParams.get('fecha') || todayISO()
+  const url = leerUrlDelCierre(searchParams)
+  const fecha = url.date || todayISO()
 
   const [tripsMeta, setTripsMeta] = useState<TripsMeta | null>(null)
   // Forzar con pendientes: closures.override; reabrir: closures.sign (RBAC).
@@ -100,15 +103,17 @@ function ClosuresCenterPageInner() {
   // Arranca de la URL y la mantiene al día con `replace` (sin entradas nuevas en
   // el historial, así que la URL y la pestaña no se desincronizan).
   const [tab, setTabState] = useState<TabId>(() => {
-    const deLaUrl = searchParams.get('tab')
-    return TABS.some(t => t.id === deLaUrl) ? (deLaUrl as TabId) : 'flota'
+    return url.tab ?? 'fleet'
   })
   function setTab(next: TabId) {
     setTabState(next)
-    const params = new URLSearchParams(searchParams.toString())
-    params.set('tab', next)
-    router.replace(`/dashboard/operations/closures?${params.toString()}`)
+    router.replace(urlDelCierre(searchParams, { tab: next }))
   }
+  // Un enlace viejo (?fecha=, ?tab=viajes) se lee igual y se reescribe en inglés,
+  // sin entrada nueva en el historial.
+  useEffect(() => {
+    if (esUrlVieja(searchParams)) router.replace(urlDelCierre(searchParams, {}))
+  }, [searchParams, router])
 
   // Las dos consultas que alimentan el cierre las dispara FlotaDelDiaSection;
   // acá sólo se observa su estado con las MISMAS queryKey — no se agrega una
@@ -180,12 +185,12 @@ function ClosuresCenterPageInner() {
   const cierreViajesQuery = useQuery({
     queryKey: ['cierre-viajes', fecha],
     queryFn: () => tripsApi.cierreViajes(fecha),
-    enabled: tab === 'viajes',
+    enabled: tab === 'trips',
   })
   const motivosViajesQuery = useQuery({
     queryKey: ['taxonomies', 'TRIP_UNASSIGNED_REASON'],
     queryFn: () => taxonomiesApi.list('TRIP_UNASSIGNED_REASON'),
-    enabled: tab === 'viajes',
+    enabled: tab === 'trips',
     staleTime: 5 * 60_000,
   })
 
@@ -218,9 +223,7 @@ function ClosuresCenterPageInner() {
 
 
   function setFecha(next: string) {
-    const params = new URLSearchParams(searchParams.toString())
-    params.set('fecha', next)
-    router.replace(`/dashboard/operations/closures?${params.toString()}`)
+    router.replace(urlDelCierre(searchParams, { date: next }))
   }
 
   async function refrescarCierre() {
@@ -283,10 +286,7 @@ function ClosuresCenterPageInner() {
 
   /** Este cierre, con su fecha y pestaña: a donde vuelve el detalle de un viaje. */
   function urlDeEsteCierre(): string {
-    const params = new URLSearchParams(searchParams.toString())
-    params.set('fecha', fecha)
-    params.set('tab', tab)
-    return `/dashboard/operations/closures?${params.toString()}`
+    return urlDelCierre(searchParams, { date: fecha, tab })
   }
 
   function handleSelectTrip(tripId: string) {
@@ -345,7 +345,7 @@ function ClosuresCenterPageInner() {
                 role="tab"
                 aria-selected={isActive}
                 // El número de la pestaña dice qué cuenta: "Viajes 12" a secas no lo dice.
-                aria-label={t.id === 'viajes' && ajustes.length > 0
+                aria-label={t.id === 'trips' && ajustes.length > 0
                   ? `Viajes, ${ajustes.length} ${ajustes.length === 1 ? 'ajuste posterior' : 'ajustes posteriores'} al cierre`
                   : undefined}
                 onClick={() => setTab(t.id)}
@@ -355,7 +355,7 @@ function ClosuresCenterPageInner() {
               >
                 <Icon size={14} className="shrink-0" />
                 {t.label}
-                {t.id === 'viajes' && ajustes.length > 0 && (
+                {t.id === 'trips' && ajustes.length > 0 && (
                   <span className="ml-0.5 rounded-full bg-gray-200 px-1.5 text-[10px] font-bold tabular-nums text-text-secondary">
                     {ajustes.length}
                   </span>
@@ -366,7 +366,7 @@ function ClosuresCenterPageInner() {
         </div>
 
         <div className="p-5 sm:p-6">
-          {tab === 'flota' && (
+          {tab === 'fleet' && (
             <FlotaDelDiaSection
               fecha={fecha}
               unassignedReasons={tripsMeta?.unassigned_reasons ?? []}
@@ -379,7 +379,7 @@ function ClosuresCenterPageInner() {
               // puede responderle.
             />
           )}
-          {tab === 'viajes' && (<>
+          {tab === 'trips' && (<>
             <div ref={ajustesRef} className="scroll-mt-4">
               <AjustesPosterioresAlCierre ajustes={ajustes} volverA={urlDeEsteCierre()} />
             </div>
@@ -402,13 +402,13 @@ function ClosuresCenterPageInner() {
               />
             )}
           </>)}
-          {tab === 'pendientes' && <PreCierrePendingSection fecha={fecha} />}
-          {tab === 'reporte' && <StatusReportSection fecha={fecha} shippers={shippersQuery.data} />}
+          {tab === 'pending' && <PreCierrePendingSection fecha={fecha} />}
+          {tab === 'report' && <StatusReportSection fecha={fecha} shippers={shippersQuery.data} />}
         </div>
 
         <div className="border-t border-border bg-gray-50/60 p-5 sm:p-6 space-y-3 rounded-b-2xl">
           {diaCerrado ? (
-            <DiaCerrado periodo={cierreQuery.data?.periodo ?? null} ajustes={ajustes.length} onVerAjustes={() => { setTab('viajes'); setIrAAjustes(n => n + 1) }} />
+            <DiaCerrado periodo={cierreQuery.data?.periodo ?? null} ajustes={ajustes.length} onVerAjustes={() => { setTab('trips'); setIrAAjustes(n => n + 1) }} />
           ) : (
             <div>
               <h2 className="text-sm font-bold text-text-primary">Confirmar cierre</h2>

@@ -14,7 +14,7 @@ const EMPTY_PRE_CIERRE = {
 
 const push = vi.fn()
 const replace = vi.fn()
-let consulta = 'fecha=2026-08-04'
+let consulta = 'date=2026-08-04'
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push, replace }),
   useSearchParams: () => new URLSearchParams(consulta),
@@ -104,7 +104,7 @@ beforeEach(async () => {
   vi.mocked(isCierrePendienteError).mockReset().mockReturnValue(false)
   permisos.dados = new Set(['closures.declare', 'closures.sign'])
   push.mockReset(); replace.mockReset()
-  consulta = 'fecha=2026-08-04'
+  consulta = 'date=2026-08-04'
 })
 
 describe('ClosuresCenterPage', () => {
@@ -194,17 +194,24 @@ describe('ClosuresCenterPage', () => {
   it('la pestaña activa queda en la URL, para volver a ella desde el detalle de un viaje', () => {
     renderPage()
     fireEvent.click(screen.getByRole('tab', { name: 'Viajes' }))
-    expect(replace).toHaveBeenCalledWith('/dashboard/operations/closures?fecha=2026-08-04&tab=viajes')
+    expect(replace).toHaveBeenCalledWith('/dashboard/operations/closures?date=2026-08-04&tab=trips')
+  })
+
+  it('un enlace viejo en español abre donde decía y se reescribe en inglés', async () => {
+    consulta = 'fecha=2026-08-04&tab=reporte'
+    renderPage()
+    expect(screen.getByRole('tab', { name: 'Reporte' })).toHaveAttribute('aria-selected', 'true')
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard/operations/closures?date=2026-08-04&tab=report'))
   })
 
   it('abre en la pestaña que dice la URL', () => {
-    consulta = 'fecha=2026-08-04&tab=reporte'
+    consulta = 'date=2026-08-04&tab=report'
     renderPage()
     expect(screen.getByRole('tab', { name: 'Reporte' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('una pestaña que no existe en la URL abre la de siempre', () => {
-    consulta = 'fecha=2026-08-04&tab=inventada'
+    consulta = 'date=2026-08-04&tab=inventada'
     renderPage()
     expect(screen.getByRole('tab', { name: 'Flota del día' })).toHaveAttribute('aria-selected', 'true')
   })
@@ -302,7 +309,7 @@ describe('ClosuresCenterPage', () => {
 
     fireEvent.change(screen.getByLabelText('Fecha del cierre'), { target: { value: '2026-08-05' } })
 
-    expect(replace).toHaveBeenCalledWith(expect.stringContaining('fecha=2026-08-05'))
+    expect(replace).toHaveBeenCalledWith(expect.stringContaining('date=2026-08-05'))
   })
 
   // Firmar el dia es un acto con nombre y hora. El boton solo miraba `closing`,

@@ -1,4 +1,5 @@
 import { destinoSeguro } from '@/lib/auth/destino'
+import { CIERRE } from './cierre'
 
 /** Abrir el detalle de un viaje y volver a donde se estaba (bug 10/10: desde el
  *  Cierre, cerrar el detalle llevaba siempre al Monitor). La pantalla de origen
@@ -14,7 +15,8 @@ export function volverDesdeElViaje(next: string | null | undefined): string {
   return destinoSeguro(next, MONITOR)
 }
 
-export const CIERRE = '/dashboard/operations/closures'
+// La ruta del Cierre vive en su módulo; se re-exporta para quien la importa de acá.
+export { CIERRE }
 
 /** Qué dice el vínculo de vuelta del detalle (spec 2026-10-10 §4): adónde lleva,
  *  no un ícono suelto (NN/g). Usa el mismo destino seguro que `volverDesdeElViaje`,
