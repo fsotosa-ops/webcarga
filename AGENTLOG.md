@@ -16,6 +16,38 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Ítem 5 de la minuta 09/10: activo y asignado del viaje en la base — DESPLEGADO (dev + base + Mage)
+
+Spec `docs/superpowers/specs/2026-10-11-trip-assignment-in-the-database-design.md` y plan del mismo nombre, ejecutado
+native con revisión final (opus). Ledger: `.superpowers/sdd/2026-10-11-trip-assignment-in-the-database/progress.md`.
+
+- **Problema:** un viaje manual nacía "activo, no asignado" (la API escribía true/false fijos), y cualquier cambio de
+  flota hecho en la app (manual o vínculo sobre un viaje del TMS) tardaba hasta 15 min, hasta la corrida de dbt. En
+  ese lapso Cierre › Viajes lo ponía en Por resolver y bloqueaba la firma, mientras Flota ya lo mostraba asignado.
+- **Decisión del usuario (11/10): opción B**, una sola definición en la base y varios llamadores. Se descartó
+  disparar dbt por demanda desde la API (integración de 6 pasos, choque con la corrida de 15 min, Disk IO).
+- **Hecho:**
+  - Migración `20261012090000_trip_assignment_in_the_database` (aplicada): `app.is_trip_open`,
+    `app.is_trip_assigned` y los triggers `trg_sync_trip_assignment_ins/_upd/_del` sobre `app.trip_fleet_links`
+    (solo escriben si el valor cambia y respetan el override).
+  - API: el alta manual llama a las funciones; las 4 rutas de edición (PATCH, vincular, desvincular, restaurar
+    campo) escriben en una transacción, bloquean el viaje antes que el vínculo (mismo orden que dbt: sin deadlock) y
+    la copia a `trips_manual` ya no se traga errores. Restaurar el override de Asignado recalcula en el acto.
+  - Mage: `macros/viaje_activo_y_asignado.sql` llama a las funciones (subido con OK del usuario, 16:34 UTC); el SQL
+    compilado las usa en las 3 ramas; paridad en vivo: 1 diferencia en 3.389 (`add6d7dc`, huérfano conocido).
+- **Verificado en dev:** viaje A (manual, CERRADO con flota) nació inactivo y asignado y no apareció en Por
+  resolver; viaje B (sin flota) apareció en Por resolver y salió al instante al vincularle conductor desde el
+  detalle. Los dos anulados con "Cargado por error".
+- **Para cambiar la regla de activo/asignado:** se edita la función con una migración, no la macro.
+- **Minors diferidos (revisión final):** `app.resolving_fleet` vale toda la transacción; ningún test lee la copia en
+  `trips_manual`; los tests mockeados no distinguen `pool` de `conn`; la regex de la guarda de INSERT no ve un
+  INSERT con `ON CONFLICT` antes de las comillas.
+
+**Siguiente paso exacto:**
+- [ ] P2: grupo `incomplete_assignment` en Por resolver (solo patente o solo conductor; decisión D2 del 11/10).
+- [ ] P3 (ítem 21), P4 (ítem 20), P5 (ítem 23), P6 (menores), P7 (respuestas para Pablo): ver la entrada de la
+      auditoría de la minuta, abajo.
+
 ### 2026-10-11 — Auditoría de la minuta 09/10 contra código, Mage y despliegues + cuenta al pie del sidebar
 
 Plan: `~/.claude/plans/necesito-que-revises-completamente-synchronous-fog.md`. Cada ítem se verificó en código, en el
@@ -47,10 +79,8 @@ mirror de Mage y en git, no solo aquí.
 
 **Siguiente paso exacto:**
 - [x] P0b verificado en dev (expandida, contraída y teléfono).
-- [ ] P1, ítem 5: un manual nuevo aparece "no asignado" en Cierre › Viajes hasta la corrida de Mage
-      (`routers/trips.py:1917-1927` copia `is_assigned=false`). Brainstorming corto; la regla es "flags solo en dbt".
-      Bugs vecinos: `_mirror_manual_trip` con `except Exception: pass` (`trips.py:1989`); editar un manual sube
-      `status_reported_at` y lo vuelve a contar en días nuevos.
+- [x] P1, ítem 5: hecho (ver la entrada de arriba). Que editar un manual actualice `status_reported_at` no era un
+      bug: en un viaje gestionado a mano la edición es su "reporte".
 - [ ] P2: grupo `incomplete_assignment` en `services/cierre_viajes.py` + `lib/cierre/gruposDeViajes.ts`.
 - [ ] P3, ítem 21: enlaces del Cierre (Flota y Viajes) a la empresa / `?driver=` / `?asset=`.
 - [ ] P4, ítem 20: abrir la fila de requisito (`listPending({requirementCode, estado})`, sin llamadores hoy).
