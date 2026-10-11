@@ -18,6 +18,7 @@ import { RolesTab } from './roles-tab'
 import type { PermissionCode } from '@/lib/authz/permisos.generated'
 import type { ClaveDeSeccion } from './secciones'
 import { OrigenesTab } from './origenes'
+import { ClientesDelTmsTab } from './clientes-del-tms'
 
 export interface Seccion {
   /** Tipada contra PERMISO_DE_SECCION: una sección sin permiso declarado no compila. */
@@ -95,6 +96,8 @@ export const DOMINIOS: Dominio[] = [
         proposito: 'Por qué se anula un viaje cargado en la app', Panel: MotivosAnulacionTab },
       { clave: 'origins', titulo: 'Orígenes',
         proposito: 'Los lugares desde los que sale carga', Panel: OrigenesTab },
+      { clave: 'tms-clients', titulo: 'Clientes del TMS',
+        proposito: 'A qué cliente del directorio corresponde cada cliente de cada TMS', Panel: ClientesDelTmsTab },
     ],
   },
   {

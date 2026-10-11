@@ -23,6 +23,8 @@ export const PERMISO_DE_SECCION = {
   'void-reasons':         'operations.configure',
   // Un origen es una ubicación marcada como origen: PATCH /locations.
   'origins':              'commercial.edit',
+  // La correspondencia cliente del TMS → cliente del directorio: PUT /tms-clients.
+  'tms-clients':          'commercial.edit',
   'subtypes':             'operations.configure',
   'operation-types':      'operations.configure',
   'users':                'users.manage',

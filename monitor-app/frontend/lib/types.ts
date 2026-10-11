@@ -2057,3 +2057,14 @@ export interface Directorio {
   empresas: { total: number; activas: number; inactivas: number; onboarding: number }
   flota:    { tractos: number; ramplas: number; conductores: number }
 }
+
+/** Un cliente de un TMS y el cliente del directorio que le corresponde
+ *  (app.tms_client_shippers, spec 2026-10-11). Sin vincular: shipper_id null. */
+export type TmsClient = {
+  source_client_id: string
+  source_system:    string
+  source_client:    string
+  trips:            number
+  shipper_id:       string | null
+  shipper_name:     string | null
+}
