@@ -40,7 +40,9 @@ renuevan aunque esté cerrado: "duraciones" de 23-41 días) y un umbral dinámic
   vitest 1694; tsc y build limpios.
 - Ojo: la API toma `view="en_curso"` por defecto; quien quiera el Historial debe decirlo (el front siempre lo dice).
 
-### 2026-10-11 — Cierre de sesión: lo que queda de la minuta 09/10 (Pablo)
+### 2026-10-11 — Cierre de sesión: lo que queda de la minuta 09/10 (Pablo) — se retoma el 12/10
+
+Sin decisiones pendientes del usuario. **Siguiente paso exacto (12/10): empezar por el ítem 5**, el más acotado.
 
 - [ ] Que Pablo revise en dev todo lo de hoy (Monitor, Cierre › Flota/Viajes/Reporte, Configuración › Clientes del TMS).
 - [ ] Ítem 5: un viaje manual nuevo queda "activo, no asignado" hasta la próxima corrida de Mage (≤15 min).
