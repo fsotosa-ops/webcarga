@@ -729,3 +729,10 @@ def test_inventario_usa_el_singular_cuando_corresponde():
     assert {"n": 1, "etiqueta": "usuario"} in cuerpo["people"]["pares"]
     assert {"n": 1, "etiqueta": "subtipo"} in cuerpo["fleet"]["pares"]
 
+
+def test_un_estado_se_puede_mover_al_grupo_pendiente_de_cierre_tms():
+    """Ítem 6 (minuta 09/10): "Control de salida" de Sodimac se mueve a este grupo
+    desde Configuración › Estados, sin código; si otro TMS tiene un estado así, igual."""
+    from app.routers.config import TripStatusPatch
+    assert TripStatusPatch(group_id="pendiente_cierre_tms").group_id == "pendiente_cierre_tms"
+

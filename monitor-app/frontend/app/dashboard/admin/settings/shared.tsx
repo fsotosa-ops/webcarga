@@ -11,6 +11,9 @@ export const GROUP_OPTIONS = [
   { id: 'en_ruta',    label: 'En Ruta'    },
   { id: 'en_local',   label: 'En Local'   },
   { id: 'retornando', label: 'Retornando' },
+  // Asignado y terminado para Operaciones; falta que el TMS del cliente lo cierre
+  // (Sodimac en "Control de salida"). Lo sigue Facturación (minuta 09/10, ítem 6).
+  { id: 'pendiente_cierre_tms', label: 'Pendiente de cierre TMS' },
   { id: 'cerrado',    label: 'Cerrado'    },
   { id: 'problema',   label: 'Problema'   },
   { id: 'otro',       label: 'Otro'       },

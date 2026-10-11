@@ -104,6 +104,12 @@ SELECT trip_id, planning_date, client_name, source_system_trip_id, trip_status,
        source_system, tractor_plate, driver_name, carrier_name,
        CASE
            WHEN oferta_retirada THEN 'oferta_sin_declarar'
+           -- Ítem 6 (minuta 09/10): asignado, pero el TMS del cliente todavía no lo
+           -- cierra. Va aparte, sin importar la fecha ni si el TMS dejó de reportar
+           -- (Sodimac puede tardar hasta el martes siguiente): no es "en curso" ni
+           -- "abandonado", y no pide motivo. Lo decide el grupo del estado en el
+           -- catálogo (Configuración › Estados), no una lista de estados en el código.
+           WHEN is_assigned AND group_id = 'pendiente_cierre_tms' THEN 'pendiente_cierre_tms'
            WHEN is_active AND NOT is_assigned AND planning_date = $1::date THEN 'hoy'
            WHEN is_active AND NOT is_assigned AND planning_date < $1::date THEN 'rezago'
            WHEN is_active AND is_assigned     AND planning_date < $1::date THEN 'en_curso'
@@ -120,6 +126,7 @@ FROM base
 WHERE unassigned_reason_id IS NULL
   AND NOT eliminado_en_tms
   AND (oferta_retirada
+   OR (is_assigned AND group_id = 'pendiente_cierre_tms')
    OR (is_active AND NOT is_assigned)
    OR (is_active AND is_assigned AND planning_date < $1::date)
    OR (NOT is_active

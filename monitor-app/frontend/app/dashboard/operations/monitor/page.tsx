@@ -46,12 +46,14 @@ const GROUP_DISPLAY: Record<string, { label: string; on: string; off: string }> 
   en_ruta:    { label: 'En Ruta',    on: 'bg-blue-500   border-blue-500   text-white', off: 'text-blue-600   border-blue-200   bg-blue-50/70   hover:border-blue-300'   },
   en_local:   { label: 'En Local',   on: 'bg-orange-500 border-orange-500 text-white', off: 'text-orange-600 border-orange-200 bg-orange-50/70 hover:border-orange-300' },
   retornando: { label: 'Retornando', on: 'bg-cyan-500   border-cyan-500   text-white', off: 'text-cyan-700   border-cyan-200   bg-cyan-50/70   hover:border-cyan-300'   },
+  // Ítem 6 (minuta 09/10): el token `espera` ya existe; no se agrega un color nuevo.
+  pendiente_cierre_tms: { label: 'Pendiente cierre TMS', on: 'bg-espera border-espera text-white', off: 'text-espera border-espera/30 bg-espera/5 hover:border-espera/50' },
   cerrado:    { label: 'Cerrados',   on: 'bg-slate-500  border-slate-500  text-white', off: 'text-slate-600  border-slate-200  bg-slate-50/70  hover:border-slate-300'  },
   problema:   { label: 'Problema',   on: 'bg-red-500    border-red-500    text-white', off: 'text-red-600    border-red-200    bg-red-50/70    hover:border-red-300'     },
   otro:       { label: 'Otro',       on: 'bg-gray-500   border-gray-500   text-white', off: 'text-gray-600   border-gray-200   bg-gray-50/70   hover:border-gray-300'    },
 }
 
-const GROUP_ORDER = ['en_ruta', 'en_local', 'retornando', 'cerrado', 'problema', 'otro']
+const GROUP_ORDER = ['en_ruta', 'en_local', 'retornando', 'pendiente_cierre_tms', 'cerrado', 'problema', 'otro']
 
 function todayISO() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date())

@@ -17,6 +17,7 @@ const grupos = {
   abandonado: [viaje('t4', '2033002', { dias_sin_novedad: 31.6 })],
   con_motivo: [],
   oferta_sin_declarar: [],
+  pendiente_cierre_tms: [],
 }
 
 describe('PasoViajesSection', () => {
@@ -193,6 +194,25 @@ describe('PasoViajesSection', () => {
     render(<PasoViajesSection grupos={grupos} bloquean={2} motivos={[]} onCerrar={vi.fn()} />)
     fireEvent.change(screen.getByRole('searchbox', { name: /buscar/i }), { target: { value: 'zzzz' } })
     expect(screen.getAllByText(/ningún viaje coincide/i).length).toBeGreaterThan(0)
+  })
+
+  it('los asignados pendientes de cierre del TMS van aparte, al final, sin casilla ni motivo (minuta 09/10, ítem 6)', () => {
+    const conPendiente = { ...grupos, pendiente_cierre_tms: [
+      viaje('t9', '881496', { client_name: 'Sodimac', trip_status: 'Control de salida', tractor_plate: 'GPRZ30', driver_name: 'Ana Rojas' }),
+    ] }
+    render(<PasoViajesSection grupos={conPendiente} bloquean={2} motivos={[{ id: 'm1', label: 'Sin camión' }]} onCerrar={vi.fn()} />)
+
+    const titulos = screen.getAllByText(/^(Hoy|Rezago|En curso|Abandonados por el TMS|Ofertas sin declarar|Con motivo|Asignados, pendientes de cierre del TMS)$/).map(e => e.textContent)
+    expect(titulos[titulos.length - 1]).toBe('Asignados, pendientes de cierre del TMS')
+    expect(screen.getByText('881496')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /881496/ })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: /881496/ })).toBeNull()
+  })
+
+  it('si el backend todavía no manda el grupo nuevo, la pestaña igual se dibuja', () => {
+    const { pendiente_cierre_tms: _, ...sinElGrupoNuevo } = grupos
+    render(<PasoViajesSection grupos={sinElGrupoNuevo as typeof grupos} bloquean={2} motivos={[]} onCerrar={vi.fn()} />)
+    expect(screen.getByText('Asignados, pendientes de cierre del TMS')).toBeInTheDocument()
   })
 })
 

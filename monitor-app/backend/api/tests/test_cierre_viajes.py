@@ -258,7 +258,8 @@ async def test_el_endpoint_agrupa_y_dice_cuantos_bloquean(conexion_revertida):
     resp = await cierre_viajes(fecha="2026-08-18",
                                pool=PoolDeUnaConexion(conexion_revertida), _=None)
 
-    assert set(resp["grupos"]) == {"hoy", "rezago", "en_curso", "abandonado", "con_motivo", "oferta_sin_declarar"}
+    assert set(resp["grupos"]) == {"hoy", "rezago", "en_curso", "abandonado", "con_motivo", "oferta_sin_declarar",
+                                   "pendiente_cierre_tms"}
     assert resp["bloquean"] == len(resp["grupos"]["hoy"]) + len(resp["grupos"]["rezago"])
 
     grupo_por_id = {
@@ -852,3 +853,68 @@ async def test_una_oferta_retirada_sin_declarar_va_a_su_grupo_y_no_bloquea(conex
         oferta, await _motivo_de_viaje(conn))
     resp = await cierre_viajes(fecha="2026-08-18", pool=pool, _=None)
     assert await _grupo_de(resp, oferta) is None
+
+
+# ── Ítem 6 (minuta 09/10): asignados, pendientes de cierre del TMS ────────────
+
+async def _estado_pendiente_de_cierre(conexion) -> str:
+    """Un estado del catálogo en el grupo "Pendiente de cierre TMS", como queda
+    "Control de salida" de Sodimac cuando se lo mueve desde Configuración."""
+    estado = f"ZZ-PENDIENTE-{uuid.uuid4().hex[:6]}"
+    await conexion.execute(
+        "INSERT INTO app.trip_statuses (id, label, group_id, active, counts_as_load) "
+        "VALUES ($1, $1, 'pendiente_cierre_tms', true, true)", estado)
+    return estado
+
+
+async def test_un_asignado_pendiente_de_cierre_del_tms_tiene_su_propio_grupo(conexion_revertida):
+    """Hoy caían en "En curso" (mezclados con los que van en ruta) o en
+    "Abandonado" si el TMS dejaba de reportar. Ya están bien asignados: falta
+    que el TMS del cliente los cierre, y eso lo sigue Facturación."""
+    from app.services.cierre_viajes import SQL_GRUPOS_CIERRE
+
+    estado = await _estado_pendiente_de_cierre(conexion_revertida)
+    reciente = await _crear_viaje(
+        conexion_revertida, planning_date=FECHA_NEGOCIO - timedelta(days=3),
+        is_active=True, is_assigned=True, trip_status=estado)
+    sin_novedad = await _crear_viaje(
+        conexion_revertida, planning_date=FECHA_NEGOCIO - timedelta(days=30),
+        is_active=False, is_assigned=True, dias_sin_novedad=10, trip_status=estado)
+    del_dia = await _crear_viaje(
+        conexion_revertida, planning_date=FECHA_NEGOCIO,
+        is_active=True, is_assigned=True, trip_status=estado)
+
+    grupos = {r["trip_id"]: r["grupo"] for r in await conexion_revertida.fetch(SQL_GRUPOS_CIERRE, FECHA_NEGOCIO)}
+
+    assert grupos.get(reciente) == "pendiente_cierre_tms"
+    assert grupos.get(sin_novedad) == "pendiente_cierre_tms"
+    assert grupos.get(del_dia) == "pendiente_cierre_tms"
+
+
+async def test_un_pendiente_de_cierre_sin_asignar_sigue_pidiendo_motivo(conexion_revertida):
+    """El grupo es para asignados: sin patente ni conductor, sigue en hoy/rezago."""
+    from app.services.cierre_viajes import SQL_GRUPOS_CIERRE
+
+    estado = await _estado_pendiente_de_cierre(conexion_revertida)
+    sin_asignar = await _crear_viaje(
+        conexion_revertida, planning_date=FECHA_NEGOCIO - timedelta(days=2),
+        is_active=True, is_assigned=False, trip_status=estado)
+
+    grupos = {r["trip_id"]: r["grupo"] for r in await conexion_revertida.fetch(SQL_GRUPOS_CIERRE, FECHA_NEGOCIO)}
+    assert grupos.get(sin_asignar) == "rezago"
+
+
+async def test_los_pendientes_de_cierre_no_bloquean_la_firma(conexion_revertida):
+    from app.routers.trips import cierre_viajes
+
+    estado = await _estado_pendiente_de_cierre(conexion_revertida)
+    tid = await _crear_viaje(
+        conexion_revertida, planning_date=FECHA_NEGOCIO - timedelta(days=3),
+        is_active=True, is_assigned=True, trip_status=estado)
+
+    resp = await cierre_viajes(fecha=FECHA_NEGOCIO.isoformat(), pool=PoolDeUnaConexion(conexion_revertida), _=None)
+
+    assert str(tid) in {v["trip_id"] for v in resp["grupos"]["pendiente_cierre_tms"]}
+    bloquean_sin_el = len(resp["grupos"]["hoy"]) + len(resp["grupos"]["rezago"])
+    assert resp["bloquean"] == bloquean_sin_el
+

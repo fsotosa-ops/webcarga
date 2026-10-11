@@ -24,7 +24,7 @@ interface Props {
   soloLectura?: boolean
 }
 
-const ORDEN_GRUPOS: GrupoDelCierre[] = ['hoy', 'rezago', 'oferta_sin_declarar', 'en_curso', 'abandonado', 'con_motivo']
+const ORDEN_GRUPOS: GrupoDelCierre[] = ['hoy', 'rezago', 'oferta_sin_declarar', 'en_curso', 'abandonado', 'con_motivo', 'pendiente_cierre_tms']
 
 // Sólo hoy/rezago bloquean el cierre — son los que se pueden resolver acá.
 // en_curso/abandonado se muestran para que no desaparezcan de la vista (Regla
@@ -61,6 +61,14 @@ const GRUPO_INFO: Record<GrupoDelCierre, { titulo: string; bajada: string; selec
   con_motivo: {
     titulo: 'Con motivo', bajada: 'Declarados como no asignados por WebCarga. Se pueden deshacer.',
     seleccionable: false, vacio: 'Todavía no se declaró ningún viaje.',
+  },
+  // Ítem 6 (minuta 09/10): ya están asignados; falta que el TMS del cliente los
+  // cierre (Sodimac en "Control de salida", hasta el martes siguiente). No piden
+  // motivo ni bloquean la firma. Al final, porque los sigue Facturación.
+  pendiente_cierre_tms: {
+    titulo: 'Asignados, pendientes de cierre del TMS',
+    bajada: 'Ya están asignados; falta que el TMS del cliente los cierre. Los sigue Facturación.',
+    seleccionable: false, vacio: 'No hay viajes esperando el cierre del TMS.',
   },
 }
 
@@ -235,7 +243,8 @@ export function PasoViajesSection({
 
       {ORDEN_GRUPOS.map(grupo => {
         const info = GRUPO_INFO[grupo]
-        const todos = grupos[grupo]
+        // `?? []`: el frontend y el backend se despliegan por separado.
+        const todos = grupos[grupo] ?? []
         const viajes = todos.filter(coincide)
         return (
           <div key={grupo} className="bg-white rounded-xl border border-border overflow-hidden">

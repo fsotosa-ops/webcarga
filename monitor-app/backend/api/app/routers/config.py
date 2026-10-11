@@ -16,7 +16,9 @@ from ..services.revisiones import SQL_PENDIENTES_POR_DOMINIO, registrar_revision
 router = APIRouter(prefix="/config", tags=["config"])
 
 # Taxonomía de grupos del tablero — compartida entre estados TMS y operacionales
-VALID_GROUP_IDS = {"en_ruta", "en_local", "retornando", "cerrado", "problema", "otro"}
+# `pendiente_cierre_tms` (minuta 09/10, ítem 6): asignado y terminado para Operaciones, pero el
+# TMS del cliente todavía no lo cierra (Sodimac en "Control de salida"). Lo sigue Facturación.
+VALID_GROUP_IDS = {"en_ruta", "en_local", "retornando", "pendiente_cierre_tms", "cerrado", "problema", "otro"}
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
 

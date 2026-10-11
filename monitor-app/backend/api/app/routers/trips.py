@@ -2298,7 +2298,8 @@ async def cierre_viajes(
     Sólo `hoy` y `rezago` bloquean el cierre: son cargas que nos ofrecieron y
     todavía no contestamos. `en_curso` y `abandonado` se muestran para que no
     desaparezcan de la vista —regla 5 de Pablo, "si no me cerraron el viaje no
-    me lo van a pagar"— pero no impiden firmar el día.
+    me lo van a pagar"— pero no impiden firmar el día. Tampoco
+    `pendiente_cierre_tms` (ítem 6): ya están asignados; falta el cierre del TMS.
 
     Declarado ANTES de GET /{trip_id} — FastAPI matchea rutas en el orden en
     que se registran, así que el literal "/cierre-viajes" debe ir antes del
@@ -2325,7 +2326,7 @@ async def cierre_viajes(
 
     grupos: dict[str, list] = {
         "hoy": [], "rezago": [], "en_curso": [], "abandonado": [], "con_motivo": [],
-        "oferta_sin_declarar": [],
+        "oferta_sin_declarar": [], "pendiente_cierre_tms": [],
     }
     for r in filas:
         stops = paradas.get(str(r["trip_id"]), [])

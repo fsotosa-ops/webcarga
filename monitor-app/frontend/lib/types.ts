@@ -1636,6 +1636,8 @@ export type ViajeDelCierre = {
 
 /** `con_motivo` (HU-D3): declarados desde el cierre de ese día o después. */
 export type GrupoDelCierre = 'hoy' | 'rezago' | 'en_curso' | 'abandonado' | 'con_motivo' | 'oferta_sin_declarar'
+  // Ítem 6 (minuta 09/10): asignados cuyo estado del TMS está en el grupo "Pendiente de cierre TMS".
+  | 'pendiente_cierre_tms'
 
 export type CierreViajesResponse = {
   grupos:   Record<GrupoDelCierre, ViajeDelCierre[]>

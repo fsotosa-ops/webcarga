@@ -20,7 +20,7 @@ from pydantic import BaseModel, field_validator
 # (que conoce el `domain` de la fila), no en el schema.
 GRUPOS_POR_DOMINIO = {
     # En que columna del tablero aparece un viaje con este estado.
-    "OPERATIONAL_STATE": {"en_ruta", "en_local", "retornando", "cerrado", "problema", "otro"},
+    "OPERATIONAL_STATE": {"en_ruta", "en_local", "retornando", "pendiente_cierre_tms", "cerrado", "problema", "otro"},
     # Si el conductor trabajo sin asignacion o no trabajo (migracion 20260917000000).
     "DRIVER_REASON": {"no_trabajando", "trabajando_sin_asignacion"},
 }
