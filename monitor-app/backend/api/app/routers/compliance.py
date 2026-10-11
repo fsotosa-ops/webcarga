@@ -742,7 +742,7 @@ async def match_pending_files(
     Dos archivos para el mismo dueño quedan "por elegir": ninguno se guarda solo."""
     if len(body.file_names) > PENDING_MATCH_MAX_FILES:
         raise HTTPException(
-            422, f"Máximo {PENDING_MATCH_MAX_FILES} archivos por carga; recibimos {len(body.file_names)}.")
+            422, f"Máximo {PENDING_MATCH_MAX_FILES} archivos por carga; llegaron {len(body.file_names)}.")
     filas = await pool.fetch(_PENDING_OWNERS_SQL, str(body.requirement_id), "falta", list(PENDING_STATES))
     owners = [PendingOwner(f["record_id"], f["entity_type"], f["label"], f["tax_id"], f["carrier_name"])
               for f in filas]

@@ -1893,7 +1893,7 @@ def test_pending_match_rechaza_mas_de_200_archivos():
         json={"requirement_id": "00000000-0000-0000-0000-000000000000",
               "file_names": [f"{i}.pdf" for i in range(201)]})
     assert res.status_code == 422
-    assert "Máximo 200 archivos" in res.json()["detail"]
+    assert res.json()["detail"] == "Máximo 200 archivos por carga; llegaron 201."
 
 
 def test_pending_match_rechaza_un_requirement_id_que_no_es_uuid():
