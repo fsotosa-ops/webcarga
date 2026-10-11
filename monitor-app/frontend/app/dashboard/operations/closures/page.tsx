@@ -26,6 +26,7 @@ import { AvisoDeActualizacion } from '@/components/dashboard/AvisoDeActualizacio
 import { Estado } from '@/components/ui/Estado'
 import { urlDelViaje } from '@/lib/navegacion/viaje'
 import { esUrlVieja, leerUrlDelCierre, urlDelCierre } from '@/lib/navegacion/cierre'
+import type { PestanaDeViajes } from '@/lib/cierre/gruposDeViajes'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import type { PeriodoDeCierre, TripsMeta } from '@/lib/types'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
@@ -108,6 +109,11 @@ function ClosuresCenterPageInner() {
   function setTab(next: TabId) {
     setTabState(next)
     router.replace(urlDelCierre(searchParams, { tab: next }))
+  }
+  // La pestaña de Viajes también vive en la URL (?trips=), por el mismo motivo
+  // que ?tab=: volver del detalle de un viaje deja todo donde estaba.
+  function setPestanaDeViajes(next: PestanaDeViajes) {
+    router.replace(urlDelCierre(searchParams, { trips: next }))
   }
   // Un enlace viejo (?fecha=, ?tab=viajes) se lee igual y se reescribe en inglés,
   // sin entrada nueva en el historial.
@@ -384,13 +390,18 @@ function ClosuresCenterPageInner() {
               <AjustesPosterioresAlCierre ajustes={ajustes} volverA={urlDeEsteCierre()} />
             </div>
             {cierreViajesQuery.isError ? (
-              <Estado
-                tipo="error"
-                titulo="No se pudieron cargar los viajes"
-                detalle="Intenta de nuevo en unos segundos."
-              />
+              <Estado tipo="error" titulo="No se pudieron cargar los viajes" detalle="Intenta de nuevo en unos segundos.">
+                <button
+                  type="button"
+                  onClick={() => { void cierreViajesQuery.refetch() }}
+                  className="text-etiqueta font-semibold border border-border rounded-lg px-2.5 py-1 bg-white text-text-primary hover:bg-bg-main"
+                >
+                  Reintentar
+                </button>
+              </Estado>
             ) : (
               <PasoViajesSection
+                fecha={fecha}
                 grupos={cierreViajesQuery.data?.grupos}
                 bloquean={cierreViajesQuery.data?.bloquean}
                 cargando={cierreViajesQuery.isLoading}
@@ -399,6 +410,8 @@ function ClosuresCenterPageInner() {
                 onDeshacer={handleDeshacerViajes}
                 meta={tripsMeta}
                 soloLectura={diaCerrado}
+                pestana={url.trips}
+                onCambiarPestana={setPestanaDeViajes}
               />
             )}
           </>)}

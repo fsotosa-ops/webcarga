@@ -4,72 +4,33 @@ import { useState } from 'react'
 import { Search } from 'lucide-react'
 import { Estado } from '@/components/ui/Estado'
 import { Cifra } from '@/components/ui/Cifra'
+import { ChipsDeFiltro } from '@/components/ui/ChipsDeFiltro'
 import { TmsChip } from '@/components/dashboard/TripTable'
 import { TEXTO_APOYO, TEXTO_CUERPO } from '@/lib/ui/texto'
+import {
+  GRUPOS_DE_VIAJES, PESTANAS_DE_VIAJES, diasAtras, esPestanaDeViajes, filasDePestana, pestanaInicial, viajesPorPatente,
+  type FilaDeViaje, type PestanaDeViajes,
+} from '@/lib/cierre/gruposDeViajes'
 import type { CierreViajesResponse, GrupoDelCierre, TripsMeta, UnassignedReasonMeta, ViajeDelCierre } from '@/lib/types'
 
 interface Props {
-  grupos:    CierreViajesResponse['grupos'] | undefined
+  /** La fecha del cierre: de ella salen los días de rezago y el "hace N días". */
+  fecha:     string
+  grupos:    Partial<CierreViajesResponse['grupos']> | undefined
   bloquean:  number | undefined
   cargando?: boolean
-  /** Motivos de NO ASIGNACIÓN de viaje: sólo id y etiqueta. El grupo de un
-   *  motivo de conductor no aplica acá. */
+  /** Motivos de NO ASIGNACIÓN de viaje: sólo id y etiqueta. */
   motivos:   Pick<UnassignedReasonMeta, 'id' | 'label'>[]
   onCerrar:  (tripIds: string[], motivoId: string) => void | Promise<void>
   /** Quita el motivo y devuelve el viaje a su grupo (HU-D3). */
   onDeshacer?: (tripIds: string[]) => void | Promise<void>
   /** Para los colores del TMS, los mismos del Monitor. */
   meta?:      TripsMeta | null
-  /** Día firmado: nada se deshace (el backend también lo rechaza). */
+  /** Día firmado: nada se declara ni se deshace (el backend también lo rechaza). */
   soloLectura?: boolean
-}
-
-const ORDEN_GRUPOS: GrupoDelCierre[] = ['hoy', 'rezago', 'oferta_sin_declarar', 'en_curso', 'abandonado', 'con_motivo', 'pendiente_cierre_tms']
-
-// Sólo hoy/rezago bloquean el cierre — son los que se pueden resolver acá.
-// en_curso/abandonado se muestran para que no desaparezcan de la vista (Regla
-// 5 de Pablo: "si no me cerraron el viaje no me lo van a pagar"), pero no
-// llevan casilla: en_curso porque todavía puede reportar, abandonado porque
-// ya está fuera del alcance de "hoy" — se resuelve, no se cierra en lote acá.
-const GRUPO_INFO: Record<GrupoDelCierre, { titulo: string; bajada: string; seleccionable: boolean; vacio: string }> = {
-  hoy: {
-    titulo: 'Hoy', bajada: 'Planificados para hoy, todavía sin resolver.',
-    seleccionable: true, vacio: 'Ya se resolvieron los planificados de hoy.',
-  },
-  rezago: {
-    titulo: 'Rezago', bajada: 'De días anteriores, todavía sin resolver.',
-    seleccionable: true, vacio: 'No queda rezago sin resolver.',
-  },
-  en_curso: {
-    titulo: 'En curso', bajada: 'Viajes en curso ahora mismo — puede que reporten antes del cierre.',
-    seleccionable: false, vacio: 'Nada en curso ahora mismo.',
-  },
-  abandonado: {
-    titulo: 'Abandonados por el TMS', bajada: 'Sin novedad hace semanas — igual hay que cerrarlos.',
-    seleccionable: false, vacio: 'Nada abandonado por el TMS.',
-  },
-  // HU-D3 (minuta 02/10): poner el motivo sacaba el viaje de los cuatro
-  // grupos y no aparecía en ninguna parte — "no sé dónde queda". Acá se ve, y
-  // se deshace si fue un error.
-  // Ofertas que el TMS retiró porque WebCarga no las tomó (Publicada de
-  // Sodimac, 07/10). Se declaran con motivo —el "acusete" de Pablo— pero no
-  // bloquean la firma: ya no hay carga que responder.
-  oferta_sin_declarar: {
-    titulo: 'Ofertas sin declarar', bajada: 'El TMS las retiró porque no se tomaron. Declara el motivo.',
-    seleccionable: true, vacio: 'No hay ofertas retiradas sin declarar.',
-  },
-  con_motivo: {
-    titulo: 'Con motivo', bajada: 'Declarados como no asignados por WebCarga. Se pueden deshacer.',
-    seleccionable: false, vacio: 'Todavía no se declaró ningún viaje.',
-  },
-  // Ítem 6 (minuta 09/10): ya están asignados; falta que el TMS del cliente los
-  // cierre (Sodimac en "Control de salida", hasta el martes siguiente). No piden
-  // motivo ni bloquean la firma. Al final, porque los sigue Facturación.
-  pendiente_cierre_tms: {
-    titulo: 'Asignados, pendientes de cierre del TMS',
-    bajada: 'Ya están asignados; falta que el TMS del cliente los cierre. Los sigue Facturación.',
-    seleccionable: false, vacio: 'No hay viajes esperando el cierre del TMS.',
-  },
+  /** La pestaña que trae la URL (`?trips=`); la página es dueña de la URL. */
+  pestana?:         PestanaDeViajes | null
+  onCambiarPestana?: (p: PestanaDeViajes) => void
 }
 
 /** Fecha de planificación corta, como la lee el coordinador: 02/10. */
@@ -79,47 +40,41 @@ function formatFecha(iso: string | null): string {
   return `${d}/${m}`
 }
 
-/** Cuenta desde el último reporte del TMS, no desde la planificación — ver
- *  el docstring de `ViajeDelCierre` en lib/types.ts. */
+/** Cuenta desde el último reporte del TMS, no desde la planificación. */
 function formatDiasSinNovedad(dias: number): string {
   return `${dias.toFixed(1).replace('.', ',')} días sin novedad`
 }
 
-/** Paso "Viajes" del Cierre del Día (Tarea 6) — cuarta pestaña del Centro de
- *  Cierre. Muestra los grupos que devuelve `GET /trips/cierre-viajes`, más
- *  "Con motivo" (HU-D3), donde lo declarado se ve y se deshace,
- *  y deja declarar en lote, con motivo obligatorio, por qué WebCarga no tomó
- *  una carga (hoy/rezago). en_curso/abandonado son de sólo lectura: se
- *  listan para que no desaparezcan de la vista, no bloquean el cierre.
+/** Paso "Viajes" del Cierre del Día: tres pestañas que responden qué falta
+ *  declarar, qué sigue vivo sin depender del cierre y qué ya se declaró (spec
+ *  2026-10-11). Cómo se presenta cada grupo del backend lo dice
+ *  `lib/cierre/gruposDeViajes.ts`, no este componente.
  *
- *  Puramente presentacional — el fetch de `cierreViajes`/`motivos` y la
- *  llamada a `bulkClose` viven en la página que la aloja, igual que
- *  `unassignedReasons` ya llega como prop a `FlotaDelDiaSection`.
- *
- *  Sin encabezado propio (Importante 5, revisión de rama 2026-08-18): esta
- *  sección vive DENTRO de una pestaña de `ClosuresCenterPageInner`, que ya
- *  tiene su propio encabezado de nivel 1 ("Centro de Cierre del Día"). Sus
- *  tres pestañas hermanas (`FlotaDelDiaSection`, `PreCierrePendingSection`,
- *  `StatusReportSection`) tampoco llevan uno — se mantiene consistente. */
+ *  Puramente presentacional: el fetch, `bulkClose` y la URL viven en la página.
+ *  Sin encabezado propio: vive dentro de una pestaña del Centro de Cierre. */
 export function PasoViajesSection({
-  grupos, bloquean, cargando = false, motivos, onCerrar, onDeshacer, meta, soloLectura = false,
+  fecha, grupos, bloquean, cargando = false, motivos, onCerrar, onDeshacer, meta, soloLectura = false,
+  pestana: pestanaDeLaUrl, onCambiarPestana,
 }: Props) {
+  // La pestaña elegida a mano manda; si no hay, la de la URL; si no, la inicial.
+  // La inicial se calcula sobre los datos, pero NO se guarda: así declarar el
+  // último viaje por resolver no hace saltar la pestaña.
+  const [elegida, setElegida] = useState<PestanaDeViajes | null>(null)
+  const [chip, setChip] = useState<GrupoDelCierre | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  // Buscador (minuta 09/10, ítem 22): filtra todos los grupos a la vez, sobre lo que
-  // ya está en pantalla, por los mismos datos que muestra cada fila.
+  // Buscador (minuta 09/10, ítem 22): cubre las tres pestañas.
   const [q, setQ] = useState('')
-  const qLower = q.trim().toLowerCase()
-  const coincide = (v: ViajeDelCierre) => !qLower || [
-    v.source_system_trip_id, v.client_name, v.tractor_plate, v.driver_name, v.carrier_name, v.origin, ...v.destinations,
-  ].some(x => (x ?? '').toLowerCase().includes(qLower))
   const [motivoId, setMotivoId] = useState('')
-  // El motivo elegido en una fila, todavía sin guardar (HU-D3): elegir no
-  // cierra el viaje; "Guardar" sí. Antes el cambio del desplegable lo cerraba
-  // al instante y el viaje desaparecía.
+  // El motivo elegido en una fila, todavía sin guardar (HU-D3).
   const [borrador, setBorrador] = useState<Record<string, string>>({})
   const [guardando, setGuardando] = useState(false)
   const [guardandoFila, setGuardandoFila] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const qLower = q.trim().toLowerCase()
+  const coincide = (v: ViajeDelCierre) => !qLower || [
+    v.source_system_trip_id, v.client_name, v.tractor_plate, v.driver_name, v.carrier_name, v.origin, ...v.destinations,
+  ].some(x => (x ?? '').toLowerCase().includes(qLower))
 
   function toggleSelected(tripId: string) {
     setSelected(prev => {
@@ -129,10 +84,8 @@ export function PasoViajesSection({
     })
   }
 
-  // Es un camino de escritura: si `onCerrar` (bulk-close) revienta, el
-  // usuario no puede creer que cerró N viajes cuando no cerró ninguno. La
-  // selección y el motivo elegido NO se limpian en el catch — vuelve a
-  // intentar sin tener que re-elegir todo de nuevo.
+  // Camino de escritura: si `onCerrar` revienta, la selección y el motivo NO se
+  // limpian, para reintentar sin volver a elegir todo.
   async function handleCerrar() {
     if (selected.size === 0 || !motivoId) return
     setGuardando(true)
@@ -148,10 +101,8 @@ export function PasoViajesSection({
     }
   }
 
-  // Una fila sola se cierra con el MISMO escritor que el lote, con un solo
-  // elemento. No hay endpoint nuevo ni semantica nueva: declarar un viaje es
-  // un unico acto, y tenerlo escrito dos veces es como empiezan a decir cosas
-  // distintas.
+  // Una fila sola se cierra con el MISMO escritor que el lote: declarar un viaje
+  // es un único acto.
   async function handleCerrarFila(tripId: string) {
     const motivo = borrador[tripId]
     if (!motivo) return
@@ -187,26 +138,45 @@ export function PasoViajesSection({
     return <Estado tipo="cargando" />
   }
 
+  const pestana: PestanaDeViajes = elegida
+    ?? (esPestanaDeViajes(pestanaDeLaUrl ?? null) ? pestanaDeLaUrl! : pestanaInicial(grupos))
+  function cambiarPestana(p: PestanaDeViajes) {
+    setElegida(p)
+    setChip(null)
+    onCambiarPestana?.(p)
+  }
+
+  const porPestana = Object.fromEntries(PESTANAS_DE_VIAJES.map(p => {
+    const todas = filasDePestana(grupos, p.id)
+    return [p.id, { todas, coinciden: todas.filter(coincide) }]
+  })) as Record<PestanaDeViajes, { todas: FilaDeViaje[]; coinciden: FilaDeViaje[] }>
+
+  const info = PESTANAS_DE_VIAJES.find(p => p.id === pestana)!
+  const { todas, coinciden } = porPestana[pestana]
+  const filas = chip ? coinciden.filter(f => f.grupo === chip) : coinciden
+  const repetidas = viajesPorPatente(todas)
+  const declarar = pestana === 'to_resolve' && !soloLectura
+  const deshacer = pestana === 'resolved' && !soloLectura && !!onDeshacer
+  // Los chips aparecen solo si la pestaña junta más de un camino.
+  const chips = Object.entries(GRUPOS_DE_VIAJES)
+    .filter(([g, p]) => p.pestana === pestana && todas.some(f => f.grupo === g))
+    .map(([g, p]) => ({ id: g, etiqueta: p.chip, n: coinciden.filter(f => f.grupo === g).length }))
+  const otraConResultados = qLower && coinciden.length === 0
+    ? PESTANAS_DE_VIAJES.find(p => porPestana[p.id].coinciden.length > 0)
+    : undefined
   const n = selected.size
 
   return (
     <div className="space-y-4">
       <Cifra
         valor={bloquean}
-        etiqueta="viajes por resolver antes de cerrar"
+        etiqueta="bloquean la firma del día"
         tono={bloquean && bloquean > 0 ? 'atencion' : 'resuelto'}
       />
 
       {n > 0 && (
-        // Pegada al TECHO del area de scroll, no al pie. `position: sticky` no
-        // puede salirse de la caja de su padre, y como ultimo hijo de una
-        // seccion de 3.500 px la barra solo se "pegaba" cuando ya estabas
-        // abajo del todo — medido en el navegador: con la pagina arriba
-        // quedaba 2.751 px por debajo de lo visible, o sea no servia para
-        // nada. Arriba el padre la sostiene durante todo el recorrido.
-        //
-        // Ojo: esto NO lo puede verificar un test de jsdom, que no tiene
-        // layout. Afirmar la clase CSS no es afirmar que se ve.
+        // Pegada al TECHO del área de scroll: `position: sticky` no sale de la caja
+        // de su padre, y al pie solo se pegaba ya abajo del todo.
         <div className="sticky top-0 z-20 flex items-center gap-2 bg-white border border-accent/20 shadow-sm rounded-lg px-3 py-2">
           <span className="text-etiqueta font-semibold text-text-primary">{n} seleccionado{n === 1 ? '' : 's'}</span>
           <select
@@ -229,97 +199,135 @@ export function PasoViajesSection({
         </div>
       )}
 
-      <div className="relative">
-        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-        <input
-          type="search"
-          value={q}
-          onChange={e => setQ(e.target.value)}
-          placeholder="Buscar Nº de viaje, patente, conductor, empresa o cliente…"
-          aria-label="Buscar viaje"
-          className="w-full pl-8 pr-3 py-2 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 bg-white"
-        />
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div role="tablist" aria-label="Viajes del cierre" className="flex items-center gap-1 bg-gray-50 rounded-xl p-1 overflow-x-auto max-w-full">
+          {PESTANAS_DE_VIAJES.map(p => {
+            const { todas: t, coinciden: c } = porPestana[p.id]
+            return (
+              <button
+                key={p.id}
+                type="button"
+                role="tab"
+                aria-selected={p.id === pestana}
+                onClick={() => cambiarPestana(p.id)}
+                className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
+                  p.id === pestana ? 'bg-white text-accent shadow-sm' : 'text-gray-500 hover:text-text-primary'
+                }`}
+              >
+                {p.etiqueta}
+                <span className="rounded-full bg-gray-200 px-1.5 text-[10px] font-bold tabular-nums text-text-secondary">
+                  {qLower ? `${c.length} de ${t.length}` : t.length}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="relative flex-1 min-w-[16rem]">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <input
+            type="search"
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            placeholder="Buscar Nº de viaje, patente, conductor, empresa o cliente…"
+            aria-label="Buscar viaje"
+            className="w-full pl-8 pr-3 py-2 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 bg-white"
+          />
+        </div>
       </div>
 
-      {ORDEN_GRUPOS.map(grupo => {
-        const info = GRUPO_INFO[grupo]
-        // `?? []`: el frontend y el backend se despliegan por separado.
-        const todos = grupos[grupo] ?? []
-        const viajes = todos.filter(coincide)
-        return (
-          <div key={grupo} className="bg-white rounded-xl border border-border overflow-hidden">
-            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border/60">
-              <div>
-                <p className="text-xs font-bold text-text-primary">{info.titulo}</p>
-                <p className={`text-etiqueta ${TEXTO_APOYO}`}>{info.bajada}</p>
-              </div>
-              <span className="text-xs font-semibold text-text-primary tabular-nums">
-                {qLower ? `${viajes.length} de ${todos.length}` : todos.length}
-              </span>
-            </div>
+      <p className={`text-etiqueta ${TEXTO_APOYO}`}>{info.bajada}</p>
+      {chips.length > 1 && (
+        <ChipsDeFiltro opciones={chips} activo={chip} onElegir={id => setChip(id as GrupoDelCierre | null)} />
+      )}
 
-            {viajes.length === 0 ? (
-              <Estado tipo="vacio" titulo={todos.length > 0 ? 'Ningún viaje coincide con la búsqueda' : info.vacio} />
-            ) : (
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className={`bg-bg-main text-etiqueta font-bold uppercase tracking-wide ${TEXTO_APOYO}`}>
-                    {info.seleccionable && <th className="text-left px-3 py-2 w-8" />}
-                    {/* Las mismas columnas que el Monitor (HU-D2, minuta 02/10):
-                        con el número solo, el coordinador lo copiaba y salía a
-                        buscarlo. Sin filas desplegables: "lo más simple
-                        posible". */}
-                    <th className="text-left px-3 py-2">TMS · Cliente</th>
-                    <th className="text-left px-3 py-2">Nº viaje</th>
-                    <th className="text-left px-3 py-2">Fecha</th>
-                    <th className="text-left px-3 py-2">Patente</th>
-                    <th className="text-left px-3 py-2">Conductor</th>
-                    <th className="text-left px-3 py-2">Empresa</th>
-                    <th className="text-left px-3 py-2">Origen · Destinos</th>
-                    <th className="text-left px-3 py-2">Estado</th>
-                    <th className="text-left px-3 py-2">Tiempo</th>
-                    {/* El motivo, por fila. Antes solo se podia elegir en la
-                        barra de lote del pie, despues de las CUATRO tablas:
-                        para declarar una fila que se ve arriba habia que
-                        recorrer toda la pagina y volver. */}
-                    <th className="text-left px-3 py-2">Motivo de no asignación</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {viajes.map((v: ViajeDelCierre) => (
-                    <tr key={v.trip_id}>
-                      {info.seleccionable && (
-                        <td className="px-3 py-2">
-                          <input
-                            type="checkbox"
-                            aria-label={`Seleccionar viaje ${v.source_system_trip_id ?? v.trip_id}`}
-                            checked={selected.has(v.trip_id)}
-                            onChange={() => toggleSelected(v.trip_id)}
-                          />
-                        </td>
-                      )}
+      {todas.length === 0 ? (
+        <Estado tipo="vacio" titulo={info.vacio} />
+      ) : filas.length === 0 ? (
+        <Estado
+          tipo="vacio"
+          titulo="Ningún viaje coincide con la búsqueda"
+          detalle={otraConResultados
+            ? `${porPestana[otraConResultados.id].coinciden.length} resultados en ${otraConResultados.etiqueta}`
+            : undefined}
+        />
+      ) : (
+        <div className="bg-white rounded-xl border border-border overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
+                {declarar && <th className="text-left px-3 py-2 w-8" />}
+                <th className="text-left px-3 py-2">TMS · Cliente</th>
+                <th className="text-left px-3 py-2">Nº viaje</th>
+                <th className="text-left px-3 py-2">Fecha</th>
+                {pestana !== 'resolved' && (
+                  <th className="text-left px-3 py-2">{pestana === 'to_resolve' ? 'Por qué está aquí' : 'Situación'}</th>
+                )}
+                <th className="text-left px-3 py-2">Patente</th>
+                <th className="text-left px-3 py-2">Conductor</th>
+                <th className="text-left px-3 py-2">Empresa</th>
+                <th className="text-left px-3 py-2">Origen · Destinos</th>
+                <th className="text-left px-3 py-2">Tiempo</th>
+                {pestana !== 'tracking' && <th className="text-left px-3 py-2">Motivo de no asignación</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/60">
+              {filas.map(v => {
+                const presentacion = GRUPOS_DE_VIAJES[v.grupo]
+                const atras = diasAtras(v.planning_date, fecha)
+                const nro = v.source_system_trip_id ?? v.trip_id
+                const otros = v.tractor_plate ? repetidas.get(v.tractor_plate) : undefined
+                return (
+                  <tr key={v.trip_id}>
+                    {declarar && (
                       <td className="px-3 py-2">
-                        <TmsChip tms={v.source_system ?? ''} meta={meta} sourceTripId={v.source_system_trip_id} />
-                        <span className={`block mt-1 text-etiqueta ${TEXTO_APOYO}`}>{v.client_name ?? '—'}</span>
+                        <input
+                          type="checkbox"
+                          aria-label={`Seleccionar viaje ${nro}`}
+                          checked={selected.has(v.trip_id)}
+                          onChange={() => toggleSelected(v.trip_id)}
+                        />
                       </td>
-                      <td className={`px-3 py-2 font-identificador ${TEXTO_CUERPO}`}>{v.source_system_trip_id ?? '—'}</td>
-                      <td className={`px-3 py-2 tabular-nums ${TEXTO_CUERPO}`}>{formatFecha(v.planning_date)}</td>
-                      <td className="px-3 py-2 font-identificador font-semibold text-text-primary">{v.tractor_plate ?? '—'}</td>
-                      <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{v.driver_name ?? '—'}</td>
-                      <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{v.carrier_name ?? '—'}</td>
+                    )}
+                    <td className="px-3 py-2">
+                      <TmsChip tms={v.source_system ?? ''} meta={meta} sourceTripId={v.source_system_trip_id} />
+                      <span className={`block mt-1 text-etiqueta ${TEXTO_APOYO}`}>{v.client_name ?? '—'}</span>
+                    </td>
+                    <td data-testid="nro-viaje" className={`px-3 py-2 font-identificador ${TEXTO_CUERPO}`}>{nro}</td>
+                    <td className={`px-3 py-2 tabular-nums ${TEXTO_CUERPO}`}>
+                      {formatFecha(v.planning_date)}
+                      {atras > 0 && <span className={`block text-etiqueta ${TEXTO_APOYO}`}>hace {atras} {atras === 1 ? 'día' : 'días'}</span>}
+                    </td>
+                    {pestana !== 'resolved' && (
                       <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>
-                        <span className="font-medium text-text-primary">{v.origin ?? '—'}</span>
-                        {v.destinations.length > 0 && (
-                          <span className={`block text-etiqueta ${TEXTO_APOYO}`}>{v.destinations.join(' · ')}</span>
+                        {presentacion.porQue(v, fecha)}
+                        {presentacion.bloqueaLaFirma && (
+                          <span className="block text-etiqueta font-semibold text-accent">Bloquea la firma</span>
                         )}
                       </td>
-                      <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{v.trip_status ?? '—'}</td>
-                      <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{formatDiasSinNovedad(v.dias_sin_novedad)}</td>
+                    )}
+                    <td className="px-3 py-2 font-identificador font-semibold text-text-primary">
+                      {v.tractor_plate ?? '—'}
+                      {otros && (
+                        <span title={`${v.tractor_plate}: ${otros.join(', ')}`} className={`block text-etiqueta font-normal ${TEXTO_APOYO}`}>
+                          {otros.length} viajes
+                        </span>
+                      )}
+                    </td>
+                    <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{v.driver_name ?? '—'}</td>
+                    <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{v.carrier_name ?? '—'}</td>
+                    <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>
+                      <span className="font-medium text-text-primary">{v.origin ?? '—'}</span>
+                      {v.destinations.length > 0 && (
+                        <span className={`block text-etiqueta ${TEXTO_APOYO}`}>{v.destinations.join(' · ')}</span>
+                      )}
+                    </td>
+                    <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{formatDiasSinNovedad(v.dias_sin_novedad)}</td>
+                    {pestana === 'to_resolve' && (
                       <td className="px-3 py-2">
-                        {info.seleccionable ? (
+                        {declarar ? (
                           <div className="flex items-center gap-1.5">
                             <select
-                              aria-label={`Motivo del viaje ${v.source_system_trip_id ?? v.trip_id}`}
+                              aria-label={`Motivo del viaje ${nro}`}
                               value={borrador[v.trip_id] ?? ''}
                               disabled={guardandoFila === v.trip_id}
                               onChange={e => setBorrador(prev => ({ ...prev, [v.trip_id]: e.target.value }))}
@@ -337,33 +345,36 @@ export function PasoViajesSection({
                               {guardandoFila === v.trip_id ? 'Guardando…' : 'Guardar'}
                             </button>
                           </div>
-                        ) : grupo === 'con_motivo' ? (
-                          <div className="flex items-center gap-1.5">
-                            <span className={TEXTO_CUERPO}>{v.unassigned_reason_label ?? '—'}</span>
-                            {onDeshacer && !soloLectura && (
-                              <button
-                                type="button"
-                                aria-label={`Deshacer el motivo del viaje ${v.source_system_trip_id ?? v.trip_id}`}
-                                disabled={guardandoFila === v.trip_id}
-                                onClick={() => handleDeshacer(v.trip_id)}
-                                className="text-etiqueta font-semibold border border-border rounded-lg px-2.5 py-1 bg-white text-text-primary hover:bg-bg-main disabled:opacity-50"
-                              >
-                                {guardandoFila === v.trip_id ? 'Deshaciendo…' : 'Deshacer'}
-                              </button>
-                            )}
-                          </div>
                         ) : (
-                          <span className={TEXTO_APOYO}>{v.unassigned_reason_label ?? '—'}</span>
+                          <span className={TEXTO_APOYO}>—</span>
                         )}
                       </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        )
-      })}
+                    )}
+                    {pestana === 'resolved' && (
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className={TEXTO_CUERPO}>{presentacion.porQue(v, fecha)}</span>
+                          {deshacer && (
+                            <button
+                              type="button"
+                              aria-label={`Deshacer el motivo del viaje ${nro}`}
+                              disabled={guardandoFila === v.trip_id}
+                              onClick={() => handleDeshacer(v.trip_id)}
+                              className="text-etiqueta font-semibold border border-border rounded-lg px-2.5 py-1 bg-white text-text-primary hover:bg-bg-main disabled:opacity-50"
+                            >
+                              {guardandoFila === v.trip_id ? 'Deshaciendo…' : 'Deshacer'}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {error && <Estado tipo="error" titulo={error} />}
     </div>
