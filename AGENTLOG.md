@@ -32,18 +32,21 @@
   - Equipo Completo da 3 (Iansa 2, Sodimac 1), igual a la base. La tabla de Equipo Completo del CSV era un ejemplo de formato armado con filas copiadas de Tractoreo.
   - 7 segundas vueltas, con conductor.
   - En el teléfono no hay desborde.
+- **Ajustes pedidos el 11/10, en dev:**
+  - Viajes de varios días: vuelven, por tipo (`summary.multi_day`), en el Resumen, el PDF y el Excel.
+  - El cliente se muestra con el nombre del directorio (`public.shippers`): "Walmart", no "walmart".
+  - Asignados se abre hasta el conductor: Cliente → Origen → Empresa → "Conductor · patente". Cada fila de `assigned.rows` trae sus `vehicles`. El Excel queda al nivel de empresa, como el CSV.
+  - "No trabajaron" es una sola tabla: cada fila Origen › Empresa se despliega en sus conductores (o equipos), con un 1 bajo su motivo. El faltante de dotación va como línea propia, "Faltante de dotación".
+  - El docstring de `status_report.py` está al día.
+  - Verificado en dev el 07/10: Charlotte en CD Lo Aguirre muestra sus 4 conductores; Inversiones Casilla muestra un faltante de dotación de 3.
 - **Hallazgo de datos:** el 07/10 los 35 equipos de Equipo Completo que no trabajaron aparecen "Sin motivo" y "Sin origen". Nadie captura motivo ni origen habitual para Equipo Completo. Es un dato pendiente, no un error del reporte.
 - **Decisiones:**
   - Las claves nuevas de la API van en inglés.
   - "Sin motivo" es la última columna.
   - `summary.not_working` cuenta equipos; en Tractoreo, la pestaña "No trabajaron" cuenta conductores.
-  - Se retiraron los viajes multi-día del reporte.
   - `sumar` vive en `lib/reporte/sumar.ts`.
   - Los mensajes vacíos no dicen "Hoy", porque el cierre se mira del día anterior.
   - La suite completa del backend no se corrió: `status_report.py` solo lo importa `main.py`. Regla nueva en la memoria.
-- **Pendientes menores:**
-  - El docstring de `status_report.py` todavía describe la Sección 2 vieja.
-  - Los nombres de cliente salen como vienen del TMS ("walmart", "iansa").
 - **Siguiente paso exacto:**
   - [ ] Que Pablo revise el reporte nuevo en dev; definir si Equipo Completo debe llevar motivo y origen habitual.
   - [ ] Ítem 5: viajes manuales nuevos quedan "no asignado" hasta la corrida de Mage.
