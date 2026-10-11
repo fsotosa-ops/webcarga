@@ -17,7 +17,7 @@ from app.authz import Permission, require_fields
 from app.db import get_pool
 from app.routers.trips import router
 from app.schemas.trip import STOP_FIELD_PERMISSIONS, TRIP_FIELD_PERMISSIONS, TripPatch, TripStopPatch
-from tests.conftest import usuario
+from tests.conftest import usuario, wire_transactional_conn
 
 OPERADOR = usuario("operations_operator", aal="aal1")
 SUPERVISOR = usuario("operations_supervisor", aal="aal1")
@@ -29,6 +29,9 @@ def make_pool():
     pool.fetchval.return_value = "trip-1"
     pool.fetchrow.return_value = {"id": "trip-1", "client_name": None}
     pool.fetch.return_value = []
+    # Las ediciones escriben en una transacción (spec 2026-10-11): la conexión
+    # prestada es el mismo mock, así las aserciones sobre pool.* no cambian.
+    wire_transactional_conn(pool, pool)
     return pool
 
 

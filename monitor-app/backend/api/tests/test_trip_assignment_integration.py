@@ -11,7 +11,10 @@ from pathlib import Path
 
 import pytest
 
-from app.routers.trips import TripCreateBody, TripStopCreate, create_trip
+from app.routers import trips as trips_router
+from app.routers.trips import (
+    TripCreateBody, TripPatch, TripStopCreate, assign_fleet_link, create_trip, patch_trip, remove_fleet_link,
+)
 from app.services.cierre_viajes import SQL_GRUPOS_CIERRE
 from tests.conftest import PoolDeUnaConexion, _usuario_real, cliente_de_prueba
 
@@ -173,3 +176,37 @@ async def test_manual_trip_without_fleet_is_born_active_and_unassigned(conexion_
     trip_id = await create_manual_trip(conn, await open_status(conn), None)
     row = await conn.fetchrow("SELECT is_active, is_assigned FROM app.trips WHERE id = $1::uuid", trip_id)
     assert (row["is_active"], row["is_assigned"]) == (True, False)
+
+
+async def test_linking_driver_via_endpoint_assigns_immediately(conexion_revertida):
+    conn = conexion_revertida
+    await apply_migration(conn)
+    trip_id = await create_manual_trip(conn, await open_status(conn), None)
+    pool = PoolDeUnaConexion(conn)
+    user = await _usuario_real(conn)
+    await assign_fleet_link(trip_id, {"driver_id": await any_driver_id(conn)}, pool=pool, user=user)
+    assert await is_assigned(conn, trip_id) is True
+    await remove_fleet_link(trip_id, pool=pool, user=user)
+    assert await is_assigned(conn, trip_id) is False
+
+
+async def test_patch_rolls_back_when_mirror_fails(conexion_revertida, monkeypatch):
+    conn = conexion_revertida
+    await apply_migration(conn)
+    trip_id = await create_manual_trip(conn, await open_status(conn), None)
+
+    async def failing_mirror(_conn, _trip_id):
+        raise RuntimeError("mirror failed")
+
+    monkeypatch.setattr(trips_router, "_mirror_manual_trip", failing_mirror)
+    with pytest.raises(RuntimeError, match="mirror failed"):
+        await patch_trip(trip_id, TripPatch(comments="edición que no debe quedar"),
+                         pool=PoolDeUnaConexion(conn), user=await _usuario_real(conn))
+    assert await conn.fetchval("SELECT comments FROM app.trips WHERE id = $1::uuid", trip_id) is None
+
+
+async def test_mirror_error_is_not_swallowed(conexion_revertida):
+    """Sin el except: pass, un error de la copia llega a quien llama."""
+    conn = conexion_revertida
+    with pytest.raises(Exception):
+        await trips_router._mirror_manual_trip(conn, "no-es-un-uuid")

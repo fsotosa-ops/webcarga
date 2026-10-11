@@ -1964,35 +1964,37 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
     return trip_id
 
 
-async def _mirror_manual_trip(pool, trip_id: str) -> None:
-    """Espeja los campos editables de un viaje manual desde app.trips hacia
-    app.trips_manual, para que el rebuild de dbt conserve las ediciones del
-    operador. No-op para viajes TMS (sin fila en trips_manual)."""
-    try:
-        await pool.execute(
-            """
-            UPDATE app.trips_manual m SET
-                trip_status            = t.trip_status,
-                manual_status          = t.manual_status,
-                origin_region          = t.origin_region,
-                origin_city            = t.origin_city,
-                is_active              = COALESCE(t.is_active, m.is_active),
-                is_working             = COALESCE(t.is_working, m.is_working),
-                is_assigned            = COALESCE(t.is_assigned, m.is_assigned),
-                is_first_leg           = COALESCE(t.is_first_leg, m.is_first_leg),
-                notes                  = t.notes,
-                comments               = t.comments,
-                unassigned_reason_id   = t.unassigned_reason_id,
-                fleet_link_id          = t.fleet_link_id,
-                manually_edited_fields = COALESCE(t.manually_edited_fields, '{}'),
-                updated_at             = NOW()
-            FROM app.trips t
-            WHERE m.id = t.id AND m.id = $1
-            """,
-            trip_id,
-        )
-    except Exception:
-        pass  # best-effort: nunca romper la operación principal
+async def _mirror_manual_trip(conn, trip_id: str) -> None:
+    """Copia los campos editables de un viaje manual de app.trips a
+    app.trips_manual, de donde dbt lo reconstruye. Sin copia, la siguiente
+    corrida pisa la edición del operador. No hace nada en un viaje del TMS (no
+    tiene fila en trips_manual).
+
+    Corre dentro de la transacción de la edición y propaga cualquier error:
+    antes se lo tragaba un `except Exception: pass`, y la edición se perdía en
+    silencio en la corrida siguiente (spec 2026-10-11)."""
+    await conn.execute(
+        """
+        UPDATE app.trips_manual m SET
+            trip_status            = t.trip_status,
+            manual_status          = t.manual_status,
+            origin_region          = t.origin_region,
+            origin_city            = t.origin_city,
+            is_active              = COALESCE(t.is_active, m.is_active),
+            is_working             = COALESCE(t.is_working, m.is_working),
+            is_assigned            = COALESCE(t.is_assigned, m.is_assigned),
+            is_first_leg           = COALESCE(t.is_first_leg, m.is_first_leg),
+            notes                  = t.notes,
+            comments               = t.comments,
+            unassigned_reason_id   = t.unassigned_reason_id,
+            fleet_link_id          = t.fleet_link_id,
+            manually_edited_fields = COALESCE(t.manually_edited_fields, '{}'),
+            updated_at             = NOW()
+        FROM app.trips t
+        WHERE m.id = t.id AND m.id = $1
+        """,
+        trip_id,
+    )
 
 
 @router.post("")
@@ -2725,115 +2727,122 @@ async def patch_trip(
                 "Motivo inválido: no existe o no pertenece al catálogo de no asignación del viaje",
             )
 
-    # driver_name goes to trip_fleet_links.driver_name_raw (not app.trips)
-    if "driver_name" in data:
-        new_name = data.pop("driver_name")
-        link_id = await pool.fetchval("SELECT id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id)
-        if link_id:
-            await pool.execute(
-                "UPDATE app.trip_fleet_links SET driver_name_raw = $1, updated_at = NOW() WHERE id = $2",
-                new_name, link_id,
-            )
-        else:
-            new_link_id = await pool.fetchval(
-                """INSERT INTO app.trip_fleet_links
-                   (trip_id, driver_name_raw, link_source, created_by)
-                   VALUES ($1, $2, 'manual', $3) RETURNING id""",
-                trip_id, new_name, user["sub"],
-            )
-            await pool.execute(
-                "UPDATE app.trips SET fleet_link_id = $1, updated_at = NOW() WHERE id = $2",
-                new_link_id, trip_id,
-            )
+    # Todo o nada (spec 2026-10-11): el vínculo, los campos del viaje y la copia a
+    # trips_manual van en una transacción. La nota de bitácora va después, como
+    # en create_trip: es best-effort y adentro dejaría la transacción abortada.
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # driver_name goes to trip_fleet_links.driver_name_raw (not app.trips)
+            if "driver_name" in data:
+                new_name = data.pop("driver_name")
+                link_id = await conn.fetchval("SELECT id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id)
+                if link_id:
+                    await conn.execute(
+                        "UPDATE app.trip_fleet_links SET driver_name_raw = $1, updated_at = NOW() WHERE id = $2",
+                        new_name, link_id,
+                    )
+                else:
+                    new_link_id = await conn.fetchval(
+                        """INSERT INTO app.trip_fleet_links
+                           (trip_id, driver_name_raw, link_source, created_by)
+                           VALUES ($1, $2, 'manual', $3) RETURNING id""",
+                        trip_id, new_name, user["sub"],
+                    )
+                    await conn.execute(
+                        "UPDATE app.trips SET fleet_link_id = $1, updated_at = NOW() WHERE id = $2",
+                        new_link_id, trip_id,
+                    )
 
-    # driver_phone goes to trip_fleet_links
-    if "driver_phone" in data:
-        new_phone = data.pop("driver_phone")
-        link_id = await pool.fetchval("SELECT id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id)
-        if link_id:
-            await pool.execute(
-                "UPDATE app.trip_fleet_links SET driver_phone = $1, updated_at = NOW() WHERE id = $2",
-                new_phone, link_id,
-            )
-        else:
-            new_link_id = await pool.fetchval(
-                """INSERT INTO app.trip_fleet_links
-                   (trip_id, driver_phone, link_source, created_by)
-                   VALUES ($1, $2, 'manual', $3) RETURNING id""",
-                trip_id, new_phone, user["sub"],
-            )
-            await pool.execute(
-                "UPDATE app.trips SET fleet_link_id = $1, updated_at = NOW() WHERE id = $2",
-                new_link_id, trip_id,
-            )
+            # driver_phone goes to trip_fleet_links
+            if "driver_phone" in data:
+                new_phone = data.pop("driver_phone")
+                link_id = await conn.fetchval("SELECT id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id)
+                if link_id:
+                    await conn.execute(
+                        "UPDATE app.trip_fleet_links SET driver_phone = $1, updated_at = NOW() WHERE id = $2",
+                        new_phone, link_id,
+                    )
+                else:
+                    new_link_id = await conn.fetchval(
+                        """INSERT INTO app.trip_fleet_links
+                           (trip_id, driver_phone, link_source, created_by)
+                           VALUES ($1, $2, 'manual', $3) RETURNING id""",
+                        trip_id, new_phone, user["sub"],
+                    )
+                    await conn.execute(
+                        "UPDATE app.trips SET fleet_link_id = $1, updated_at = NOW() WHERE id = $2",
+                        new_link_id, trip_id,
+                    )
 
-    # tractor_plate / trailer_plate go to trip_fleet_links
-    plate_updates = {k: data.pop(k) for k in ("tractor_plate", "trailer_plate") if k in data}
-    if plate_updates:
-        link_id = await pool.fetchval("SELECT id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id)
-        if link_id:
-            for col, val in plate_updates.items():
-                await pool.execute(
-                    f"UPDATE app.trip_fleet_links SET {col} = $1, updated_at = NOW() WHERE id = $2",
-                    val, link_id,
+            # tractor_plate / trailer_plate go to trip_fleet_links
+            plate_updates = {k: data.pop(k) for k in ("tractor_plate", "trailer_plate") if k in data}
+            if plate_updates:
+                link_id = await conn.fetchval("SELECT id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id)
+                if link_id:
+                    for col, val in plate_updates.items():
+                        await conn.execute(
+                            f"UPDATE app.trip_fleet_links SET {col} = $1, updated_at = NOW() WHERE id = $2",
+                            val, link_id,
+                        )
+                else:
+                    cols = ", ".join(plate_updates.keys())
+                    phs  = ", ".join(f"${i + 2}" for i in range(len(plate_updates)))
+                    new_link_id = await conn.fetchval(
+                        f"""INSERT INTO app.trip_fleet_links
+                           (trip_id, {cols}, link_source, created_by)
+                           VALUES ($1, {phs}, 'manual', ${len(plate_updates) + 2}) RETURNING id""",
+                        trip_id, *plate_updates.values(), user["sub"],
+                    )
+                    await conn.execute(
+                        "UPDATE app.trips SET fleet_link_id = $1, updated_at = NOW() WHERE id = $2",
+                        new_link_id, trip_id,
+                    )
+
+            # Remaining fields go to app.trips
+            bool_fields = ("is_active", "is_working", "is_assigned", "is_first_leg")
+            str_fields  = ("manual_status", "notes", "comments",
+                           "origin_region", "origin_city", "unassigned_reason_id")
+            # cag_inicio_at/cag_fin_at (Carga Inicio/Fin, origen) removidos de acá
+            # (Fase 1, cutover final, 2026-07-18) — se editan vía TripStopPatch sobre
+            # la parada ORIGIN (PATCH /trips/{id}/stops/{stop_id}), mismo mecanismo
+            # que Desc. Inicio/Fin de cualquier destino.
+            trip_fields = {k: v for k, v in data.items() if k in (*bool_fields, *str_fields)}
+            # Ubicación / motivo de no asignación: string vacío = limpiar (NULL) —
+            # evita mezclar '' y NULL en filtros exactos y en la FK de unassigned_reason_id
+            for k in ("origin_region", "origin_city", "unassigned_reason_id"):
+                if trip_fields.get(k) == "":
+                    trip_fields[k] = None
+
+            if trip_fields:
+                sent = list(trip_fields.keys())
+                sets: list[str] = []
+                vals: list = [trip_id]
+
+                for field in bool_fields:
+                    if field in trip_fields:
+                        vals.append(trip_fields[field])
+                        sets.append(f"{field} = ${len(vals)}")
+
+                for field in str_fields:
+                    if field in trip_fields:
+                        vals.append(trip_fields[field])
+                        sets.append(f"{field} = ${len(vals)}")
+
+                vals.append(sent)
+                sets.append(
+                    f"manually_edited_fields = ARRAY(SELECT DISTINCT unnest("
+                    f"COALESCE(manually_edited_fields,'{{}}') || ${len(vals)}::text[]))"
                 )
-        else:
-            cols = ", ".join(plate_updates.keys())
-            phs  = ", ".join(f"${i + 2}" for i in range(len(plate_updates)))
-            new_link_id = await pool.fetchval(
-                f"""INSERT INTO app.trip_fleet_links
-                   (trip_id, {cols}, link_source, created_by)
-                   VALUES ($1, {phs}, 'manual', ${len(plate_updates) + 2}) RETURNING id""",
-                trip_id, *plate_updates.values(), user["sub"],
-            )
-            await pool.execute(
-                "UPDATE app.trips SET fleet_link_id = $1, updated_at = NOW() WHERE id = $2",
-                new_link_id, trip_id,
-            )
+                vals.append(user["sub"])
+                sets.append(f"edited_by = ${len(vals)}::uuid")
+                sets.append("edited_at = NOW(), updated_at = NOW()")
 
-    # Remaining fields go to app.trips
-    bool_fields = ("is_active", "is_working", "is_assigned", "is_first_leg")
-    str_fields  = ("manual_status", "notes", "comments",
-                   "origin_region", "origin_city", "unassigned_reason_id")
-    # cag_inicio_at/cag_fin_at (Carga Inicio/Fin, origen) removidos de acá
-    # (Fase 1, cutover final, 2026-07-18) — se editan vía TripStopPatch sobre
-    # la parada ORIGIN (PATCH /trips/{id}/stops/{stop_id}), mismo mecanismo
-    # que Desc. Inicio/Fin de cualquier destino.
-    trip_fields = {k: v for k, v in data.items() if k in (*bool_fields, *str_fields)}
-    # Ubicación / motivo de no asignación: string vacío = limpiar (NULL) —
-    # evita mezclar '' y NULL en filtros exactos y en la FK de unassigned_reason_id
-    for k in ("origin_region", "origin_city", "unassigned_reason_id"):
-        if trip_fields.get(k) == "":
-            trip_fields[k] = None
+                await conn.execute(
+                    f"UPDATE app.trips SET {', '.join(sets)} WHERE id = $1",
+                    *vals,
+                )
 
-    if trip_fields:
-        sent = list(trip_fields.keys())
-        sets: list[str] = []
-        vals: list = [trip_id]
-
-        for field in bool_fields:
-            if field in trip_fields:
-                vals.append(trip_fields[field])
-                sets.append(f"{field} = ${len(vals)}")
-
-        for field in str_fields:
-            if field in trip_fields:
-                vals.append(trip_fields[field])
-                sets.append(f"{field} = ${len(vals)}")
-
-        vals.append(sent)
-        sets.append(
-            f"manually_edited_fields = ARRAY(SELECT DISTINCT unnest("
-            f"COALESCE(manually_edited_fields,'{{}}') || ${len(vals)}::text[]))"
-        )
-        vals.append(user["sub"])
-        sets.append(f"edited_by = ${len(vals)}::uuid")
-        sets.append("edited_at = NOW(), updated_at = NOW()")
-
-        await pool.execute(
-            f"UPDATE app.trips SET {', '.join(sets)} WHERE id = $1",
-            *vals,
-        )
+            await _mirror_manual_trip(conn, trip_id)
 
     if "manual_status" in data:
         await _log_system_note(
@@ -2841,7 +2850,6 @@ async def patch_trip(
             f"Estableció estado operativo manual: {data['manual_status']}",
         )
 
-    await _mirror_manual_trip(pool, trip_id)
     return await get_trip(trip_id, pool, user)
 
 
@@ -2925,17 +2933,21 @@ async def assign_fleet_link(
     if not carrier_id and not driver_id:
         raise HTTPException(422, "Indica al menos un conductor o una empresa")
 
-    tractor_asset_id, tractor_plate = await _activo_de_la_patente(
-        pool, body.get("tractor_plate"), body.get("tractor_asset_id"))
-    trailer_asset_id, trailer_plate = await _activo_de_la_patente(
-        pool, body.get("trailer_plate"), body.get("trailer_asset_id"))
-    await _escribir_link_manual(
-        pool, trip_id, user=user,
-        carrier_id=carrier_id, driver_id=driver_id,
-        tractor_asset_id=tractor_asset_id, tractor_plate=tractor_plate,
-        trailer_asset_id=trailer_asset_id, trailer_plate=trailer_plate,
-        driver_name=body.get("driver_name"),
-    )
+    # El vínculo y la copia a trips_manual, en una transacción (spec 2026-10-11).
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            tractor_asset_id, tractor_plate = await _activo_de_la_patente(
+                conn, body.get("tractor_plate"), body.get("tractor_asset_id"))
+            trailer_asset_id, trailer_plate = await _activo_de_la_patente(
+                conn, body.get("trailer_plate"), body.get("trailer_asset_id"))
+            await _escribir_link_manual(
+                conn, trip_id, user=user,
+                carrier_id=carrier_id, driver_id=driver_id,
+                tractor_asset_id=tractor_asset_id, tractor_plate=tractor_plate,
+                trailer_asset_id=trailer_asset_id, trailer_plate=trailer_plate,
+                driver_name=body.get("driver_name"),
+            )
+            await _mirror_manual_trip(conn, trip_id)
 
     # La nota registra lo que efectivamente se vinculó, no siempre la empresa:
     # desde que `carrier_id` es opcional, la mayoría de las veces es sólo el
@@ -2953,8 +2965,6 @@ async def assign_fleet_link(
         )
         vinculado.append(f"empresa transportista: {carrier_name or carrier_id}")
     await _log_system_note(pool, trip_id, user, "Vinculó " + " · ".join(vinculado))
-
-    await _mirror_manual_trip(pool, trip_id)
     return await get_trip(trip_id, pool, user)
 
 
@@ -2969,17 +2979,20 @@ async def remove_fleet_link(
     """Remove the manual fleet link from a trip."""
     # FIX 2026-07-18: mismo motivo que assign_fleet_link — buscar por trip_id,
     # no por trips.fleet_link_id (huérfano tras cualquier --full-refresh).
-    link_id = await pool.fetchval(
-        "SELECT id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id
-    )
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            link_id = await conn.fetchval(
+                "SELECT id FROM app.trip_fleet_links WHERE trip_id = $1", trip_id
+            )
+            if link_id:
+                await conn.execute("DELETE FROM app.trip_fleet_links WHERE id = $1", link_id)
+                await conn.execute(
+                    "UPDATE app.trips SET fleet_link_id = NULL, updated_at = NOW() WHERE id = $1",
+                    trip_id,
+                )
+                await _mirror_manual_trip(conn, trip_id)
     if link_id:
-        await pool.execute("DELETE FROM app.trip_fleet_links WHERE id = $1", link_id)
-        await pool.execute(
-            "UPDATE app.trips SET fleet_link_id = NULL, updated_at = NOW() WHERE id = $1",
-            trip_id,
-        )
         await _log_system_note(pool, trip_id, user, "Desvinculó la empresa transportista")
-        await _mirror_manual_trip(pool, trip_id)
     return {"ok": True}
 
 
@@ -2996,20 +3009,22 @@ async def reset_field(
         raise HTTPException(422, f"Campo no restaurable: {field}")
     # Un anulado es de solo lectura (services/anular_viajes.py).
     await exigir_vigentes(pool, [trip_id])
-    await pool.execute(
-        """
-        UPDATE app.trips
-        SET manually_edited_fields = array_remove(manually_edited_fields, $2),
-            updated_at = NOW()
-        WHERE id = $1
-        """,
-        trip_id, field,
-    )
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                """
+                UPDATE app.trips
+                SET manually_edited_fields = array_remove(manually_edited_fields, $2),
+                    updated_at = NOW()
+                WHERE id = $1
+                """,
+                trip_id, field,
+            )
+            await _mirror_manual_trip(conn, trip_id)
     if field == "manual_status":
         await _log_system_note(
             pool, trip_id, user, "Revirtió el estado manual al valor del TMS"
         )
-    await _mirror_manual_trip(pool, trip_id)
     return {"ok": True, "field": field}
 
 

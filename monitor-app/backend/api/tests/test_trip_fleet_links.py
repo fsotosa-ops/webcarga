@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.routers.trips import router, _TRIP_FROM, _TRIP_SELECT, _FLEET_MATCH_CASE
 from app.db import get_pool
 from app.auth import get_current_user, get_supabase
-from tests.conftest import usuario
+from tests.conftest import usuario, wire_transactional_conn
 
 USER = usuario("operations_supervisor", "certification_supervisor", "insurance_supervisor", "commercial_supervisor", sub="11111111-1111-1111-1111-111111111111")
 
@@ -15,6 +15,9 @@ def make_pool():
     pool = AsyncMock()
     pool.fetchval.return_value = None  # sin fleet_link_id previo / sin viaje bloqueado
     pool.fetchrow.return_value = {"id": "trip-1", "stops": "[]"}
+    # Las ediciones escriben en una transacción (spec 2026-10-11): la conexión
+    # prestada es el mismo mock, así las aserciones sobre pool.* no cambian.
+    wire_transactional_conn(pool, pool)
     return pool
 
 

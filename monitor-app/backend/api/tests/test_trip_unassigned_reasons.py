@@ -7,7 +7,7 @@ from app.routers.trips import router
 from app.db import get_pool
 from app.auth import get_current_user, get_supabase
 
-from tests.conftest import usuario
+from tests.conftest import usuario, wire_transactional_conn
 
 # Lo que hoy tiene un `editor` (migra a los 4 Supervisores, spec RBAC §9).
 USER = usuario("operations_supervisor", "certification_supervisor", "insurance_supervisor",
@@ -18,6 +18,9 @@ def make_pool():
     pool = AsyncMock()
     pool.fetchval.return_value = "trip-1"  # SELECT id FROM app.trips (exists check)
     pool.fetchrow.return_value = {"id": "trip-1", "stops": "[]"}
+    # Las ediciones escriben en una transacción (spec 2026-10-11): la conexión
+    # prestada es el mismo mock, así las aserciones sobre pool.* no cambian.
+    wire_transactional_conn(pool, pool)
     return pool
 
 
