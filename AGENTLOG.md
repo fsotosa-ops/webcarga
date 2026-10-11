@@ -16,6 +16,31 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Monitor: el filtro de cliente sale de la vista, con su cuenta — en dev (3ec20441)
+
+**Causa:** las opciones salían de `/trips/meta`, de todo el histórico. HBC aparecía por 1 viaje manual cerrado del
+23/09, y "Sin cliente vinculado" por los 2 viajes huérfanos viejos del TMS. Esto ya pasaba antes del cambio a ID.
+**Hecho:** `GET /trips` devuelve `clients: [{id, name, count}]` (faceta disyuntiva: la vista sin el propio filtro
+de cliente; el filtro de cliente va último en `list_trips`). `/meta` ya no expone `clients`. En el front,
+`lib/monitor/clientesDelFiltro.ts` (un cliente elegido que queda sin viajes en la vista sigue, en cero). Los chips
+muestran la cuenta. Tests: integración `test_los_clientes_del_filtro_son_los_de_la_vista_con_su_cuenta` +
+3 de vitest; área backend 138 ok; vitest 1687 ok; tsc limpio.
+
+**Consultas del usuario respondidas (sin cambios de código):**
+- "Cierre y Reporte solo muestran Walmart": es el dato. El 10/10 los 35 tractos asignados son de Walmart; el único
+  Sodimac del 10/10 está "Publicada" (oferta, sin camión). El Monitor "En curso" muestra Sodimac de varios días
+  (25/09 a 12/10, casi todos sin camión). El 08/10 y el 09/10 hay Iansa y Sodimac. Un Sodimac de Equipo Completo
+  del 08/10 y el 09/10 (tracto 5e58bdb6) quedó "No asignado" en días firmados: es el caso del 10/10 (ítem 4),
+  que por decisión del usuario queda como está.
+- "Muestra los dos generadores": sale solo en filas SIN viaje (o en la fila fusionada conductor+tracto, cuando
+  los dos están sin carga). Muestra las operaciones habilitadas de la empresa (`carrier_shipper_names`). Una fila
+  con viaje muestra el cliente de ese viaje (`today_trip_client`).
+- [ ] **Decisión pendiente del usuario:** en filas sin viaje, ¿se sigue mostrando "habilitado para…" o se deja la
+  celda vacía (como se decidió con el CD: "solo el origen real del viaje", y luego "Mantenlo")?
+
+**Pendiente aparte:** la falla de la suite `test_get_del_cierre_no_escribe_integracion::…[<lambda>2]` no está
+investigada (corrió con código previo a los arreglos de la revisión final).
+
 ### 2026-10-11 — El cliente del viaje por ID — en dev
 
 - **Qué se hizo:** spec `docs/superpowers/specs/2026-10-11-cliente-del-viaje-por-id-design.md` y plan del mismo nombre, ejecutado inline con revisión final (opus).
