@@ -1,0 +1,85 @@
+'use client'
+
+import { useMemo, useState } from 'react'
+import { ChevronRight } from 'lucide-react'
+import type { AssignedRow } from '@/lib/types'
+import { COLUMNAS_DE_ZONA, arbolDeAsignados, filasDelArbol, type FilaDelArbol } from '@/lib/reporte/arbolDeAsignados'
+
+const SANGRIA = ['pl-3', 'pl-7', 'pl-11'] as const
+
+function alternar(conjunto: ReadonlySet<string>, clave: string): Set<string> {
+  const nuevo = new Set(conjunto)
+  if (nuevo.has(clave)) nuevo.delete(clave)
+  else nuevo.add(clave)
+  return nuevo
+}
+
+export type Plegado = {
+  estaAbierto: (clave: string, nivel: 0 | 1) => boolean
+  alternar:    (fila: FilaDelArbol) => void
+}
+
+/** Qué está abierto en el árbol. Los clientes abren abiertos y los orígenes
+ *  cerrados (spec 2026-10-11). Guarda solo lo que la persona tocó, nunca una copia
+ *  de los datos: cambiar de tipo o de cliente no lo deja desfasado. Vive en la
+ *  sección y no en la tabla, porque la tabla se desmonta cuando un tipo no tiene
+ *  asignados, y al volver se perdería. */
+export function usePlegado(): Plegado {
+  const [clientesPlegados, setClientesPlegados] = useState<ReadonlySet<string>>(new Set())
+  const [origenesAbiertos, setOrigenesAbiertos] = useState<ReadonlySet<string>>(new Set())
+  return {
+    estaAbierto: (clave, nivel) => (nivel === 0 ? !clientesPlegados.has(clave) : origenesAbiertos.has(clave)),
+    alternar: fila => {
+      if (fila.nivel === 0) setClientesPlegados(c => alternar(c, fila.clave))
+      else setOrigenesAbiertos(o => alternar(o, fila.clave))
+    },
+  }
+}
+
+/** Asignados como tabla dinámica: Cliente → Origen del viaje → Empresa, con subtotales. */
+export function TablaDeAsignados({ rows, plegado }: { rows: AssignedRow[]; plegado: Plegado }) {
+  const arbol = useMemo(() => arbolDeAsignados(rows), [rows])
+  const { estaAbierto } = plegado
+
+  return (
+    <div className="bg-white rounded-xl border border-border overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
+            <th className="text-left px-3 py-2">Cliente › Origen › Empresa</th>
+            {COLUMNAS_DE_ZONA.map(z => <th key={z.clave} className="text-right px-3 py-2">{z.etiqueta}</th>)}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/60">
+          {filasDelArbol(arbol, estaAbierto).map(f => {
+            const abierto = f.plegable && estaAbierto(f.clave, f.nivel as 0 | 1)
+            return (
+              <tr key={f.clave} className={f.nivel === 0 ? 'bg-gray-50 font-bold' : f.nivel === 1 ? 'font-semibold' : ''}>
+                <td className={`py-2 pr-3 ${SANGRIA[f.nivel]}`}>
+                  {f.plegable ? (
+                    <button type="button" aria-expanded={abierto} onClick={() => plegado.alternar(f)}
+                            className="flex items-center gap-1 hover:text-accent">
+                      <ChevronRight size={12} aria-hidden className={`transition-transform ${abierto ? 'rotate-90' : ''}`} />
+                      {f.etiqueta}
+                    </button>
+                  ) : f.etiqueta}
+                </td>
+                {COLUMNAS_DE_ZONA.map(z => (
+                  <td key={z.clave} className={`px-3 py-2 text-right ${z.clave === 'total' ? 'font-bold' : ''}`}>
+                    {f.cifras[z.clave]}
+                  </td>
+                ))}
+              </tr>
+            )
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-border font-bold bg-gray-50">
+            <td className="px-3 py-2">Total</td>
+            {COLUMNAS_DE_ZONA.map(z => <td key={z.clave} className="px-3 py-2 text-right">{arbol.total[z.clave]}</td>)}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}

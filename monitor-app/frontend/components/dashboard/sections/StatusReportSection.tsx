@@ -3,54 +3,76 @@
 import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, History, Printer, FileDown, Copy, Check } from 'lucide-react'
+import { Loader2, History, Printer, FileDown, Copy, Check, RotateCw } from 'lucide-react'
 import { statusReportApi } from '@/lib/api/statusReport'
 import { carriersApi } from '@/lib/api/carriers'
 import type { Shipper } from '@/lib/api/locations'
-import type { CarrierUtilizationRow, MotivoCrossTab, StatusReport, ZoneCrossTab } from '@/lib/types'
+import type { OperationTypeKey } from '@/lib/types'
 import { FleetDriverGapCard } from '../FleetDriverGapCard'
-import { ZONE_COLS, descargarReporteExcel, sumar } from '@/lib/reporte/exportarReporte'
+import { descargarReporteExcel } from '@/lib/reporte/exportarReporte'
+import { TIPOS_DE_OPERACION } from '@/lib/reporte/tiposDeOperacion'
+import {
+  CuatroCifras, SeccionAsignados, SeccionEmpresas, SeccionNoTrabajaron, SeccionResumen, SeccionSegundasVueltas,
+} from './reporte/SeccionesDelReporte'
 
-type Tab = 'resumen' | 'asignado' | 'vueltas' | 'sin_trabajar' | 'tractoreo_empresa' | 'eq_completos' | 'general' | 'dotacion'
+type Seccion = 'resumen' | 'asignados' | 'segundas_vueltas' | 'no_trabajaron' | 'empresas' | 'dotacion'
+
+/** Seis secciones nombradas por la pregunta que responden (spec 2026-10-11). */
+const SECCIONES: { id: Seccion; label: string }[] = [
+  { id: 'resumen', label: 'Resumen' },
+  { id: 'asignados', label: 'Asignados' },
+  { id: 'segundas_vueltas', label: 'Segundas vueltas' },
+  { id: 'no_trabajaron', label: 'No trabajaron' },
+  { id: 'empresas', label: 'Empresas' },
+  { id: 'dotacion', label: 'Dotación' },
+]
+
+const PILDORA = 'text-[11px] font-semibold px-2.5 py-1.5 rounded-lg whitespace-nowrap transition-colors'
+const pildora = (activa: boolean) =>
+  `${PILDORA} ${activa ? 'bg-white text-accent shadow-sm' : 'text-gray-500 hover:text-text-primary'}`
+const ACCION = 'flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-accent disabled:opacity-40'
+
+/** 2026-08-02 → 02/08, como lo escribe Operaciones en el correo del día. */
+const diaYMes = (fecha: string) => `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`
 
 interface Props {
   fecha:      string
   shippers?:  Shipper[]
 }
 
-// Las columnas de motivo las manda el backend (`section4.motivos`), desde el
-// catálogo: la lista escrita acá dejaba fuera 9 motivos, que sólo sumaban al
-// total sin que se viera cuáles eran.
-const OPERATION_TYPE_CLS: Record<string, string> = {
-  Tractoreo:         'bg-indigo-50 text-indigo-700 border-indigo-100',
-  'Equipo Completo': 'bg-gray-100 text-gray-600 border-transparent',
-}
-
-function Pct({ value }: { value: number }) {
-  return <span className="font-bold text-accent">{value}%</span>
-}
-
-/** Sección "Confirmar cierre → Reporte" del Centro de Cierre (Tarea 14,
- *  plan 1.5) — HU-04, extraída de StatusReportDialog.tsx sin semántica de
- *  diálogo. Agrega la Sección 7 (Tarea 8/9, inconsistencias de dotación,
- *  reusa FleetDriverGapCard tal cual) y un detalle plano por conductor en
- *  la Sección 4 (Tarea 6, driver_detail — muestra el tipo de operación del
- *  tracto habitual, satisface el pedido explícito del usuario de poder
- *  identificarlo por fila). El botón "Confirmar cierre" vive a nivel de
- *  página (Tarea 1.1), no acá — esta sección es solo de lectura. */
+/** Reporte de estatus del día (Cierre › Reporte). Un tipo de operación a la vez,
+ *  elegido arriba; seis secciones; solo lectura. El botón "Confirmar cierre"
+ *  vive en la página, no acá. */
 export function StatusReportSection({ fecha, shippers }: Props) {
-  const [tab, setTab] = useState<Tab>('resumen')
+  const [tipo, setTipo] = useState<OperationTypeKey>('tractoreo')
+  const [seccion, setSeccion] = useState<Seccion>('resumen')
   const [client, setClient] = useState('')
   // Lo que está a la vista, para "Copiar estatus": el coordinador lo pega tal cual
-  // en el correo o el chat del día (minuta 09/10), sin bajar PDF ni Excel.
+  // en el correo o el chat del día (minuta 09/10). Lo plegado no está en el DOM,
+  // así que no se copia: se copia lo que se ve.
   const contenidoRef = useRef<HTMLDivElement>(null)
   const [copiado, setCopiado] = useState(false)
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['status-report', fecha, client],
+    queryFn: () => statusReportApi.get(fecha, client || undefined),
+  })
+  // Mismo queryKey que FleetDriverGapCard: cacheado, no duplica el pedido. Lo usan
+  // el PDF y el Excel, aunque no se haya abierto la pestaña Dotación.
+  const gapQuery = useQuery({
+    queryKey: ['fleet-driver-gap'],
+    queryFn: () => carriersApi.fleetDriverGap(),
+  })
+
+  const porTipo = data?.by_operation_type
+  const tipoActual = TIPOS_DE_OPERACION.find(t => t.clave === tipo)!
+  const reporte = porTipo?.[tipo]
 
   async function copiarEstatus() {
     const nodo = contenidoRef.current
     if (!nodo) return
-    const seccion = TABS.find(t => t.id === tab)?.label ?? ''
-    const encabezado = `Estatus del día ${fecha} — ${seccion}`
+    const nombre = SECCIONES.find(s => s.id === seccion)?.label ?? ''
+    const encabezado = `Estatus del día ${diaYMes(fecha)} · ${tipoActual.etiqueta} · ${nombre}`
     const html = `<p><b>${encabezado}</b></p>${nodo.innerHTML}`
     const texto = `${encabezado}\n\n${nodo.innerText ?? nodo.textContent ?? ''}`
     if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
@@ -65,40 +87,11 @@ export function StatusReportSection({ fecha, shippers }: Props) {
     setTimeout(() => setCopiado(false), 2000)
   }
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['status-report', fecha, client],
-    queryFn: () => statusReportApi.get(fecha, client || undefined),
-  })
-
-  // Mismo queryKey que FleetDriverGapCard — cacheado, no duplica el fetch
-  // si el usuario ya visitó la tab 7. Se pide igual acá (independiente de
-  // qué tab esté activa) para que el PDF de una página siempre tenga el
-  // dato de inconsistencias disponible.
-  const gapQuery = useQuery({
-    queryKey: ['fleet-driver-gap'],
-    queryFn: () => carriersApi.fleetDriverGap(),
-  })
-
-  const TABS: { id: Tab; label: string }[] = [
-    { id: 'resumen', label: '1. Resumen' },
-    { id: 'asignado', label: '2. Asignado' },
-    { id: 'vueltas', label: '3. Vueltas' },
-    { id: 'sin_trabajar', label: '4. Sin trabajar' },
-    { id: 'tractoreo_empresa', label: '5. Tractoreo — Empresas' },
-    { id: 'eq_completos', label: '6. Eq. Completos' },
-    { id: 'general', label: '7. General' },
-    { id: 'dotacion', label: '8. Dotación' },
-  ]
-
   return (
     <div className="space-y-4">
-      {data && (
+      {porTipo && (
         <>
-          {/* Resumen imprimible de una página — visible solo al imprimir/
-              "Guardar como PDF" (Ctrl+P triggered por handlePrint acá
-              abajo). El resto de la página se oculta vía la regla global
-              de acá abajo, para que el PDF no arrastre nav/sidebar/otras
-              secciones del Centro de Cierre. */}
+          {/* Resumen imprimible de una página: los dos tipos lado a lado (spec §4). */}
           <style>{`
             @media print {
               body * { visibility: hidden; }
@@ -106,31 +99,26 @@ export function StatusReportSection({ fecha, shippers }: Props) {
               #closures-print-summary { position: absolute; inset: 0; padding: 32px; }
             }
           `}</style>
-          <div id="closures-print-summary" className="hidden print:block text-sm">
+          <div id="closures-print-summary" data-testid="resumen-imprimible" className="hidden print:block text-sm">
             <h1 className="text-xl font-bold mb-1">WebCarga — Reporte de Estatus del Día</h1>
             <p className="text-gray-500 mb-6">{fecha}{client ? ` · ${client}` : ' · WebCarga consolidado'}</p>
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="border border-gray-300 rounded-lg p-3">
-                <p className="text-[10px] font-bold text-gray-500 uppercase">Total equipos activos</p>
-                <p className="text-2xl font-bold">{data.section1_resumen.total_equipos_activos}</p>
-              </div>
-              <div className="border border-gray-300 rounded-lg p-3">
-                <p className="text-[10px] font-bold text-gray-500 uppercase">Tractoreo</p>
-                <p>{data.section1_resumen.tractoreo.assigned} asignados / {data.section1_resumen.tractoreo.unassigned} sin asignar</p>
-                <p className="font-bold">{data.section1_resumen.tractoreo.utilization_pct}% utilización</p>
-              </div>
-              <div className="border border-gray-300 rounded-lg p-3">
-                <p className="text-[10px] font-bold text-gray-500 uppercase">Equipos Completos</p>
-                <p>{data.section1_resumen.equipos_completos.assigned} asignados / {data.section1_resumen.equipos_completos.unassigned} sin asignar</p>
-                <p className="font-bold">{data.section1_resumen.equipos_completos.utilization_pct}% utilización</p>
-              </div>
+            <div className="grid grid-cols-2 gap-6 mb-6">
+              {TIPOS_DE_OPERACION.map(t => (
+                <div key={t.clave} className="space-y-3">
+                  <p className="text-[10px] font-bold text-gray-500 uppercase">{t.etiqueta}</p>
+                  <CuatroCifras reporte={porTipo[t.clave]} />
+                  <table className="w-full text-xs border-collapse">
+                    <tbody>
+                      {porTipo[t.clave].summary.by_client.map(c => (
+                        <tr key={c.client_name} className="border-b border-gray-100">
+                          <td className="py-1">{c.client_name}</td><td className="py-1 text-right">{c.assigned}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
             </div>
-            <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">
-              Viajes multi-día activos ({data.section1_resumen.multi_dia_activos.total})
-            </p>
-            <p className="mb-6">
-              {Object.entries(data.section1_resumen.multi_dia_activos.por_dias_atras).map(([d, n]) => `${n} equipo(s) — ${d} día(s)`).join(' · ') || 'Ninguno'}
-            </p>
             {gapQuery.data && gapQuery.data.rows.length > 0 && (
               <>
                 <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">
@@ -160,462 +148,75 @@ export function StatusReportSection({ fecha, shippers }: Props) {
         </>
       )}
 
-      <div data-testid="report-body" className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap print:hidden">
-        <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto max-w-full">
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
-                tab === t.id ? 'bg-white text-accent shadow-sm' : 'text-gray-500 hover:text-text-primary'
-              }`}
-            >
-              {t.label}
+      <div data-testid="report-body" className="space-y-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap print:hidden">
+          <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 overflow-x-auto max-w-full">
+            {TIPOS_DE_OPERACION.map(t => (
+              <button key={t.clave} type="button" aria-pressed={tipo === t.clave}
+                      disabled={seccion === 'dotacion'} onClick={() => setTipo(t.clave)}
+                      className={`${pildora(tipo === t.clave)} disabled:opacity-40`}>
+                {t.etiqueta}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <select aria-label="Filtrar por cliente" value={client} onChange={e => setClient(e.target.value)}
+                    className="text-[11px] border border-border rounded-lg px-2 py-1.5 bg-white">
+              <option value="">WebCarga consolidado</option>
+              {(shippers ?? []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
+            <button type="button" onClick={() => window.print()} disabled={!porTipo} className={ACCION}
+                    title="Abre el diálogo de impresión — elige 'Guardar como PDF' para descargarlo">
+              <Printer size={12} /> Descargar PDF
+            </button>
+            <button type="button" disabled={!porTipo} className={ACCION}
+                    onClick={() => { if (porTipo) void descargarReporteExcel(porTipo, fecha, gapQuery.data?.rows) }}>
+              <FileDown size={12} /> Descargar Excel
+            </button>
+            <button type="button" onClick={() => { void copiarEstatus() }} disabled={!reporte || seccion === 'dotacion'}
+                    className={ACCION} title="Copia la sección a la vista, lista para pegar en un correo o un chat">
+              {copiado ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar estatus</>}
+            </button>
+            <Link href="/dashboard/operations/closures/history" target="_blank" className={ACCION}>
+              <History size={12} /> Ver histórico
+            </Link>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 border-b border-border overflow-x-auto max-w-full print:hidden">
+          {SECCIONES.map(s => (
+            <button key={s.id} type="button" aria-pressed={seccion === s.id} onClick={() => setSeccion(s.id)}
+                    className={pildora(seccion === s.id)}>
+              {s.label}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          <select
-            aria-label="Filtrar por cliente"
-            value={client}
-            onChange={e => setClient(e.target.value)}
-            className="text-[11px] border border-border rounded-lg px-2 py-1.5 bg-white"
-          >
-            <option value="">WebCarga consolidado</option>
-            {(shippers ?? []).map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-          </select>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            disabled={!data}
-            className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-accent disabled:opacity-40"
-            title="Abre el diálogo de impresión — elige 'Guardar como PDF' para descargarlo"
-          >
-            <Printer size={12} /> Descargar PDF
-          </button>
-          <button
-            type="button"
-            onClick={() => { if (data) void descargarReporteExcel(data, fecha) }}
-            disabled={!data}
-            className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-accent disabled:opacity-40"
-          >
-            <FileDown size={12} /> Descargar Excel
-          </button>
-          <button
-            type="button"
-            onClick={() => { void copiarEstatus() }}
-            disabled={!data || tab === 'dotacion'}
-            className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-accent disabled:opacity-40"
-            title="Copia la sección a la vista, lista para pegar en un correo o un chat"
-          >
-            {copiado ? <><Check size={12} /> Copiado</> : <><Copy size={12} /> Copiar estatus</>}
-          </button>
-          <Link
-            href="/dashboard/operations/closures/history"
-            target="_blank"
-            className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-accent"
-          >
-            <History size={12} /> Ver histórico
-          </Link>
-        </div>
-      </div>
 
-      {tab === 'dotacion' ? (
-        <FleetDriverGapCard />
-      ) : isLoading || !data ? (
-        <div className="flex items-center justify-center py-16 text-gray-400">
-          <Loader2 size={20} className="animate-spin" />
-        </div>
-      ) : (
-        <div ref={contenidoRef}>
-          {tab === 'resumen' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-white rounded-xl border border-border p-3">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase">Total equipos activos</p>
-                  <p className="text-xl font-bold text-text-primary">{data.section1_resumen.total_equipos_activos}</p>
-                </div>
-                <div className="bg-white rounded-xl border border-border p-3">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase">Tractoreo</p>
-                  <p className="text-xs">
-                    {data.section1_resumen.tractoreo.assigned} asignados / {data.section1_resumen.tractoreo.unassigned} sin asignar
-                  </p>
-                  <p className="text-[11px] mt-0.5"><Pct value={data.section1_resumen.tractoreo.utilization_pct} /> utilización</p>
-                </div>
-                <div className="bg-white rounded-xl border border-border p-3">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase">Equipos Completos</p>
-                  <p className="text-xs">
-                    {data.section1_resumen.equipos_completos.assigned} asignados / {data.section1_resumen.equipos_completos.unassigned} sin asignar
-                  </p>
-                  <p className="text-[11px] mt-0.5"><Pct value={data.section1_resumen.equipos_completos.utilization_pct} /> utilización</p>
-                </div>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">
-                  Viajes multi-día activos ({data.section1_resumen.multi_dia_activos.total})
-                </p>
-                <div className="flex gap-2 flex-wrap">
-                  {Object.entries(data.section1_resumen.multi_dia_activos.por_dias_atras).map(([dias, n]) => (
-                    <span key={dias} className="text-[11px] bg-gray-50 border border-border rounded-full px-2.5 py-1">
-                      {n} equipo(s) — {dias} día(s)
-                    </span>
-                  ))}
-                  {data.section1_resumen.multi_dia_activos.total === 0 && (
-                    <span className="text-[11px] text-gray-300 italic">Ninguno</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {tab === 'asignado' && (
-            <div className="space-y-4">
-              {/* Decisión B (minuta 09/10): "lo importante es de dónde salió realmente". */}
-              <p className="text-dato text-gray-500">
-                Asignados por el origen del viaje. Los que no cargaron, en su origen habitual.
-              </p>
-              <ZoneTable title="Por origen del viaje" rows={data.section2_tractoreo_asignado.por_cd}
-                motivosSinCarga={data.section2_tractoreo_asignado.motivos_sin_carga} />
-              <ZoneTable title="Por empresa dentro de cada origen" rows={data.section2_tractoreo_asignado.por_empresa_y_cd} showCarrier
-                motivosSinCarga={data.section2_tractoreo_asignado.motivos_sin_carga} />
-            </div>
-          )}
-
-          {tab === 'vueltas' && (
-            <div className="bg-white rounded-xl border border-border overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
-                    <th className="text-left px-3 py-2">Patente</th>
-                    <th className="text-left px-3 py-2">Empresa</th>
-                    <th className="text-left px-3 py-2">Origen del viaje</th>
-                    <th className="text-left px-3 py-2">Tipo de destino</th>
-                    <th className="text-right px-3 py-2">Vueltas</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {data.section3_vueltas.length === 0 && (
-                    <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-300 italic">Ningún equipo con 2+ vueltas hoy</td></tr>
-                  )}
-                  {data.section3_vueltas.map((v, i) => (
-                    <tr key={i}>
-                      <td className="px-3 py-2 font-mono font-medium">{v.tractor_plate}</td>
-                      <td className="px-3 py-2">{v.carrier_name}</td>
-                      <td className="px-3 py-2 text-gray-500">{v.cd_origen ?? '—'}</td>
-                      <td className="px-3 py-2 text-gray-500">{v.tipo_destino ?? '—'}</td>
-                      <td className="px-3 py-2 text-right font-bold text-accent">{v.vueltas}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {tab === 'sin_trabajar' && (
-            <div className="space-y-4">
-              <MotivoTable title="Por origen habitual" rows={data.section4_tractoreo_no_trabajando.por_cd}
-                motivos={columnasDeMotivo(data.section4_tractoreo_no_trabajando)} />
-              <MotivoTable title="Por empresa dentro de cada origen" rows={data.section4_tractoreo_no_trabajando.por_empresa_y_cd}
-                motivos={columnasDeMotivo(data.section4_tractoreo_no_trabajando)} showCarrier />
-              <div>
-                <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">Detalle por conductor</p>
-                <div className="bg-white rounded-xl border border-border overflow-hidden">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
-                        <th className="text-left px-3 py-2">Conductor</th>
-                        <th className="text-left px-3 py-2">Empresa</th>
-                        <th className="text-left px-3 py-2">Origen habitual</th>
-                        <th className="text-left px-3 py-2">Motivo</th>
-                        <th className="text-left px-3 py-2">Tracto habitual</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/60">
-                      {data.section4_tractoreo_no_trabajando.driver_detail.length === 0 && (
-                        <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-300 italic">Sin conductores pendientes</td></tr>
-                      )}
-                      {data.section4_tractoreo_no_trabajando.driver_detail.map(d => (
-                        <tr key={d.driver_id}>
-                          <td className="px-3 py-2 font-medium">{d.full_name}</td>
-                          <td className="px-3 py-2 text-gray-500">{d.carrier_name ?? '—'}</td>
-                          <td className="px-3 py-2 text-gray-500">{d.cd_origen ?? 'Sin origen'}</td>
-                          <td className="px-3 py-2 text-gray-500">{d.unassigned_reason_label ?? '—'}</td>
-                          <td className="px-3 py-2">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-gray-500">{d.tractor_plate ?? 'Sin tracto reciente'}</span>
-                              {d.operation_type && (
-                                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${OPERATION_TYPE_CLS[d.operation_type] ?? 'bg-gray-100 text-gray-500 border-transparent'}`}>
-                                  {d.operation_type}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {tab === 'tractoreo_empresa' && (
-            <CarrierUtilizationTable rows={data.section_tractoreo_por_empresa} emptyLabel="Sin Tractoreo" />
-          )}
-
-          {tab === 'eq_completos' && (
-            <CarrierUtilizationTable rows={data.section5_equipos_completos} emptyLabel="Sin equipos completos" />
-          )}
-
-          {tab === 'general' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white rounded-xl border border-border p-3">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase">Tractoreo total</p>
-                  <p className="text-xs">
-                    {data.section6_resumen_general.tractoreo.total} enrolados / {data.section6_resumen_general.tractoreo.assigned} asignados / {data.section6_resumen_general.tractoreo.unassigned} sin asignar
-                  </p>
-                  <p className="text-[11px] mt-0.5"><Pct value={data.section6_resumen_general.tractoreo.utilization_pct} /> utilización</p>
-                </div>
-                <div className="bg-white rounded-xl border border-border p-3">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase">Equipos Completos total</p>
-                  <p className="text-xs">
-                    {data.section6_resumen_general.equipos_completos.total} enrolados / {data.section6_resumen_general.equipos_completos.assigned} asignados / {data.section6_resumen_general.equipos_completos.unassigned} sin asignar
-                  </p>
-                  <p className="text-[11px] mt-0.5"><Pct value={data.section6_resumen_general.equipos_completos.utilization_pct} /> utilización</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">Por Origen habitual</p>
-                  <div className="bg-white rounded-xl border border-border overflow-hidden">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
-                          <th className="text-left px-3 py-2">Origen habitual</th>
-                          <th className="text-right px-3 py-2">Enrolados</th>
-                          <th className="text-right px-3 py-2">Asignados</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/60">
-                        {data.section6_resumen_general.por_cd.map(c => (
-                          <tr key={c.cd}>
-                            <td className="px-3 py-2">{c.cd}</td>
-                            <td className="px-3 py-2 text-right">{c.enrolled}</td>
-                            <td className="px-3 py-2 text-right text-green-700">{c.assigned}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">Por cliente</p>
-                  <div className="bg-white rounded-xl border border-border overflow-hidden">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
-                          <th className="text-left px-3 py-2">Cliente</th>
-                          <th className="text-right px-3 py-2">Asignados</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/60">
-                        {data.section6_resumen_general.por_cliente.map(c => (
-                          <tr key={c.client_name}>
-                            <td className="px-3 py-2">{c.client_name}</td>
-                            <td className="px-3 py-2 text-right text-green-700">{c.assigned}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              {data.section7_desvios_de_cd.length > 0 && (
-                <div className="mt-4">
-                  <p className="text-etiqueta font-bold text-informativo uppercase mb-1.5">
-                    Cargaron en otro origen ({data.section7_desvios_de_cd.length})
-                  </p>
-                  <div className="bg-white rounded-xl border border-border overflow-hidden">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="text-etiqueta font-bold text-informativo uppercase border-b border-border">
-                          <th className="text-left px-3 py-2">Patente</th>
-                          <th className="text-left px-3 py-2">Empresa</th>
-                          <th className="text-left px-3 py-2">Origen habitual</th>
-                          <th className="text-left px-3 py-2">Cargó en</th>
-                          <th className="text-left px-3 py-2">Generador de carga</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border/60">
-                        {data.section7_desvios_de_cd.map((d, i) => (
-                          <tr key={`${d.tractor_plate ?? i}-${d.origin_cd}`}>
-                            <td className="px-3 py-2 font-identificador">{d.tractor_plate ?? '—'}</td>
-                            <td className="px-3 py-2">{d.carrier_name ?? '—'}</td>
-                            <td className="px-3 py-2 text-informativo">{d.home_cd}</td>
-                            <td className="px-3 py-2">{d.origin_cd}</td>
-                            <td className="px-3 py-2 text-informativo">{d.client_name ?? '—'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-      </div>
-    </div>
-  )
-}
-
-/** Empresa/Enrolados/Asignados/No asignados/% utilización — usada tanto
- *  por Tractoreo (Sección 5) como por Equipo Completo (Sección 6), mismo
- *  componente y misma estructura visual para ambas (paridad pedida
- *  explícitamente por el usuario 2026-08-04: la tab "por empresa" solo
- *  existía para Equipo Completo). */
-function CarrierUtilizationTable({ rows, emptyLabel }: { rows: CarrierUtilizationRow[]; emptyLabel: string }) {
-  return (
-    <div className="bg-white rounded-xl border border-border overflow-hidden">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
-            <th className="text-left px-3 py-2">Empresa</th>
-            <th className="text-right px-3 py-2">Enrolados</th>
-            <th className="text-right px-3 py-2">Asignados</th>
-            <th className="text-right px-3 py-2">No asignados</th>
-            <th className="text-right px-3 py-2">% utilización</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border/60">
-          {rows.length === 0 && (
-            <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-300 italic">{emptyLabel}</td></tr>
-          )}
-          {rows.map(r => (
-            <tr key={r.carrier_name}>
-              <td className="px-3 py-2 font-medium">{r.carrier_name}</td>
-              <td className="px-3 py-2 text-right">{r.enrolled}</td>
-              <td className="px-3 py-2 text-right text-green-700">{r.assigned}</td>
-              <td className="px-3 py-2 text-right text-gray-400">{r.unassigned}</td>
-              <td className="px-3 py-2 text-right"><Pct value={r.utilization_pct} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-/** `motivosSinCarga`: columnas aparte, después del total, con los que
- *  trabajaron sin asignación (Sección 2, minuta 09/10). */
-function ZoneTable({ title, rows, showCarrier, motivosSinCarga = [] }: {
-  title: string; rows: ZoneCrossTab[]; showCarrier?: boolean; motivosSinCarga?: string[]
-}) {
-  return (
-    <div>
-      <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">{title}</p>
-      <div className="bg-white rounded-xl border border-border overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
-              <th className="text-left px-3 py-2">Origen</th>
-              {showCarrier && <th className="text-left px-3 py-2">Empresa</th>}
-              {ZONE_COLS.map(c => <th key={c} className="text-right px-3 py-2">{c}</th>)}
-              {motivosSinCarga.map(m => <th key={m} className="text-right px-3 py-2">{m}</th>)}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/60">
-            {rows.length === 0 && (
-              <tr><td colSpan={(showCarrier ? 2 : 1) + ZONE_COLS.length + motivosSinCarga.length} className="px-3 py-4 text-center text-gray-300 italic">Sin datos</td></tr>
-            )}
-            {rows.map((r, i) => (
-              <tr key={i}>
-                <td className="px-3 py-2">{r.cd}</td>
-                {showCarrier && <td className="px-3 py-2">{r.carrier_name}</td>}
-                {ZONE_COLS.map(c => (
-                  <td key={c} className={`px-3 py-2 text-right ${c === 'total' ? 'font-bold' : ''}`}>{r[c]}</td>
-                ))}
-                {motivosSinCarga.map(m => (
-                  <td key={m} className="px-3 py-2 text-right text-gray-500">{r.sin_carga?.[m] ?? 0}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-          {rows.length > 0 && (
-            <tfoot>
-              {/* Totales al pie (minuta 09/10, ítem 9): el número que se compara con el Excel. */}
-              <tr className="border-t-2 border-border font-bold bg-gray-50">
-                <td className="px-3 py-2">Total</td>
-                {showCarrier && <td className="px-3 py-2" />}
-                {ZONE_COLS.map(c => <td key={c} className="px-3 py-2 text-right">{sumar(rows, r => r[c] as number)}</td>)}
-                {motivosSinCarga.map(m => <td key={m} className="px-3 py-2 text-right">{sumar(rows, r => r.sin_carga?.[m])}</td>)}
-              </tr>
-            </tfoot>
-          )}
-        </table>
-      </div>
-    </div>
-  )
-}
-
-/** Las columnas que manda el backend; si todavía no las manda (despliegues
- *  separados), las que traen las filas. */
-function columnasDeMotivo(seccion: { motivos?: string[]; por_cd: MotivoCrossTab[] }): string[] {
-  if (seccion.motivos) return seccion.motivos
-  const claves = new Set<string>()
-  for (const fila of seccion.por_cd) {
-    for (const clave of Object.keys(fila)) {
-      if (!['cd', 'carrier_name', 'total'].includes(clave)) claves.add(clave)
-    }
-  }
-  return Array.from(claves)
-}
-
-function MotivoTable({ title, rows, motivos, showCarrier }: {
-  title: string; rows: MotivoCrossTab[]; motivos: string[]; showCarrier?: boolean
-}) {
-  const columnas = [...motivos, 'total']
-  return (
-    <div>
-      <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">{title}</p>
-      <div className="bg-white rounded-xl border border-border overflow-x-auto">
-        <table className="w-full text-xs" style={{ minWidth: 900 }}>
-          <thead>
-            <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
-              <th className="text-left px-3 py-2 whitespace-nowrap">Origen habitual</th>
-              {showCarrier && <th className="text-left px-3 py-2 whitespace-nowrap">Empresa</th>}
-              {columnas.map(c => <th key={c} className="text-right px-2 py-2 whitespace-nowrap">{c}</th>)}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/60">
-            {rows.length === 0 && (
-              <tr><td colSpan={(showCarrier ? 2 : 1) + columnas.length} className="px-3 py-4 text-center text-gray-300 italic">Sin datos</td></tr>
-            )}
-            {rows.map((r, i) => (
-              <tr key={i}>
-                <td className="px-3 py-2 whitespace-nowrap">{r.cd}</td>
-                {showCarrier && <td className="px-3 py-2 whitespace-nowrap">{r.carrier_name}</td>}
-                {columnas.map(c => (
-                  <td key={c} className={`px-2 py-2 text-right ${c === 'total' ? 'font-bold' : ''}`}>{(r[c] as number) ?? 0}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-          {rows.length > 0 && (
-            <tfoot>
-              <tr className="border-t-2 border-border font-bold bg-gray-50">
-                <td className="px-3 py-2">Total</td>
-                {showCarrier && <td className="px-3 py-2" />}
-                {columnas.map(c => <td key={c} className="px-2 py-2 text-right">{sumar(rows, r => r[c] as number)}</td>)}
-              </tr>
-            </tfoot>
-          )}
-        </table>
+        {seccion === 'dotacion' ? (
+          <FleetDriverGapCard />
+        ) : isLoading ? (
+          <div className="flex items-center justify-center py-16 text-gray-400">
+            <Loader2 size={20} className="animate-spin" />
+          </div>
+        ) : isError ? (
+          <div role="alert" className="flex items-center justify-center gap-3 py-16 text-xs text-gray-500">
+            No se pudo cargar el reporte.
+            <button type="button" onClick={() => { void refetch() }} className={ACCION}>
+              <RotateCw size={12} /> Reintentar
+            </button>
+          </div>
+        ) : !reporte ? (
+          // Un backend anterior al rediseño todavía no manda `by_operation_type`.
+          <p role="status" className="py-16 text-center text-xs text-gray-400">Actualizando el reporte…</p>
+        ) : (
+          <div ref={contenidoRef}>
+            {seccion === 'resumen' && <SeccionResumen reporte={reporte} tipo={tipoActual} />}
+            {seccion === 'asignados' && <SeccionAsignados reporte={reporte} tipo={tipoActual} />}
+            {seccion === 'segundas_vueltas' && <SeccionSegundasVueltas reporte={reporte} tipo={tipoActual} />}
+            {seccion === 'no_trabajaron' && <SeccionNoTrabajaron reporte={reporte} tipo={tipoActual} />}
+            {seccion === 'empresas' && <SeccionEmpresas reporte={reporte} tipo={tipoActual} />}
+          </div>
+        )}
       </div>
     </div>
   )

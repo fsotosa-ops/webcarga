@@ -3,7 +3,7 @@ import { render, screen, fireEvent, within, waitFor } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StatusReportSection } from './StatusReportSection'
 import { statusReportApi } from '@/lib/api/statusReport'
-import type { StatusReport } from '@/lib/types'
+import type { OperationTypeReport, StatusReport } from '@/lib/types'
 
 const escribirExcel = vi.hoisted(() => vi.fn())
 vi.mock('write-excel-file/browser', () => ({ default: escribirExcel }))
@@ -15,46 +15,56 @@ vi.mock('@/lib/api/carriers', () => ({
   carriersApi: { fleetDriverGap: vi.fn().mockResolvedValue({ rows: [{ carrier_id: 'c1', business_name: 'Transportes Sur', n_tractos: 3, n_conductores: 2, gap: 1 }] }) },
 }))
 
+const VACIO: OperationTypeReport = {
+  summary: { total: 0, assigned: 0, not_working: 0, utilization_pct: 0, by_client: [], by_home_origin: [] },
+  assigned: { rows: [], other_origin: [] },
+  worked_without_assignment: { reasons: [], rows: [] },
+  second_legs: [],
+  not_working: { reasons: [], by_reason: [], detail: [] },
+  carriers: [],
+}
+
+const TRACTOREO: OperationTypeReport = {
+  summary: {
+    total: 81, assigned: 29, not_working: 40, utilization_pct: 35.8,
+    by_client: [{ client_name: 'Walmart', assigned: 29 }],
+    by_home_origin: [{ origin: 'CD Lo Aguirre', enrolled: 50, assigned: 20 }],
+  },
+  assigned: {
+    rows: [
+      { client_name: 'Walmart', origin: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', rm: 3, z0: 1, region: 0, unclassified: 0, total: 4 },
+      { client_name: 'Walmart', origin: 'CD Quilicura', carrier_name: 'Norte Spa', rm: 0, z0: 0, region: 2, unclassified: 0, total: 2 },
+    ],
+    other_origin: [{ tractor_plate: 'ZZZZ99', carrier_name: 'Transportes Sur', home_origin: 'CD El Peñón', origin: 'CD Quilicura', client_name: 'Walmart' }],
+  },
+  worked_without_assignment: {
+    reasons: ['Se retira sin carga'],
+    rows: [{ origin: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', counts: { 'Se retira sin carga': 2 }, total: 2 }],
+  },
+  second_legs: [{ tractor_plate: 'ABCD12', carrier_name: 'Transportes Sur', driver_name: 'Ana Soto', origin: 'CD Lo Aguirre', destination_zone: 'RM', legs: 2 }],
+  not_working: {
+    reasons: ['Panne'],
+    by_reason: [{ origin: 'CD El Peñón', carrier_name: 'Otra Spa', counts: { Panne: 2 }, total: 2 }],
+    detail: [{ name: 'Juan Pérez', carrier_name: 'Otra Spa', home_origin: 'CD El Peñón', reason: 'Panne', tractor_plate: 'ABCD12' }],
+  },
+  carriers: [{ carrier_name: 'Transportes Sur', enrolled: 5, assigned: 2, unassigned: 3, utilization_pct: 40.0 }],
+}
+
+const EQUIPO_COMPLETO: OperationTypeReport = {
+  ...VACIO,
+  summary: { ...VACIO.summary, total: 10, assigned: 3, not_working: 7, utilization_pct: 30.0 },
+  not_working: {
+    reasons: ['Panne'],
+    by_reason: [{ origin: 'CD Lo Aguirre', carrier_name: 'Equipos Sur', counts: { Panne: 1 }, total: 1 }],
+    detail: [{ name: 'EQUI01', carrier_name: 'Equipos Sur', home_origin: 'CD Lo Aguirre', reason: 'Panne', tractor_plate: 'EQUI01' }],
+  },
+  carriers: [{ carrier_name: 'Equipos Sur', enrolled: 10, assigned: 3, unassigned: 7, utilization_pct: 30.0 }],
+}
+
 const REPORT: StatusReport = {
   business_date: '2026-08-02',
   client_filter: null,
-  section1_resumen: {
-    total_equipos_activos: 81,
-    tractoreo: { total: 81, assigned: 29, unassigned: 52, utilization_pct: 35.8 },
-    equipos_completos: { total: 0, assigned: 0, unassigned: 0, utilization_pct: 0 },
-    multi_dia_activos: { total: 5, por_dias_atras: { "1": 3, "2": 2 } },
-  },
-  section2_tractoreo_asignado: {
-    motivos_sin_carga: ['Se retira sin carga'],
-    por_cd: [{ cd: 'CD Lo Aguirre', RM: 3, Z0: 1, "Región": 0, "Sin clasificar": 0, total: 4, sin_carga: { 'Se retira sin carga': 2 } }],
-    por_empresa_y_cd: [{ cd: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', RM: 3, Z0: 1, "Región": 0, "Sin clasificar": 0, total: 4, sin_carga: { 'Se retira sin carga': 2 } }],
-  },
-  section3_vueltas: [
-    { tractor_plate: 'ABCD12', carrier_name: 'Transportes Sur', cd_origen: 'CD Lo Aguirre', tipo_destino: 'RM', vueltas: 2 },
-  ],
-  section4_tractoreo_no_trabajando: {
-    por_cd: [{ cd: 'CD El Peñón', Panne: 2, "A confirmar": 1, total: 3 }],
-    por_empresa_y_cd: [{ cd: 'CD El Peñón', carrier_name: 'Otra Spa', Panne: 2, total: 2 }],
-    driver_detail: [
-      {
-        driver_id: 'd1', full_name: 'Juan Pérez', carrier_name: 'Otra Spa', cd_origen: 'CD El Peñón',
-        unassigned_reason_label: 'Panne', tractor_plate: 'ABCD12', operation_type: 'Equipo Completo',
-      },
-    ],
-  },
-  section_tractoreo_por_empresa: [
-    { carrier_name: 'Transportes Sur', enrolled: 5, assigned: 2, unassigned: 3, utilization_pct: 40.0 },
-  ],
-  section5_equipos_completos: [
-    { carrier_name: 'Equipos Sur', enrolled: 10, assigned: 3, unassigned: 7, utilization_pct: 30.0 },
-  ],
-  section6_resumen_general: {
-    tractoreo: { total: 81, assigned: 29, unassigned: 52, utilization_pct: 35.8 },
-    equipos_completos: { total: 10, assigned: 3, unassigned: 7, utilization_pct: 30.0 },
-    por_cd: [{ cd: 'CD Lo Aguirre', enrolled: 4, assigned: 4 }],
-    por_cliente: [{ client_name: 'Walmart', assigned: 4 }],
-  },
-  section7_desvios_de_cd: [],
+  by_operation_type: { tractoreo: TRACTOREO, equipo_completo: EQUIPO_COMPLETO },
 }
 
 function renderSection(props: Partial<Parameters<typeof StatusReportSection>[0]> = {}) {
@@ -64,10 +74,17 @@ function renderSection(props: Partial<Parameters<typeof StatusReportSection>[0]>
       <StatusReportSection fecha="2026-08-02" {...props} />
     </QueryClientProvider>,
   )
-  // El resumen imprimible (Descargar PDF) duplica textos como "Total
-  // equipos activos"/"81"/nombres de empresa fuera de pantalla — todas las
-  // aserciones de interacción normal se scopean acá para no chocar con él.
+  // El resumen imprimible duplica textos fuera de pantalla: las aserciones van acá.
   return within(screen.getByTestId('report-body'))
+}
+
+/** La tarjeta de una cifra del resumen: los mismos números se repiten en otras tablas. */
+const cifra = (body: ReturnType<typeof renderSection>, titulo: string) =>
+  body.getByText(titulo, { selector: 'p' }).parentElement!
+
+async function abrir(body: ReturnType<typeof renderSection>, seccion: string) {
+  await body.findByText('Equipos activos')
+  fireEvent.click(body.getByRole('button', { name: seccion }))
 }
 
 beforeEach(() => {
@@ -75,190 +92,180 @@ beforeEach(() => {
 })
 
 describe('StatusReportSection', () => {
-  it('muestra la Sección 1 (resumen) por defecto', async () => {
+  it('abre en Tractoreo › Resumen con las cuatro cifras', async () => {
     const body = renderSection()
-    expect(await body.findByText('Total equipos activos')).toBeInTheDocument()
-    expect(body.getByText('81')).toBeInTheDocument()
-    expect(body.getByText(/29 asignados \/ 52 sin asignar/)).toBeInTheDocument()
-    expect(body.getByText('3 equipo(s) — 1 día(s)')).toBeInTheDocument()
+    expect(await body.findByText('Equipos activos')).toBeInTheDocument()
+    expect(cifra(body, 'Equipos activos')).toHaveTextContent('81')
+    expect(cifra(body, 'Asignados')).toHaveTextContent('29')
+    expect(cifra(body, 'No trabajaron')).toHaveTextContent('40')
+    expect(cifra(body, 'Utilización')).toHaveTextContent('35.8%')
   })
 
-  it('cambia a la Sección 2 (tractoreo asignado) y muestra el cross-tab por CD', async () => {
+  it('el selector cambia todas las secciones al otro tipo', async () => {
     const body = renderSection()
-    await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: '2. Asignado' }))
-    expect((await body.findAllByText('CD Lo Aguirre')).length).toBe(2)
-    expect(body.getByText('Transportes Sur')).toBeInTheDocument()
+    await body.findByText('Equipos activos')
+    fireEvent.click(body.getByRole('button', { name: 'Equipo Completo' }))
+    expect(cifra(body, 'Equipos activos')).toHaveTextContent('10')
+    fireEvent.click(body.getByRole('button', { name: 'Empresas' }))
+    expect(body.getByText('Equipos Sur')).toBeInTheDocument()
+    expect(body.queryByText('Transportes Sur')).not.toBeInTheDocument()
   })
 
-  it('la Sección 2 agrupa por el origen real del viaje y dice dónde quedan los que no cargaron (decisión B)', async () => {
+  it('Asignados abre los clientes y deja cerrados los orígenes', async () => {
     const body = renderSection()
-    await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: '2. Asignado' }))
-    expect(await body.findByText('Por origen del viaje')).toBeInTheDocument()
-    expect(body.getByText(/Los que no cargaron, en su origen habitual/)).toBeInTheDocument()
+    await abrir(body, 'Asignados')
+    expect(body.getByRole('button', { name: 'Walmart' })).toHaveAttribute('aria-expanded', 'true')
+    expect(body.getByRole('button', { name: 'CD Lo Aguirre' })).toHaveAttribute('aria-expanded', 'false')
+    expect(body.queryByText('Norte Spa')).not.toBeInTheDocument()
   })
 
-  it('la Sección 2 muestra aparte a los que trabajaron sin asignación, por motivo (minuta 09/10)', async () => {
+  it('abrir un origen muestra sus empresas, y cerrar el cliente esconde todo lo de adentro', async () => {
     const body = renderSection()
-    await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: '2. Asignado' }))
-    expect((await body.findAllByRole('columnheader', { name: 'Se retira sin carga' })).length).toBe(2)
-    const fila = body.getByText('Transportes Sur').closest('tr')!
+    await abrir(body, 'Asignados')
+    fireEvent.click(body.getByRole('button', { name: 'CD Quilicura' }))
+    expect(body.getByText('Norte Spa')).toBeInTheDocument()
+    fireEvent.click(body.getByRole('button', { name: 'Walmart' }))
+    expect(body.queryByRole('button', { name: 'CD Quilicura' })).not.toBeInTheDocument()
+    expect(body.queryByText('Norte Spa')).not.toBeInTheDocument()
+  })
+
+  it('cada cliente muestra su subtotal y el pie el total, en el orden del CSV', async () => {
+    const body = renderSection()
+    await abrir(body, 'Asignados')
+    const cliente = body.getByRole('button', { name: 'Walmart' }).closest('tr')!
+    expect(within(cliente).getAllByRole('cell').map(c => c.textContent)).toEqual(['Walmart', '3', '1', '2', '0', '6'])
+    const pie = within(body.getAllByRole('table')[0]).getAllByRole('row').at(-1)!
+    expect(within(pie).getAllByRole('cell').map(c => c.textContent)).toEqual(['Total', '3', '1', '2', '0', '6'])
+  })
+
+  it('lo plegado sigue plegado al cambiar de tipo y volver', async () => {
+    const body = renderSection()
+    await abrir(body, 'Asignados')
+    fireEvent.click(body.getByRole('button', { name: 'Walmart' }))
+    fireEvent.click(body.getByRole('button', { name: 'Equipo Completo' }))
+    fireEvent.click(body.getByRole('button', { name: 'Tractoreo' }))
+    expect(body.getByRole('button', { name: 'Walmart' })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('debajo del árbol van los que trabajaron sin asignación, con solo sus motivos, y los que cargaron en otro origen', async () => {
+    const body = renderSection()
+    await abrir(body, 'Asignados')
+    expect(body.getByText('Trabajaron sin asignación')).toBeInTheDocument()
+    expect(body.getByRole('columnheader', { name: 'Se retira sin carga' })).toBeInTheDocument()
+    expect(body.getByText(/Cargaron en otro origen \(1\)/)).toBeInTheDocument()
+    expect(body.getByText('ZZZZ99')).toBeInTheDocument()
+  })
+
+  it('un tipo sin asignados lo dice, en vez de dibujar una tabla vacía', async () => {
+    const body = renderSection()
+    await body.findByText('Equipos activos')
+    fireEvent.click(body.getByRole('button', { name: 'Equipo Completo' }))
+    fireEvent.click(body.getByRole('button', { name: 'Asignados' }))
+    expect(body.getByText('Hoy no hubo equipos de Equipo Completo asignados')).toBeInTheDocument()
+    expect(body.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('Segundas vueltas muestra la patente y su conductor', async () => {
+    const body = renderSection()
+    await abrir(body, 'Segundas vueltas')
+    const fila = body.getByText('ABCD12').closest('tr')!
+    expect(within(fila).getByText('Ana Soto')).toBeInTheDocument()
     expect(within(fila).getByText('2')).toBeInTheDocument()
   })
 
-  it('cambia a la Sección 3 (vueltas) y muestra los equipos con 2+ vueltas', async () => {
+  it('No trabajaron va por conductor en Tractoreo y por equipo en Equipo Completo', async () => {
     const body = renderSection()
-    await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: '3. Vueltas' }))
-    const row = (await body.findByText('Transportes Sur')).closest('tr')!
-    expect(within(row).getByText('2')).toBeInTheDocument()
-    // La vuelta es de la patente (minuta 09/10): la fila dice cuál.
-    expect(within(row).getByText('ABCD12')).toBeInTheDocument()
-  })
-
-  it('cambia a la Sección 4 y muestra el cross-tab por motivo Y el detalle por conductor con tipo de operación', async () => {
-    const body = renderSection()
-    await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: '4. Sin trabajar' }))
-    expect((await body.findAllByText('CD El Peñón')).length).toBeGreaterThanOrEqual(2)
+    await abrir(body, 'No trabajaron')
+    expect(body.getByRole('columnheader', { name: 'Conductor' })).toBeInTheDocument()
     expect(body.getByText('Juan Pérez')).toBeInTheDocument()
-    expect(body.getByText('ABCD12')).toBeInTheDocument()
-    expect(body.getByText('Equipo Completo')).toBeInTheDocument()
+    fireEvent.click(body.getByRole('button', { name: 'Equipo Completo' }))
+    expect(body.getByRole('columnheader', { name: 'Equipo' })).toBeInTheDocument()
+    expect(body.getAllByText('EQUI01').length).toBeGreaterThan(0)
   })
 
-  it('cambia a la Sección 5 (Tractoreo por empresa) y muestra el % de utilización — mismo componente que Equipo Completo', async () => {
+  it('las columnas de motivo son las que manda la API, ni una más', async () => {
     const body = renderSection()
-    await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: /5\. Tractoreo/ }))
-    expect(await body.findByText('Transportes Sur')).toBeInTheDocument()
-    expect(body.getByText('40%')).toBeInTheDocument()
+    await abrir(body, 'No trabajaron')
+    const tabla = body.getAllByRole('table')[0]
+    expect(within(tabla).getAllByRole('columnheader').map(c => c.textContent)).toEqual(['Origen', 'Empresa', 'Panne', 'Total'])
   })
 
-  it('cambia a la Sección 6 (equipos completos) y muestra el % de utilización', async () => {
+  it('Dotación muestra las inconsistencias de dotación', async () => {
     const body = renderSection()
-    await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: '6. Eq. Completos' }))
-    expect(await body.findByText('Equipos Sur')).toBeInTheDocument()
-    expect(body.getByText('30%')).toBeInTheDocument()
-  })
-
-  it('cambia a la Sección 7 (resumen general) y muestra por CD y por cliente', async () => {
-    const body = renderSection()
-    await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: '7. General' }))
-    expect(await body.findByText('Walmart')).toBeInTheDocument()
-  })
-
-  it('cambia a la Sección 8 y muestra las inconsistencias de dotación (FleetDriverGapCard)', async () => {
-    const body = renderSection()
-    await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: '8. Dotación' }))
+    await abrir(body, 'Dotación')
     expect(await body.findByText('1 empresa con desbalance de dotación')).toBeInTheDocument()
+  })
+
+  it('con un backend anterior al rediseño avisa que se está actualizando', async () => {
+    vi.mocked(statusReportApi.get).mockResolvedValue({ business_date: '2026-08-02', client_filter: null })
+    const body = renderSection()
+    expect(await body.findByText('Actualizando el reporte…')).toBeInTheDocument()
+  })
+
+  it('si falla la carga ofrece reintentar, y reintentar vuelve a pedir', async () => {
+    vi.mocked(statusReportApi.get).mockRejectedValueOnce(new Error('500'))
+    const body = renderSection()
+    fireEvent.click(await body.findByRole('button', { name: 'Reintentar' }))
+    expect(await body.findByText('Equipos activos')).toBeInTheDocument()
+    expect(statusReportApi.get).toHaveBeenCalledTimes(2)
   })
 
   it('filtrar por cliente vuelve a pedir el reporte con ese cliente', async () => {
     const body = renderSection({ shippers: [{ id: 's1', name: 'Walmart', status: 'ACTIVE' }] })
-    await body.findByText('Total equipos activos')
+    await body.findByText('Equipos activos')
     fireEvent.change(body.getByRole('combobox', { name: 'Filtrar por cliente' }), { target: { value: 'Walmart' } })
     expect(statusReportApi.get).toHaveBeenCalledWith('2026-08-02', 'Walmart')
   })
 
   it('el link "Ver histórico" apunta a /dashboard/operations/closures/history', async () => {
     const body = renderSection()
-    await body.findByText('Total equipos activos')
-    const link = body.getByRole('link', { name: /Ver histórico/ })
-    expect(link).toHaveAttribute('href', '/dashboard/operations/closures/history')
+    await body.findByText('Equipos activos')
+    expect(body.getByRole('link', { name: /Ver histórico/ })).toHaveAttribute('href', '/dashboard/operations/closures/history')
   })
 
   it('"Descargar PDF" llama a window.print', async () => {
     const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {})
     const body = renderSection()
-    await body.findByText('Total equipos activos')
+    await body.findByText('Equipos activos')
     fireEvent.click(body.getByRole('button', { name: /Descargar PDF/ }))
     expect(printSpy).toHaveBeenCalled()
     printSpy.mockRestore()
   })
 
-  it('"Descargar Excel" baja un .xlsx de verdad, con una hoja por sección (minuta 09/10, ítem 15)', async () => {
+  it('el resumen imprimible muestra los dos tipos lado a lado', async () => {
+    renderSection()
+    const impreso = await screen.findByTestId('resumen-imprimible')
+    expect(within(impreso).getByText('Tractoreo')).toBeInTheDocument()
+    expect(within(impreso).getByText('Equipo Completo')).toBeInTheDocument()
+  })
+
+  it('"Descargar Excel" baja los dos tipos aunque se vea uno', async () => {
     const toFile = vi.fn().mockResolvedValue(undefined)
     escribirExcel.mockReset().mockReturnValue({ toFile })
     const body = renderSection()
-    await body.findByText('Total equipos activos')
-
+    await body.findByText('Equipos activos')
     fireEvent.click(body.getByRole('button', { name: /Descargar Excel/ }))
-
     await waitFor(() => expect(toFile).toHaveBeenCalledWith('reporte_estatus_2026-08-02.xlsx'))
-    const hojas = escribirExcel.mock.calls[0][0] as { sheet: string; data: unknown[][] }[]
-    expect(hojas.map(h => h.sheet)).toContain('2. Asignado')
-    const asignado = hojas.find(h => h.sheet === '2. Asignado')!
-    expect(JSON.stringify(asignado.data)).toContain('CD Lo Aguirre')
+    const hojas = (escribirExcel.mock.calls[0][0] as { sheet: string }[]).map(h => h.sheet)
+    expect(hojas).toEqual(expect.arrayContaining(['Asignados · Tractoreo', 'Asignados · Eq. Completo', 'Dotación']))
   })
 
-  it('la tabla de asignados suma cada columna al pie, para comparar con el Excel (minuta 09/10, ítem 9)', async () => {
-    vi.mocked(statusReportApi.get).mockResolvedValue({
-      ...REPORT,
-      section2_tractoreo_asignado: {
-        ...REPORT.section2_tractoreo_asignado,
-        por_cd: [
-          { cd: 'CD Lo Aguirre', RM: 3, Z0: 1, "Región": 0, "Sin clasificar": 0, total: 4, sin_carga: { 'Se retira sin carga': 2 } },
-          { cd: 'CD Quilicura', RM: 2, Z0: 0, "Región": 5, "Sin clasificar": 1, total: 8, sin_carga: { 'Se retira sin carga': 1 } },
-        ],
-      },
-    })
-    const body = renderSection()
-    await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: '2. Asignado' }))
-    const pie = (await body.findAllByRole('row', { name: /^Total/ }))[0]
-    expect(within(pie).getAllByRole('cell').map(c => c.textContent)).toEqual(['Total', '5', '1', '5', '1', '12', '3'])
-  })
-
-  it('"Copiar estatus" deja la sección a la vista lista para pegar (minuta 09/10)', async () => {
+  it('"Copiar estatus" copia la sección y el tipo a la vista, sin lo plegado', async () => {
     const write = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { write } })
     vi.stubGlobal('ClipboardItem', class { constructor(public items: Record<string, Blob>) {} })
     const body = renderSection()
-    await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: '2. Asignado' }))
-    await body.findAllByText('CD Lo Aguirre')
+    await abrir(body, 'Asignados')
 
     fireEvent.click(body.getByRole('button', { name: /Copiar estatus/ }))
 
     await waitFor(() => expect(write).toHaveBeenCalled())
     const item = write.mock.calls[0][0][0] as { items: Record<string, Blob> }
-    expect(Object.keys(item.items).sort()).toEqual(['text/html', 'text/plain'])
-    expect(await item.items['text/plain'].text()).toContain('CD Lo Aguirre')
+    const texto = await item.items['text/plain'].text()
+    expect(texto).toContain('Estatus del día 02/08 · Tractoreo · Asignados')
+    expect(texto).toContain('CD Quilicura')
+    expect(texto).not.toContain('Norte Spa')
     expect(await body.findByText(/copiado/i)).toBeInTheDocument()
     vi.unstubAllGlobals()
-  })
-
-  it('en la Sección 7 muestra los que cargaron en un CD distinto al suyo', async () => {
-    vi.mocked(statusReportApi.get).mockResolvedValue({
-      ...REPORT,
-      section7_desvios_de_cd: [{
-        tractor_plate: 'ABCD12', carrier_name: 'Transportes Sur',
-        home_cd: 'CD El Peñón', origin_cd: 'CD Quilicura', client_name: 'Walmart',
-      }],
-    })
-    const body = renderSection()
-    await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: '7. General' }))
-
-    // Declarar el origen habitual no sirve para que todos calcen: sirve para ver cuándo
-    // no calzan. Antes se perdía, porque el reporte agrupaba por el origen
-    // adivinado y no podía contradecirse a sí mismo.
-    expect(await body.findByText(/Cargaron en otro origen \(1\)/)).toBeInTheDocument()
-    expect(body.getByText('CD Quilicura')).toBeInTheDocument()
-    expect(body.getByText('ABCD12')).toBeInTheDocument()
-  })
-
-  it('sin desvíos no dibuja la sección', async () => {
-    const body = renderSection()
-    await body.findByText('Total equipos activos')
-    fireEvent.click(body.getByRole('button', { name: '7. General' }))
-
-    expect(await body.findByText('Por Origen habitual')).toBeInTheDocument()
-    expect(body.queryByText(/Cargaron en otro origen/)).not.toBeInTheDocument()
   })
 })
