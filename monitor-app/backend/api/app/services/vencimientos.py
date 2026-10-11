@@ -339,3 +339,76 @@ _MESES = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
 def nombre_del_periodo(inicio: date) -> str:
     """"octubre 2026": como lo dice una persona, para los mensajes."""
     return f"{_MESES[inicio.month - 1]} {inicio.year}"
+
+
+# ── El estado de un documento y quién entra en la cola, UNA vez ──────────────
+#
+# Vivía como un CASE escrito dentro de GET /compliance-records/pending, y el
+# resto de las pantallas tenía su propia versión. Pendientes (spec
+# 2026-10-11-pending-documents-design.md) necesita la misma respuesta en la
+# lista y en el resumen, así que la definición se muda acá. Los demás lectores
+# (avisos del viaje, vista rápida, roster) migran en el bloque 3.
+
+DOCUMENT_STATES = ("NOT_REQUIRED", "UP_TO_DATE", "OVERDUE", "EXPIRING", "MISSING")
+PENDING_STATES = ("OVERDUE", "EXPIRING", "MISSING")
+
+
+def document_state_sql(alias: str = "cr") -> str:
+    """En qué estado está un registro. Excluyentes, en este orden:
+      NOT_REQUIRED  todavía no se exige (p. ej. desde el mes siguiente al ingreso)
+      UP_TO_DATE    no está pendiente
+      OVERDUE       venció, o se marcó vencido, o tiene archivo sin el dato que
+                    su regla necesita (vence_el = -infinity): no sirve
+      EXPIRING      dentro de la ventana de aviso
+      MISSING       se exige y nunca se cargó"""
+    return (
+        f"(CASE WHEN NOT {exigible_sql(alias)} THEN 'NOT_REQUIRED' "
+        f"WHEN NOT {pendiente_predicate(alias)} THEN 'UP_TO_DATE' "
+        f"WHEN {alias}.status = 'EXPIRED' OR {vencido_predicate(alias)} THEN 'OVERDUE' "
+        f"WHEN {por_vencer_predicate(alias)} THEN 'EXPIRING' "
+        f"ELSE 'MISSING' END)"
+    )
+
+
+def in_scope_sql(alias: str = "cr") -> str:
+    """Si el registro entra en la cola de Pendientes: una empresa activa, o un
+    conductor o equipo activo con asignación vigente a una empresa activa.
+
+    La siembra NO se acota (crea registros para todos, también inactivos, para
+    que quien se reactiva vuelva con sus pendientes): el alcance se aplica al
+    leer. Autocontenido sobre `entity_type`/`entity_id`, para que cualquier
+    consulta lo pueda usar sin depender de sus JOINs."""
+    activa = "vg_sc.operational_status = 'ACTIVE'"
+    corriente = (
+        f"(CASE {alias}.entity_type "
+        f"WHEN 'CARRIER' THEN EXISTS (SELECT 1 FROM public.carriers vg_sc "
+        f"WHERE vg_sc.id = {alias}.entity_id AND {activa}) "
+        f"WHEN 'DRIVER' THEN EXISTS (SELECT 1 FROM public.drivers vg_sd "
+        f"JOIN public.driver_assignments vg_sa ON vg_sa.driver_id = vg_sd.id AND vg_sa.status = 'ACTIVE' "
+        f"JOIN public.carriers vg_sc ON vg_sc.id = vg_sa.carrier_id AND {activa} "
+        f"WHERE vg_sd.id = {alias}.entity_id AND vg_sd.operational_status = 'ACTIVE') "
+        f"WHEN 'ASSET' THEN EXISTS (SELECT 1 FROM public.assets vg_sx "
+        f"JOIN public.asset_assignments vg_sa ON vg_sa.asset_id = vg_sx.id AND vg_sa.status = 'ACTIVE' "
+        f"JOIN public.carriers vg_sc ON vg_sc.id = vg_sa.carrier_id AND {activa} "
+        f"WHERE vg_sx.id = {alias}.entity_id AND vg_sx.operational_status = 'ACTIVE') "
+        f"ELSE false END)"
+    )
+    # ON_ENTITY_END: el documento se exige cuando la persona o el equipo YA SE
+    # FUE, así que exigir una asignación vigente lo dejaría fuera siempre. Entra
+    # si la empresa de su ÚLTIMA asignación sigue activa; el estado de la
+    # entidad y de esa asignación no cuentan (la empresa aún debe el documento).
+    def _ultima(tabla: str, col: str) -> str:
+        return (
+            f"EXISTS (SELECT 1 FROM public.carriers vg_ec WHERE vg_ec.operational_status = 'ACTIVE' "
+            f"AND vg_ec.id = (SELECT vg_ea.carrier_id FROM public.{tabla} vg_ea "
+            f"WHERE vg_ea.{col} = {alias}.entity_id "
+            f"ORDER BY COALESCE(vg_ea.end_date, 'infinity'::date) DESC, vg_ea.start_date DESC, "
+            f"vg_ea.created_at DESC LIMIT 1))"
+        )
+    return (
+        f"(CASE WHEN {_es(alias, 'exigible_on', 'ON_ENTITY_END')} AND {alias}.entity_type = 'DRIVER' "
+        f"THEN {_ultima('driver_assignments', 'driver_id')} "
+        f"WHEN {_es(alias, 'exigible_on', 'ON_ENTITY_END')} AND {alias}.entity_type = 'ASSET' "
+        f"THEN {_ultima('asset_assignments', 'asset_id')} "
+        f"ELSE {corriente} END)"
+    )
