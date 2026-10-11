@@ -12,12 +12,16 @@ export const COLUMNAS_DE_ZONA = [
   { clave: 'total', etiqueta: 'Total' },
 ] as const satisfies readonly { clave: keyof Cifras; etiqueta: string }[]
 
-type NodoEmpresa = { carrier_name: string; cifras: Cifras }
+type NodoConductor = { etiqueta: string; cifras: Cifras }
+type NodoEmpresa = { clave: string; carrier_name: string; cifras: Cifras; conductores: NodoConductor[] }
 type NodoOrigen = { clave: string; origin: string; cifras: Cifras; empresas: NodoEmpresa[] }
 type NodoCliente = { clave: string; client_name: string; cifras: Cifras; origenes: NodoOrigen[] }
 export type ArbolDeAsignados = { clientes: NodoCliente[]; total: Cifras }
 
-export type FilaDelArbol = { nivel: 0 | 1 | 2; clave: string; etiqueta: string; cifras: Cifras; plegable: boolean }
+export type NivelPlegable = 0 | 1 | 2
+export type FilaDelArbol = { nivel: 0 | 1 | 2 | 3; clave: string; etiqueta: string; cifras: Cifras; plegable: boolean }
+
+const CERO: Cifras = { rm: 0, z0: 0, region: 0, unclassified: 0, total: 0 }
 
 function cifrasDe(filas: AssignedRow[]): Cifras {
   return {
@@ -46,16 +50,26 @@ export function arbolDeAsignados(rows: AssignedRow[]): ArbolDeAsignados {
       clave: `${cliente}\u0000${origen}`,
       origin: origen,
       cifras: cifrasDe(delOrigen),
-      empresas: delOrigen.map(f => ({ carrier_name: f.carrier_name, cifras: cifrasDe([f]) })),
+      empresas: delOrigen.map(f => ({
+        clave: `${cliente}\u0000${origen}\u0000${f.carrier_name}`,
+        carrier_name: f.carrier_name,
+        cifras: cifrasDe([f]),
+        // Cada tracto cuenta 1 en la zona de su último viaje del día.
+        conductores: f.vehicles.map(v => ({
+          etiqueta: `${v.driver_name ?? 'Sin conductor'} · ${v.tractor_plate ?? 'sin patente'}`,
+          cifras: { ...CERO, [v.zone]: 1, total: 1 },
+        })),
+      })),
     })),
   }))
   return { clientes, total: cifrasDe(rows) }
 }
 
-/** Las filas en orden de lectura. `estaAbierto` dice si un cliente (nivel 0) o un
- *  origen (nivel 1) muestra su detalle; sin él, todo abierto. */
+/** Las filas en orden de lectura. `estaAbierto` dice si un cliente (nivel 0), un
+ *  origen (nivel 1) o una empresa (nivel 2) muestra su detalle; sin él, todo
+ *  abierto, hasta los conductores (nivel 3). */
 export function filasDelArbol(
-  arbol: ArbolDeAsignados, estaAbierto: (clave: string, nivel: 0 | 1) => boolean = () => true,
+  arbol: ArbolDeAsignados, estaAbierto: (clave: string, nivel: NivelPlegable) => boolean = () => true,
 ): FilaDelArbol[] {
   const filas: FilaDelArbol[] = []
   for (const c of arbol.clientes) {
@@ -65,8 +79,12 @@ export function filasDelArbol(
       filas.push({ nivel: 1, clave: o.clave, etiqueta: o.origin, cifras: o.cifras, plegable: true })
       if (!estaAbierto(o.clave, 1)) continue
       for (const e of o.empresas) {
-        filas.push({ nivel: 2, clave: `${o.clave}\u0000${e.carrier_name}`, etiqueta: e.carrier_name,
-                     cifras: e.cifras, plegable: false })
+        const plegable = e.conductores.length > 0
+        filas.push({ nivel: 2, clave: e.clave, etiqueta: e.carrier_name, cifras: e.cifras, plegable })
+        if (!plegable || !estaAbierto(e.clave, 2)) continue
+        e.conductores.forEach((c, i) => {
+          filas.push({ nivel: 3, clave: `${e.clave}\u0000${i}`, etiqueta: c.etiqueta, cifras: c.cifras, plegable: false })
+        })
       }
     }
   }

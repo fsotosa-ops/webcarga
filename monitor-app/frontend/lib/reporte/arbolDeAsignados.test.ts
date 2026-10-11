@@ -4,6 +4,10 @@ import { arbolDeAsignados, filasDelArbol } from './arbolDeAsignados'
 
 const fila = (client_name: string, origin: string, carrier_name: string, rm: number, region = 0): AssignedRow => ({
   client_name, origin, carrier_name, rm, z0: 0, region, unclassified: 0, total: rm + region,
+  vehicles: [
+    ...Array.from({ length: rm }, (_, i) => ({ tractor_plate: `RM${i}`, driver_name: `Conductor RM${i}`, zone: 'rm' as const })),
+    ...Array.from({ length: region }, (_, i) => ({ tractor_plate: `RG${i}`, driver_name: null, zone: 'region' as const })),
+  ],
 })
 
 // Ordenadas como las manda la API: cliente, origen, empresa.
@@ -23,8 +27,8 @@ describe('arbolDeAsignados', () => {
     expect(arbol.total.total).toBe(8)
   })
 
-  it('sin estado de apertura lista todo en orden de lectura (el Excel)', () => {
-    const filas = filasDelArbol(arbolDeAsignados(ROWS))
+  it('hasta la empresa lista todo en orden de lectura (el Excel)', () => {
+    const filas = filasDelArbol(arbolDeAsignados(ROWS), (_clave, nivel) => nivel < 2)
     expect(filas.map(f => `${f.nivel}:${f.etiqueta}`)).toEqual([
       '0:Sodimac', '1:CD Quilicura', '2:Norte Spa',
       '0:Walmart', '1:CD Lo Aguirre', '2:Norte Spa', '2:Transportes Sur', '1:CD Quilicura', '2:Transportes Sur',
@@ -33,9 +37,18 @@ describe('arbolDeAsignados', () => {
 
   it('un cliente cerrado esconde sus orígenes y un origen cerrado sus empresas', () => {
     const arbol = arbolDeAsignados(ROWS)
-    const soloWalmartAbierto = (clave: string, nivel: 0 | 1) => nivel === 0 && clave === 'Walmart'
+    const soloWalmartAbierto = (clave: string, nivel: number) => nivel === 0 && clave === 'Walmart'
     expect(filasDelArbol(arbol, soloWalmartAbierto).map(f => f.etiqueta))
       .toEqual(['Sodimac', 'Walmart', 'CD Lo Aguirre', 'CD Quilicura'])
+  })
+
+  it('una empresa abierta muestra sus conductores, cada uno con su patente y un 1 en su zona', () => {
+    const arbol = arbolDeAsignados(ROWS)
+    const filas = filasDelArbol(arbol)
+    const conductores = filas.filter(f => f.nivel === 3 && f.clave.startsWith('Walmart\u0000CD Lo Aguirre\u0000Norte Spa'))
+    expect(conductores.map(f => f.etiqueta)).toEqual(['Conductor RM0 · RM0', 'Conductor RM1 · RM1', 'Sin conductor · RG0'])
+    expect(conductores[2].cifras).toEqual({ rm: 0, z0: 0, region: 1, unclassified: 0, total: 1 })
+    expect(conductores.every(f => !f.plegable)).toBe(true)
   })
 
   it('el mismo origen en dos clientes son dos nodos distintos', () => {

@@ -1,5 +1,7 @@
 'use client'
 
+import { useState } from 'react'
+import { ChevronRight } from 'lucide-react'
 import type { OperationTypeReport, ReasonRow } from '@/lib/types'
 import type { TipoDeOperacion } from '@/lib/reporte/tiposDeOperacion'
 import { sumar } from '@/lib/reporte/sumar'
@@ -226,47 +228,92 @@ export function SeccionSegundasVueltas({ reporte, tipo }: Props) {
   )
 }
 
+type Detalle = OperationTypeReport['not_working']['detail'][number]
+
+/** "No trabajaron" en una sola tabla (pedido del usuario 11/10): origen y empresa
+ *  por motivo, y cada fila se abre en sus conductores (o equipos), cada uno con
+ *  un 1 bajo su motivo. Lo que la fila cuenta y no tiene persona detrás es el
+ *  faltante de la dotación, que va como su propia línea. */
+function TablaDeNoTrabajaron({ reporte, porConductor }: { reporte: OperationTypeReport; porConductor: boolean }) {
+  const { reasons, by_reason: rows, detail } = reporte.not_working
+  const [abiertas, setAbiertas] = useState<ReadonlySet<string>>(new Set())
+  const alternar = (clave: string) => setAbiertas(a => {
+    const nueva = new Set(a)
+    if (nueva.has(clave)) nueva.delete(clave)
+    else nueva.add(clave)
+    return nueva
+  })
+  const etiqueta = (d: Detalle) => (porConductor ? `${d.name} · ${d.tractor_plate ?? 'sin tracto reciente'}` : d.name)
+
+  return (
+    <div className="bg-white rounded-xl border border-border overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className={CABECERA}>
+            <th className={`text-left ${TH}`}>Origen › Empresa</th>
+            {reasons.map(m => <th key={m} className={`text-right ${TH}`}>{m}</th>)}
+            <th className={`text-right ${TH}`}>Total</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/60">
+          {rows.map(r => {
+            const clave = `${r.origin}\u0000${r.carrier_name ?? ''}`
+            const abierta = abiertas.has(clave)
+            const hijos = detail.filter(d => (d.home_origin ?? 'Sin origen') === r.origin && d.carrier_name === r.carrier_name)
+            const faltante = Object.fromEntries(reasons.map(m => [m, (r.counts[m] ?? 0) - hijos.filter(d => d.reason === m).length]))
+            const totalFaltante = reasons.reduce((acc, m) => acc + Math.max(faltante[m], 0), 0)
+            return [
+              <tr key={clave} className="font-semibold">
+                <td className="py-2 pl-3 pr-3">
+                  <button type="button" aria-expanded={abierta} onClick={() => alternar(clave)}
+                          className="flex items-center gap-1 text-left hover:text-accent">
+                    <ChevronRight size={12} aria-hidden className={`transition-transform ${abierta ? 'rotate-90' : ''}`} />
+                    {r.origin} › {r.carrier_name ?? '—'}
+                  </button>
+                </td>
+                {reasons.map(m => <td key={m} className="px-3 py-2 text-right">{r.counts[m] ?? 0}</td>)}
+                <td className="px-3 py-2 text-right font-bold">{r.total}</td>
+              </tr>,
+              ...(abierta ? hijos.map((d, i) => (
+                <tr key={`${clave}-${i}`} className="text-gray-500">
+                  <td className={`py-2 pl-7 pr-3 ${porConductor ? '' : 'font-mono'}`}>{etiqueta(d)}</td>
+                  {reasons.map(m => <td key={m} className="px-3 py-2 text-right">{d.reason === m ? 1 : ''}</td>)}
+                  <td className="px-3 py-2 text-right">1</td>
+                </tr>
+              )) : []),
+              ...(abierta && totalFaltante > 0 ? [
+                <tr key={`${clave}-faltante`} className="text-gray-500 italic">
+                  <td className="py-2 pl-7 pr-3">Faltante de dotación</td>
+                  {reasons.map(m => <td key={m} className="px-3 py-2 text-right">{faltante[m] > 0 ? faltante[m] : ''}</td>)}
+                  <td className="px-3 py-2 text-right">{totalFaltante}</td>
+                </tr>,
+              ] : []),
+            ]
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-border font-bold bg-gray-50">
+            <td className="px-3 py-2">Total</td>
+            {reasons.map(m => <td key={m} className="px-3 py-2 text-right">{sumar(rows, r => r.counts[m])}</td>)}
+            <td className="px-3 py-2 text-right">{sumar(rows, r => r.total)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  )
+}
+
 export function SeccionNoTrabajaron({ reporte, tipo }: Props) {
-  const nw = reporte.not_working
   const porConductor = tipo.clave === 'tractoreo'
-  if (nw.by_reason.length === 0) {
+  if (reporte.not_working.by_reason.length === 0) {
     return <Vacio>No hay {porConductor ? 'conductores' : 'equipos'} de {tipo.etiqueta} sin trabajar</Vacio>
   }
   return (
-    <div className="space-y-4">
-      <div>
-        <Titulo>Por motivo</Titulo>
-        <TablaDeMotivos reasons={nw.reasons} rows={nw.by_reason} />
-      </div>
-      {nw.detail.length > 0 && (
-        <div>
-          <Titulo>{porConductor ? 'Por conductor' : 'Por equipo'}</Titulo>
-          <div className="bg-white rounded-xl border border-border overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className={CABECERA}>
-                  <th className={`text-left ${TH}`}>{porConductor ? 'Conductor' : 'Equipo'}</th>
-                  <th className={`text-left ${TH}`}>Empresa</th>
-                  <th className={`text-left ${TH}`}>Origen habitual</th>
-                  <th className={`text-left ${TH}`}>Motivo</th>
-                  {porConductor && <th className={`text-left ${TH}`}>Tracto habitual</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {nw.detail.map((d, i) => (
-                  <tr key={`${d.name}-${i}`}>
-                    <td className={`px-3 py-2 font-medium ${porConductor ? '' : 'font-mono'}`}>{d.name}</td>
-                    <td className="px-3 py-2 text-gray-500">{d.carrier_name ?? '—'}</td>
-                    <td className="px-3 py-2 text-gray-500">{d.home_origin ?? 'Sin origen'}</td>
-                    <td className="px-3 py-2 text-gray-500">{d.reason}</td>
-                    {porConductor && <td className="px-3 py-2 text-gray-500">{d.tractor_plate ?? 'Sin tracto reciente'}</td>}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+    <div className="space-y-2">
+      <p className="text-dato text-gray-500">
+        Por motivo. Abre una empresa para ver {porConductor ? 'sus conductores' : 'sus equipos'}.
+      </p>
+      <TablaDeNoTrabajaron reporte={reporte} porConductor={porConductor} />
     </div>
   )
 }

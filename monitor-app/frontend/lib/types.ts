@@ -1668,6 +1668,12 @@ export type AssignedRow = {
   region:       number
   unclassified: number
   total:        number
+  /** Los tractos de la fila con su conductor: la vista por conductor (11/10). */
+  vehicles: {
+    tractor_plate: string | null
+    driver_name:   string | null
+    zone:          'rm' | 'z0' | 'region' | 'unclassified'
+  }[]
 }
 
 /** Origen × empresa con un conteo por motivo; `counts` trae solo los motivos con casos. */

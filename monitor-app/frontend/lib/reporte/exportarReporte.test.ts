@@ -10,8 +10,10 @@ function reporte(over: Partial<OperationTypeReport> = {}): OperationTypeReport {
                multi_day: { total: 1, by_days_back: { '2': 1 } } },
     assigned: {
       rows: [
-        { client_name: 'Walmart', origin: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', rm: 1, z0: 0, region: 0, unclassified: 0, total: 1 },
-        { client_name: 'Walmart', origin: 'CD Quilicura', carrier_name: 'Norte Spa', rm: 0, z0: 1, region: 0, unclassified: 0, total: 1 },
+        { client_name: 'Walmart', origin: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', rm: 1, z0: 0, region: 0, unclassified: 0, total: 1,
+          vehicles: [{ tractor_plate: 'ABCD12', driver_name: 'Juan Pérez', zone: 'rm' }] },
+        { client_name: 'Walmart', origin: 'CD Quilicura', carrier_name: 'Norte Spa', rm: 0, z0: 1, region: 0, unclassified: 0, total: 1,
+          vehicles: [{ tractor_plate: 'EFGH34', driver_name: 'Ana Soto', zone: 'z0' }] },
       ],
       other_origin: [],
     },
@@ -55,6 +57,8 @@ describe('hojasDelReporte', () => {
     expect(negrita(empresa[7])).toBe(false)
     const pie = hoja.data[hoja.data.length - 1]
     expect(pie.map(valor)).toEqual(['Total', null, null, 1, 1, 0, 0, 2])
+    // Como el CSV de Pablo: hasta la empresa, sin los conductores.
+    expect(JSON.stringify(hoja.data)).not.toContain('Juan Pérez')
   })
 
   it('No trabajaron dice "Conductor" en Tractoreo y "Equipo" en Equipo Completo', () => {

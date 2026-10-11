@@ -34,8 +34,13 @@ const TRACTOREO: OperationTypeReport = {
   },
   assigned: {
     rows: [
-      { client_name: 'Walmart', origin: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', rm: 3, z0: 1, region: 0, unclassified: 0, total: 4 },
-      { client_name: 'Walmart', origin: 'CD Quilicura', carrier_name: 'Norte Spa', rm: 0, z0: 0, region: 2, unclassified: 0, total: 2 },
+      { client_name: 'Walmart', origin: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', rm: 3, z0: 1, region: 0, unclassified: 0, total: 4,
+        vehicles: [
+          { tractor_plate: 'AAAA11', driver_name: 'Ana Soto', zone: 'rm' }, { tractor_plate: 'BBBB22', driver_name: 'Luis Rojas', zone: 'rm' },
+          { tractor_plate: 'CCCC33', driver_name: 'Pía Díaz', zone: 'rm' }, { tractor_plate: 'DDDD44', driver_name: null, zone: 'z0' },
+        ] },
+      { client_name: 'Walmart', origin: 'CD Quilicura', carrier_name: 'Norte Spa', rm: 0, z0: 0, region: 2, unclassified: 0, total: 2,
+        vehicles: [{ tractor_plate: 'EEEE55', driver_name: 'Eva Ríos', zone: 'region' }, { tractor_plate: 'FFFF66', driver_name: 'Juan Pérez', zone: 'region' }] },
     ],
     other_origin: [{ tractor_plate: 'ZZZZ99', carrier_name: 'Transportes Sur', home_origin: 'CD El Peñón', origin: 'CD Quilicura', client_name: 'Walmart' }],
   },
@@ -45,9 +50,16 @@ const TRACTOREO: OperationTypeReport = {
   },
   second_legs: [{ tractor_plate: 'ABCD12', carrier_name: 'Transportes Sur', driver_name: 'Ana Soto', origin: 'CD Lo Aguirre', destination_zone: 'RM', legs: 2 }],
   not_working: {
-    reasons: ['Panne'],
-    by_reason: [{ origin: 'CD El Peñón', carrier_name: 'Otra Spa', counts: { Panne: 2 }, total: 2 }],
-    detail: [{ name: 'Juan Pérez', carrier_name: 'Otra Spa', home_origin: 'CD El Peñón', reason: 'Panne', tractor_plate: 'ABCD12' }],
+    reasons: ['Panne', 'Sin conductor'],
+    by_reason: [
+      { origin: 'CD El Peñón', carrier_name: 'Otra Spa', counts: { Panne: 2 }, total: 2 },
+      { origin: 'Sin origen', carrier_name: 'Faltante Spa', counts: { Panne: 1, 'Sin conductor': 2 }, total: 3 },
+    ],
+    detail: [
+      { name: 'Juan Pérez', carrier_name: 'Otra Spa', home_origin: 'CD El Peñón', reason: 'Panne', tractor_plate: 'ABCD12' },
+      { name: 'Rosa Vera', carrier_name: 'Otra Spa', home_origin: 'CD El Peñón', reason: 'Panne', tractor_plate: null },
+      { name: 'Hugo Lara', carrier_name: 'Faltante Spa', home_origin: null, reason: 'Panne', tractor_plate: 'XYZW12' },
+    ],
   },
   carriers: [{ carrier_name: 'Transportes Sur', enrolled: 5, assigned: 2, unassigned: 3, utilization_pct: 40.0 }],
 }
@@ -183,21 +195,51 @@ describe('StatusReportSection', () => {
     expect(within(fila).getByText('2')).toBeInTheDocument()
   })
 
-  it('No trabajaron va por conductor en Tractoreo y por equipo en Equipo Completo', async () => {
+  it('Asignados abre una empresa en sus conductores, con la patente', async () => {
+    const body = renderSection()
+    await abrir(body, 'Asignados')
+    fireEvent.click(body.getByRole('button', { name: 'CD Lo Aguirre' }))
+    const empresa = body.getByRole('button', { name: 'Transportes Sur' })
+    expect(empresa).toHaveAttribute('aria-expanded', 'false')
+    expect(body.queryByText('Ana Soto · AAAA11')).not.toBeInTheDocument()
+    fireEvent.click(empresa)
+    expect(body.getByText('Ana Soto · AAAA11')).toBeInTheDocument()
+    expect(body.getByText('Sin conductor · DDDD44')).toBeInTheDocument()
+  })
+
+  it('No trabajaron es una sola tabla por motivo: cada fila se abre en sus conductores', async () => {
     const body = renderSection()
     await abrir(body, 'No trabajaron')
-    expect(body.getByRole('columnheader', { name: 'Conductor' })).toBeInTheDocument()
-    expect(body.getByText('Juan Pérez')).toBeInTheDocument()
+    expect(body.getAllByRole('table')).toHaveLength(1)
+    expect(body.queryByText('Juan Pérez')).not.toBeInTheDocument()
+    fireEvent.click(body.getByRole('button', { name: /Otra Spa/ }))
+    const juan = body.getByText('Juan Pérez · ABCD12').closest('tr')!
+    // Su 1 va bajo su motivo; el total de la fila de la empresa no cambia.
+    expect(within(juan).getAllByRole('cell').map(c => c.textContent)).toEqual(['Juan Pérez · ABCD12', '1', '', '1'])
+    expect(body.getByText('Rosa Vera · sin tracto reciente')).toBeInTheDocument()
+  })
+
+  it('el faltante de dotación aparece como su propia línea bajo "Sin conductor"', async () => {
+    const body = renderSection()
+    await abrir(body, 'No trabajaron')
+    fireEvent.click(body.getByRole('button', { name: /Faltante Spa/ }))
+    const faltante = body.getByText('Faltante de dotación').closest('tr')!
+    expect(within(faltante).getAllByRole('cell').map(c => c.textContent)).toEqual(['Faltante de dotación', '', '2', '2'])
+  })
+
+  it('en Equipo Completo la fila se abre en los equipos', async () => {
+    const body = renderSection()
+    await abrir(body, 'No trabajaron')
     fireEvent.click(body.getByRole('button', { name: 'Equipo Completo' }))
-    expect(body.getByRole('columnheader', { name: 'Equipo' })).toBeInTheDocument()
-    expect(body.getAllByText('EQUI01').length).toBeGreaterThan(0)
+    fireEvent.click(body.getByRole('button', { name: /Equipos Sur/ }))
+    expect(body.getByText('EQUI01')).toBeInTheDocument()
   })
 
   it('las columnas de motivo son las que manda la API, ni una más', async () => {
     const body = renderSection()
     await abrir(body, 'No trabajaron')
     const tabla = body.getAllByRole('table')[0]
-    expect(within(tabla).getAllByRole('columnheader').map(c => c.textContent)).toEqual(['Origen', 'Empresa', 'Panne', 'Total'])
+    expect(within(tabla).getAllByRole('columnheader').map(c => c.textContent)).toEqual(['Origen › Empresa', 'Panne', 'Sin conductor', 'Total'])
   })
 
   it('Dotación muestra las inconsistencias de dotación', async () => {

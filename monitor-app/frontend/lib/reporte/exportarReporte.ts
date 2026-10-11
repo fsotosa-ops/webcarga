@@ -45,7 +45,8 @@ function resumen(r: OperationTypeReport): Fila[] {
  *  cliente y origen en negrita, el total general al pie. */
 function asignados(r: OperationTypeReport): Fila[] {
   const arbol = arbolDeAsignados(r.assigned.rows)
-  const cuerpo = filasDelArbol(arbol).map(f => {
+  // Hasta la empresa, como el CSV de Pablo: los conductores son para la pantalla.
+  const cuerpo = filasDelArbol(arbol, (_clave, nivel) => nivel < 2).map(f => {
     const fila: Valor[] = [f.nivel === 0 ? f.etiqueta : null, f.nivel === 1 ? f.etiqueta : null,
                            f.nivel === 2 ? f.etiqueta : null, ...zonas(f.cifras)]
     return f.nivel < 2 ? negrita(fila) : fila
