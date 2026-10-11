@@ -12,7 +12,7 @@ C1, C2, A1, D1, S1 = "c1", "c2", "a1", "d1", "s1"
 
 def senales(**kw) -> Senales:
     base = dict(patentes=[], conductores=[], pares_cliente=[], empresas_por_clave={},
-                clientes_por_clave={}, vinculos_activos=set(), nombres_empresa={})
+                vinculos_activos=set(), nombres_empresa={})
     base.update(kw)
     return Senales(**base)
 
@@ -94,14 +94,13 @@ def test_nombre_distinto_para_el_mismo_rut_se_corrige():
 
 def test_cliente_nuevo_de_una_patente_resuelta_se_vincula():
     c = clasificar(senales(patentes=[patente(carrier_names=["WEBCARGA"])],
-                           pares_cliente=[ParCliente(plate="ABCD12", client_name="walmart")],
-                           clientes_por_clave={"WALMART": (S1, "Walmart")},
+                           pares_cliente=[ParCliente(plate="ABCD12", shipper_id=S1, shipper_name="Walmart")],
                            nombres_empresa={C1: "Trans Norte"}))
     assert [(v.carrier_id, v.shipper_id) for v in c.vinculos] == [(C1, S1)]
 
 
 def test_cliente_ya_vinculado_no_se_repite():
     c = clasificar(senales(patentes=[patente(carrier_names=["WEBCARGA"])],
-                           pares_cliente=[ParCliente(plate="ABCD12", client_name="walmart")],
-                           clientes_por_clave={"WALMART": (S1, "Walmart")}, vinculos_activos={(C1, S1)}))
+                           pares_cliente=[ParCliente(plate="ABCD12", shipper_id=S1, shipper_name="Walmart")],
+                           vinculos_activos={(C1, S1)}))
     assert c.vinculos == []

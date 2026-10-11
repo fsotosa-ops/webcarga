@@ -43,6 +43,7 @@ from ..authz import Permission, require
 from ..db import get_pool
 from ..services.fleet_driver_gap import compute_fleet_driver_gap
 from ..services.origen_del_viaje import origen_del_viaje
+from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente
 from ..services.cierre_lineas import (
     GRUPO_NO_TRABAJANDO, GRUPO_TRABAJANDO_SIN_ASIGNACION, LINEAS_CONDUCTORES, LINEAS_TRACTOS, frescura_del_dia,
 )
@@ -91,8 +92,10 @@ _TODAY_TRIPS_SQL = f"""
 SELECT
     t.id AS trip_id,
     vfr.resolved_tractor_asset_id AS asset_id,
-    -- El nombre del directorio: el TMS manda "walmart" o "WALMART".
-    COALESCE(sh.name, t.client_name) AS client_name,
+    -- El cliente del directorio, por id (spec 2026-10-11): el id para filtrar y
+    -- el nombre para mostrar (services/cliente_del_viaje.nombre_del_cliente).
+    t.shipper_id::text AS shipper_id,
+    {nombre_del_cliente('t', 'sh')} AS client_name,
     t.planning_date,
     d.full_name AS driver_name,
     t.status_reported_at,
@@ -105,7 +108,7 @@ SELECT
 FROM app.trips t
 JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
 LEFT JOIN public.drivers d ON d.id = vfr.resolved_driver_id
-LEFT JOIN public.shippers sh ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE'
+{join_cliente('t', 'sh')}
 WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
   AND vfr.resolved_tractor_asset_id IS NOT NULL
 """
@@ -167,8 +170,8 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
     for r in trip_rows:
         trips_by_asset.setdefault(r["asset_id"], []).append(r)
 
-    client_names = {r["client_name"].strip().lower() for r in trip_rows if r["client_name"]}
-    buckets = await _load_operation_type_buckets(pool, client_names)
+    shipper_ids = {r["shipper_id"] for r in trip_rows if r["shipper_id"]}
+    buckets = await _load_operation_type_buckets(pool, shipper_ids)
 
     trip_ids = [r["trip_id"] for r in trip_rows]
     leg_rows = await pool.fetch(
@@ -215,8 +218,7 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
         destination_zone = None
         dias_en_curso = None
         if latest:
-            shipper_key = (latest["client_name"] or "").strip().lower()
-            bucket = buckets.get(shipper_key)
+            bucket = buckets.get(latest["shipper_id"])
             op_type = _resolve_operation_type(bucket, latest["last_destination_local"])
             destination_zone = _zone_bucket(op_type)
             if latest["planning_date"]:
@@ -236,6 +238,7 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
             # también —sobre todo— para el que no trabajó.
             "home_cd": (status_row or {}).get("home_cd"),
             "client_name": latest["client_name"] if latest else None,
+            "shipper_id": latest["shipper_id"] if latest else None,
             "destination_zone": destination_zone,
             "driver_name": latest["driver_name"] if latest else None,
             "dias_en_curso": dias_en_curso,
@@ -294,9 +297,9 @@ async def _build_driver_rows(pool, business_date: _date) -> list[dict]:
     return [r for r in rows if r["category"] in ("NO_TRABAJANDO", "SIN_RESOLVER")]
 
 
-# Los clientes de cada empresa, del directorio: el mismo cruce que daily_closures.py.
+# Los clientes de cada empresa en el directorio, por id.
 _SQL_CLIENTES_POR_EMPRESA = """
-SELECT cs.carrier_id, array_agg(DISTINCT sh.name ORDER BY sh.name) AS clients
+SELECT cs.carrier_id, array_agg(DISTINCT sh.id::text) AS clients
 FROM public.carrier_shippers cs
 JOIN public.shippers sh ON sh.id = cs.shipper_id AND sh.status = 'ACTIVE'
 WHERE cs.status = 'ACTIVE'
@@ -312,20 +315,18 @@ def _clientes_de_la_fila(fila: dict, clientes_por_empresa: dict) -> list[str]:
       - sin carga, o sin noción de carga (conductor que no trabajó, faltante de
         dotación): a cada cliente de su empresa en el directorio.
     Así, con "Walmart" elegido, el reporte habla de la flota que trabaja para
-    Walmart, haya cargado o no."""
+    Walmart, haya cargado o no.
+    Todo por id del directorio: un viaje sin cliente vinculado no pertenece a
+    ninguno (cuenta solo en "Todos los clientes")."""
     if fila.get("con_carga"):
-        return [fila["client_name"]] if fila["client_name"] else []
+        return [fila["shipper_id"]] if fila.get("shipper_id") else []
     return list(clientes_por_empresa.get(fila["carrier_id"], []))
 
 
-def _filter_by_client(rows: list[dict], client: str | None, clientes_por_empresa: dict) -> list[dict]:
-    if not client:
+def _filter_by_client(rows: list[dict], shipper_id: str | None, clientes_por_empresa: dict) -> list[dict]:
+    if not shipper_id:
         return rows
-    buscado = client.strip().lower()
-    return [
-        r for r in rows
-        if any(c.strip().lower() == buscado for c in _clientes_de_la_fila(r, clientes_por_empresa))
-    ]
+    return [r for r in rows if shipper_id in _clientes_de_la_fila(r, clientes_por_empresa)]
 
 
 def _clientes_del_dia(rows: list[dict]) -> list[dict]:
@@ -335,16 +336,19 @@ def _clientes_del_dia(rows: list[dict]) -> list[dict]:
     tarjetas (Walmart el 10/10: 31 en Tractoreo, 4 en Equipo Completo). Sale del
     día completo, antes del filtro, para que la lista no cambie al elegir."""
     acc: dict = {}
+    nombres: dict = {}
     for r in rows:
-        if not (r["con_carga"] and r["client_name"]):
+        # Por id: un viaje sin cliente vinculado no es una opción del filtro.
+        if not (r["con_carga"] and r.get("shipper_id")):
             continue
+        nombres[r["shipper_id"]] = r["client_name"]
         for clave, codigo in _TIPOS.items():
             if codigo in r["categories"]:
-                b = acc.setdefault(r["client_name"], {clave_: 0 for clave_ in _TIPOS})
+                b = acc.setdefault(r["shipper_id"], {clave_: 0 for clave_ in _TIPOS})
                 b[clave] += 1
     return [
-        {"client_name": k, "assigned": sum(v.values()), "by_operation_type": v}
-        for k, v in sorted(acc.items(), key=lambda kv: (-sum(kv[1].values()), kv[0]))
+        {"shipper_id": k, "client_name": nombres[k], "assigned": sum(v.values()), "by_operation_type": v}
+        for k, v in sorted(acc.items(), key=lambda kv: (-sum(kv[1].values()), nombres[kv[0]]))
     ]
 
 
@@ -568,15 +572,15 @@ def _reporte_del_tipo(rows: list[dict], *, no_trabajaron: dict, catalogo_sin_asi
 
 
 @router.get("")
-async def get_status_report(fecha: str, client: str | None = None, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
+async def get_status_report(fecha: str, shipper_id: str | None = None, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
     business_date = _parse_business_date(fecha)
     clientes_por_empresa = {r["carrier_id"]: list(r["clients"]) for r in await pool.fetch(_SQL_CLIENTES_POR_EMPRESA)}
     all_rows = await _build_asset_rows(pool, business_date)
-    rows = _filter_by_client(all_rows, client, clientes_por_empresa)
+    rows = _filter_by_client(all_rows, shipper_id, clientes_por_empresa)
     por_tipo = {clave: [r for r in rows if codigo in r["categories"]] for clave, codigo in _TIPOS.items()}
     # Conductores y faltante de dotación, con la misma regla de pertenencia.
-    driver_rows = _filter_by_client(await _build_driver_rows(pool, business_date), client, clientes_por_empresa)
-    faltantes = _filter_by_client(await compute_fleet_driver_gap(pool), client, clientes_por_empresa)
+    driver_rows = _filter_by_client(await _build_driver_rows(pool, business_date), shipper_id, clientes_por_empresa)
+    faltantes = _filter_by_client(await compute_fleet_driver_gap(pool), shipper_id, clientes_por_empresa)
     catalogo_no_trabajo = [r["label"] for r in await pool.fetch(_SQL_MOTIVOS_DEL_GRUPO, GRUPO_NO_TRABAJANDO)]
     catalogo_sin_asignacion = [
         r["label"] for r in await pool.fetch(_SQL_MOTIVOS_DEL_GRUPO, GRUPO_TRABAJANDO_SIN_ASIGNACION)
@@ -590,7 +594,7 @@ async def get_status_report(fecha: str, client: str | None = None, pool=Depends(
     }
     return {
         "business_date": business_date.isoformat(),
-        "client_filter": client,
+        "client_filter": shipper_id,
         "clients": _clientes_del_dia(all_rows),
         # El faltante de dotación con el mismo filtro: lo leen la pestaña Dotación,
         # el PDF y el Excel, para que todas las cifras digan lo mismo.

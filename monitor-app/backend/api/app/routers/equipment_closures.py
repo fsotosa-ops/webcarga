@@ -130,15 +130,12 @@ LEFT JOIN LATERAL (
 LEFT JOIN LATERAL (
     SELECT t.id AS trip_id, vfr.resolved_driver_id AS trip_driver_id, td.full_name AS trip_driver_name,
            t.source_system_trip_id, {origen_del_viaje('t')} AS origen,
-           COALESCE(sh.name, t.client_name) AS client_name
+           COALESCE(sh.name, t.client_name || ' · sin vincular') AS client_name
     FROM app.trips t
     JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
     LEFT JOIN public.drivers td ON td.id = vfr.resolved_driver_id
-    -- Mismo criterio que daily_closures.py y trips.py (_TRIP_FROM): el
-    -- client_name crudo del TMS viene en minusculas ("walmart"), y
-    -- public.shippers tiene el nombre prolijo.
-    LEFT JOIN public.shippers sh
-           ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE'
+    -- El cliente del directorio, por id (spec 2026-10-11; services/cliente_del_viaje.py).
+    LEFT JOIN public.shippers sh ON sh.id = t.shipper_id
     WHERE vfr.resolved_tractor_asset_id = eds.asset_id
       AND t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
     ORDER BY t.status_reported_at DESC NULLS LAST

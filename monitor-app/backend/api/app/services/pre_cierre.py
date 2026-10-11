@@ -85,8 +85,11 @@ class Conductor:
 
 @dataclass(frozen=True)
 class ParCliente:
+    """Una patente y el cliente del directorio de su viaje del día (por id,
+    spec 2026-10-11)."""
     plate: str
-    client_name: str
+    shipper_id: str
+    shipper_name: str
 
 
 @dataclass(frozen=True)
@@ -96,8 +99,6 @@ class Senales:
     pares_cliente: list[ParCliente]
     # clave = upper(trim(business_name)) → [(id, business_name)]
     empresas_por_clave: dict[str, list[tuple[str, str]]]
-    # clave = upper(trim(name)) → (id, name); el primero, como el fetchrow de antes
-    clientes_por_clave: dict[str, tuple[str, str]]
     vinculos_activos: set[tuple[str, str]]
     nombres_empresa: dict[str, str]
 
@@ -198,10 +199,7 @@ def clasificar(s: Senales) -> Clasificacion:
         carrier_id = c.carrier_por_patente.get(par.plate)
         if not carrier_id:
             continue
-        cliente = s.clientes_por_clave.get(_normalize(par.client_name))
-        if not cliente:
-            continue
-        shipper_id, shipper_name = cliente
+        shipper_id, shipper_name = par.shipper_id, par.shipper_name
         clave = (carrier_id, shipper_id)
         if clave in s.vinculos_activos or clave in vistos:
             continue
@@ -256,10 +254,13 @@ LEFT JOIN LATERAL (
 """
 
 _SQL_PARES_CLIENTE = """
-SELECT DISTINCT upper(trim(t.fleet->>'tractor_plate')) AS plate, t.client_name
+SELECT DISTINCT upper(trim(t.fleet->>'tractor_plate')) AS plate,
+       t.shipper_id::text AS shipper_id, sh.name AS shipper_name
 FROM app.trips t
+-- El cliente del directorio, por id (spec 2026-10-11). Un viaje sin vincular no
+-- propone vínculo empresa-cliente: no se sabe de qué cliente es.
+JOIN public.shippers sh ON sh.id = t.shipper_id AND sh.status = 'ACTIVE'
 WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND t.fleet->>'tractor_plate' IS NOT NULL
-  AND t.client_name IS NOT NULL
 """
 
 
@@ -278,14 +279,6 @@ async def leer_senales(conn, fecha: _date) -> Senales:
     ):
         empresas.setdefault(r["clave"], []).append((r["id"], r["business_name"]))
 
-    claves_cliente = sorted({_normalize(p.client_name) for p in pares})
-    clientes: dict[str, tuple[str, str]] = {}
-    for r in await conn.fetch(
-        "SELECT id::text AS id, name, upper(trim(name)) AS clave "
-        "FROM public.shippers WHERE upper(trim(name)) = ANY($1::text[]) ORDER BY id",
-        claves_cliente,
-    ):
-        clientes.setdefault(r["clave"], (r["id"], r["name"]))
 
     ids_empresa = sorted({p.carrier_id for p in patentes if p.carrier_id}
                          | {i for lista in empresas.values() for i, _ in lista})
@@ -296,7 +289,7 @@ async def leer_senales(conn, fecha: _date) -> Senales:
         "SELECT id::text AS id, business_name FROM public.carriers WHERE id = ANY($1::uuid[])", ids_empresa)}
 
     return Senales(patentes=patentes, conductores=conductores, pares_cliente=pares,
-                   empresas_por_clave=empresas, clientes_por_clave=clientes,
+                   empresas_por_clave=empresas,
                    vinculos_activos=vinculos, nombres_empresa=nombres)
 
 

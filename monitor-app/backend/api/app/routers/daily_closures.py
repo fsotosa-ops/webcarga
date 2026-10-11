@@ -90,14 +90,12 @@ LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
 -- Fase 1.5 (2026-07-21): cliente(s) que el conductor sirvió ese día — el
 -- denominador común de los 3 reportes manuales hoy armados a mano
 -- (Sider/Lansa, Sodimac, Walmart todos pivotean por EETT y/o cliente).
--- Resuelve vía public.shippers para un nombre prolijo, mismo criterio ya
--- usado en trips.py (_TRIP_FROM) — client_name crudo del TMS puede venir
--- con mayúsculas/minúsculas inconsistentes.
+-- El nombre del cliente del directorio, cruzado por id (spec 2026-10-11).
 LEFT JOIN LATERAL (
-    SELECT array_agg(DISTINCT COALESCE(sh.name, t.client_name)) AS client_names
+    SELECT array_agg(DISTINCT COALESCE(sh.name, t.client_name || ' · sin vincular')) AS client_names
     FROM app.trip_fleet_links fl
     JOIN app.trips t ON t.id = fl.trip_id
-    LEFT JOIN public.shippers sh ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE'
+    LEFT JOIN public.shippers sh ON sh.id = t.shipper_id
     WHERE fl.driver_id = dds.driver_id AND t.planning_date = dds.business_date AND t.client_name IS NOT NULL
 ) clients ON true
 {_compliance_alert_lateral('dcomp', 'DRIVER', 'dds.driver_id', _DRIVER_CRITICAL_DOC_CODES)}
@@ -191,10 +189,10 @@ LEFT JOIN LATERAL (
 ) carrier_shippers ON true
 LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
 LEFT JOIN LATERAL (
-    SELECT array_agg(DISTINCT COALESCE(sh.name, t.client_name)) AS client_names
+    SELECT array_agg(DISTINCT COALESCE(sh.name, t.client_name || ' · sin vincular')) AS client_names
     FROM app.trip_fleet_links fl
     JOIN app.trips t ON t.id = fl.trip_id
-    LEFT JOIN public.shippers sh ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE'
+    LEFT JOIN public.shippers sh ON sh.id = t.shipper_id
     WHERE fl.driver_id = dds.driver_id AND t.planning_date = dds.business_date AND t.client_name IS NOT NULL
 ) clients ON true
 WHERE dds.business_date BETWEEN $1 AND $2

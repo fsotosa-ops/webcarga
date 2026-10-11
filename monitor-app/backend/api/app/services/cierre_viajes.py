@@ -38,7 +38,7 @@ SQL_BASE = """    SELECT t.id AS trip_id, t.planning_date,
            -- mientras "Flota del dia" -que resuelve por public.shippers-
            -- mostraba "Walmart" en la columna que se llama IGUAL. La misma
            -- columna diciendo dos cosas distintas segun la pestana.
-           COALESCE(sh.name, t.client_name) AS client_name,
+           COALESCE(sh.name, t.client_name || ' · sin vincular') AS client_name,
            t.source_system_trip_id, t.trip_status, t.unassigned_reason_id,
            t.is_active, t.is_assigned,
            round((EXTRACT(EPOCH FROM (now() - t.status_reported_at)) / 86400)::numeric, 1)
@@ -84,8 +84,7 @@ SQL_BASE = """    SELECT t.id AS trip_id, t.planning_date,
             WHERE st.trip_id = t.id AND st.stop_type = 'DESTINATION'
         ) x
     ) entrega ON true
-    LEFT JOIN public.shippers sh
-           ON lower(trim(sh.name)) = lower(trim(t.client_name)) AND sh.status = 'ACTIVE'
+    LEFT JOIN public.shippers sh ON sh.id = t.shipper_id
     -- planning_date IS NULL sólo entra si NOT is_active: así el único grupo
     -- que puede alcanzar (abandonado, que no exige fecha) queda disponible
     -- para él, pero un viaje activo sin fecha sigue sin calzar en ningún

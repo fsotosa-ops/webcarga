@@ -197,7 +197,8 @@ def test_el_detalle_trae_el_generador_de_carga():
     TMS viene en minusculas ("walmart")."""
     from app.routers.equipment_closures import _DETAIL_SQL
     assert "today_trip.client_name AS today_trip_client" in _DETAIL_SQL
-    assert "COALESCE(sh.name, t.client_name) AS client_name" in _DETAIL_SQL
+    assert "COALESCE(sh.name, t.client_name || ' · sin vincular') AS client_name" in _DETAIL_SQL
+    assert "LEFT JOIN public.shippers sh ON sh.id = t.shipper_id" in _DETAIL_SQL
     assert "LEFT JOIN public.shippers sh" in _DETAIL_SQL
 
 

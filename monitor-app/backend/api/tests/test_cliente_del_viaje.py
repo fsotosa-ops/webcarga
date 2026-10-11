@@ -65,3 +65,17 @@ def test_el_filtro_de_cliente_es_por_id_y_acepta_los_sin_vincular():
 def test_los_tipos_de_operacion_se_indexan_por_id():
     fuente = inspect.getsource(trips._load_operation_type_buckets)
     assert "s.id = ANY($1::uuid[])" in fuente and "lower(" not in fuente
+
+
+import pathlib
+import re
+
+APP = pathlib.Path(__file__).resolve().parents[1] / "app"
+CRUCE_POR_TEXTO = re.compile(r"lower\((b?trim\()?(sh2?|s|hs)\.name|lower\((b?trim\()?t\.client_name|upper\(trim\(name\)\)")
+
+
+def test_ningun_cruce_de_cliente_por_texto_queda_en_el_backend():
+    """El criterio de aceptación del spec §5."""
+    hallazgos = [f"{p.relative_to(APP)}:{i}" for p in APP.rglob("*.py")
+                 for i, linea in enumerate(p.read_text().splitlines(), 1) if CRUCE_POR_TEXTO.search(linea)]
+    assert hallazgos == []

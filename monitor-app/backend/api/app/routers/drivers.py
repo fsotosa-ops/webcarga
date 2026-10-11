@@ -183,8 +183,8 @@ WITH viajes AS (
     JOIN app.trips t ON t.id = fl.trip_id
     -- El origen del viaje: una sola definición (services/origen_del_viaje.py).
     JOIN LATERAL (SELECT {origen_del_viaje('t')} AS local) ts ON ts.local IS NOT NULL
-    JOIN public.shippers sh
-      ON lower(btrim(sh.name)) = lower(btrim(t.client_name)) AND sh.status = 'ACTIVE'
+    -- El cliente del directorio, por id (spec 2026-10-11).
+    JOIN public.shippers sh ON sh.id = t.shipper_id AND sh.status = 'ACTIVE'
     -- lower(name) y no lower(btrim(name)): es la expresión exacta del índice
     -- único locations_entity_name_site_number_ci_key.
     JOIN public.locations l

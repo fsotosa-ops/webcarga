@@ -278,7 +278,9 @@ async def test_el_endpoint_agrupa_y_dice_cuantos_bloquean(conexion_revertida):
             f"el viaje sintetico de {grupo_esperado} no aterrizo en ese grupo")
 
     item_hoy = next(v for v in resp["grupos"]["hoy"] if v["trip_id"] == str(id_hoy))
-    assert item_hoy["client_name"] == "TEST-CIERRE"
+    # El viaje sintético no tiene cliente vinculado en el directorio: se muestra
+    # con su texto y la marca, nunca desaparece (spec 2026-10-11).
+    assert item_hoy["client_name"] == "TEST-CIERRE · sin vincular"
     assert item_hoy["planning_date"] == FECHA_NEGOCIO.isoformat()
     assert isinstance(item_hoy["dias_sin_novedad"], float)
     # Sin motivo, porque desde el 14/09 tenerlo lo saca de los cuatro grupos
