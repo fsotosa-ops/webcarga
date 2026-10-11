@@ -35,7 +35,9 @@ async def test_trips_del_dia_excluye_los_anulados(conexion_revertida):
     assert await conn.fetchval(del_dia, DIA, tid) is True
 
     await conn.execute(
-        "UPDATE app.trips SET voided_at = now(), voided_by = $2::uuid, void_reason = 'Duplicado' WHERE id = $1::uuid",
+        "UPDATE app.trips SET voided_at = now(), voided_by = $2::uuid, void_reason_id = "
+        "(SELECT id FROM app.status_taxonomies WHERE domain = 'TRIP_VOID_REASON' AND code = 'DUPLICADO') "
+        "WHERE id = $1::uuid",
         tid, usuario["sub"])
 
     assert await conn.fetchval(del_dia, DIA, tid) is False

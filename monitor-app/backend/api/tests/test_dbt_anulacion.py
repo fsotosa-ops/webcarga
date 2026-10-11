@@ -31,3 +31,10 @@ def test_la_rama_manual_las_lleva_desde_trips_manual():
     texto = _texto()
     for col in COLUMNAS:
         assert f"m.{col}" in texto, col
+
+
+def test_el_texto_libre_void_reason_ya_no_esta_en_el_modelo():
+    """Contract de la spec 2026-10-10 motivos de anulación: el motivo es de catálogo."""
+    texto = _texto()
+    assert "'void_reason'" not in texto
+    assert "AS void_reason," not in texto

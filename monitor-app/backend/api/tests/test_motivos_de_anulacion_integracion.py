@@ -28,3 +28,9 @@ async def test_todo_viaje_anulado_tiene_motivo_de_catalogo(conexion_revertida):
     assert await conexion_revertida.fetchval(
         "SELECT count(*) FROM app.trips t JOIN app.status_taxonomies r ON r.id = t.void_reason_id "
         "WHERE t.planning_date = '2026-09-23' AND r.code = 'DUPLICADO'") == 6
+
+
+async def test_la_columna_de_texto_libre_ya_no_existe(conexion_revertida):
+    assert await conexion_revertida.fetchval(
+        "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'app' "
+        "AND table_name IN ('trips', 'trips_manual') AND column_name = 'void_reason'") == 0
