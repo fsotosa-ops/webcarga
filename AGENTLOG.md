@@ -16,6 +16,34 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-11 — Ítem 21: vista rápida de empresa, conductor y equipo desde el Cierre — desplegado en dev, verificación visual BLOQUEADA
+
+HU `monitor-app/docs/user-stories/20261011/01-hu-entity-quick-view.md` (fuera de git a propósito) y maqueta
+`monitor-app/docs/mockups/2026-10-quick-view/entity-quick-view.html`, aprobadas por el usuario (panel lateral,
+teléfono como enlace para llamar). Plan `docs/superpowers/plans/2026-10-11-entity-quick-view.md`.
+
+- **Hecho y desplegado en dev (`dedb957c`..`93b4c4cb`):**
+  - API: `GET /drivers|assets|carriers/{id}/summary` (`services/entity_summary.py`: una consulta, sin URLs
+    firmadas, estado de cada documento con los predicados de `vencimientos.py`; suma "faltan").
+  - API: las filas de `cierre-viajes` traen `carrier_id`, `driver_id` y `tractor_asset_id`.
+  - UI: primitivas `Section`, `KeyValueList`, `StatusChip`, `DocumentStatusBar`, token `--warning`, `PanelLateral`
+    con `overlay="none"`; `EntityQuickView` (variante por prop) y `useQuickView` (pila con "Volver");
+    `EntityCell` en Flota y Viajes; rutas canónicas `/dashboard/drivers/[id]` y `/dashboard/assets/[id]`
+    (`EntityRedirect`); "Volver al Cierre" en la ficha de empresa (`returnLink`).
+  - Tests: backend 10 nuevos; vitest 1.745/1.745; tsc y build OK (rutas nuevas en el manifest).
+- **Bloqueado:** al verificar, `cierre-viajes` dio 504 (80 s). **Supabase está estrangulado por Disk IO** desde
+  ~16:00 UTC del 11/10 (checkpoints de 120-200 s, statement timeouts desde 18:30); los planes son normales, no es
+  el código. Contribuyeron la ingesta de Mage y las corridas de tests de integración del día.
+- **Decisiones:** panel lateral (no vista completa ni modal); endpoints de resumen en vez de reutilizar
+  `GET /carriers/{id}` (firma una URL por documento); direcciones canónicas por id; reglas de estilo de la spec
+  2026-08-16 (memoria `feedback_implementacion_fiel_a_la_maqueta`).
+
+**Siguiente paso exacto:**
+- [ ] Cuando la base se recupere: verificación visual en dev (Cierre 08/10 › Viajes y Flota; conductor, equipo,
+      empresa; navegar dentro del panel y volver; Abrir ficha completa y Volver al Cierre; Esc y foco), capturas
+      lado a lado con la maqueta a 1440 y 390 px, y mostrarlas al usuario.
+- [ ] Después: pasada visual del detalle del viaje y de Configuración con las mismas primitivas (aprobada).
+
 ### 2026-10-11 — Cierre › Viajes: grupo "Asignación incompleta" (minuta 09/10 §2.4) — DESPLEGADO en dev
 
 - **Decisiones del usuario (11/10):** entran los del día (activos o cerrados) y los activos de antes; bloquea la
