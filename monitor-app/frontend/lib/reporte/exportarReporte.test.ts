@@ -1,0 +1,72 @@
+import { describe, it, expect } from 'vitest'
+import type { OperationTypeKey, OperationTypeReport } from '@/lib/types'
+import { hojasDelReporte } from './exportarReporte'
+
+function reporte(over: Partial<OperationTypeReport> = {}): OperationTypeReport {
+  return {
+    summary: { total: 3, assigned: 2, not_working: 1, utilization_pct: 66.7,
+               by_client: [{ client_name: 'Walmart', assigned: 2 }],
+               by_home_origin: [{ origin: 'CD Lo Aguirre', enrolled: 3, assigned: 2 }] },
+    assigned: {
+      rows: [
+        { client_name: 'Walmart', origin: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', rm: 1, z0: 0, region: 0, unclassified: 0, total: 1 },
+        { client_name: 'Walmart', origin: 'CD Quilicura', carrier_name: 'Norte Spa', rm: 0, z0: 1, region: 0, unclassified: 0, total: 1 },
+      ],
+      other_origin: [],
+    },
+    worked_without_assignment: { reasons: [], rows: [] },
+    second_legs: [],
+    not_working: { reasons: ['Panne'], by_reason: [{ origin: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', counts: { Panne: 1 }, total: 1 }],
+                   detail: [{ name: 'Juan Pérez', carrier_name: 'Transportes Sur', home_origin: 'CD Lo Aguirre', reason: 'Panne', tractor_plate: 'ABCD12' }] },
+    carriers: [{ carrier_name: 'Transportes Sur', enrolled: 3, assigned: 2, unassigned: 1, utilization_pct: 66.7 }],
+    ...over,
+  }
+}
+
+const POR_TIPO: Record<OperationTypeKey, OperationTypeReport> = { tractoreo: reporte(), equipo_completo: reporte() }
+const negrita = (v: unknown) => typeof v === 'object' && v !== null && (v as { fontWeight?: string }).fontWeight === 'bold'
+const valor = (v: unknown) => (typeof v === 'object' && v !== null ? (v as { value: unknown }).value : v)
+
+describe('hojasDelReporte', () => {
+  it('trae los dos tipos, una hoja por sección, y Dotación al final', () => {
+    expect(hojasDelReporte(POR_TIPO, []).map(h => h.sheet)).toEqual([
+      'Resumen · Tractoreo', 'Resumen · Eq. Completo',
+      'Asignados · Tractoreo', 'Asignados · Eq. Completo',
+      'Segundas vueltas · Tractoreo', 'Segundas vueltas · Eq. Completo',
+      'No trabajaron · Tractoreo', 'No trabajaron · Eq. Completo',
+      'Empresas · Tractoreo', 'Empresas · Eq. Completo',
+      'Dotación',
+    ])
+  })
+
+  it('ningún nombre de hoja pasa de 31 caracteres (Excel lo rechaza)', () => {
+    for (const h of hojasDelReporte(POR_TIPO, [])) expect(h.sheet.length).toBeLessThanOrEqual(31)
+  })
+
+  it('Asignados sigue el CSV de Pablo: subtotales en negrita y total general al pie', () => {
+    const hoja = hojasDelReporte(POR_TIPO, []).find(h => h.sheet === 'Asignados · Tractoreo')!
+    expect(hoja.data[0].map(valor)).toEqual(['Cliente', 'Origen', 'Empresa', 'RM', 'Z0', 'Región', 'Sin clasificar', 'Total'])
+    const cliente = hoja.data[1]
+    expect(valor(cliente[0])).toBe('Walmart')
+    expect(negrita(cliente[0]) && negrita(cliente[7])).toBe(true)
+    expect(valor(cliente[7])).toBe(2)
+    const empresa = hoja.data.find(f => f[2] === 'Transportes Sur')!
+    expect(negrita(empresa[7])).toBe(false)
+    const pie = hoja.data[hoja.data.length - 1]
+    expect(pie.map(valor)).toEqual(['Total', null, null, 1, 1, 0, 0, 2])
+  })
+
+  it('No trabajaron dice "Conductor" en Tractoreo y "Equipo" en Equipo Completo', () => {
+    const hojas = hojasDelReporte(POR_TIPO, [])
+    const encabezados = (nombre: string) => hojas.find(h => h.sheet === nombre)!.data.map(f => valor(f[0]))
+    expect(encabezados('No trabajaron · Tractoreo')).toContain('Conductor')
+    expect(encabezados('No trabajaron · Eq. Completo')).toContain('Equipo')
+  })
+
+  it('Dotación lista el desbalance por empresa', () => {
+    const hoja = hojasDelReporte(POR_TIPO, [
+      { carrier_id: 'c1', business_name: 'Transportes Sur', n_tractos: 3, n_conductores: 1, gap: 2 },
+    ]).find(h => h.sheet === 'Dotación')!
+    expect(hoja.data.map(f => f.map(valor))).toContainEqual(['Transportes Sur', 3, 1, 2])
+  })
+})
