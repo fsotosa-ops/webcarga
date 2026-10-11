@@ -16,7 +16,23 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
-### 2026-10-11 — Rediseño de Certificación, bloque 1 "Pendientes": SPEC ESCRITA, espera revisión (se ejecuta en otra sesión)
+### 2026-10-11 — Rediseño de Certificación, bloque 1 "Pendientes": SPEC APROBADA por el usuario (se ejecuta en otra sesión)
+
+**Spec aprobada (11/10, "estoy ok con el spec").** El siguiente paso es `superpowers:writing-plans` sobre la spec y
+elegir el método de ejecución.
+
+**Concesión deliberada, explicada al usuario:**
+- Este bloque deja la definición única de estado y alcance y la usa en Pendientes.
+- Los otros cinco lectores (avisos del viaje, vista rápida, roster del Directorio, Cierre y frontend) migran en el
+  bloque 3.
+- Mientras tanto pueden discrepar de Pendientes, como discrepan hoy entre sí. No es un parche, porque no se agrega
+  código que después haya que deshacer.
+
+**Corrección del usuario (11/10) sobre seguros:** el seguro que se carga en Certificación (SEGURO_*) es documentación
+de la empresa; Seguros (`insurance_policies`) gestiona las pólizas. La separación es intencional, no un duplicado.
+- Se corrigió la auditoría (punto 6).
+- La respuesta para Pablo (3.4 / 09/10 "¿habla con Seguros?") pasa a ser: **no, a propósito**. Son dos propósitos
+  distintos: certificar a la empresa y gestionar la póliza.
 
 Spec: `docs/superpowers/specs/2026-10-11-pending-documents-design.md`. El diseño se aprobó por secciones en el chat (brainstorming, camino de arquitectura).
 
@@ -273,8 +289,9 @@ mirror de Mage y en git, no solo aquí.
 - **D2:** el grupo "Asignación incompleta" (solo patente o solo conductor) va en Por resolver, sin motivo.
 - **D3:** anular sigue como está: el operador anula lo suyo, el admin todo.
 - **Respuestas para Pablo (sin código):** 2.5, el historial de documentos SÍ existe (archivo nuevo por carga +
-  `audit_log document_replace`), pero solo se ve desde Directorio; 3.4, la póliza NO se comparte entre Certificación
-  y Seguros (hay que cargarla dos veces); 3.2, los ajustes posteriores no ven una asignación tardía de flota sobre un
+  `audit_log document_replace`), pero solo se ve desde Directorio; 3.4, la póliza de Certificación y la de Seguros
+  son a propósito distintas (corrección del usuario 11/10: la de Certificación es documentación de la empresa; Seguros
+  gestiona la póliza), así que no "hablan" entre sí por diseño; 3.2, los ajustes posteriores no ven una asignación tardía de flota sobre un
   viaje ya firmado.
 - **Hecho (P0b, pedido del usuario): cuenta al pie del sidebar** (`159421bc`). `SidebarAccount` reúne avatar, nombre,
   rol, Cambiar contraseña y Cerrar sesión; `getDisplayName` en `lib/authz/acceso.ts`; la `Topbar` queda solo en el

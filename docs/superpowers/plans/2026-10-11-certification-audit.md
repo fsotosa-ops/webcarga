@@ -47,8 +47,11 @@ vencer y cargarlo ahí mismo. Pablo lo llamó "cubo"; dijo que la función "exis
 4. **"Por requisito" no lleva a ningún lado**, aunque `/pending?requirement_code=` ya lo soporta.
 5. **Cada escritura sobre empresas, equipos o asignaciones refresca 5 vistas materializadas.** Ese refresco
    alimenta 2 columnas y una tabla que la app no lee.
-6. **La póliza vive dos veces:** como requisitos SEGURO_* y en `insurance_policies`, cada una con su carga, su
-   firma y su alerta.
+6. ~~La póliza vive dos veces~~ **Corregido por el usuario (11/10): no es un duplicado.** El seguro que se carga
+   en Certificación (requisitos SEGURO_*) es documentación de la empresa para certificarla; Seguros
+   (`insurance_policies`) gestiona las pólizas. La separación es intencional. Lo que sí queda abierto es la pregunta
+   de Pablo del 09/10 (si cargar la póliza en Certificación "habla" con Seguros): la respuesta es que no, a
+   propósito, porque son propósitos distintos.
 7. **Cinco componentes que listan documentos** y dos vocabularios (`urgencia` contra `status`+`is_expired`).
    Cuatro zonas de arrastre independientes.
 8. **Una URL firmada por documento**, con llamadas síncronas a Supabase dentro de handlers async (N+1 HTTP), y
@@ -108,7 +111,7 @@ Un hallazgo sin evidencia no entra.
    frente a `vencimientos.py`. Las consultas van parametrizadas, son de solo lectura y ninguna recorre el padrón.
 2. **El modelo:**
    - las solicitudes, que hoy son filas de `compliance_records` con ON_REQUEST;
-   - la superposición de la póliza (SEGURO_* contra `insurance_policies`);
+   - ~~la superposición de la póliza~~ (no aplica: separación intencional, ver el punto 6);
    - las vistas materializadas y sus triggers: quién las lee, cuánto cuesta cada refresco (pg_stat_statements)
      y el lock de `trg_refresh_compliance_on_carriers_update`.
 3. **El rendimiento:** medir el tiempo de p50/p95 de los endpoints de cada trabajo (`/status`, `/pending`, la
@@ -144,7 +147,7 @@ Un hallazgo sin evidencia no entra.
 3. **Las preguntas para el cliente**, juntas y no una por una:
    - ¿qué significa "opcional"?
    - ¿un mismo F30 le sirve a dos clientes?
-   - ¿la póliza va en Certificación o en Seguros?
+   - ~~¿la póliza va en Certificación o en Seguros?~~ (resuelto: las dos, con propósitos distintos);
    - las 11 dudas de la planilla;
    - historial o pisar el archivo anterior.
 
