@@ -12,7 +12,7 @@ import { FleetDriverGapCard } from '../FleetDriverGapCard'
 import { descargarReporteExcel } from '@/lib/reporte/exportarReporte'
 import { TIPOS_DE_OPERACION } from '@/lib/reporte/tiposDeOperacion'
 import {
-  CuatroCifras, SeccionAsignados, SeccionEmpresas, SeccionNoTrabajaron, SeccionResumen, SeccionSegundasVueltas,
+  CuatroCifras, ViajesDeVariosDias, SeccionAsignados, SeccionEmpresas, SeccionNoTrabajaron, SeccionResumen, SeccionSegundasVueltas,
 } from './reporte/SeccionesDelReporte'
 
 type Seccion = 'resumen' | 'asignados' | 'segundas_vueltas' | 'no_trabajaron' | 'empresas' | 'dotacion'
@@ -116,6 +116,7 @@ export function StatusReportSection({ fecha, shippers }: Props) {
                 <div key={t.clave} className="space-y-3">
                   <p className="text-[10px] font-bold text-gray-500 uppercase">{t.etiqueta}</p>
                   <CuatroCifras reporte={porTipo[t.clave]} />
+                  <ViajesDeVariosDias reporte={porTipo[t.clave]} />
                   <table className="w-full text-xs border-collapse">
                     <tbody>
                       {porTipo[t.clave].summary.by_client.map(c => (

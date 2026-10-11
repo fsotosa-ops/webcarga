@@ -29,6 +29,9 @@ function resumen(r: OperationTypeReport): Fila[] {
   return [
     ['Equipos activos', s.total], ['Asignados', s.assigned], ['No trabajaron', s.not_working],
     ['% utilización', s.utilization_pct], [],
+    ['Viajes de varios días', s.multi_day.total],
+    ...Object.entries(s.multi_day.by_days_back).map(([dias, n]) => [`Hace ${dias} ${dias === '1' ? 'día' : 'días'}`, n]),
+    [],
     negrita(['Cliente', 'Asignados']),
     ...s.by_client.map(c => [c.client_name, c.assigned]),
     negrita(['Total', sumar(s.by_client, c => c.assigned)]), [],

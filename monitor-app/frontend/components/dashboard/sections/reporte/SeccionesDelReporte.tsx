@@ -45,12 +45,33 @@ export function CuatroCifras({ reporte }: { reporte: OperationTypeReport }) {
   )
 }
 
+const plural = (n: number | string, uno: string, varios: string) => `${n} ${Number(n) === 1 ? uno : varios}`
+
+/** Los equipos que siguen en un viaje planificado días antes, por días atrás. */
+export function ViajesDeVariosDias({ reporte }: { reporte: OperationTypeReport }) {
+  const { total, by_days_back } = reporte.summary.multi_day
+  return (
+    <div>
+      <Titulo>Viajes de varios días ({total})</Titulo>
+      <div className="flex gap-2 flex-wrap">
+        {Object.entries(by_days_back).map(([dias, n]) => (
+          <span key={dias} className="text-[11px] bg-gray-50 border border-border rounded-full px-2.5 py-1">
+            {plural(n, 'equipo', 'equipos')} — {plural(dias, 'día', 'días')}
+          </span>
+        ))}
+        {total === 0 && <span className="text-[11px] text-gray-400 italic">Ninguno</span>}
+      </div>
+    </div>
+  )
+}
+
 export function SeccionResumen({ reporte, tipo }: Props) {
   const s = reporte.summary
   if (s.total === 0) return <Vacio>No hay equipos de {tipo.etiqueta} enrolados</Vacio>
   return (
     <div className="space-y-4">
       <CuatroCifras reporte={reporte} />
+      <ViajesDeVariosDias reporte={reporte} />
       <div className="grid sm:grid-cols-2 gap-4">
         <div>
           <Titulo>Asignados por cliente</Titulo>

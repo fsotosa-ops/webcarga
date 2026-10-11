@@ -16,7 +16,8 @@ vi.mock('@/lib/api/carriers', () => ({
 }))
 
 const VACIO: OperationTypeReport = {
-  summary: { total: 0, assigned: 0, not_working: 0, utilization_pct: 0, by_client: [], by_home_origin: [] },
+  summary: { total: 0, assigned: 0, not_working: 0, utilization_pct: 0, by_client: [], by_home_origin: [],
+             multi_day: { total: 0, by_days_back: {} } },
   assigned: { rows: [], other_origin: [] },
   worked_without_assignment: { reasons: [], rows: [] },
   second_legs: [],
@@ -29,6 +30,7 @@ const TRACTOREO: OperationTypeReport = {
     total: 81, assigned: 29, not_working: 40, utilization_pct: 35.8,
     by_client: [{ client_name: 'Walmart', assigned: 29 }],
     by_home_origin: [{ origin: 'CD Lo Aguirre', enrolled: 50, assigned: 20 }],
+    multi_day: { total: 5, by_days_back: { '1': 3, '2': 2 } },
   },
   assigned: {
     rows: [
@@ -99,6 +101,13 @@ describe('StatusReportSection', () => {
     expect(cifra(body, 'Asignados')).toHaveTextContent('29')
     expect(cifra(body, 'No trabajaron')).toHaveTextContent('40')
     expect(cifra(body, 'Utilización')).toHaveTextContent('35.8%')
+  })
+
+  it('el resumen muestra los viajes de varios días por días atrás', async () => {
+    const body = renderSection()
+    expect(await body.findByText('Viajes de varios días (5)')).toBeInTheDocument()
+    expect(body.getByText('3 equipos — 1 día')).toBeInTheDocument()
+    expect(body.getByText('2 equipos — 2 días')).toBeInTheDocument()
   })
 
   it('el selector cambia todas las secciones al otro tipo', async () => {

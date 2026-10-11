@@ -1688,6 +1688,9 @@ export type OperationTypeReport = {
     by_client:       { client_name: string; assigned: number }[]
     /** Enrolados vs asignados por origen habitual declarado (HU-28). */
     by_home_origin:  { origin: string; enrolled: number; assigned: number }[]
+    /** Equipos con carga que siguen en un viaje planificado días antes; la clave
+     *  de `by_days_back` es cuántos días atrás ("1", "2", …). */
+    multi_day:       { total: number; by_days_back: Record<string, number> }
   }
   assigned: {
     rows: AssignedRow[]

@@ -6,7 +6,8 @@ function reporte(over: Partial<OperationTypeReport> = {}): OperationTypeReport {
   return {
     summary: { total: 3, assigned: 2, not_working: 1, utilization_pct: 66.7,
                by_client: [{ client_name: 'Walmart', assigned: 2 }],
-               by_home_origin: [{ origin: 'CD Lo Aguirre', enrolled: 3, assigned: 2 }] },
+               by_home_origin: [{ origin: 'CD Lo Aguirre', enrolled: 3, assigned: 2 }],
+               multi_day: { total: 1, by_days_back: { '2': 1 } } },
     assigned: {
       rows: [
         { client_name: 'Walmart', origin: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', rm: 1, z0: 0, region: 0, unclassified: 0, total: 1 },
@@ -61,6 +62,13 @@ describe('hojasDelReporte', () => {
     const encabezados = (nombre: string) => hojas.find(h => h.sheet === nombre)!.data.map(f => valor(f[0]))
     expect(encabezados('No trabajaron · Tractoreo')).toContain('Conductor')
     expect(encabezados('No trabajaron · Eq. Completo')).toContain('Equipo')
+  })
+
+  it('el Resumen trae los viajes de varios días', () => {
+    const hoja = hojasDelReporte(POR_TIPO, []).find(h => h.sheet === 'Resumen · Tractoreo')!
+    const filas = hoja.data.map(f => f.map(valor))
+    expect(filas).toContainEqual(['Viajes de varios días', 1])
+    expect(filas).toContainEqual(['Hace 2 días', 1])
   })
 
   it('Dotación lista el desbalance por empresa', () => {
