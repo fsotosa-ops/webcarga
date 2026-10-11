@@ -42,9 +42,13 @@ async def _un_estado(conn) -> str:
     return await conn.fetchval("SELECT id FROM app.trip_statuses WHERE active ORDER BY id LIMIT 1")
 
 
-def _cliente_unico() -> str:
-    """Marca el viaje del test: ningun dato real se llama asi."""
-    return f"TEST-{uuid.uuid4().hex[:8]}"
+async def _cliente_unico(conn) -> str:
+    """Marca el viaje del test: ningun dato real se llama asi. Se crea en el
+    directorio, dentro de la transaccion del test: el alta exige un cliente del
+    directorio (spec 2026-10-11)."""
+    nombre = f"TEST-{uuid.uuid4().hex[:8]}"
+    await conn.execute("INSERT INTO public.shippers (name, status) VALUES ($1, 'ACTIVE')", nombre)
+    return nombre
 
 
 async def _filas_del_cliente(conn, cliente: str) -> dict:
@@ -62,7 +66,7 @@ async def test_crear_viaje_con_conductor_y_empresa_deja_un_solo_vinculo_manual(c
     conn = conexion_revertida
     usuario = await _usuario_real(conn)
     driver_id, carrier_id, nombre = await _conductor_con_empresa(conn)
-    cliente = _cliente_unico()
+    cliente = await _cliente_unico(conn)
 
     viaje = await create_trip(
         TripCreateBody(
@@ -102,7 +106,7 @@ async def test_crear_viaje_solo_con_patente_no_choca_con_el_trigger(conexion_rev
     usuario = await _usuario_real(conn)
     patente = await conn.fetchval(
         "SELECT license_plate FROM public.assets WHERE license_plate IS NOT NULL ORDER BY id LIMIT 1")
-    cliente = _cliente_unico()
+    cliente = await _cliente_unico(conn)
 
     viaje = await create_trip(
         TripCreateBody(
@@ -126,7 +130,7 @@ async def test_un_alta_que_falla_no_deja_nada_escrito(conexion_revertida):
     escribir trips_manual y trips. Antes quedaban confirmados."""
     conn = conexion_revertida
     usuario = await _usuario_real(conn)
-    cliente = _cliente_unico()
+    cliente = await _cliente_unico(conn)
 
     with pytest.raises(HTTPException) as err:
         await create_trip(
@@ -151,7 +155,7 @@ async def test_vincular_a_mano_un_viaje_con_vinculo_auto_lo_reemplaza(conexion_r
     usuario = await _usuario_real(conn)
     driver_id, carrier_id, nombre = await _conductor_con_empresa(conn)
     viaje = await create_trip(
-        TripCreateBody(planning_date="2026-09-23", client_name=_cliente_unico(),
+        TripCreateBody(planning_date="2026-09-23", client_name=await _cliente_unico(conn),
                        driver_name=nombre, stops=[TripStopCreate(local="IANSA")]),
         pool=PoolDeUnaConexion(conn),
         user=usuario,

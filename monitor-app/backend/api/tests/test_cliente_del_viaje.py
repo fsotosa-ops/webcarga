@@ -1,0 +1,44 @@
+"""Una sola definición del cliente del viaje (spec 2026-10-11)."""
+from unittest.mock import AsyncMock
+
+import pytest
+from fastapi import HTTPException
+
+from app.services.cliente_del_viaje import join_cliente, nombre_del_cliente, resolver_cliente
+
+
+def test_el_cruce_es_por_id_y_nunca_por_texto():
+    assert join_cliente("t", "sh") == "LEFT JOIN public.shippers sh ON sh.id = t.shipper_id"
+    assert "lower(" not in join_cliente("t2", "s2")
+
+
+def test_un_viaje_sin_vincular_se_muestra_con_el_texto_del_tms_y_la_marca():
+    assert nombre_del_cliente("t", "sh") == "COALESCE(sh.name, t.client_name || ' · sin vincular')"
+
+
+async def test_resolver_por_id_devuelve_el_nombre_del_directorio():
+    conn = AsyncMock()
+    conn.fetchrow.return_value = {"id": "s1", "name": "Walmart"}
+    assert await resolver_cliente(conn, shipper_id="s1", client_name=None) == ("s1", "Walmart")
+
+
+async def test_resolver_por_nombre_no_distingue_mayusculas_ni_espacios():
+    conn = AsyncMock()
+    conn.fetchrow.return_value = {"id": "s1", "name": "Walmart"}
+    assert await resolver_cliente(conn, shipper_id=None, client_name="  WALMART ") == ("s1", "Walmart")
+    assert "lower(btrim(name)) = lower(btrim($1))" in conn.fetchrow.call_args.args[0]
+
+
+async def test_un_cliente_que_no_esta_en_el_directorio_se_rechaza():
+    conn = AsyncMock()
+    conn.fetchrow.return_value = None
+    with pytest.raises(HTTPException) as e:
+        await resolver_cliente(conn, shipper_id=None, client_name="Prueba")
+    assert e.value.status_code == 422
+    assert e.value.detail == "El cliente «Prueba» no está en el directorio"
+
+
+async def test_sin_cliente_se_rechaza():
+    with pytest.raises(HTTPException) as e:
+        await resolver_cliente(AsyncMock(), shipper_id=None, client_name="  ")
+    assert e.value.detail == "Elige el cliente del viaje"

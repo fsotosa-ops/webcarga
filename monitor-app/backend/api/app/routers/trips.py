@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require, require_fields
 from ..db import get_pool
+from ..services.cliente_del_viaje import resolver_cliente
 from ..services.vencimientos import pendiente_predicate
 from ..schemas.trip import (
     AsignarConductorBody, TripBulkCloseBody, TripVoidBody, TripVoidRevertBody, TripBulkReopenBody, TripPatch, TripStopPatch,
@@ -1614,6 +1615,9 @@ class TripCreateBody(BaseModel):
     # Compat: clientes viejos mandan source_system — se IGNORA (siempre 'manual')
     source_system:          str           = 'manual'
     client_name:            Optional[str] = None
+    # El cliente del directorio (spec 2026-10-11). El formulario manda el id;
+    # la carga CSV, el nombre, que se resuelve contra el directorio.
+    shipper_id:             Optional[str] = None
     origin_region:          Optional[str] = None
     origin_city:            Optional[str] = None
     cargo_type:             Optional[str] = None
@@ -1825,6 +1829,12 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
     app.trips (visibilidad sin esperar al pipeline). Mismo id en ambas."""
     _validate_create_body(body, valid_statuses)
 
+    # El cliente se resuelve contra el directorio antes de calcular el id: el
+    # nombre del directorio es el que entra al id canónico del viaje.
+    shipper_id, nombre_cliente = await resolver_cliente(
+        conn, shipper_id=body.shipper_id, client_name=body.client_name)
+    body = body.model_copy(update={"client_name": nombre_cliente, "shipper_id": shipper_id})
+
     trip_id = _manual_trip_id(body)
 
     # Si el id canónico ya existe, el viaje ya está en el sistema
@@ -1858,12 +1868,12 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
         await conn.execute(
             """
             INSERT INTO app.trips_manual (
-                id, origin_tms, source_system_trip_id, client_name, planning_date,
+                id, origin_tms, source_system_trip_id, client_name, shipper_id, planning_date,
                 origin_region, origin_city, cargo_type, trip_status,
                 fleet, stops, created_by
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,$12::uuid)
+            ) VALUES ($1,$2,$3,$4,$5::uuid,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13::uuid)
             """,
-            trip_id, body.origin_tms, body.source_system_trip_id, body.client_name,
+            trip_id, body.origin_tms, body.source_system_trip_id, body.client_name, body.shipper_id,
             body.planning_date, body.origin_region, body.origin_city,
             body.cargo_type, body.current_status,
             fleet_json, stops_json, user["sub"],
@@ -1880,16 +1890,16 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
     await conn.execute(
         """
         INSERT INTO app.trips (
-            id, source_system, origin_tms, source_system_trip_id, client_name,
+            id, source_system, origin_tms, source_system_trip_id, client_name, shipper_id,
             planning_date, origin_region, origin_city, cargo_type,
             trip_status, fleet, stops,
             is_active, is_working, is_assigned, is_first_leg,
             status_reported_at, pipeline_updated_at, created_at, updated_at,
             manually_edited_fields
-        ) VALUES ($1,'manual',$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,
+        ) VALUES ($1,'manual',$2,$3,$4,$5::uuid,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,
                   true,false,false,false,NOW(),NOW(),NOW(),NOW(),'{}')
         """,
-        trip_id, body.origin_tms, body.source_system_trip_id, body.client_name,
+        trip_id, body.origin_tms, body.source_system_trip_id, body.client_name, body.shipper_id,
         body.planning_date, body.origin_region, body.origin_city,
         body.cargo_type, body.current_status,
         fleet_json, stops_json,

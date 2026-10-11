@@ -39,3 +39,20 @@ async def test_los_viajes_manuales_vigentes_con_cliente_del_directorio_tienen_su
         WHERE m.shipper_id IS NULL
     """)
     assert sin_id == 0
+
+
+async def test_el_alta_manual_guarda_el_id_y_el_nombre_del_directorio(conexion_revertida):
+    """El CSV trae "  IANSA "; queda el id de Iansa y el nombre del directorio,
+    que es el que entra al id canónico del viaje."""
+    from datetime import date
+
+    from app.routers.trips import TripCreateBody, _insert_trip
+    from tests.conftest import _usuario_real
+
+    usuario = await _usuario_real(conexion_revertida)
+    iansa = await conexion_revertida.fetchrow("SELECT id::text, name FROM public.shippers WHERE lower(name) = 'iansa'")
+    body = TripCreateBody(planning_date=date(2099, 1, 2), client_name="  IANSA ", source_system_trip_id="ZZ-CLI-1")
+    trip_id = await _insert_trip(conexion_revertida, body, usuario, valid_statuses=set())
+    fila = await conexion_revertida.fetchrow(
+        "SELECT shipper_id::text, client_name FROM app.trips_manual WHERE id = $1", trip_id)
+    assert (fila["shipper_id"], fila["client_name"]) == (iansa["id"], iansa["name"])

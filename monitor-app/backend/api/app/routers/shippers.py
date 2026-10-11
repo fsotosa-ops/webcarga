@@ -40,7 +40,7 @@ async def create_shipper(
             name,
         )
     except Exception as e:
-        if "shippers_name_key" in str(e):
-            raise HTTPException(409, f"Ya existe un cliente llamado '{name}'")
+        if "shippers_name_key" in str(e) or "shippers_name_ci_key" in str(e):
+            raise HTTPException(409, f"Ya existe un cliente llamado '{name}' (sin importar mayúsculas)")
         raise
     return dict(row)

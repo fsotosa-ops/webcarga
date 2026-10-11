@@ -39,8 +39,13 @@ def make_pool(trip_exists=False):
         return "ffffffff-0000-0000-0000-000000000001"
     pool.fetchval.side_effect = fetchval_side_effect
 
-    # get_trip al final del create
-    pool.fetchrow.return_value = {"id": "x"}
+    # El cliente del directorio (spec 2026-10-11): toda alta lo resuelve. Y
+    # get_trip al final del create.
+    def fetchrow_side_effect(query, *args):
+        if "FROM public.shippers" in query:
+            return {"id": "5bb0c3a8-0000-0000-0000-000000000001", "name": "Walmart"}
+        return {"id": "x"}
+    pool.fetchrow.side_effect = fetchrow_side_effect
     # El alta corre en una transacción: la conexión prestada ES el mismo
     # mock, así las aserciones sobre pool.execute siguen viendo cada INSERT.
     wire_transactional_conn(pool, pool)
@@ -139,7 +144,7 @@ def test_create_forces_source_system_manual():
     pool = make_pool()
     client = make_client(pool)
     res = client.post("/api/v1/trips", json={
-        "planning_date": "2026-07-06", "source_system": "qanalytics",
+        "planning_date": "2026-07-06", "source_system": "qanalytics", "client_name": "walmart",
     })
     assert res.status_code == 200
     inserts = [c.args[0] for c in pool.execute.call_args_list if "INSERT INTO app.trips " in c.args[0]]
@@ -149,7 +154,7 @@ def test_create_forces_source_system_manual():
 def test_create_writes_both_tables_with_same_id():
     pool = make_pool()
     client = make_client(pool)
-    res = client.post("/api/v1/trips", json={"planning_date": "2026-07-06"})
+    res = client.post("/api/v1/trips", json={"planning_date": "2026-07-06", "client_name": "walmart"})
     assert res.status_code == 200
     manual_call = next(c for c in pool.execute.call_args_list if "app.trips_manual" in c.args[0])
     trips_call  = next(c for c in pool.execute.call_args_list if "INSERT INTO app.trips " in c.args[0])
@@ -182,7 +187,7 @@ def test_create_puts_phone_in_fleet_when_no_company():
     pool = make_pool()
     client = make_client(pool)
     res = client.post("/api/v1/trips", json={
-        "planning_date": "2026-07-06", "driver_phone": "+56911112222",
+        "planning_date": "2026-07-06", "client_name": "walmart", "driver_phone": "+56911112222",
     })
     assert res.status_code == 200
     manual_call = next(c for c in pool.execute.call_args_list if "app.trips_manual" in c.args[0])
@@ -254,7 +259,7 @@ def test_create_persists_origin_location_and_stop_destination():
     pool = make_pool()
     client = make_client(pool)
     res = client.post("/api/v1/trips", json={
-        "planning_date": "2026-07-06",
+        "planning_date": "2026-07-06", "client_name": "walmart",
         "origin_region": "Región Metropolitana de Santiago",
         "origin_city": "Pudahuel",
         "stops": [{"local": "CD El Peñón",
