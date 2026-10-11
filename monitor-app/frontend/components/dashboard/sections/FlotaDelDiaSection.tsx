@@ -13,6 +13,8 @@ import type {
   CategoriaDeLinea, DailyClosureStatus, DriverDayStatusValue, EquipmentClosureStatus, UnassignedReasonMeta,
 } from '@/lib/types'
 import { Estado } from '@/components/ui/Estado'
+import { EntityCell } from '@/components/dashboard/EntityCell'
+import type { QuickViewTarget } from '@/lib/quickView'
 
 /** Las tres vistas del cierre de flota. Conductores y tractos son DOS EJES
  *  distintos —el día se firma por los dos, con dos endpoints y dos tablas—,
@@ -77,6 +79,11 @@ interface Props {
    *  vacío (`TODO(Tarea 1.3/1.4)`), así que el botón se veía, se podía clicar
    *  y no pasaba nada — la peor de las tres opciones. */
   onCreateManualTrip?: (driverId: string, driverName: string) => void
+  /** Abre la vista rápida de una entidad de la fila (HU 20261011/01). Sin él (sin
+   *  `directory.read`) los nombres son texto. */
+  onOpenQuickView?: (target: QuickViewTarget, rowKey: string) => void
+  /** La fila desde la que está abierta la vista rápida: queda marcada. */
+  activeRowKey?: string | null
 }
 
 /** "Flota del día" — el cierre tiene DOS EJES, y esta sección los muestra a
@@ -101,7 +108,9 @@ interface Props {
  *  (más riguroso que dejarlo pasar en silencio), así que ahora se ve y se
  *  puede resolver donde bloquea, en vez de escalar sólo como
  *  SIN_TIPO_OPERACION en la pestaña Pendientes. */
-export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onCreateManualTrip }: Props) {
+export function FlotaDelDiaSection({
+  fecha, unassignedReasons, onSelectTrip, onCreateManualTrip, onOpenQuickView, activeRowKey = null,
+}: Props) {
   const queryClient = useQueryClient()
   const [vista, setVista] = useState<Vista>('TRACTOREO')
   const [category, setCategory] = useState<RowCategory>('total')
@@ -239,6 +248,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
     soloConductor?: boolean   // conductor que no es habitual de ningún tracto
     primary: string           // Conductor (ambos tipos; en Equipo Completo puede ser "mejor esfuerzo")
     secondary: string | null  // Tracto/Equipo habitual (ambos tipos)
+    assetId?: string | null   // el tracto de `secondary`, si está en el directorio (vista rápida)
     carrierName: string | null
     statusLabel: string
     statusCls: string
@@ -308,6 +318,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
       ?? e.driver_name
       ?? (e.status === 'ASSIGNED' ? 'El TMS no reportó conductor' : 'Sin conductor habitual'),
     secondary: e.tractor_plate,
+    assetId: e.asset_id,
     carrierName: e.carrier_name,
     statusLabel: STATUS_LABEL[e.status],
     statusCls: STATUS_CLS[e.status],
@@ -349,6 +360,7 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
       return filaDeConductor(d, {
         key: base.key,
         secondary: e.tractor_plate,
+        assetId: e.asset_id,
         carrierName: e.carrier_name ?? d.carrier_name,
         cd: e.home_cd_name ?? d.home_cd_name,
         tractoPropio: propio ? { assetId: e.asset_id, reasonId: e.unassigned_reason_id } : null,
@@ -629,7 +641,8 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                   </td>
                 </tr>
               )}
-              <tr>
+              <tr aria-current={r.key === activeRowKey ? 'true' : undefined}
+                  className={r.key === activeRowKey ? 'bg-accent/5 shadow-[inset_3px_0_0_var(--accent)]' : undefined}>
                 <td className="px-3 py-2">
                   {r.selectable && (
                     <input
@@ -640,11 +653,19 @@ export function FlotaDelDiaSection({ fecha, unassignedReasons, onSelectTrip, onC
                     />
                   )}
                 </td>
-                <td className="px-3 py-2 font-medium text-text-primary">{r.primary}</td>
-                <td className="px-3 py-2 text-gray-500">{r.carrierName ?? '—'}</td>
+                <td className="px-3 py-2 font-medium text-text-primary">
+                  <EntityCell kind="driver" id={r.driverId} label={r.primary}
+                              onOpen={onOpenQuickView && (t => onOpenQuickView(t, r.key))} />
+                </td>
+                <td className="px-3 py-2 text-gray-500">
+                  <EntityCell kind="carrier" id={r.carrierId} label={r.carrierName}
+                              onOpen={onOpenQuickView && (t => onOpenQuickView(t, r.key))} />
+                </td>
                 <td className="px-3 py-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-informativo">{r.secondary ?? (r.soloConductor ? 'Sin tracto habitual' : '—')}</span>
+                  <div className="flex items-center gap-1.5 text-informativo">
+                    <EntityCell kind="asset" id={r.assetId} label={r.secondary} mono
+                                empty={r.soloConductor ? 'Sin tracto habitual' : '—'}
+                                onOpen={onOpenQuickView && (t => onOpenQuickView(t, r.key))} />
                     {r.lastKnownOperationType && (
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${OPERATION_TYPE_CLS[r.lastKnownOperationType] ?? 'bg-gray-100 text-gray-500 border-transparent'}`}>
                         {r.lastKnownOperationType}

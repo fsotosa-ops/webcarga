@@ -1640,6 +1640,11 @@ export type ViajeDelCierre = {
   /** Lo que le falta a la flota resuelta contra el directorio (minuta 09/10 §2.4).
    *  Opcional: backend y frontend se despliegan por separado. */
   missing_fleet?:          FleetGap[]
+  /** Las entidades resueltas contra el directorio, para la vista rápida
+   *  (HU 20261011/01). null = lo que se ve viene del TMS sin cruzar. */
+  carrier_id?:             string | null
+  driver_id?:              string | null
+  tractor_asset_id?:       string | null
 }
 
 /** Una pieza de la flota del viaje que no está resuelta contra el directorio. */

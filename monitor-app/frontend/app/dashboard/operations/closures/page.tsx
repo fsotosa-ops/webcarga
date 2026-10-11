@@ -29,6 +29,8 @@ import type { PestanaDeViajes } from '@/lib/cierre/gruposDeViajes'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import type { PeriodoDeCierre, TripsMeta } from '@/lib/types'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
+import { EntityQuickView } from '@/components/dashboard/EntityQuickView'
+import { useQuickView, type QuickViewTarget } from '@/lib/quickView'
 
 
 function todayISO() {
@@ -82,6 +84,19 @@ function ClosuresCenterPageInner() {
   // Firmar y reabrir son el mismo permiso (closures.sign).
   const puedeReabrir = usePermiso('closures.sign')
   const puedeFirmar = puedeReabrir
+  // Vista rápida de empresa, conductor o equipo (HU 20261011/01): sin salir del
+  // Cierre; `quickViewOrigin` marca la fila desde la que se abrió.
+  const puedeVerDirectorio = usePermiso('directory.read')
+  const quickView = useQuickView()
+  const [quickViewOrigin, setQuickViewOrigin] = useState<string | null>(null)
+  function openQuickView(target: QuickViewTarget, origin: string) {
+    quickView.open(target)
+    setQuickViewOrigin(origin)
+  }
+  function closeQuickView() {
+    quickView.close()
+    setQuickViewOrigin(null)
+  }
   const [closing, setClosing] = useState(false)
   const [closeError, setCloseError] = useState<string | null>(null)
   const [overridePending, setOverridePending] = useState(false)
@@ -371,6 +386,8 @@ function ClosuresCenterPageInner() {
               fecha={fecha}
               unassignedReasons={tripsMeta?.unassigned_reasons ?? []}
               onSelectTrip={handleSelectTrip}
+              onOpenQuickView={puedeVerDirectorio ? openQuickView : undefined}
+              activeRowKey={quickView.current ? quickViewOrigin : null}
               // Sin `onCreateManualTrip`: esta página todavía no aloja el
               // TripAssignDialog (TODO Tarea 1.3/1.4, mismo patrón que
               // monitor/page.tsx con prefillFleet/handleNewTripFromFleet), y
@@ -401,6 +418,8 @@ function ClosuresCenterPageInner() {
                 grupos={cierreViajesQuery.data?.grupos}
                 bloquean={cierreViajesQuery.data?.bloquean}
                 tripHref={id => urlDelViaje(id, urlDeEsteCierre())}
+                onOpenQuickView={puedeVerDirectorio ? openQuickView : undefined}
+                activeTripId={quickView.current ? quickViewOrigin : null}
                 cargando={cierreViajesQuery.isLoading}
                 motivos={motivosViajesQuery.data ?? []}
                 onCerrar={handleCerrarViajes}
@@ -531,6 +550,18 @@ function ClosuresCenterPageInner() {
           )}
         </div>
       </div>
+      {quickView.current && (
+        <EntityQuickView
+          // Otra entidad, otro panel: el foco y el scroll empiezan de nuevo.
+          key={`${quickView.current.kind}:${quickView.current.id}`}
+          target={quickView.current}
+          canGoBack={quickView.canGoBack}
+          onNavigate={quickView.navigate}
+          onBack={quickView.back}
+          onClose={closeQuickView}
+          returnTo={urlDeEsteCierre()}
+        />
+      )}
     </div>
   )
 }

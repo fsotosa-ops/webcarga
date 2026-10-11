@@ -7,6 +7,8 @@ import { Estado } from '@/components/ui/Estado'
 import { Cifra } from '@/components/ui/Cifra'
 import { ChipsDeFiltro } from '@/components/ui/ChipsDeFiltro'
 import { TmsChip } from '@/components/dashboard/TripTable'
+import { EntityCell } from '@/components/dashboard/EntityCell'
+import type { QuickViewTarget } from '@/lib/quickView'
 import { TEXTO_APOYO, TEXTO_CUERPO } from '@/lib/ui/texto'
 import {
   GRUPOS_DE_VIAJES, PESTANAS_DE_VIAJES, diasAtras, esPestanaDeViajes, filasDePestana, pestanaInicial, viajesPorPatente,
@@ -35,6 +37,11 @@ interface Props {
   /** El detalle de un viaje, con la vuelta a este Cierre: ahí se completa la flota
    *  de una asignación incompleta. La página es dueña de la URL. */
   tripHref: (tripId: string) => string
+  /** Abre la vista rápida de una entidad de la fila. Sin él (sin `directory.read`)
+   *  los nombres son texto. */
+  onOpenQuickView?: (target: QuickViewTarget, tripId: string) => void
+  /** La fila desde la que está abierta la vista rápida: queda marcada. */
+  activeTripId?: string | null
 }
 
 /** Fecha de planificación corta, como la lee el coordinador: 02/10. */
@@ -58,7 +65,7 @@ function formatDiasSinNovedad(dias: number): string {
  *  Sin encabezado propio: vive dentro de una pestaña del Centro de Cierre. */
 export function PasoViajesSection({
   fecha, grupos, bloquean, cargando = false, motivos, onCerrar, onDeshacer, meta, soloLectura = false,
-  pestana: pestanaDeLaUrl, onCambiarPestana, tripHref,
+  pestana: pestanaDeLaUrl, onCambiarPestana, tripHref, onOpenQuickView, activeTripId = null,
 }: Props) {
   // La pestaña elegida a mano manda; si no hay, la de la URL; si no, la inicial.
   // La inicial se calcula UNA vez, con los primeros datos, y se congela: si se
@@ -303,7 +310,8 @@ export function PasoViajesSection({
                 const nro = v.source_system_trip_id ?? v.trip_id
                 const otros = v.tractor_plate ? repetidas.get(v.tractor_plate) : undefined
                 return (
-                  <tr key={v.trip_id}>
+                  <tr key={v.trip_id} aria-current={v.trip_id === activeTripId ? 'true' : undefined}
+                      className={v.trip_id === activeTripId ? 'bg-accent/5 shadow-[inset_3px_0_0_var(--accent)]' : undefined}>
                     {declarar && presentacion.action !== 'declare' && <td className="px-3 py-2" />}
                     {declarar && presentacion.action === 'declare' && (
                       <td className="px-3 py-2">
@@ -333,15 +341,22 @@ export function PasoViajesSection({
                       </td>
                     )}
                     <td className="px-3 py-2 font-identificador font-semibold text-text-primary">
-                      {v.tractor_plate ?? '—'}
+                      <EntityCell kind="asset" id={v.tractor_asset_id} label={v.tractor_plate} mono
+                                  onOpen={onOpenQuickView && (t => onOpenQuickView(t, v.trip_id))} />
                       {otros && (
                         <span title={`${v.tractor_plate}: ${otros.join(', ')}`} className={`block text-etiqueta font-normal ${TEXTO_APOYO}`}>
                           {otros.length} viajes
                         </span>
                       )}
                     </td>
-                    <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{v.driver_name ?? '—'}</td>
-                    <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>{v.carrier_name ?? '—'}</td>
+                    <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>
+                      <EntityCell kind="driver" id={v.driver_id} label={v.driver_name} unresolved
+                                  onOpen={onOpenQuickView && (t => onOpenQuickView(t, v.trip_id))} />
+                    </td>
+                    <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>
+                      <EntityCell kind="carrier" id={v.carrier_id} label={v.carrier_name} unresolved
+                                  onOpen={onOpenQuickView && (t => onOpenQuickView(t, v.trip_id))} />
+                    </td>
                     <td className={`px-3 py-2 ${TEXTO_CUERPO}`}>
                       <span className="font-medium text-text-primary">{v.origin ?? '—'}</span>
                       {v.destinations.length > 0 && (

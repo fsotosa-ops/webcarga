@@ -1028,4 +1028,23 @@ describe('FlotaDelDiaSection', () => {
     expect(screen.queryByText(/nadie tiene origen habitual/)).not.toBeInTheDocument()
     expect(screen.queryByText(/sin origen habitual/)).not.toBeInTheDocument()
   })
+
+  it('conductor, empresa y patente del directorio abren la vista rápida de su propia entidad', async () => {
+    const onOpenQuickView = vi.fn()
+    renderSection({ onOpenQuickView })
+    fireEvent.click(await screen.findByRole('button', { name: 'Ver equipo FCCP42' }))
+    expect(onOpenQuickView).toHaveBeenCalledWith({ kind: 'asset', id: 'tr1', label: 'FCCP42' }, 'asset:tr1')
+    // El conductor del VIAJE de hoy, no el habitual: es el que se muestra.
+    fireEvent.click(screen.getByRole('button', { name: 'Ver conductor Celis Huerta Brian' }))
+    expect(onOpenQuickView).toHaveBeenCalledWith({ kind: 'driver', id: 'v1', label: 'Celis Huerta Brian' }, 'asset:tr1')
+    fireEvent.click(screen.getByRole('button', { name: 'Ver empresa Transportes La Fortaleza Spa' }))
+    expect(onOpenQuickView).toHaveBeenCalledWith(
+      { kind: 'carrier', id: 'cf', label: 'Transportes La Fortaleza Spa' }, 'asset:tr3')
+  })
+
+  it('sin quién abra la vista rápida, los nombres son texto', async () => {
+    renderSection()
+    await screen.findByText('FCCP42')
+    expect(screen.queryByRole('button', { name: /^Ver (equipo|conductor|empresa) / })).toBeNull()
+  })
 })

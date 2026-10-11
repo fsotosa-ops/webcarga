@@ -25,8 +25,8 @@ function segmentos(dir: string, acc = new Set<string>()): Set<string> {
 }
 
 const EN_INGLES = [
-  'access-denied', 'admin', 'api', 'auth', 'callback', 'carriers', 'certification', 'closures',
-  'compliance', 'confirm', 'dashboard', 'forgot-password', 'history', 'inbox', 'insurance', 'login',
+  'access-denied', 'admin', 'api', 'assets', 'auth', 'callback', 'carriers', 'certification', 'closures',
+  'compliance', 'confirm', 'dashboard', 'drivers', 'forgot-password', 'history', 'inbox', 'insurance', 'login',
   'mfa', 'monitor', 'operations', 'pricing', 'reset-password', 'settings', 'setup', 'trips',
   'unavailable', 'v1', 'verify',
 ]

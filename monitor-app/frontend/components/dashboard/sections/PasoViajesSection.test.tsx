@@ -263,4 +263,27 @@ describe('PasoViajesSection', () => {
     expect(within(deAntes).getByText('Falta tracto')).toBeInTheDocument()
     expect(within(deAntes).queryByText('Bloquea la firma')).toBeNull()
   })
+
+  it('empresa, conductor y patente del directorio abren la vista rápida; lo del TMS sin cruzar queda en texto', () => {
+    const onOpenQuickView = vi.fn()
+    renderViajes({
+      onOpenQuickView,
+      grupos: { ...GRUPOS, hoy: [viaje('t1', '2032999', {
+        tractor_plate: 'LRTD11', tractor_asset_id: 'a1', driver_name: 'QUINTANA SOSA', driver_id: null,
+        carrier_name: 'Bugarín', carrier_id: 'c1',
+      })] },
+    })
+    const fila = screen.getByText('2032999').closest('tr')!
+    fireEvent.click(within(fila).getByRole('button', { name: 'Ver equipo LRTD11' }))
+    expect(onOpenQuickView).toHaveBeenCalledWith({ kind: 'asset', id: 'a1', label: 'LRTD11' }, 't1')
+    fireEvent.click(within(fila).getByRole('button', { name: 'Ver empresa Bugarín' }))
+    expect(onOpenQuickView).toHaveBeenCalledWith({ kind: 'carrier', id: 'c1', label: 'Bugarín' }, 't1')
+    expect(within(fila).getByText('QUINTANA SOSA')).toBeInTheDocument()
+    expect(within(fila).getByText('no está en el directorio')).toBeInTheDocument()
+  })
+
+  it('la fila desde la que se abrió la vista rápida queda marcada', () => {
+    renderViajes({ onOpenQuickView: vi.fn(), activeTripId: 't1' })
+    expect(screen.getByText('2032999').closest('tr')).toHaveAttribute('aria-current', 'true')
+  })
 })
