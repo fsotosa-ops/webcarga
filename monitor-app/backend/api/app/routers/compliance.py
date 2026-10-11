@@ -64,6 +64,7 @@ from ..services.vencimientos import (
     falta_para_aprobar,
     nombre_del_periodo,
     cubierto_predicate,
+    DOCUMENT_STATES,
     document_state_sql,
     in_scope_sql,
     PENDING_STATES,
@@ -545,17 +546,17 @@ resolved AS (
 
 # Pendientes (spec 2026-10-11): qué estados trae cada valor de `state`.
 STATE_FILTERS: dict[str, tuple[str, ...] | None] = {
-    "overdue":  ("OVERDUE",),
-    "expiring": ("EXPIRING",),
-    "missing":  ("MISSING",),
-    "pending":  PENDING_STATES,
-    "all":      None,
+    **{estado.lower(): (estado,) for estado in PENDING_STATES},
+    "pending": PENDING_STATES,
+    "all":     None,
 }
 
 
 # Orden de la cola con `state`: vencido, por vencer, falta, y al final lo demás.
-_order_list = ", ".join(f"'{x}'" for x in (*PENDING_STATES, "NOT_REQUIRED", "UP_TO_DATE"))
-_urgent_list = ", ".join(f"'{x}'" for x in PENDING_STATES if x != "MISSING")
+_order_list = ", ".join(
+    f"'{x}'" for x in (*PENDING_STATES, *(e for e in DOCUMENT_STATES if e not in PENDING_STATES)))
+# Los que tienen fecha de vencimiento que ordenar: todos los pendientes menos MISSING.
+_urgent_list = ", ".join(f"'{x}'" for x in PENDING_STATES if x != PENDING_STATES[-1])
 
 _PENDING_ROWS_SQL = f"""
 WITH {_pending_ctes('$10')},

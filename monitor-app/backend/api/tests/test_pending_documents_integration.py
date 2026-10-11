@@ -439,22 +439,68 @@ async def test_pending_global_no_trae_a_un_conductor_inactivo_pero_la_ficha_si(c
     assert {r["entity_id"] for r in ficha["rows"]} == {activo, inactivo}
 
 
-async def test_pending_un_equipo_sin_asignacion_vigente_no_sale_con_state(conexion_revertida):
+async def test_pending_un_equipo_inactivo_no_sale_con_state_pero_su_ficha_si(conexion_revertida):
+    """Asignacion ACTIVE, pero el equipo no esta activo: solo el alcance lo saca."""
     conn = conexion_revertida
     empresa = await _empresa(conn)
-    con_asignacion = await _equipo(conn, empresa)
-    sin_asignacion = await _equipo(conn, empresa, asignacion="INACTIVE")
+    activo = await _equipo(conn, empresa)
+    inactivo = await _equipo(conn, empresa)
+    await conn.execute("UPDATE public.assets SET operational_status = 'INACTIVE' WHERE id = $1", inactivo)
     req = await _requisito(conn, entidad="ASSET")
-    await _registro(conn, req, "ASSET", con_asignacion)
-    await _registro(conn, req, "ASSET", sin_asignacion)
+    await _registro(conn, req, "ASSET", activo)
+    await _registro(conn, req, "ASSET", inactivo)
     codigo = await _codigo(conn, req)
 
     cola = await _listar(conn, requirement_code=codigo, carrier_id=empresa, state="pending")
     ficha = await _listar(conn, requirement_code=codigo, carrier_id=empresa)
 
-    assert [r["entity_id"] for r in cola["rows"]] == [con_asignacion]
-    # Sin state el equipo sin asignacion vigente no se resuelve a empresa: hoy tampoco sale.
-    assert {r["entity_id"] for r in ficha["rows"]} == {con_asignacion}
+    assert [r["entity_id"] for r in cola["rows"]] == [activo]
+    assert {r["entity_id"] for r in ficha["rows"]} == {activo, inactivo}
+
+
+async def test_pending_un_equipo_activo_de_una_empresa_inactiva_no_sale_en_la_cola_global(conexion_revertida):
+    conn = conexion_revertida
+    activa = await _empresa(conn)
+    de_baja = await _empresa(conn, estado="INACTIVE")
+    bueno = await _equipo(conn, activa)
+    huerfano = await _equipo(conn, de_baja)
+    req = await _requisito(conn, entidad="ASSET")
+    await _registro(conn, req, "ASSET", bueno)
+    await _registro(conn, req, "ASSET", huerfano)
+    codigo = await _codigo(conn, req)
+
+    cola = await _listar(conn, requirement_code=codigo, state="pending")
+    ficha = await _listar(conn, requirement_code=codigo, carrier_id=de_baja)
+    # La cola global ya excluye a la empresa de baja por su filtro propio; pedida
+    # por empresa, solo el alcance del equipo la saca.
+    de_baja_con_state = await _listar(conn, requirement_code=codigo, carrier_id=de_baja, state="pending")
+
+    assert de_baja_con_state["rows"] == []
+    assert [r["entity_id"] for r in cola["rows"]] == [bueno]
+    assert [r["entity_id"] for r in ficha["rows"]] == [huerfano]
+
+
+async def test_pending_ordena_por_fecha_dentro_de_cada_estado_y_el_total_es_el_filtrado(conexion_revertida):
+    conn = conexion_revertida
+    hoy = await _hoy(conn)
+    req = await _requisito(conn, entidad="CARRIER", politica="REQUIRED")
+    emp = {k: await _empresa(conn) for k in ("v_viejo", "v_reciente", "p_cerca", "p_lejos", "falta1", "falta2", "al_dia")}
+    await _registro(conn, req, "CARRIER", emp["v_reciente"], status="APPROVED_MANUAL", vence=hoy - timedelta(days=2))
+    await _registro(conn, req, "CARRIER", emp["v_viejo"], status="APPROVED_MANUAL", vence=hoy - timedelta(days=30))
+    await _registro(conn, req, "CARRIER", emp["p_lejos"], status="APPROVED_MANUAL", vence=hoy + timedelta(days=9))
+    await _registro(conn, req, "CARRIER", emp["p_cerca"], status="APPROVED_MANUAL", vence=hoy + timedelta(days=3))
+    await _registro(conn, req, "CARRIER", emp["falta1"])
+    await _registro(conn, req, "CARRIER", emp["falta2"])
+    await _registro(conn, req, "CARRIER", emp["al_dia"], status="APPROVED_MANUAL", vence=hoy + timedelta(days=400))
+
+    res = await _listar(conn, requirement_code=await _codigo(conn, req), state="pending")
+
+    ids = [r["carrier_id"] for r in res["rows"]]
+    assert ids[:4] == [emp["v_viejo"], emp["v_reciente"], emp["p_cerca"], emp["p_lejos"]]
+    assert {emp["falta1"], emp["falta2"]} == set(ids[4:])
+    assert res["total"] == 6  # el al dia no cuenta
+    todos = await _listar(conn, requirement_code=await _codigo(conn, req), state="all")
+    assert todos["total"] == 7
 
 
 async def test_pending_una_empresa_inactiva_no_sale_con_state_pero_su_ficha_si(conexion_revertida):
