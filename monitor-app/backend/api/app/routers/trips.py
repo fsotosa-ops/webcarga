@@ -1914,6 +1914,9 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
             )
         raise
 
+    # Activo y asignado los calcula la regla (app.is_trip_open / is_trip_assigned),
+    # la misma que usa dbt; nunca un literal (spec 2026-10-11). El vínculo de
+    # flota que se escribe más abajo lo recoge el trigger trg_sync_trip_assignment.
     await conn.execute(
         """
         INSERT INTO app.trips (
@@ -1923,8 +1926,10 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
             is_active, is_working, is_assigned, is_first_leg,
             status_reported_at, pipeline_updated_at, created_at, updated_at,
             manually_edited_fields
-        ) VALUES ($1,'manual',$2,$3,$4,$5::uuid,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,
-                  true,false,false,false,NOW(),NOW(),NOW(),NOW(),'{}')
+        ) VALUES ($1,'manual',$2,$3,$4,$5::uuid,$6,$7,$8,$9,$10::text,$11::jsonb,$12::jsonb,
+                  COALESCE(app.is_trip_open($10::text), true), false,
+                  app.is_trip_assigned($10::text, $11::jsonb, $1::uuid), false,
+                  NOW(),NOW(),NOW(),NOW(),'{}')
         """,
         trip_id, body.origin_tms, body.source_system_trip_id, body.client_name, body.shipper_id,
         body.planning_date, body.origin_region, body.origin_city,

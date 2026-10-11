@@ -11,7 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import cliente_de_prueba
+from app.routers.trips import TripCreateBody, TripStopCreate, create_trip
+from app.services.cierre_viajes import SQL_GRUPOS_CIERRE
+from tests.conftest import PoolDeUnaConexion, _usuario_real, cliente_de_prueba
 
 pytestmark = pytest.mark.integracion
 
@@ -137,3 +139,37 @@ async def test_link_change_without_effect_does_not_touch_trip(conexion_revertida
         "UPDATE app.trip_fleet_links SET driver_phone = '+56900000000' WHERE trip_id = $1::uuid", trip_id)
     after = await conn.fetchval("SELECT ctid::text FROM app.trips WHERE id = $1::uuid", trip_id)
     assert after == before
+
+
+async def create_manual_trip(conn, status: str | None, tractor_plate: str | None) -> str:
+    trip = await create_trip(
+        TripCreateBody(
+            planning_date=TEST_DATE.isoformat(),
+            client_name=await cliente_de_prueba(conn),
+            current_status=status,
+            driver_name="CONDUCTOR DE PRUEBA SIN MATCH" if tractor_plate else None,
+            tractor_plate=tractor_plate,
+            stops=[TripStopCreate(local="IANSA")],
+        ),
+        pool=PoolDeUnaConexion(conn),
+        user=await _usuario_real(conn),
+    )
+    return str(trip["id"])
+
+
+async def test_closed_manual_trip_with_fleet_is_born_inactive_and_assigned(conexion_revertida):
+    conn = conexion_revertida
+    await apply_migration(conn)
+    trip_id = await create_manual_trip(conn, "CERRADO FINALIZADO", "ZZZZ99")
+    row = await conn.fetchrow("SELECT is_active, is_assigned FROM app.trips WHERE id = $1::uuid", trip_id)
+    assert (row["is_active"], row["is_assigned"]) == (False, True)
+    in_closure = {str(r["trip_id"]) for r in await conn.fetch(SQL_GRUPOS_CIERRE, TEST_DATE)}
+    assert trip_id not in in_closure
+
+
+async def test_manual_trip_without_fleet_is_born_active_and_unassigned(conexion_revertida):
+    conn = conexion_revertida
+    await apply_migration(conn)
+    trip_id = await create_manual_trip(conn, await open_status(conn), None)
+    row = await conn.fetchrow("SELECT is_active, is_assigned FROM app.trips WHERE id = $1::uuid", trip_id)
+    assert (row["is_active"], row["is_assigned"]) == (True, False)
