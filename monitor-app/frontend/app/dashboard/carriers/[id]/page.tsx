@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ChevronRight, PenLine, Check, X,
+  ArrowLeft, ChevronRight, PenLine, Check, X,
   Loader2, Search, Users, Truck, ShieldCheck, FileText,
 } from 'lucide-react'
 import { carriersApi } from '@/lib/api/carriers'
@@ -32,6 +32,7 @@ import { checklistCompletion } from '@/components/dashboard/DocumentChecklist'
 import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceChecklist'
 import { expiryRelative, updatedRelative } from '@/lib/compliance'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
+import { returnLink } from '@/lib/navegacion/directory'
 
 const ROSTER_PAGE_SIZE = 9
 
@@ -145,6 +146,8 @@ function EmpresaDetailPageInner() {
   // vehículo, que es donde se carga su documentación.
   const requestedDriverId   = searchParams.get('driver')
   const requestedAssetId    = searchParams.get('asset')
+  // Llegando desde otra pantalla (la vista rápida del Cierre) con `?next=`.
+  const backLink            = returnLink(searchParams.get('next'))
   const canEdit = usePermiso('directory.edit')
   const canAdmin = usePermiso('directory.delete')
   const [activeTab, setActiveTab] = useState<Tab>(
@@ -387,6 +390,12 @@ function EmpresaDetailPageInner() {
 
   return (
     <div className="p-4 md:p-6 space-y-5 relative">
+      {backLink && (
+        <Link href={backLink.href}
+              className="inline-flex items-center gap-1.5 text-dato font-semibold text-accion hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded">
+          <ArrowLeft size={14} aria-hidden="true" />{backLink.label}
+        </Link>
+      )}
       <nav className="flex items-center gap-1.5 text-sm text-gray-400">
         <a href="/dashboard/carriers" className="hover:text-accent transition-colors shrink-0">Empresas</a>
         <ChevronRight size={13} />

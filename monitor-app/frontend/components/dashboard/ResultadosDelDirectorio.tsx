@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { User, Truck } from 'lucide-react'
 import type { DirectorioBusqueda } from '@/lib/types'
+import { carrierPanelHref } from '@/lib/navegacion/directory'
 
 /**
  * Los conductores y los vehículos que coinciden con lo que se buscó.
@@ -35,7 +36,7 @@ export function ResultadosDelDirectorio({ datos }: { datos: DirectorioBusqueda }
         {conductores.map(c => (
           <Fila
             key={c.id}
-            href={c.carrier_id ? `/dashboard/carriers/${c.carrier_id}?tab=conductores&driver=${c.id}` : null}
+            href={c.carrier_id ? carrierPanelHref(c.carrier_id, { kind: 'driver', id: c.id }) : null}
             principal={c.full_name}
             secundario={c.tax_id}
             empresa={c.carrier_name}
@@ -48,7 +49,7 @@ export function ResultadosDelDirectorio({ datos }: { datos: DirectorioBusqueda }
         {vehiculos.map(v => (
           <Fila
             key={v.id}
-            href={v.carrier_id ? `/dashboard/carriers/${v.carrier_id}?tab=equipos&asset=${v.id}` : null}
+            href={v.carrier_id ? carrierPanelHref(v.carrier_id, { kind: 'asset', id: v.id }) : null}
             principal={v.license_plate}
             secundario={v.webcarga_operation_type_label ?? 'Sin tipo de operación'}
             empresa={v.carrier_name}

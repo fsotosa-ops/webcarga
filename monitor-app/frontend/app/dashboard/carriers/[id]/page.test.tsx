@@ -109,6 +109,20 @@ beforeEach(() => {
 })
 
 describe('EmpresaDetailPage', () => {
+  it('llegando desde el Cierre ofrece volver a él; sin ?next= no muestra nada de más', async () => {
+    const cierre = '/dashboard/operations/closures?date=2026-10-08&tab=trips'
+    vi.mocked(useSearchParams).mockReturnValue(
+      new URLSearchParams(`next=${encodeURIComponent(cierre)}`) as unknown as ReturnType<typeof useSearchParams>)
+    renderPage()
+    expect(await screen.findByRole('link', { name: 'Volver al Cierre' })).toHaveAttribute('href', cierre)
+  })
+
+  it('sin ?next= no hay vínculo de vuelta', async () => {
+    renderPage()
+    await screen.findAllByRole('button', { name: /Documentos/ })
+    expect(screen.queryByRole('link', { name: /^Volver/ })).toBeNull()
+  })
+
   it('shows the alert banner when there is a mandatory MISSING record', async () => {
     renderPage()
     await clickTab(/Documentos/)
