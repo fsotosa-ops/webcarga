@@ -1,5 +1,6 @@
 import type { QueryClient, QueryKey } from '@tanstack/react-query'
 import type { DirectoryEntity } from '@/lib/types'
+import { entitySummaryKey } from '@/lib/api/entitySummary'
 import { invalidarCertificacion } from './certificacion'
 
 /**
@@ -64,18 +65,25 @@ function rosterKeys(entity: DirectoryEntity, carrierId: string): QueryKey[] {
   ]
 }
 
-function entityKeys(change: DirectoryChange): QueryKey[] {
+/** Las claves propias de la entidad: su ficha y, para una empresa, sus rosters.
+ *  Un borrado las SACA de la caché en vez de invalidarlas: releerlas sería
+ *  pedir algo que ya no existe (un 404 justo antes de navegar). */
+function ownKeys(change: DirectoryChange): QueryKey[] {
   if (!change.id) return []
-  // Los contactos de una empresa viven en su ficha: el roster no cambia.
-  if (change.entity === 'carrier' && change.type === 'contact') return [directoryKeys.carrierDetail(change.id)]
   if (change.entity === 'carrier') return rosterKeys('carrier', change.id)
-  if (change.entity === 'driver') {
-    // El panel de un tracto muestra el nombre de su conductor habitual, y no
-    // sabemos de qué tracto es: raíz entera (solo se relee la que está montada).
-    const tractor: QueryKey[] = change.type === 'contact' ? [] : [['asset-driver-assignment']]
-    return [directoryKeys.driverDetail(change.id), ...tractor]
-  }
+  if (change.entity === 'driver') return [directoryKeys.driverDetail(change.id)]
   return [directoryKeys.assetDetail(change.id), directoryKeys.assetDriverAssignment(change.id)]
+}
+
+/** Lo que un contacto cambia: la ficha de la entidad y su vista rápida (el
+ *  teléfono sale del contacto principal). Ni listas, ni rosters, ni
+ *  Certificación, ni Monitor, ni Cierre. */
+function contactKeys(change: DirectoryChange): QueryKey[] {
+  if (!change.id) return []
+  const detail = change.entity === 'carrier' ? directoryKeys.carrierDetail(change.id)
+    : change.entity === 'driver' ? directoryKeys.driverDetail(change.id)
+    : directoryKeys.assetDetail(change.id)
+  return [detail, entitySummaryKey(change.entity, change.id)]
 }
 
 /**
@@ -87,17 +95,29 @@ function entityKeys(change: DirectoryChange): QueryKey[] {
  * cambio llega al Cierre, para avisarlo.
  */
 export async function invalidateDirectory(qc: QueryClient, change: DirectoryChange): Promise<{ affectsClosure: boolean }> {
-  const keys: QueryKey[] = [...DIRECTORY_ROOTS, ...entityKeys(change)]
+  // Un contacto no cambia quién opera ni dónde: no toca el Cierre ni el Monitor.
+  if (change.type === 'contact') {
+    await Promise.all(contactKeys(change).map(queryKey => qc.invalidateQueries({ queryKey })))
+    return { affectsClosure: false }
+  }
+  const own = ownKeys(change)
+  const keys: QueryKey[] = [...DIRECTORY_ROOTS, ...MONITOR_ROOTS]
+  if (change.type === 'delete') {
+    for (const queryKey of own) qc.removeQueries({ queryKey, exact: true })
+  } else {
+    keys.push(...own)
+  }
+  // El panel de un tracto muestra el nombre de su conductor habitual, y no
+  // sabemos de qué tracto es: raíz entera (solo se relee la que está montada).
+  // Un conductor recién creado todavía no es el habitual de nadie.
+  if (change.entity === 'driver' && change.type !== 'create') keys.push(['asset-driver-assignment'])
   for (const carrierId of change.carrierIds ?? []) {
     if (carrierId) keys.push(...rosterKeys(change.entity, carrierId))
   }
-  // Un contacto no cambia quién opera ni dónde: no toca el Cierre ni el Monitor.
-  const affectsClosure = change.type !== 'contact'
-  if (affectsClosure) keys.push(...MONITOR_ROOTS)
   await Promise.all([
     ...keys.map(queryKey => qc.invalidateQueries({ queryKey })),
     invalidarCertificacion(qc),
-    ...(affectsClosure ? CLOSURE_ROOTS.map(queryKey => qc.invalidateQueries({ queryKey, refetchType: 'none' })) : []),
+    ...CLOSURE_ROOTS.map(queryKey => qc.invalidateQueries({ queryKey, refetchType: 'none' })),
   ])
-  return { affectsClosure }
+  return { affectsClosure: true }
 }

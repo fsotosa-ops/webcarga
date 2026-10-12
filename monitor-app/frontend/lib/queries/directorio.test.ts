@@ -34,16 +34,23 @@ function recorrer(dir: string, acc: string[] = []): string[] {
 }
 const fuentes = () => ['app', 'components', 'hooks', 'lib'].flatMap(d => recorrer(join(RAIZ, d)))
 
-async function invalidadas(change: DirectoryChange) {
+async function espiar(change: DirectoryChange) {
   const qc = new QueryClient()
-  const espia = vi.spyOn(qc, 'invalidateQueries')
+  const invalida = vi.spyOn(qc, 'invalidateQueries')
+  const saca = vi.spyOn(qc, 'removeQueries')
   await invalidateDirectory(qc, change)
-  return espia.mock.calls.map(([f]) => ({
-    key: JSON.stringify(f?.queryKey), refetchType: f?.refetchType,
-  }))
+  return {
+    invalidadas: invalida.mock.calls.map(([f]) => ({ key: JSON.stringify(f?.queryKey), refetchType: f?.refetchType })),
+    removidas: saca.mock.calls.map(([f]) => JSON.stringify(f?.queryKey)),
+  }
 }
+const invalidadas = async (change: DirectoryChange) => (await espiar(change)).invalidadas
 const claves = async (change: DirectoryChange) => (await invalidadas(change)).map(c => c.key)
-const raices = async (change: DirectoryChange) => new Set((await claves(change)).map(k => JSON.parse(k)[0] as string))
+/** Raíces que el cambio deja al día: las invalidadas y las que saca de la caché. */
+const raices = async (change: DirectoryChange) => {
+  const { invalidadas: inv, removidas } = await espiar(change)
+  return new Set([...inv.map(c => c.key), ...removidas].map(k => JSON.parse(k)[0] as string))
+}
 
 describe('invalidateDirectory', () => {
   it('una transferencia invalida el roster de origen y el de destino (Review Focus 2)', async () => {
@@ -87,6 +94,34 @@ describe('invalidateDirectory', () => {
     expect(r.affectsClosure).toBe(false)
     expect(k).not.toContain(JSON.stringify(['daily-closure']))
     expect(k).not.toContain(JSON.stringify(['available-drivers']))
+  })
+
+  it('un contacto invalida solo la ficha de la entidad y su vista rápida', async () => {
+    expect(await claves({ entity: 'carrier', id: 'c1', type: 'contact' })).toEqual([
+      JSON.stringify(['carrier-detail', 'c1']), JSON.stringify(['entity-summary', 'carrier', 'c1']),
+    ])
+    expect(await claves({ entity: 'driver', id: 'd1', type: 'contact' })).toEqual([
+      JSON.stringify(['driver-detail', 'd1']), JSON.stringify(['entity-summary', 'driver', 'd1']),
+    ])
+  })
+
+  it('borrar una empresa saca sus claves de la caché en vez de releerlas (sin 404 antes de navegar)', async () => {
+    const { invalidadas: inv, removidas } = await espiar({ entity: 'carrier', id: 'c1', type: 'delete' })
+    const propias = [['carrier-detail', 'c1'], ['carrier-drivers', 'c1'], ['carrier-assets-roster', 'c1'], ['carrier-assets', 'c1']]
+      .map(k => JSON.stringify(k))
+    expect(removidas.sort()).toEqual([...propias].sort())
+    const k = inv.map(c => c.key)
+    for (const p of propias) expect(k).not.toContain(p)
+    // Las listas sí: la empresa tiene que desaparecer de ellas.
+    expect(k).toContain(JSON.stringify(['carriers']))
+    expect(k).toContain(JSON.stringify(['carriers-directorio']))
+  })
+
+  it('un conductor nuevo no relee el conductor habitual de los tractos', async () => {
+    const k = await claves({ entity: 'driver', id: 'd1', type: 'create', carrierIds: ['c1'] })
+    expect(k).not.toContain(JSON.stringify(['asset-driver-assignment']))
+    const editado = await claves({ entity: 'driver', id: 'd1', type: 'update', carrierIds: ['c1'] })
+    expect(editado).toContain(JSON.stringify(['asset-driver-assignment']))
   })
 
   it('la ficha de empresa tiene una sola clave (R11)', () => {
@@ -148,11 +183,22 @@ function raicesLeidas(): Map<string, string> {
   return leidas
 }
 
-const MONITOR = ['available-drivers', 'available-assets', 'drivers', 'driver-candidates']
-const CIERRE = CLOSURE_ROOTS.map(r => String((r as unknown[])[0]))
+
+/** Lo único que un contacto deja obsoleto: la ficha de la entidad y su vista
+ *  rápida (el teléfono sale del contacto principal). */
+const LO_QUE_CAMBIA_UN_CONTACTO: Record<DirectoryEntity, string[]> = {
+  carrier: ['carrier-detail', 'entity-summary'],
+  driver:  ['driver-detail', 'entity-summary'],
+  asset:   ['asset-detail', 'entity-summary'],
+}
 
 /** Raíces leídas que un cambio dado NO deja obsoletas, con su motivo. */
-function noLasCambia(change: DirectoryChange): string[] {
+function noLasCambia(change: DirectoryChange, leidas: Map<string, string>): string[] {
+  // Un contacto no cambia quién opera ni dónde, ni listas, rosters o
+  // Certificación: todo lo leído salvo su ficha y su vista rápida.
+  if (change.type === 'contact') {
+    return [...leidas.keys()].filter(r => !LO_QUE_CAMBIA_UN_CONTACTO[change.entity].includes(r))
+  }
   const fuera: string[] = []
   // La ficha de un conductor o un equipo no muestra datos de la empresa.
   if (change.entity === 'carrier') fuera.push('driver-detail', 'asset-detail', 'asset-driver-assignment')
@@ -163,13 +209,6 @@ function noLasCambia(change: DirectoryChange): string[] {
   // Alguien recién creado no tiene ficha propia en caché.
   if (change.type === 'create' && change.entity === 'driver') fuera.push('driver-detail')
   if (change.type === 'create' && change.entity === 'asset') fuera.push('asset-detail', 'asset-driver-assignment')
-  // Un contacto no cambia quién opera ni dónde (ver el test de arriba), ni el
-  // nombre del conductor habitual de un tracto.
-  if (change.type === 'contact') fuera.push(...MONITOR, ...CIERRE, 'asset-driver-assignment')
-  // Los contactos de una empresa viven en su ficha, no en sus rosters.
-  // (ni el teléfono de un conductor sale en el roster, ni la ficha de su empresa).
-  if (change.type === 'contact') fuera.push('carrier-drivers', 'carrier-assets-roster', 'carrier-assets')
-  if (change.type === 'contact' && change.entity !== 'carrier') fuera.push('carrier-detail')
   // Un conductor recién creado no es todavía el habitual de ningún tracto.
   if (change.type === 'create' && change.entity === 'driver') fuera.push('asset-driver-assignment')
   return fuera
@@ -190,7 +229,7 @@ describe('cobertura', () => {
     const faltan: string[] = []
     for (const change of MUTACIONES) {
       const tocadas = await raices(change)
-      const fuera = new Set(noLasCambia(change))
+      const fuera = new Set(noLasCambia(change, leidas))
       for (const [raiz, archivo] of leidas) {
         if (tocadas.has(raiz) || NO_DEPENDEN_DEL_DIRECTORIO.has(raiz) || fuera.has(raiz)) continue
         faltan.push(`${change.entity}/${change.type}: ${raiz} (${archivo})`)
@@ -201,7 +240,7 @@ describe('cobertura', () => {
 
   it('las exclusiones nombran raíces que alguna pantalla lee (no se vuelven letra muerta)', () => {
     const leidas = raicesLeidas()
-    const muertas = [...NO_DEPENDEN_DEL_DIRECTORIO, ...MUTACIONES.flatMap(noLasCambia)]
+    const muertas = [...NO_DEPENDEN_DEL_DIRECTORIO, ...MUTACIONES.flatMap(c => noLasCambia(c, leidas))]
       .filter(r => !leidas.has(r))
     expect([...new Set(muertas)]).toEqual([])
   })
@@ -225,6 +264,24 @@ describe('cobertura', () => {
       if (!MUTACION.test(texto)) continue
       const delegado = DELEGAN[rel.split('\\').join('/')]
       if (delegado ? !texto.includes(delegado) : !texto.includes('invalidateDirectory(')) faltan.push(rel)
+    }
+    expect(faltan).toEqual([])
+  })
+
+  it('quien monta un componente que delega llama a invalidateDirectory (R12)', () => {
+    const faltan: string[] = []
+    for (const [archivo, callback] of Object.entries(DELEGAN)) {
+      const nombre = archivo.split('/').pop()!.replace(/\.tsx$/, '')
+      const monta = new RegExp(`<${nombre}\\b`)
+      const quienes = fuentes().filter(r => relative(RAIZ, r).split('\\').join('/') !== archivo
+        && monta.test(readFileSync(r, 'utf8')))
+      if (quienes.length === 0) faltan.push(`${nombre}: nadie lo monta`)
+      for (const r of quienes) {
+        const texto = readFileSync(r, 'utf8')
+        if (!texto.includes('invalidateDirectory(') || !texto.includes(callback)) {
+          faltan.push(`${nombre} (${callback}) en ${relative(RAIZ, r)}`)
+        }
+      }
     }
     expect(faltan).toEqual([])
   })
