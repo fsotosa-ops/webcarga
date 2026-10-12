@@ -337,8 +337,11 @@ async def aplicar_correcciones(conn, fecha: _date) -> None:
                               filas=[(par[0], None, por_par[par].shipper_name) for par in vinculados])
 
 
+# Trae el estado (bloque 0 del Directorio): "Activar empresa" se ofrece con
+# directory.edit solo a las ONBOARDING; el resto de las transiciones son de
+# directory.delete. El estado depende de c.id: el DISTINCT no cambia las filas.
 _SQL_ONBOARDING = """
-SELECT DISTINCT c.id::text AS carrier_id, c.business_name AS carrier_name
+SELECT DISTINCT c.id::text AS carrier_id, c.business_name AS carrier_name, c.operational_status
 FROM app.trips t
 JOIN public.assets a ON upper(trim(a.license_plate)) = upper(trim(t.fleet->>'tractor_plate'))
 JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'

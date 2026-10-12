@@ -9,11 +9,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from ..auth import get_current_user, get_supabase
-from ..authz import Permission, require
+from ..authz import Permission, exigir, require, require_fields
 from ..db import get_pool
 from ..services.vencimientos import pendiente_predicate
 from ..schemas.assignment import AssetAssignmentCreateBody, DriverAssignmentCreateBody
-from ..schemas.carrier import CarrierCreateBody, CarrierListResponse, CarrierPatchBody
+from ..schemas.carrier import CARRIER_FIELD_PERMISSIONS, CarrierCreateBody, CarrierListResponse, CarrierPatchBody
 from ..schemas.common import PaginatedResponse
 from ..schemas.contact import ContactCreateBody
 from ..schemas.insurance import CarrierInsuranceOverviewResponse, InsurancePolicyCreateBody
@@ -576,6 +576,7 @@ async def patch_carrier(
     carrier_id: str, body: CarrierPatchBody, pool=Depends(get_pool),
     supabase=Depends(get_supabase), user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
+    require_fields(user, body.model_dump(exclude_none=True), CARRIER_FIELD_PERMISSIONS)
     async with pool.acquire() as conn:
         async with conn.transaction():
             # `management_types` va en el SELECT porque el bucle de auditoría de
@@ -588,6 +589,16 @@ async def patch_carrier(
             )
             if not current:
                 raise HTTPException(404, "Empresa no encontrada")
+            # Dar de baja o reactivar una empresa es de Certificación (D-e,
+            # 12/10): directory.delete. La excepción es activar una empresa
+            # nueva (ONBOARDING → ACTIVE), que el Supervisor de Operaciones
+            # hace desde el pre-cierre con directory.edit (R5). Depende del
+            # estado actual, por eso no cabe en CARRIER_FIELD_PERMISSIONS; va
+            # antes de cualquier escritura.
+            if body.operational_status is not None and not (
+                current["operational_status"] == "ONBOARDING" and body.operational_status == "ACTIVE"
+            ):
+                exigir(user, Permission.DIRECTORY_DELETE)
             if body.expected_updated_at is not None and current["updated_at"] != body.expected_updated_at:
                 raise HTTPException(409, "El registro fue modificado por otro usuario; recargue e intente de nuevo")
 
@@ -822,7 +833,10 @@ async def assign_driver(
 
 @router.delete("/{carrier_id}/drivers/{driver_id}")
 async def unassign_driver(
-    carrier_id: str, driver_id: str, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_DELETE)),
+    # Quitar del roster termina una asignación: es editar, igual que asignar
+    # (POST de arriba). Hasta el 12/10 exigía directory.delete y el botón se
+    # mostraba con directory.edit: 403 a los Supervisores de Operaciones (F-33).
+    carrier_id: str, driver_id: str, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -886,7 +900,10 @@ async def assign_asset(
 
 @router.delete("/{carrier_id}/assets/{asset_id}")
 async def unassign_asset(
-    carrier_id: str, asset_id: str, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_DELETE)),
+    # Quitar del roster termina una asignación: es editar, igual que asignar
+    # (POST de arriba). Hasta el 12/10 exigía directory.delete y el botón se
+    # mostraba con directory.edit: 403 a los Supervisores de Operaciones (F-33).
+    carrier_id: str, asset_id: str, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():

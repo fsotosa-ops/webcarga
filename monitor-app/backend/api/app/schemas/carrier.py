@@ -6,6 +6,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, field_validator, model_validator
 
+from ..authz.permissions import Permission
+
 from .common import ManagementType, normalize_management_types
 
 # Verificado contra datos reales (2026-07-16): public.carriers.operational_status
@@ -113,6 +115,21 @@ class CarrierPatchBody(BaseModel):
         if self.management_types is not None:
             touched.append("management_types")
         return touched
+
+
+# Permiso por campo del PATCH (bloque 0 del Directorio, 0.3). El estado va con
+# directory.edit en el mapa porque UNA transición lo es: ONBOARDING → ACTIVE,
+# que el Supervisor de Operaciones hace desde el pre-cierre (excepción R5).
+# Toda otra (dar de baja, reactivar) exige además directory.delete, y eso
+# depende del estado actual: lo decide patch_carrier después de leerlo, no
+# este mapa.
+CARRIER_FIELD_PERMISSIONS: dict[str, Permission] = {
+    "business_name": Permission.DIRECTORY_EDIT,
+    "tax_id": Permission.DIRECTORY_EDIT,
+    "management_types": Permission.DIRECTORY_EDIT,
+    "expected_updated_at": Permission.DIRECTORY_EDIT,
+    "operational_status": Permission.DIRECTORY_EDIT,
+}
 
 
 class CarrierListFacets(BaseModel):

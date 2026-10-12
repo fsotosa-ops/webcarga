@@ -3,6 +3,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, field_validator
 
+from ..authz.permissions import Permission
+
 OperationalStatus = Literal["ACTIVE", "INACTIVE"]
 
 
@@ -43,3 +45,14 @@ class DriverPatchBody(BaseModel):
     @classmethod
     def _normalize_name(cls, v):
         return v.strip().title() if isinstance(v, str) and v else v
+
+
+# Permiso por campo del PATCH (bloque 0 del Directorio, 0.3; patrón de
+# TRIP_FIELD_PERMISSIONS). Dar de baja o reactivar es de Operaciones; el resto
+# de la ficha, de los supervisores. Un campo nuevo sin entrada acá hace fallar
+# test_directory_permissions.test_todo_campo_del_patch_tiene_permiso.
+DRIVER_FIELD_PERMISSIONS: dict[str, Permission] = {
+    "full_name": Permission.DIRECTORY_EDIT,
+    "home_location_id": Permission.DIRECTORY_EDIT,
+    "operational_status": Permission.DIRECTORY_FLEET_STATUS,
+}

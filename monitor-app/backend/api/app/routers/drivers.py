@@ -8,10 +8,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import get_current_user, get_supabase
-from ..authz import Permission, require
+from ..authz import Permission, require, require_fields
 from ..db import get_pool
 from ..schemas.contact import ContactCreateBody
-from ..schemas.driver import DriverCreateBody, DriverPatchBody
+from ..schemas.driver import DRIVER_FIELD_PERMISSIONS, DriverCreateBody, DriverPatchBody
 from ..services.audit import log_change, record_manual_edit
 from ..services.entity_summary import driver_summary
 from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
@@ -319,8 +319,12 @@ async def create_driver(body: DriverCreateBody, pool=Depends(get_pool), user=Dep
 
 @router.patch("/{driver_id}")
 async def patch_driver(
-    driver_id: str, body: DriverPatchBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
+    # El permiso real lo decide el mapa por campo (R8 del plan del bloque 0):
+    # el Operador da de baja sin poder editar el resto, y la ruta no puede
+    # exigir directory.edit. Mismo patrón que PATCH /trips/{id}.
+    driver_id: str, body: DriverPatchBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_READ)),
 ):
+    require_fields(user, body.model_dump(exclude_none=True), DRIVER_FIELD_PERMISSIONS)
     async with pool.acquire() as conn:
         async with conn.transaction():
             current = await conn.fetchrow(

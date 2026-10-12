@@ -150,3 +150,30 @@ async def test_un_vinculo_fijado_a_mano_no_se_audita(conexion_revertida):
         "SELECT status FROM public.carrier_shippers WHERE carrier_id = $1 AND shipper_id = $2", empresa, cliente) == "INACTIVE"
     assert await conexion_revertida.fetchval(
         "SELECT count(*) FROM public.audit_log WHERE entity_id = $1 AND source = 'pre_cierre_auto'", empresa) == 0
+
+
+async def test_la_empresa_en_onboarding_trae_su_estado(conexion_revertida):
+    """Bloque 0 del Directorio (Task 7): "Activar empresa" se ofrece con
+    directory.edit solo para las filas en ONBOARDING; las demás (dar de baja,
+    reactivar) son de directory.delete. La fila trae el estado para decidirlo,
+    y las filas que devuelve el aviso son las mismas que antes."""
+    estados = {}
+    for estado in ("ONBOARDING", "INACTIVE"):
+        empresa = await conexion_revertida.fetchval(
+            "INSERT INTO public.carriers (business_name, operational_status) VALUES ($1, $2) RETURNING id",
+            f"{P} {estado}", estado)
+        plate = f"ZZ{uuid.uuid4().hex[:4].upper()}"
+        asset = await conexion_revertida.fetchval(
+            "INSERT INTO public.assets (license_plate, asset_type, operational_status) "
+            "VALUES ($1, 'TRACTOCAMION', 'ACTIVE') RETURNING id", plate)
+        await conexion_revertida.execute(
+            "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')",
+            asset, empresa)
+        await _viaje(conexion_revertida, plate=plate)
+        await _viaje(conexion_revertida, plate=plate)   # dos viajes, una sola fila (DISTINCT)
+        estados[str(empresa)] = estado
+
+    avisos = await pre_cierre.avisos_del_dia(conexion_revertida, D)
+
+    nuestras = [r for r in avisos["escalations"]["EMPRESA_ONBOARDING"] if r["carrier_id"] in estados]
+    assert sorted((r["carrier_id"], r["operational_status"]) for r in nuestras) == sorted(estados.items())

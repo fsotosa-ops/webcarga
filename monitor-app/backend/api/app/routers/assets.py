@@ -5,9 +5,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import get_current_user, get_supabase
-from ..authz import Permission, require
+from ..authz import Permission, require, require_fields
 from ..db import get_pool
-from ..schemas.asset import AssetCreateBody, AssetPatchBody
+from ..schemas.asset import ASSET_FIELD_PERMISSIONS, AssetCreateBody, AssetPatchBody
 from ..services.audit import log_change, record_manual_edit
 from ..services.entity_summary import asset_summary
 from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
@@ -101,8 +101,11 @@ async def create_asset(body: AssetCreateBody, pool=Depends(get_pool), user=Depen
 
 @router.patch("/{asset_id}")
 async def patch_asset(
-    asset_id: str, body: AssetPatchBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
+    # Permiso por campo, como patch_driver: el Operador da de baja un equipo
+    # sin poder editar el resto (R8 del plan del bloque 0).
+    asset_id: str, body: AssetPatchBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_READ)),
 ):
+    require_fields(user, body.model_dump(exclude_none=True), ASSET_FIELD_PERMISSIONS)
     async with pool.acquire() as conn:
         async with conn.transaction():
             current = await conn.fetchrow(
@@ -220,7 +223,9 @@ async def assign_driver_to_asset(
 
 @router.delete("/{asset_id}/driver-assignment")
 async def unassign_driver_from_asset(
-    asset_id: str, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_DELETE)),
+    # Quitar el conductor habitual termina una asignación: es editar, igual
+    # que asignarlo (R6 del plan del bloque 0; hasta el 12/10, directory.delete).
+    asset_id: str, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():

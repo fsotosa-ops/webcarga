@@ -33,6 +33,7 @@ class Permission(str, Enum):
     DIRECTORY_READ = "directory.read"
     DIRECTORY_EDIT = "directory.edit"
     DIRECTORY_DELETE = "directory.delete"
+    DIRECTORY_FLEET_STATUS = "directory.fleet_status"
     # Certificación
     CERTIFICATION_READ = "certification.read"
     DOCUMENTS_UPLOAD = "documents.upload"
@@ -76,7 +77,8 @@ PERMISSION_META: dict[Permission, PermissionMeta] = {
     P.OPERATIONS_CONFIGURE: PermissionMeta("operations", "Configurar estados, umbrales, temperaturas, alertas y motivos"),
     P.DIRECTORY_READ: PermissionMeta("directory", "Ver empresas, conductores, flota y contactos"),
     P.DIRECTORY_EDIT: PermissionMeta("directory", "Crear y editar empresas, conductores, flota y contactos"),
-    P.DIRECTORY_DELETE: PermissionMeta("directory", "Dar de baja empresas, conductores, flota y contactos"),
+    P.DIRECTORY_DELETE: PermissionMeta("directory", "Dar de baja y reactivar empresas, y eliminar empresas y contactos"),
+    P.DIRECTORY_FLEET_STATUS: PermissionMeta("directory", "Dar de baja y reactivar conductores y equipos"),
     P.CERTIFICATION_READ: PermissionMeta("certification", "Ver documentos y el catálogo de requisitos"),
     P.DOCUMENTS_UPLOAD: PermissionMeta("certification", "Cargar, clasificar y mover documentos"),
     P.DOCUMENTS_REVIEW: PermissionMeta("certification", "Aprobar, rechazar, reasignar y solicitar documentos"),
@@ -112,7 +114,9 @@ def _rol(code: str, name: str, description: str, *extra: Permission) -> SystemRo
     return SystemRole(code, name, description, READ_ALL | frozenset(extra))
 
 
-_OPS_OPERADOR = (P.TRIPS_EDIT_BASIC, P.TRIPS_VOID, P.CLOSURES_DECLARE, P.CLOSURES_SIGN)
+# DIRECTORY_FLEET_STATUS (bloque 0 del Directorio, D-e 12/10): Operaciones da
+# de baja y reactiva conductores y equipos; el Supervisor lo hereda de acá.
+_OPS_OPERADOR = (P.TRIPS_EDIT_BASIC, P.TRIPS_VOID, P.CLOSURES_DECLARE, P.CLOSURES_SIGN, P.DIRECTORY_FLEET_STATUS)
 _CERT_OPERADOR = (P.DOCUMENTS_UPLOAD,)
 _SEG_OPERADOR = (P.POLICIES_EDIT,)
 
@@ -135,7 +139,8 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
     _rol("certification_operator", "Operador de Certificación", "Carga y clasifica documentos.", *_CERT_OPERADOR),
     _rol("certification_supervisor", "Supervisor de Certificación",
          "Operador + aprobación de documentos, requisitos y directorio.",
-         *_CERT_OPERADOR, P.DOCUMENTS_REVIEW, P.CERTIFICATION_CONFIGURE, P.DIRECTORY_EDIT, P.DIRECTORY_DELETE),
+         *_CERT_OPERADOR, P.DOCUMENTS_REVIEW, P.CERTIFICATION_CONFIGURE, P.DIRECTORY_EDIT, P.DIRECTORY_DELETE,
+         P.DIRECTORY_FLEET_STATUS),
     _rol("insurance_operator", "Operador de Seguros", "Gestiona pólizas, coberturas y cuotas.", *_SEG_OPERADOR),
     _rol("insurance_supervisor", "Supervisor de Seguros", "Operador + eliminación de pólizas y tipos de cobertura.",
          *_SEG_OPERADOR, P.POLICIES_DELETE, P.INSURANCE_CONFIGURE),

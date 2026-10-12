@@ -5,6 +5,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from ..authz.permissions import Permission
+
 OperationalStatus = Literal["ACTIVE", "INACTIVE"]
 # Los dos tipos que existen de verdad. CAMION, FURGON y OTRO eran
 # placeholders del commit 5955c5f (Empresas/Seguros), ANTERIORES a la taxonomía
@@ -52,3 +54,14 @@ class AssetPatchBody(BaseModel):
     manufacture_year: Optional[int] = Field(default=None, ge=1950, le=2100)
     fleet_service_type_id: Optional[str] = None
     webcarga_operation_type_id: Optional[str] = None
+
+
+# Permiso por campo del PATCH (mismo patrón que DRIVER_FIELD_PERMISSIONS):
+# dar de baja o reactivar un equipo es de Operaciones; el resto, editar.
+ASSET_FIELD_PERMISSIONS: dict[str, Permission] = {
+    "asset_type": Permission.DIRECTORY_EDIT,
+    "manufacture_year": Permission.DIRECTORY_EDIT,
+    "fleet_service_type_id": Permission.DIRECTORY_EDIT,
+    "webcarga_operation_type_id": Permission.DIRECTORY_EDIT,
+    "operational_status": Permission.DIRECTORY_FLEET_STATUS,
+}
