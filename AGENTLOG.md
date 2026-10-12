@@ -19,9 +19,12 @@
 ### PARA LA PRÓXIMA SESIÓN (guardado el 12/10 a pedido del usuario)
 
 Orden sugerido; el detalle de cada punto está en su entrada de abajo.
-1. **Mirar dev con sesión iniciada** (el usuario inicia sesión en el navegador de Playwright), sin guardar nada:
-   Pendientes (escritorio y 390 px; "Guardar" del lote no tapado) y bloque 0 del Directorio (empresa dada de baja con
-   flota `9f048f12…`, Cierre de hoy y del 04/09, Sin clasificar). Portada de Certificación, ficha y cajón iguales que antes.
+1. ~~Mirar dev con sesión iniciada~~ **HECHO 12/10 ~05:55 UTC (solo lectura):** ficha de empresa dada de baja con "Dada de
+   baja", "Reactivar" para el Propietario y "Empresa dada de baja" en las tarjetas de sus conductores; Cierre de hoy OK;
+   Sin clasificar con la cola vacía real (200, no un error); Pendientes a 390 px (lista → panel con flecha, estado bajo el
+   nombre); portada de Certificación igual que antes. Capturas `.playwright-mcp/dev-*.png`. Observado para D1: nombres de
+   conductor con un "\N" literal (artefacto de importación), una empresa con el mismo nombre en dos grupos de la portada
+   (¿dos RUT?), la portada cuenta 84 conductores (los activos son 78, F-03), y en el teléfono el panel oculto ya se monta.
 2. **Decisión del usuario: opción A/B/C del rediseño de Sin clasificar** (auditoría 11/10, recomienda B) y sus preguntas §6.
 3. **D1 "Una sola respuesta"** del Directorio (brainstorming → spec → plan → subagent-driven): `app.is_operating`,
    `app.carrier_of`, `app.carrier_operation_types`, migrar lectores; incluir la guarda en la API contra asignar viajes a
