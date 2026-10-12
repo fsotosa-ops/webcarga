@@ -11,6 +11,7 @@ from ..services.reordenamiento import (
     ESTADOS_DEL_TABLERO, MovimientoBody, mover_una_posicion,
 )
 from ..services.reglas_del_monitor import SQL_REGLAS_DEL_MONITOR
+from ..services.vencimientos import GLOBAL_ALERT_THRESHOLD
 from ..services.revisiones import SQL_PENDIENTES_POR_DOMINIO, registrar_revision
 
 # Cada ruta declara su permiso (RBAC): ver tests/test_toda_ruta_declara_permiso.py.
@@ -225,9 +226,13 @@ async def move_status(
 async def list_alert_thresholds(pool=Depends(get_pool),
     _permiso=Depends(require(Permission.REFERENCE_READ)),
 ):
+    # Solo el aviso general (D1-R4): las filas por documento no las lee nadie
+    # y la pantalla prometía una alerta que no existía. Sigue siendo una lista
+    # para no cambiar el contrato del cliente.
     rows = await pool.fetch(
         "SELECT doc_type, label, warning_days, error_days "
-        "FROM app.alert_thresholds ORDER BY doc_type"
+        "FROM app.alert_thresholds WHERE doc_type = $1",
+        GLOBAL_ALERT_THRESHOLD,
     )
     return [dict(r) for r in rows]
 
@@ -240,8 +245,11 @@ async def patch_alert_threshold(
     # Reglas de vencimiento de documentos: Certificación (spec RBAC §4).
     usuario=Depends(require(Permission.CERTIFICATION_CONFIGURE)),
 ):
+    if doc_type != GLOBAL_ALERT_THRESHOLD:
+        raise HTTPException(404, "Solo se edita el aviso general de vencimiento")
     existing = await pool.fetchrow(
-        "SELECT doc_type FROM app.alert_thresholds WHERE doc_type = $1", doc_type
+        "SELECT doc_type, label, warning_days, error_days FROM app.alert_thresholds WHERE doc_type = $1",
+        doc_type,
     )
     if not existing:
         raise HTTPException(404, "Tipo de documento no encontrado")
@@ -249,6 +257,12 @@ async def patch_alert_threshold(
     data = body.model_dump(exclude_none=True)
     if not data:
         raise HTTPException(422, "Ningún campo enviado")
+    # El crítico es un tramo DENTRO del aviso: si no fuera menor, un documento
+    # quedaría en aviso crítico antes de estar Por vencer (R-E3).
+    aviso = data.get("warning_days", existing["warning_days"])
+    critico = data.get("error_days", existing["error_days"])
+    if critico >= aviso:
+        raise HTTPException(422, "El plazo crítico tiene que ser menor que el aviso")
 
     sets, vals = [], [doc_type]
     for field, value in data.items():

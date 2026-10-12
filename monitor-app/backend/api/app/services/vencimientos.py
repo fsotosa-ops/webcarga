@@ -45,11 +45,15 @@ def hoy_sql() -> str:
     return "public.hoy_chile()"
 
 
+# La fila global de Configuracion > Alertas de vencimiento: aviso (warning_days)
+# y critico (error_days). La unica que lee la logica (D1-R4).
+GLOBAL_ALERT_THRESHOLD = "documento_por_vencer"
+
 # El aviso de Configuracion > Alertas, para los tipos sin dias propios. Sin
 # correlacion: Postgres lo calcula una vez por consulta.
 _AVISO_GENERAL = (
     "(SELECT vg_at.warning_days FROM app.alert_thresholds vg_at "
-    "WHERE vg_at.doc_type = 'documento_por_vencer')"
+    f"WHERE vg_at.doc_type = '{GLOBAL_ALERT_THRESHOLD}')"
 )
 
 

@@ -176,6 +176,27 @@ async def test_aviso_en_el_borde_del_dia_de_chile(conexion_revertida):
     assert await aviso(vencio_ayer) == ("OVERDUE", -1, None)
 
 
+async def test_un_documento_al_dia_nunca_lleva_aviso_critico(conexion_revertida):
+    """Ruling T4-C. El crítico es un tramo DENTRO del por vencer: con error_days
+    (10) mayor que los días de aviso de la regla (3), un documento que vence en
+    7 días está fuera de la ventana de su regla (Al día) aunque esté dentro de
+    error_days; no puede llevar aviso crítico."""
+    conn = conexion_revertida
+    await conn.execute("UPDATE app.alert_thresholds SET error_days = 10 WHERE doc_type = 'documento_por_vencer'")
+    empresa = await _empresa(conn)
+    requisito = await _requisito(conn, "CARRIER")
+    await conn.execute(
+        "INSERT INTO public.compliance_requirement_rules (requirement_id, shipper_id, warning_days) "
+        "VALUES ($1, NULL, 3)", requisito)
+    hoy = await _hoy(conn)
+    registro = await _registro(conn, requisito, "CARRIER", empresa, status="APPROVED_MANUAL",
+                               vence=hoy + timedelta(days=7))
+    fila = await conn.fetchrow(
+        f"SELECT {document_state_sql('cr')} AS estado, {days_to_expiry_sql('cr')} AS dias, "
+        f"{alert_severity_sql('cr')} AS aviso FROM public.compliance_records cr WHERE cr.id = $1", registro)
+    assert (fila["estado"], fila["dias"], fila["aviso"]) == ("UP_TO_DATE", 7, None)
+
+
 # ── Habilitación ─────────────────────────────────────────────────────────────
 
 async def _empresa_con_un_documento(conn, *, nivel="LEGAL_MANDATORY", status="MISSING", vence=None,
