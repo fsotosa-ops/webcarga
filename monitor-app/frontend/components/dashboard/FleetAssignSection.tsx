@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { User } from 'lucide-react'
-import { isCarrierDeactivated, type DriverPickCandidate } from '@/lib/types'
+import { type DriverPickCandidate } from '@/lib/types'
 import { DriverSearchPicker } from './DriverSearchPicker'
 
 export type FleetAssignValue = {
@@ -48,9 +48,9 @@ export function FleetAssignSection({ value, onChange, suggested = [], suggestedL
 
   function pick(d: DriverPickCandidate) {
     setQuery('')
-    // La empresa se autocompleta solo si opera (R10): un viaje no se asigna a
-    // una empresa dada de baja, igual que antes de que la búsqueda la trajera.
-    const opera = !isCarrierDeactivated(d.carrier_operational_status)
+    // La empresa se autocompleta solo si está ACTIVA (R10): ni de baja ni en
+    // alta (ONBOARDING), igual que antes de que la búsqueda trajera su estado.
+    const opera = (d.carrier_operational_status ?? 'ACTIVE') === 'ACTIVE'
     onChange({
       driver_id:        d.driver_id,
       driver_name:       d.driver_name,

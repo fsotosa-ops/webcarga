@@ -122,4 +122,11 @@ describe('FleetAssignSection', () => {
     fireEvent.click(screen.getByText('Juan Pérez'))
     expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ carrier_id: 'c1', carrier_name: 'TransCargo' }))
   })
+
+  it('no autocompleta una empresa en alta (ONBOARDING)', () => {
+    const spy = vi.fn()
+    render(<Harness onChangeSpy={spy} suggested={[{ ...CANDIDATE, carrier_operational_status: 'ONBOARDING' }]} />)
+    fireEvent.click(screen.getByText('Juan Pérez'))
+    expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ driver_id: 'd1', carrier_id: null, carrier_name: null }))
+  })
 })
