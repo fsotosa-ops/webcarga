@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { User, Truck } from 'lucide-react'
-import { CARRIER_DEACTIVATED_LABEL, isCarrierDeactivated, statusLabel, type DirectorioBusqueda } from '@/lib/types'
+import { isCarrierDeactivated, type DirectorioBusqueda } from '@/lib/types'
+import { ChipDeBaja } from './ChipDeBaja'
 import { carrierPanelHref } from '@/lib/navegacion/directory'
 
 /**
@@ -98,16 +99,7 @@ function Fila({
         <p className="text-dato font-semibold text-text-primary truncate">{principal}</p>
         {secundario && <p className="text-etiqueta text-informativo font-mono truncate">{secundario}</p>}
       </div>
-      {deBaja && (
-        <span className="text-etiqueta font-semibold px-1.5 py-0.5 rounded-full border border-border text-informativo shrink-0">
-          {statusLabel('driver', 'INACTIVE')}
-        </span>
-      )}
-      {!deBaja && empresaDeBaja && (
-        <span className="text-etiqueta font-semibold px-1.5 py-0.5 rounded-full border border-border text-informativo shrink-0">
-          {CARRIER_DEACTIVATED_LABEL}
-        </span>
-      )}
+      <ChipDeBaja estado={deBaja ? 'INACTIVE' : 'ACTIVE'} carrierStatus={empresaDeBaja ? 'INACTIVE' : null} className="shrink-0" />
       <p className="text-etiqueta text-informativo truncate max-w-[45%] text-right">
         {/* Sin empresa no hay ficha donde abrirlo, y decirlo es más honesto que
             un link que lleva a una lista vacía. Son las personas que el

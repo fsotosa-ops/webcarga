@@ -116,10 +116,6 @@ async def fuzzy_match_drivers(
             )          AS driver_phone,
             c.id       AS carrier_id,
             c.business_name AS carrier_name,
-            -- La empresa aunque esté de baja, con su estado (bloque 0, 0.9; R10):
-            -- antes salía "Sin empresa". FleetAssignSection solo la autocompleta
-            -- si no está dada de baja, así que lo que se asigna no cambia.
-            c.operational_status AS carrier_operational_status,
             a.id       AS tractor_asset_id,
             a.license_plate AS tractor_plate,
             similarity(upper(d.full_name), upper($1)) AS similarity
