@@ -3113,10 +3113,7 @@ En `CarrierListFacets`, agregar `enabled: int` y `not_enabled: int`, y sumar al 
 
 - [ ] **Step 7: Update the mocked tests that fixed the old shape**
 
-En `tests/test_carriers.py`, debajo de `_carrier_facets_row`:
-
-```python
-Y `_carrier_facets_row` pasa a traer el conteo y las dos facetas nuevas, porque ahora salen de la misma fila:
+En `tests/test_carriers.py`, `_carrier_facets_row` pasa a traer el conteo y las dos facetas nuevas, porque ahora salen de la misma fila:
 
 ```python
 def _carrier_facets_row(**overrides):
