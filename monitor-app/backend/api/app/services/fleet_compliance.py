@@ -308,3 +308,71 @@ def alert_severity_sql(alias: str = "cr") -> str:
         f"(CASE WHEN {vigente} AND {days_to_expiry_sql(alias)} <= {_ERROR_DAYS} THEN 'critical' "
         f"WHEN {vigente} AND {por_vencer_predicate(alias)} THEN 'warning' END)"
     )
+
+
+# ── Proyecciones para los lectores (D1, Task 5) ──────────────────────────────
+#
+# Los lectores no escriben los alias del resumen a mano: si cada uno proyectara
+# `own_missing` a su manera, el día que el resumen sume una cifra habría cinco
+# lugares que tocar. `summary_from_row` lee estas columnas (ruling R-B1).
+
+CARRIER_SUMMARY_COLUMNS: tuple[str, ...] = (
+    "worst_state", "own_overdue", "own_expiring", "own_missing",
+    "fleet_overdue", "fleet_expiring", "fleet_missing", "can_operate",
+)
+# Una fila de conductor o equipo no trae la habilitación hecha: la arma
+# `summary_from_row` con `blocking_mandatory` y el `operational_status` que el
+# lector ya selecciona como columna propia (por eso no se retira de la fila).
+ENTITY_SUMMARY_COLUMNS: tuple[str, ...] = (
+    "worst_state", "overdue", "expiring", "missing", "blocking_mandatory",
+)
+
+
+def compliance_record_columns_sql(alias: str = "cr") -> str:
+    """Estado, días que faltan y aviso de un registro, para un SELECT. Lo leen
+    la ficha del Directorio y los paneles de conductor y equipo (R-B7); el
+    `status` guardado sigue al lado como historial del archivo."""
+    return (
+        f"{document_state_sql(alias)} AS document_state, "
+        f"{days_to_expiry_sql(alias)} AS days_to_expiry, "
+        f"{alert_severity_sql(alias)} AS alert_severity"
+    )
+
+
+def entity_summary_columns_sql(alias: str = "ec") -> str:
+    """El resumen de un conductor o un equipo desde un LEFT JOIN a
+    `entity_compliance` (sin fila = nada pendiente). El lector selecciona además
+    su propio `operational_status`: habilitado = activo y sin obligatorios
+    vencidos ni faltantes (R-B2), y eso lo decide `summary_from_row`."""
+    return (
+        f"{alias}.worst_state AS worst_state, "
+        f"COALESCE({alias}.overdue, 0) AS overdue, "
+        f"COALESCE({alias}.expiring, 0) AS expiring, "
+        f"COALESCE({alias}.missing, 0) AS missing, "
+        f"COALESCE({alias}.blocking_mandatory, 0) AS blocking_mandatory"
+    )
+
+
+def carrier_summary_columns_sql(alias: str = "cc") -> str:
+    """El resumen de una empresa desde un JOIN a `carrier_compliance` (una fila
+    por empresa, R-B3)."""
+    return ", ".join(f"{alias}.{col} AS {col}" for col in CARRIER_SUMMARY_COLUMNS)
+
+
+# Filtros de habilitación del Directorio (R-B14) sobre una fila que ya trae
+# las columnas de `carrier_summary_columns_sql`. Una empresa no activa no es
+# ni Habilitada ni No habilitada: la pantalla la muestra en gris.
+ENABLEMENT_FILTERS: dict[str, str] = {
+    "enabled": "can_operate",
+    "not_enabled": "operational_status = 'ACTIVE' AND NOT can_operate",
+}
+
+
+def take_summary(row: dict, *, with_fleet: bool) -> dict:
+    """Arma `compliance_summary` desde una fila ya convertida a dict y le saca
+    las columnas sueltas: la respuesta lleva el resumen, no campos planos que
+    alguien termine leyendo por separado."""
+    summary = summary_from_row(row, with_fleet=with_fleet).model_dump()
+    for col in CARRIER_SUMMARY_COLUMNS if with_fleet else ENTITY_SUMMARY_COLUMNS:
+        row.pop(col, None)
+    return summary

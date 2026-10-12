@@ -106,7 +106,6 @@ async def test_el_comparador_dice_igual_cuando_es_igual(conexion_revertida):
     assert _diferencias(activas, esperado, filas, lambda f: ("total", None)) == []
 
 
-@pytest.mark.xfail(strict=True, reason="F-02: el Directorio cuenta solo los obligatorios propios; lo arregla la Task 5")
 async def test_directorio_cuenta_lo_mismo_que_pendientes(conexion_revertida):
     conn = conexion_revertida
     activas, esperado = await _activas(conn), await _esperado(conn)
@@ -120,7 +119,7 @@ async def test_directorio_cuenta_lo_mismo_que_pendientes(conexion_revertida):
     assert malas == [], _informe(malas, activas, "Directorio")
 
 
-@pytest.mark.xfail(strict=True, reason="F-02: la vista rápida cuenta solo lo propio de la empresa; lo arregla la Task 6")
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="F-02: la vista rápida cuenta solo lo propio de la empresa; lo arregla la Task 6")
 async def test_vista_rapida_cuenta_lo_mismo_que_pendientes(conexion_revertida):
     conn = conexion_revertida
     activas, esperado = await _activas(conn), await _esperado(conn)
@@ -132,7 +131,7 @@ async def test_vista_rapida_cuenta_lo_mismo_que_pendientes(conexion_revertida):
     assert malas == [], _informe(malas, activas, "Vista rápida")
 
 
-@pytest.mark.xfail(strict=True, reason="F-02: el embudo cuenta la flota de baja (2.306 frente a 2.226); lo arregla la Task 6")
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="F-02: el embudo cuenta la flota de baja (2.306 frente a 2.226); lo arregla la Task 6")
 async def test_embudo_cuenta_lo_mismo_que_pendientes(conexion_revertida):
     conn = conexion_revertida
     activas, esperado = await _activas(conn), await _esperado(conn)

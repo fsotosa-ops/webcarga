@@ -10,6 +10,7 @@ from ..db import get_pool
 from ..schemas.asset import ASSET_FIELD_PERMISSIONS, AssetCreateBody, AssetPatchBody
 from ..services.audit import log_change, record_manual_edit
 from ..services.entity_summary import asset_summary
+from ..services.fleet_compliance import compliance_record_columns_sql
 from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
 from ..utils.document_storage import resolve_signed_url
 
@@ -263,6 +264,7 @@ async def list_asset_compliance_records(
                -- El vencimiento calculado según el tipo (HU-C1, entrega 2b);
                -- -infinity (falta la emisión o el período) no es una fecha.
                NULLIF({vence_el_sql('cr')}, '-infinity') AS vence_el,
+               {compliance_record_columns_sql('cr')},
                cr.issue_date, cr.period_start
         FROM public.compliance_records cr
         JOIN public.compliance_requirements req ON req.id = cr.requirement_id

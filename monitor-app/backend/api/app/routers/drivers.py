@@ -14,6 +14,7 @@ from ..schemas.contact import ContactCreateBody
 from ..schemas.driver import DRIVER_FIELD_PERMISSIONS, DriverCreateBody, DriverPatchBody
 from ..services.audit import log_change, record_manual_edit
 from ..services.entity_summary import driver_summary
+from ..services.fleet_compliance import compliance_record_columns_sql
 from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
 from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente
 from ..services.origen_del_viaje import origen_del_viaje
@@ -401,6 +402,7 @@ async def list_driver_compliance_records(
                -- El vencimiento calculado según el tipo (HU-C1, entrega 2b);
                -- -infinity (falta la emisión o el período) no es una fecha.
                NULLIF({vence_el_sql('cr')}, '-infinity') AS vence_el,
+               {compliance_record_columns_sql('cr')},
                cr.issue_date, cr.period_start
         FROM public.compliance_records cr
         JOIN public.compliance_requirements req ON req.id = cr.requirement_id

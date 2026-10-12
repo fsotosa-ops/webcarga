@@ -2,14 +2,15 @@
 Reemplaza schemas/transporter_relational.py: internacionalizado (tax_id +
 country_code en vez de rut/dv), sin los sub-recursos jsonb legacy."""
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
+from uuid import UUID
 
 from pydantic import BaseModel, field_validator, model_validator
 
 from ..authz.permissions import Permission
 
 from .common import ManagementType, normalize_management_types
-from .states import CarrierLifecycle
+from .states import CarrierLifecycle, ComplianceSummary
 
 # Verificado contra datos reales (2026-07-16): public.carriers.operational_status
 # no tiene CHECK constraint, y los valores en uso hoy son 'ACTIVE' (38) y
@@ -137,16 +138,36 @@ CARRIER_FIELD_PERMISSIONS: dict[str, Permission] = {
 
 class CarrierListFacets(BaseModel):
     """Conteos por compliance_health sobre el universo filtrado por `q` +
-    `operational_status` (sin aplicar el filtro `health` activo) — alimenta
-    los tabs de alertas del listado de Empresas sin que cambiar de tab
-    reordene los otros conteos."""
+    `operational_status` (sin aplicar los filtros `health` ni `enablement`
+    activos) — alimenta los tabs de alertas del listado de Empresas sin que
+    cambiar de tab reordene los otros conteos. `enabled`/`not_enabled`:
+    habilitación calculada (D1, R-B14); una empresa no activa no cuenta en
+    ninguna."""
     pending: int
     ok: int
+    enabled: int
+    not_enabled: int
     total: int
 
 
+class CarrierListItem(BaseModel):
+    """Una fila del Directorio. `compliance_summary` es la respuesta única
+    (D1); `pending_mandatory` y `compliance_health` siguen al lado hasta la
+    Task 16, porque el frontend del despliegue 1 todavía los pinta."""
+    id: UUID | str
+    tax_id: Optional[str] = None
+    country_code: Optional[str] = None
+    business_name: str
+    operational_status: CarrierLifecycle
+    total_requirements: int
+    last_document_update: Optional[datetime] = None
+    pending_mandatory: int
+    compliance_health: Literal["PENDING", "OK"]
+    compliance_summary: ComplianceSummary
+
+
 class CarrierListResponse(BaseModel):
-    data: list
+    data: list[CarrierListItem]
     count: int
     page: int
     limit: int

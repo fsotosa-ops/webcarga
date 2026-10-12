@@ -2,7 +2,7 @@
 router de Checkpoint A-E (transporters.py/transporters_legacy.py, borrados
 2026-07-16 junto con insurance.py viejo — ver AGENTLOG.md).
 """
-from typing import Optional
+from typing import Annotated, Literal, Optional
 
 from uuid import UUID
 
@@ -18,6 +18,16 @@ from ..schemas.common import PaginatedResponse
 from ..schemas.contact import ContactCreateBody
 from ..schemas.insurance import CarrierInsuranceOverviewResponse, InsurancePolicyCreateBody
 from ..services.audit import log_change, record_manual_edit
+from ..services.fleet_compliance import (
+    CARRIER_SUMMARY_COLUMNS,
+    ENABLEMENT_FILTERS,
+    carrier_compliance_cte,
+    carrier_summary_columns_sql,
+    compliance_record_columns_sql,
+    entity_compliance_cte,
+    entity_summary_columns_sql,
+    take_summary,
+)
 from ..services.entity_summary import carrier_summary
 from ..services.fleet_driver_gap import compute_fleet_driver_gap
 from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
@@ -106,6 +116,13 @@ async def list_carriers(
         ),
     ),
     health: str = Query("", description="PENDING|OK — filtra por documentación obligatoria pendiente"),
+    enablement: Annotated[Literal["enabled", "not_enabled", ""], Query(
+        description=(
+            "enabled|not_enabled. Habilitada = puede operar (D1); No habilitada = activa "
+            "con algún obligatorio vencido o faltante. Una empresa no activa no es ninguna "
+            "de las dos: su ciclo de vida ya lo dice."
+        ),
+    )] = "",
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     pool=Depends(get_pool),
@@ -124,51 +141,68 @@ async def list_carriers(
         clauses.append(f"c.operational_status = ANY(${len(params)}::text[])")
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     agg_cte = f"WITH agg AS ({_CARRIER_LIST_AGG.format(where=where, pendiente=pendiente)})"
+    # D1: la misma respuesta que Pendientes (spec §5), una vez por consulta.
+    # compliance_health y pending_mandatory siguen al lado hasta la Task 16.
+    base = (
+        f"{agg_cte},\n{carrier_compliance_cte()},\n"
+        f"listed AS (SELECT agg.*, {carrier_summary_columns_sql('cc')} FROM agg "
+        f"LEFT JOIN carrier_compliance cc ON cc.carrier_id = agg.carrier_id)"
+    )
 
-    health_params = list(params)
+    filter_params = list(params)
+    filters: list[str] = []
     if health:
-        health_params.append(health)
-        health_where = f"WHERE compliance_health = ${len(health_params)}"
-    else:
-        health_where = ""
+        filter_params.append(health)
+        filters.append(f"compliance_health = ${len(filter_params)}")
+    if enablement:
+        filters.append(f"({ENABLEMENT_FILTERS[enablement]})")
+    filter_where = ("WHERE " + " AND ".join(filters)) if filters else ""
 
     offset = (page - 1) * limit
-    lp, op = len(health_params) + 1, len(health_params) + 2
+    lp, op = len(filter_params) + 1, len(filter_params) + 2
+    summary_cols = ", ".join(CARRIER_SUMMARY_COLUMNS)
 
     rows = await pool.fetch(
         f"""
-        {agg_cte}
+        {base}
         SELECT carrier_id AS id, tax_id, country_code, business_name, operational_status,
-               total_requirements, last_document_update, pending_mandatory, compliance_health
-        FROM agg
-        {health_where}
+               total_requirements, last_document_update, pending_mandatory, compliance_health,
+               {summary_cols}
+        FROM listed
+        {filter_where}
         ORDER BY
             CASE compliance_health WHEN 'PENDING' THEN 1 ELSE 2 END,
             pending_mandatory DESC,
             business_name ASC
         LIMIT ${lp} OFFSET ${op}
         """,
-        *health_params, limit, offset,
+        *filter_params, limit, offset,
     )
-    count = await pool.fetchval(f"{agg_cte} SELECT count(*) FROM agg {health_where}", *health_params)
-    facets = await pool.fetchrow(
+    # El conteo de la página y las facetas en una sola pasada. Las facetas son
+    # del universo `q` + `operational_status`, sin `health` ni `enablement`:
+    # cambiar de pestaña no reordena los otros conteos (CarrierListFacets).
+    counts = await pool.fetchrow(
         f"""
-        {agg_cte}
+        {base}
         SELECT
-            COUNT(*) FILTER (WHERE compliance_health = 'PENDING') AS pending,
-            COUNT(*) FILTER (WHERE compliance_health = 'OK') AS ok,
-            COUNT(*) AS total
-        FROM agg
+            COUNT(*) FILTER (WHERE {" AND ".join(filters) or "true"})          AS count,
+            COUNT(*) FILTER (WHERE compliance_health = 'PENDING')               AS pending,
+            COUNT(*) FILTER (WHERE compliance_health = 'OK')                    AS ok,
+            COUNT(*) FILTER (WHERE {ENABLEMENT_FILTERS["enabled"]})             AS enabled,
+            COUNT(*) FILTER (WHERE {ENABLEMENT_FILTERS["not_enabled"]})         AS not_enabled,
+            COUNT(*)                                                            AS total
+        FROM listed
         """,
-        *params,
+        *filter_params,
     )
-    return {
-        "data": [dict(r) for r in rows],
-        "count": count,
-        "page": page,
-        "limit": limit,
-        "facets": dict(facets),
-    }
+    data = []
+    for r in rows:
+        fila = dict(r)
+        fila["compliance_summary"] = take_summary(fila, with_fleet=True)
+        data.append(fila)
+    facets = dict(counts)
+    count = facets.pop("count")
+    return {"data": data, "count": count, "page": page, "limit": limit, "facets": facets}
 
 
 # ── Landing de Seguros — agregado por carrier, sincronizado con la misma
@@ -279,11 +313,15 @@ async def list_carriers_insurance_overview(
 
 async def _assemble_carrier_detail(carrier_id: str, pool, supabase=None) -> dict:
     carrier = await pool.fetchrow(
-        """
-        SELECT id, tax_id, country_code, business_name, operational_status,
-               legacy_admin_id, erp_id, is_manual_override, overridden_by, overridden_at,
-               created_at, updated_at, management_types
-        FROM public.carriers WHERE id = $1
+        f"""
+        WITH {carrier_compliance_cte()}
+        SELECT c.id, c.tax_id, c.country_code, c.business_name, c.operational_status,
+               c.legacy_admin_id, c.erp_id, c.is_manual_override, c.overridden_by, c.overridden_at,
+               c.created_at, c.updated_at, c.management_types,
+               {carrier_summary_columns_sql('cc')}
+        FROM public.carriers c
+        LEFT JOIN carrier_compliance cc ON cc.carrier_id = c.id
+        WHERE c.id = $1
         """,
         carrier_id,
     )
@@ -311,6 +349,9 @@ async def _assemble_carrier_detail(carrier_id: str, pool, supabase=None) -> dict
                -- El vencimiento calculado según el tipo (HU-C1, entrega 2b);
                -- -infinity (falta la emisión o el período) no es una fecha.
                NULLIF({vence_el_sql('cr')}, '-infinity') AS vence_el,
+               -- D1: el estado lo calcula la regla de Configuración, no el
+               -- `status` guardado (historial del archivo, spec §3).
+               {compliance_record_columns_sql('cr')},
                cr.issue_date, cr.period_start
         FROM public.compliance_records cr
         JOIN public.compliance_requirements req ON req.id = cr.requirement_id
@@ -325,8 +366,11 @@ async def _assemble_carrier_detail(carrier_id: str, pool, supabase=None) -> dict
         for record in compliance_records:
             record["file_url"] = resolve_signed_url(supabase, record["file_url"])
 
+    detail = dict(carrier)
+    summary = take_summary(detail, with_fleet=True)
     return {
-        **dict(carrier),
+        **detail,
+        "compliance_summary": summary,
         "contacts": [dict(c) for c in contacts],
         "compliance_records": compliance_records,
     }
@@ -354,9 +398,11 @@ async def get_fleet_driver_gap(pool=Depends(get_pool), _=Depends(require(Permiss
 # UNA sola consulta: son ocho conteos sobre tres tablas, y ocho viajes a la base
 # para dibujar una tira de cifras es lo que vuelve lenta una portada.
 #
-# La flota se cuenta SOLO en empresas activas y por asignación vigente. Contar
-# los 124 vehículos del catálogo diría "124 tractos" incluyendo los de empresas
-# dadas de baja hace un año, y ese número no describe ninguna operación.
+# La flota se cuenta SOLO en empresas activas y sobre app.active_fleet: lo
+# activo con asignación vigente (D1, spec §4.1). Hasta el 12/10 contaba por
+# asignación sola, y dar de baja no la toca: decía 84 conductores donde el
+# Cierre ve 78 (F-03). Es la misma pregunta con la respuesta corregida
+# (D1-R3), no un campo nuevo.
 _SQL_DIRECTORIO = """
 SELECT
   (SELECT count(*) FROM public.carriers)                                          AS empresas_total,
@@ -364,18 +410,17 @@ SELECT
   (SELECT count(*) FROM public.carriers
     WHERE operational_status IN ('LEGACY_INACTIVE', 'INACTIVE'))                  AS inactivas,
   (SELECT count(*) FROM public.carriers WHERE operational_status = 'ONBOARDING')  AS onboarding,
-  (SELECT count(DISTINCT a.id) FROM public.assets a
-     JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
-     JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
-    WHERE a.asset_type = 'TRACTOCAMION')                                          AS tractos,
-  (SELECT count(DISTINCT a.id) FROM public.assets a
-     JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
-     JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
-    WHERE a.asset_type = 'RAMPLA')                                                AS ramplas,
-  (SELECT count(DISTINCT d.id) FROM public.drivers d
-     JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
-     JOIN public.carriers c ON c.id = da.carrier_id AND c.operational_status = 'ACTIVE')
-                                                                                  AS conductores
+  (SELECT count(DISTINCT f.entity_id) FROM app.active_fleet f
+     JOIN public.carriers c ON c.id = f.carrier_id AND c.operational_status = 'ACTIVE'
+     JOIN public.assets a ON a.id = f.entity_id
+    WHERE f.entity_type = 'ASSET' AND a.asset_type = 'TRACTOCAMION')              AS tractos,
+  (SELECT count(DISTINCT f.entity_id) FROM app.active_fleet f
+     JOIN public.carriers c ON c.id = f.carrier_id AND c.operational_status = 'ACTIVE'
+     JOIN public.assets a ON a.id = f.entity_id
+    WHERE f.entity_type = 'ASSET' AND a.asset_type = 'RAMPLA')                    AS ramplas,
+  (SELECT count(DISTINCT f.entity_id) FROM app.active_fleet f
+     JOIN public.carriers c ON c.id = f.carrier_id AND c.operational_status = 'ACTIVE'
+    WHERE f.entity_type = 'DRIVER')                                               AS conductores
 """
 
 
@@ -744,10 +789,12 @@ async def list_carrier_drivers(carrier_id: str, pool=Depends(get_pool), _=Depend
     # refresca cuando cambian los documentos.
     rows = await pool.fetch(
         f"""
+        WITH {entity_compliance_cte()}
         SELECT r.driver_id AS id, r.tax_id, r.full_name, r.operational_status,
                dcs.total_requirements, dcs.last_document_update,
                COALESCE(sev.pending_mandatory, 0) AS pending_mandatory,
-               CASE WHEN COALESCE(sev.pending_mandatory, 0) > 0 THEN 'PENDING' ELSE 'OK' END AS compliance_health
+               CASE WHEN COALESCE(sev.pending_mandatory, 0) > 0 THEN 'PENDING' ELSE 'OK' END AS compliance_health,
+               {entity_summary_columns_sql('ec')}
         FROM (
             SELECT d.id AS driver_id, d.tax_id, d.full_name, d.operational_status
             FROM public.driver_assignments da
@@ -756,11 +803,17 @@ async def list_carrier_drivers(carrier_id: str, pool=Depends(get_pool), _=Depend
         ) r
         LEFT JOIN app.driver_compliance_status dcs ON dcs.driver_id = r.driver_id
         {_pending_mandatory_join('DRIVER', 'driver_id')}
+        LEFT JOIN entity_compliance ec ON ec.entity_type = 'DRIVER' AND ec.entity_id = r.driver_id
         ORDER BY r.full_name
         """,
         carrier_id,
     )
-    return [dict(r) for r in rows]
+    filas = []
+    for r in rows:
+        fila = dict(r)
+        fila["compliance_summary"] = take_summary(fila, with_fleet=False)
+        filas.append(fila)
+    return filas
 
 
 # ── Transferir conductor o tracto de empresa ──────────────────────────────────
@@ -874,35 +927,48 @@ async def unassign_driver(
 
 @router.get("/{carrier_id}/assets")
 async def list_carrier_assets(carrier_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
+    # En vivo desde public.assets, igual que el roster de conductores (bloque 0,
+    # 0.2): app.carrier_asset_roster es materializada y no se refresca cuando
+    # se da de baja un equipo. Con el ciclo de vida viejo, la habilitación del
+    # equipo saldría mal (D1, R-B8). Los conteos de documentos siguen en
+    # app.asset_compliance_status, que sí se refresca con los documentos.
     rows = await pool.fetch(
         f"""
+        WITH {entity_compliance_cte()}
         SELECT r.asset_id AS id, r.license_plate, r.asset_type, r.operational_status,
-               r.fleet_service_type_id, r.fleet_service_type_label,
-               r.fleet_service_type_bg_color, r.fleet_service_type_text_color,
+               r.fleet_service_type_id, st.label AS fleet_service_type_label,
+               st.bg_color AS fleet_service_type_bg_color, st.text_color AS fleet_service_type_text_color,
                -- Tipo de Operacion WebCarga (Tractoreo / Equipo Completo), el
                -- campo que decide si el tracto bloquea el cierre del dia.
-               --
-               -- Se lee de public.assets EN VIVO, no del roster: la vista es
-               -- materializada, y este es un campo que ahora se edita desde
-               -- esta misma pantalla — leerlo de la vista mostraria el valor
-               -- viejo hasta el proximo REFRESH, o sea el usuario guardaria y
-               -- la ficha le diria que no cambio nada.
-               av.webcarga_operation_type_id,
+               r.webcarga_operation_type_id,
                wot.label AS webcarga_operation_type_label,
                wot.code  AS webcarga_operation_type_code,
-               r.total_requirements, r.last_document_update,
+               acs.total_requirements, acs.last_document_update,
                COALESCE(sev.pending_mandatory, 0) AS pending_mandatory,
-               CASE WHEN COALESCE(sev.pending_mandatory, 0) > 0 THEN 'PENDING' ELSE 'OK' END AS compliance_health
-        FROM app.carrier_asset_roster r
-        JOIN public.assets av ON av.id = r.asset_id
-        LEFT JOIN app.status_taxonomies wot ON wot.id = av.webcarga_operation_type_id
+               CASE WHEN COALESCE(sev.pending_mandatory, 0) > 0 THEN 'PENDING' ELSE 'OK' END AS compliance_health,
+               {entity_summary_columns_sql('ec')}
+        FROM (
+            SELECT a.id AS asset_id, a.license_plate, a.asset_type, a.operational_status,
+                   a.fleet_service_type_id, a.webcarga_operation_type_id
+            FROM public.asset_assignments aa
+            JOIN public.assets a ON a.id = aa.asset_id
+            WHERE aa.carrier_id = $1 AND aa.status = 'ACTIVE'
+        ) r
+        LEFT JOIN app.status_taxonomies st ON st.id = r.fleet_service_type_id
+        LEFT JOIN app.status_taxonomies wot ON wot.id = r.webcarga_operation_type_id
+        LEFT JOIN app.asset_compliance_status acs ON acs.asset_id = r.asset_id
         {_pending_mandatory_join('ASSET', 'asset_id')}
-        WHERE r.carrier_id = $1
+        LEFT JOIN entity_compliance ec ON ec.entity_type = 'ASSET' AND ec.entity_id = r.asset_id
         ORDER BY r.license_plate
         """,
         carrier_id,
     )
-    return [dict(r) for r in rows]
+    filas = []
+    for r in rows:
+        fila = dict(r)
+        fila["compliance_summary"] = take_summary(fila, with_fleet=False)
+        filas.append(fila)
+    return filas
 
 
 @router.post("/{carrier_id}/assets", status_code=201)

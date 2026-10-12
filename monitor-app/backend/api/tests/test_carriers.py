@@ -21,9 +21,37 @@ def make_client(pool, supabase=None):
 
 
 def _carrier_facets_row(**overrides):
-    base = {"pending": 0, "ok": 0, "total": 0}
+    base = {"count": 0, "pending": 0, "ok": 0, "enabled": 0, "not_enabled": 0, "total": 0}
     base.update(overrides)
     return base
+
+
+# Las columnas que lee take_summary (D1, Task 5): una empresa sin pendientes.
+RESUMEN_VACIO = {"worst_state": None, "own_overdue": 0, "own_expiring": 0, "own_missing": 0,
+                 "fleet_overdue": 0, "fleet_expiring": 0, "fleet_missing": 0, "can_operate": True}
+# Conductor o equipo (ruling F1): cifras propias y lo que decide la habilitación.
+RESUMEN_VACIO_ENTIDAD = {"worst_state": None, "overdue": 0, "expiring": 0, "missing": 0,
+                         "blocking_mandatory": 0}
+
+
+def test_list_carriers_rejects_invalid_enablement():
+    pool = AsyncMock()
+    assert make_client(pool).get("/api/v1/carriers?enablement=BOGUS").status_code == 422
+
+
+def test_list_carriers_enablement_binds_every_placeholder():
+    """Mismo guardarraíl que test_status_binds_exactly_the_parameters_it_references:
+    un filtro nuevo no puede dejar un $n sin su argumento (los AsyncMock no lo ven)."""
+    import re
+
+    for query in ("enablement=enabled", "enablement=not_enabled&health=PENDING&q=Acme"):
+        pool = AsyncMock()
+        pool.fetch.return_value = []
+        pool.fetchrow.return_value = _carrier_facets_row()
+        make_client(pool).get(f"/api/v1/carriers?{query}")
+        for call in (pool.fetch.call_args, pool.fetchrow.call_args):
+            sql, *args = call.args
+            assert {int(n) for n in re.findall(r"\$(\d+)", sql)} == set(range(1, len(args) + 1)), query
 
 
 def test_list_carriers_aggregates_pending_mandatory_docs():
@@ -31,9 +59,9 @@ def test_list_carriers_aggregates_pending_mandatory_docs():
     pool.fetch.return_value = [{"id": "c1", "tax_id": "1-9", "country_code": "CL",
                                  "business_name": "Acme", "operational_status": "ACTIVE",
                                  "total_requirements": 12, "last_document_update": None,
-                                 "pending_mandatory": 2, "compliance_health": "PENDING"}]
-    pool.fetchval.return_value = 1
-    pool.fetchrow.return_value = _carrier_facets_row(pending=1, total=1)
+                                 "pending_mandatory": 2, "compliance_health": "PENDING",
+                                 **RESUMEN_VACIO}]
+    pool.fetchrow.return_value = _carrier_facets_row(count=1, pending=1, total=1)
     client = make_client(pool)
 
     res = client.get("/api/v1/carriers")
@@ -43,7 +71,8 @@ def test_list_carriers_aggregates_pending_mandatory_docs():
     assert body["count"] == 1
     assert body["data"][0]["business_name"] == "Acme"
     assert body["data"][0]["compliance_health"] == "PENDING"
-    assert body["facets"] == {"pending": 1, "ok": 0, "total": 1}
+    assert body["facets"] == {"pending": 1, "ok": 0, "enabled": 0, "not_enabled": 0, "total": 1}
+    assert body["data"][0]["compliance_summary"]["can_operate"] is True
     fetch_query = pool.fetch.call_args.args[0]
     assert "FROM public.carriers c" in fetch_query
     assert "LEFT JOIN public.compliance_records cr" in fetch_query
@@ -243,7 +272,7 @@ def test_get_carrier_assembles_nested_contacts_and_compliance():
         "id": "c1", "tax_id": "1-9", "country_code": "CL", "business_name": "Acme",
         "operational_status": "ACTIVE", "legacy_admin_id": None, "erp_id": None,
         "is_manual_override": False, "overridden_by": None, "overridden_at": None,
-        "created_at": None, "updated_at": None,
+        "created_at": None, "updated_at": None, **RESUMEN_VACIO,
     }
     pool.fetch.side_effect = [
         [{"id": "ct1", "contact_role": "LEGAL_REP", "first_name": "Ana", "last_name": None,
@@ -400,7 +429,7 @@ def test_patch_carrier_sets_manual_override_and_returns_detail():
         "id": "c1", "tax_id": "1-9", "country_code": "CL", "business_name": "Nuevo Nombre",
         "operational_status": "ACTIVE", "legacy_admin_id": None, "erp_id": None,
         "is_manual_override": True, "overridden_by": USER["sub"], "overridden_at": None,
-        "created_at": None, "updated_at": None,
+        "created_at": None, "updated_at": None, **RESUMEN_VACIO,
     }
     pool.fetch.side_effect = [[], []]
     client = make_client(pool)
@@ -454,7 +483,7 @@ def test_patch_carrier_management_types_audits_without_keyerror():
         "id": "c1", "tax_id": "1-9", "country_code": "CL", "business_name": "Viejo",
         "operational_status": "ACTIVE", "legacy_admin_id": None, "erp_id": None,
         "is_manual_override": True, "overridden_by": USER["sub"], "overridden_at": None,
-        "created_at": None, "updated_at": None,
+        "created_at": None, "updated_at": None, **RESUMEN_VACIO,
     }
     pool.fetch.side_effect = [[], []]
     client = make_client(pool)
@@ -495,7 +524,7 @@ def test_patch_carrier_sets_tax_id_and_activates():
         "id": "c1", "tax_id": "1-9", "country_code": "CL", "business_name": "A",
         "operational_status": "ACTIVE", "legacy_admin_id": None, "erp_id": None,
         "is_manual_override": True, "overridden_by": USER["sub"], "overridden_at": None,
-        "created_at": None, "updated_at": None,
+        "created_at": None, "updated_at": None, **RESUMEN_VACIO,
     }
     pool.fetch.side_effect = [[], []]
     client = make_client(pool)
@@ -532,7 +561,7 @@ def test_list_carrier_drivers_includes_pending_mandatory():
     pool.fetch.return_value = [{
         "id": "d1", "tax_id": "1-9", "full_name": "Juan Pérez", "operational_status": "ACTIVE",
         "total_requirements": 5, "last_document_update": None,
-        "pending_mandatory": 2, "compliance_health": "PENDING",
+        "pending_mandatory": 2, "compliance_health": "PENDING", **RESUMEN_VACIO_ENTIDAD,
     }]
     client = make_client(pool)
 
@@ -554,7 +583,7 @@ def test_list_carrier_assets_includes_pending_mandatory():
     pool.fetch.return_value = [{
         "id": "a1", "license_plate": "ABCD12", "asset_type": "TRACTOCAMION", "operational_status": "ACTIVE",
         "total_requirements": 3, "last_document_update": None,
-        "pending_mandatory": 0, "compliance_health": "OK",
+        "pending_mandatory": 0, "compliance_health": "OK", **RESUMEN_VACIO_ENTIDAD,
     }]
     client = make_client(pool)
 
@@ -564,7 +593,9 @@ def test_list_carrier_assets_includes_pending_mandatory():
     body = res.json()
     assert body[0]["compliance_health"] == "OK"
     fetch_query = pool.fetch.call_args.args[0]
-    assert "FROM app.carrier_asset_roster r" in fetch_query
+    # En vivo (D1, R-B8): nunca desde la vista materializada sin refresco.
+    assert "carrier_asset_roster" not in fetch_query
+    assert "JOIN public.assets a" in fetch_query
     assert "cr.entity_type = 'ASSET'" in fetch_query
 
 

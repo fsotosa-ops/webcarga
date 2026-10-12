@@ -13,10 +13,18 @@ import pytest
 
 from app.routers.carriers import get_directorio
 from tests.conftest import PoolDeUnaConexion
+from tests.d1_subjects import apply_fleet_facts
 
 pytestmark = pytest.mark.integracion
 
 PREFIJO = "ZZ-TEST-DIRECTORIO"
+
+
+@pytest.fixture(autouse=True)
+async def _hechos_de_la_flota(conexion_revertida):
+    """get_directorio (D1, Task 5) cuenta app.active_fleet: hasta la Task 10 la
+    migración no está aplicada."""
+    await apply_fleet_facts(conexion_revertida)
 
 
 async def _empresa(conn, estado: str) -> str:
