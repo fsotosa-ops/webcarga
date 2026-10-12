@@ -233,6 +233,13 @@ async def test_conductor_habitual_de_baja_es_409(conexion_revertida, de_baja, co
                                      pool=PoolDeUnaConexion(conn), user=usuario)
 
     assert e.value.detail["code"] == codigo
+    # El texto describe esta acción (no un viaje) y dice qué hacer.
+    quien = f"Conductor {flota['suffix']}" if de_baja == "driver" else flota["plate"]
+    accion = ("no puede ser el conductor habitual de un equipo" if de_baja == "driver"
+              else "no se le puede asignar un conductor habitual")
+    mensaje = e.value.detail["message"]
+    assert quien in mensaje and accion in mensaje and "Reactívalo en el Directorio." in mensaje
+    assert "viajes" not in mensaje
     assert await conn.fetchval(
         "SELECT count(*) FROM public.vehicle_driver_assignments WHERE asset_id = $1::uuid AND status = 'ACTIVE'",
         flota["asset"]) == 0
@@ -266,6 +273,8 @@ async def test_editar_la_patente_hacia_un_tracto_de_baja_es_409_y_no_escribe(con
 
     assert (e.value.status_code, e.value.detail["code"]) == (409, "ASSET_INACTIVE")
     assert flota["plate"] in e.value.detail["message"]
+    # Es un viaje aunque no evalúe la empresa: conserva el texto de los viajes.
+    assert "no se le pueden asignar viajes" in e.value.detail["message"]
     assert await _vinculo_manual(conn, trip_id) is None
 
 

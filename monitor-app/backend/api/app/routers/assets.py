@@ -190,7 +190,7 @@ async def assign_driver_to_asset(
             # No es un viaje: la empresa no se evalúa. La guarda compartida
             # reemplaza el chequeo propio de la Task 7 (Ruling F14).
             warnings = await enforce_assignment(conn, AssignmentSubjects(
-                driver_id=driver_id, asset_ids=(asset_id,), check_carrier=False))
+                driver_id=driver_id, asset_ids=(asset_id,), check_carrier=False, target="usual_driver"))
 
             # Desactivar la asignación ACTIVE previa de este vehículo (a
             # cualquier conductor) antes de insertar la nueva — el índice

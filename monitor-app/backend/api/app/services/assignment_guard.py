@@ -48,6 +48,11 @@ class AssignmentSubjects:
     driver_id: str | None = None
     asset_ids: tuple[str, ...] = ()
     check_carrier: bool = True
+    # A qué se asigna, solo para el texto del 409: "trip" (un viaje) o
+    # "usual_driver" (el conductor habitual de un equipo). No va atado a
+    # check_carrier: el PATCH de patente de un viaje tampoco evalúa la empresa
+    # y es un viaje.
+    target: str = "trip"
 
 
 @dataclass(frozen=True)
@@ -81,7 +86,22 @@ SELECT carrier_id::text, can_operate FROM carrier_compliance WHERE carrier_id = 
 """
 
 
-def _verdict(row, can_operate: dict[str, bool]) -> AssignmentCheck:
+# Texto del 409 por conductor o equipo de baja, según a qué se asigna.
+_INACTIVE_MESSAGES = {
+    "trip": {
+        DRIVER_INACTIVE: "El conductor {} está dado de baja: no se le pueden asignar viajes.",
+        ASSET_INACTIVE: "El equipo {} está dado de baja: no se le pueden asignar viajes.",
+    },
+    "usual_driver": {
+        DRIVER_INACTIVE: ("El conductor {} está dado de baja: no puede ser el conductor habitual de un "
+                          "equipo. Reactívalo en el Directorio."),
+        ASSET_INACTIVE: ("El equipo {} está dado de baja: no se le puede asignar un conductor habitual. "
+                         "Reactívalo en el Directorio."),
+    },
+}
+
+
+def _verdict(row, can_operate: dict[str, bool], target: str = "trip") -> AssignmentCheck:
     if row is None:
         return AssignmentCheck()
     if row["carrier_id"] and row["carrier_status"] == "ONBOARDING":
@@ -97,11 +117,11 @@ def _verdict(row, can_operate: dict[str, bool]) -> AssignmentCheck:
     if row["driver_status"] is not None and row["driver_status"] != "ACTIVE":
         return AssignmentCheck(blocking={
             "code": DRIVER_INACTIVE,
-            "message": f"El conductor {row['driver_name']} está dado de baja: no se le pueden asignar viajes."})
+            "message": _INACTIVE_MESSAGES[target][DRIVER_INACTIVE].format(row["driver_name"])})
     if row["inactive_plates"]:
         return AssignmentCheck(blocking={
             "code": ASSET_INACTIVE,
-            "message": f"El equipo {row['inactive_plates'][0]} está dado de baja: no se le pueden asignar viajes."})
+            "message": _INACTIVE_MESSAGES[target][ASSET_INACTIVE].format(row["inactive_plates"][0])})
     # `is False`, no `not`: una empresa sin fila en carrier_compliance no tiene
     # nada pendiente (contrato de la T4, Review Focus 1) y no se avisa.
     if row["carrier_id"] and can_operate.get(row["carrier_id"]) is False:
@@ -129,7 +149,7 @@ async def check_assignments(conn, items: Sequence[AssignmentSubjects]) -> list[A
                       if r["carrier_id"] and r["carrier_status"] == "ACTIVE"})
     can_operate = ({r["carrier_id"]: r["can_operate"] for r in await conn.fetch(_CAN_OPERATE_SQL, activas)}
                    if activas else {})
-    return [_verdict(rows.get(i), can_operate) for i in range(len(items))]
+    return [_verdict(rows.get(i), can_operate, item.target) for i, item in enumerate(items)]
 
 
 async def enforce_assignment(conn, subjects: AssignmentSubjects | None) -> list[dict]:
