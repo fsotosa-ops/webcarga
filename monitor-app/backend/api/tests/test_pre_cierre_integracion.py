@@ -153,7 +153,7 @@ async def test_un_vinculo_fijado_a_mano_no_se_audita(conexion_revertida):
 
 
 async def test_la_empresa_en_onboarding_trae_su_estado(conexion_revertida):
-    """Bloque 0 del Directorio (Task 7): "Activar empresa" se ofrece con
+    """Bloque 0 del Directorio, 0.3: "Activar empresa" se ofrece con
     directory.edit solo para las filas en ONBOARDING; las demás (dar de baja,
     reactivar) son de directory.delete. La fila trae el estado para decidirlo,
     y las filas que devuelve el aviso son las mismas que antes."""

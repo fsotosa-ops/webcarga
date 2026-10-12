@@ -28,7 +28,6 @@ OPERADOR = usuario("operations_operator", aal="aal1")
 SUP_OPS = usuario("operations_supervisor", aal="aal1")
 SUP_CERT = usuario("certification_supervisor", aal="aal1")
 LECTURA = usuario("reader", aal="aal1")
-ADMIN_SOLO = usuario("admin", aal="aal2")
 
 FILA_CONDUCTOR = {
     "id": "d1", "tax_id": "1-9", "country_code": "CL", "full_name": "Juan",
@@ -197,6 +196,36 @@ def test_el_supervisor_de_certificacion_da_de_baja_una_empresa(monkeypatch):
     res = cliente(SUP_CERT, pool).patch("/api/v1/carriers/c1", json={"operational_status": "INACTIVE"})
     assert res.status_code == 200
     assert conn.execute.called
+
+
+def test_la_lectura_del_estado_bloquea_la_fila(monkeypatch):
+    """Sin FOR UPDATE, una baja concurrente de Certificación (ONBOARDING →
+    INACTIVE) entre la lectura y el UPDATE quedaría pisada por la activación
+    del Supervisor de Operaciones: una reactivación que exige directory.delete."""
+    pool, conn = pool_de_empresa(monkeypatch, "ONBOARDING")
+    res = cliente(SUP_OPS, pool).patch("/api/v1/carriers/c1", json={"operational_status": "ACTIVE"})
+    assert res.status_code == 200
+    sql = conn.fetchrow.call_args_list[0].args[0]
+    assert "FROM public.carriers" in sql and "FOR UPDATE" in sql
+
+
+def test_reenviar_el_estado_actual_no_es_cambiarlo(monkeypatch):
+    """El formulario de edición puede mandar el estado que ya tiene: no es una
+    baja ni una reactivación, no exige directory.delete y no se audita."""
+    pool, conn = pool_de_empresa(monkeypatch, "ACTIVE")
+    record = AsyncMock()
+    monkeypatch.setattr(carriers_router, "record_manual_edit", record)
+    res = cliente(SUP_OPS, pool).patch(
+        "/api/v1/carriers/c1", json={"operational_status": "ACTIVE", "business_name": "Otra"})
+    assert res.status_code == 200
+    assert [c.kwargs["field"] for c in record.call_args_list] == ["business_name"]
+
+
+def test_reenviar_solo_el_estado_actual_no_escribe(monkeypatch):
+    pool, conn = pool_de_empresa(monkeypatch, "ACTIVE")
+    res = cliente(SUP_OPS, pool).patch("/api/v1/carriers/c1", json={"operational_status": "ACTIVE"})
+    assert res.status_code == 200
+    assert not conn.execute.called   # ni UPDATE (updated_at) ni auditoría
 
 
 # ── Quitar del roster y conductor habitual ───────────────────────────────────

@@ -582,9 +582,13 @@ async def patch_carrier(
             # `management_types` va en el SELECT porque el bucle de auditoría de
             # más abajo lee `current[field]` para cada campo tocado: sin traerla,
             # patchear la gestión revienta con KeyError en vez de guardar.
+            # FOR UPDATE: el permiso de abajo depende del estado leído. Sin el
+            # bloqueo, una baja concurrente (ONBOARDING → INACTIVE) entre esta
+            # lectura y el UPDATE quedaría pisada por una "activación" que en
+            # realidad es reactivar, y eso exige directory.delete.
             current = await conn.fetchrow(
                 "SELECT updated_at, business_name, operational_status, tax_id, management_types "
-                "FROM public.carriers WHERE id = $1",
+                "FROM public.carriers WHERE id = $1 FOR UPDATE",
                 carrier_id,
             )
             if not current:
@@ -594,8 +598,11 @@ async def patch_carrier(
             # nueva (ONBOARDING → ACTIVE), que el Supervisor de Operaciones
             # hace desde el pre-cierre con directory.edit (R5). Depende del
             # estado actual, por eso no cabe en CARRIER_FIELD_PERMISSIONS; va
-            # antes de cualquier escritura.
-            if body.operational_status is not None and not (
+            # antes de cualquier escritura. Reenviar el estado que ya tiene no
+            # es cambiarlo: ni exige directory.delete ni se audita.
+            cambia_estado = (body.operational_status is not None
+                             and body.operational_status != current["operational_status"])
+            if cambia_estado and not (
                 current["operational_status"] == "ONBOARDING" and body.operational_status == "ACTIVE"
             ):
                 exigir(user, Permission.DIRECTORY_DELETE)
@@ -605,8 +612,10 @@ async def patch_carrier(
             touched = body.sent_fields()
             if not touched:
                 raise HTTPException(422, "Ningún campo enviado")
+            if not cambia_estado:
+                touched = [f for f in touched if f != "operational_status"]
 
-            if body.operational_status == "ACTIVE" and not body.tax_id and not current["tax_id"]:
+            if cambia_estado and body.operational_status == "ACTIVE" and not body.tax_id and not current["tax_id"]:
                 raise HTTPException(422, "No se puede activar una empresa sin RUT/tax_id")
 
             if body.tax_id:
@@ -616,19 +625,24 @@ async def patch_carrier(
                 if dup:
                     raise HTTPException(409, f"Ya existe una empresa con tax_id {body.tax_id}")
 
-            await conn.execute(
-                """
-                UPDATE public.carriers SET
-                    business_name = COALESCE($2, business_name),
-                    operational_status = COALESCE($3, operational_status),
-                    tax_id = COALESCE($4, tax_id),
-                    management_types = COALESCE($5, management_types),
-                    updated_at = NOW()
-                WHERE id = $1
-                """,
-                carrier_id, body.business_name, body.operational_status, body.tax_id,
-                body.management_types,
-            )
+            # Si solo reenvió el estado que ya tiene, `touched` quedó vacío: no
+            # hay nada que escribir ni auditar, y tampoco se toca updated_at (el
+            # bloqueo optimista de otra persona no tiene por qué ver un cambio
+            # que no hubo).
+            if touched:
+                await conn.execute(
+                    """
+                    UPDATE public.carriers SET
+                        business_name = COALESCE($2, business_name),
+                        operational_status = COALESCE($3, operational_status),
+                        tax_id = COALESCE($4, tax_id),
+                        management_types = COALESCE($5, management_types),
+                        updated_at = NOW()
+                    WHERE id = $1
+                    """,
+                    carrier_id, body.business_name, body.operational_status, body.tax_id,
+                    body.management_types,
+                )
             for field in touched:
                 await record_manual_edit(
                     conn, table="carriers", where={"id": carrier_id}, actor=user["sub"],
