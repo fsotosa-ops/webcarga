@@ -39,7 +39,12 @@ vigencia vía historial por trigger (cubre a Mage sin tocarlo) + override por ca
   desde la app): F-27 sale y Mage deja de ser escritor en el mapa (§7 del informe).
 - [x] 12/10: P1 y P9 resueltas por decisiones previas; P6 = sí (vigencia por día); P5 = trazabilidad, nada se borra
   (§7 del informe). Quedan P2-P4, P7-P8, P10-P21 (varias con Pablo).
-- [ ] Spec del bloque 0 (8 arreglos + marcar flota de empresa dada de baja + pre-cierre no renombra) y de D1.
+- [x] 12/10: P2 = C (Operaciones, operador incluido, da de baja conductores/equipos con permiso nuevo
+  `directory.fleet_status`; la empresa, solo Certificación); solicitud de baja de empresa → bloque 3.
+- [ ] **Spec del bloque 0 escrita, espera revisión del usuario:** `docs/superpowers/specs/2026-10-12-directory-block-0-design.md`
+  (dos despliegues: 1 = Cierre un solo universo, fecha Chile, roster en vivo, pre-cierre no renombra; 2 = permisos,
+  refresco entre módulos, frescura del Cierre, red mínima, flota de empresa de baja, Sin clasificar H2/H4).
+  Luego writing-plans y ejecución; después D1.
 - [ ] Luego: spec del bloque 0 / D1 "Una sola respuesta" (funciones `app.is_operating`, `app.carrier_of`,
   `app.carrier_operation_types`), intercalado con Certificación 2a (Sin clasificar).
 
