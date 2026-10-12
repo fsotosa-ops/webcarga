@@ -72,7 +72,10 @@ async def _rut_libre(conn) -> tuple[str, str]:
     raise AssertionError("no hay un RUT libre en el rango de prueba")
 
 
-async def test_corrige_el_nombre_del_conductor_por_rut(conexion_revertida):
+async def test_un_nombre_distinto_en_el_tms_no_renombra_al_conductor(conexion_revertida):
+    """Bloque 0 del Directorio, 0.10 (P9, 12/10): el nombre lo gestiona el
+    Directorio; el TMS solo dice quién manejó cada viaje. Hasta acá este test
+    afirmaba lo contrario: fijaba el defecto (A-7, el origen de D7)."""
     rut, canon = await _rut_libre(conexion_revertida)
     conductor = await conexion_revertida.fetchval(
         "INSERT INTO public.drivers (full_name, tax_id, operational_status) VALUES ('Ana', $1, 'ACTIVE') RETURNING id", canon)
@@ -80,7 +83,9 @@ async def test_corrige_el_nombre_del_conductor_por_rut(conexion_revertida):
 
     await pre_cierre.aplicar_correcciones(conexion_revertida, D)
 
-    assert await conexion_revertida.fetchval("SELECT full_name FROM public.drivers WHERE id = $1", conductor) == "Ana Paz"
+    assert await conexion_revertida.fetchval("SELECT full_name FROM public.drivers WHERE id = $1", conductor) == "Ana"
+    assert not await conexion_revertida.fetchval(
+        "SELECT 1 FROM public.audit_log WHERE entity_id = $1 AND action = 'pre_cierre_actualizar_nombre'", conductor)
 
 
 async def test_los_avisos_no_escriben_nada(conexion_revertida):

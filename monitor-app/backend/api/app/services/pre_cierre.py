@@ -80,8 +80,6 @@ class Conductor:
     es_canonico: bool
     names: list[str]
     driver_id: str | None
-    full_name: str | None
-    is_manual_override: bool
 
 
 @dataclass(frozen=True)
@@ -115,14 +113,6 @@ class Reasignacion:
 
 
 @dataclass(frozen=True)
-class Renombre:
-    rut: str
-    driver_id: str
-    old_name: str
-    new_name: str
-
-
-@dataclass(frozen=True)
 class Vinculo:
     carrier_id: str
     carrier_name: str | None
@@ -133,7 +123,6 @@ class Vinculo:
 @dataclass
 class Clasificacion:
     reasignaciones: list[Reasignacion] = field(default_factory=list)
-    renombres: list[Renombre] = field(default_factory=list)
     vinculos: list[Vinculo] = field(default_factory=list)
     carrier_por_patente: dict[str, str] = field(default_factory=dict)
     escalations: dict[str, list[dict]] = field(default_factory=lambda: {k: [] for k in ESCALACIONES})
@@ -179,21 +168,16 @@ def clasificar(s: Senales) -> Clasificacion:
         ))
         c.carrier_por_patente[p.plate] = nuevo_id
 
+    # El nombre del conductor lo gestiona el Directorio (P9, 12/10): el TMS solo
+    # dice quién manejó cada viaje. Por eso acá ya no se propone renombrar.
     for d in s.conductores:
         if not d.es_canonico:
             c.escalations["CONDUCTOR_NO_REGISTRADO"].append(
                 {"driver_rut": d.rut, "reason": "El TMS informó un RUT que no es válido"})
             continue
-        tms_name = _single_value(d.names)
         if not d.driver_id:
-            c.escalations["CONDUCTOR_NO_REGISTRADO"].append({"driver_rut": d.rut, "driver_name_tms": tms_name})
-            continue
-        if not tms_name or d.is_manual_override:
-            continue
-        if _normalize(tms_name) == _normalize(d.full_name):
-            continue
-        c.renombres.append(Renombre(rut=d.rut, driver_id=d.driver_id, old_name=d.full_name,
-                                    new_name=tms_name.strip()))
+            c.escalations["CONDUCTOR_NO_REGISTRADO"].append(
+                {"driver_rut": d.rut, "driver_name_tms": _single_value(d.names)})
 
     vistos: set[tuple[str, str]] = set()
     for par in s.pares_cliente:
@@ -246,11 +230,10 @@ WITH r AS (
       AND trim(t.fleet->>'driver_rut_tms') != ''
     GROUP BY 1
 )
-SELECT r.rut, r.es_canonico, r.names, d.id::text AS driver_id, d.full_name,
-       COALESCE(d.is_manual_override, false) AS is_manual_override
+SELECT r.rut, r.es_canonico, r.names, d.id::text AS driver_id
 FROM r
 LEFT JOIN LATERAL (
-    SELECT id, full_name, is_manual_override FROM public.drivers WHERE tax_id = r.rut LIMIT 1
+    SELECT id FROM public.drivers WHERE tax_id = r.rut LIMIT 1
 ) d ON r.es_canonico
 """
 
@@ -337,21 +320,6 @@ async def aplicar_correcciones(conn, fecha: _date) -> None:
                               field="carrier_id", source=FUENTE,
                               filas=[(a, por_activo[a].old_name, por_activo[a].new_name) for a in activados])
 
-    if c.renombres:
-        por_conductor = {r.driver_id: r for r in c.renombres}
-        renombrados = [r["id"] for r in await conn.fetch(
-            """
-            UPDATE public.drivers d SET full_name = x.nombre
-            FROM unnest($1::uuid[], $2::text[]) AS x(id, nombre)
-            WHERE d.id = x.id AND NOT d.is_manual_override AND d.full_name IS DISTINCT FROM x.nombre
-            RETURNING d.id::text AS id
-            """,
-            list(por_conductor), [r.new_name for r in por_conductor.values()],
-        )]
-        await auditar_en_lote(conn, entity_type="DRIVER", action="pre_cierre_actualizar_nombre",
-                              field="full_name", source=FUENTE,
-                              filas=[(d, por_conductor[d].old_name, por_conductor[d].new_name) for d in renombrados])
-
     if c.vinculos:
         por_par = {(v.carrier_id, v.shipper_id): v for v in c.vinculos}
         vinculados = [(r["carrier_id"], r["shipper_id"]) for r in await conn.fetch(
@@ -428,6 +396,8 @@ def _resuelta(r) -> dict:
                 "message": (f"Se actualizó la empresa asociada a la patente {r['license_plate']} de "
                             f"'{viejo}' a '{nuevo}'. Revisar que los documentos asociados (permiso de "
                             "circulación, contrato de conductor) estén vigentes para la nueva empresa.")}
+    # Ya no se escribe (bloque 0, 0.10); queda para leer las filas viejas de
+    # audit_log, que sin esta rama se mostrarían como un cliente agregado.
     if r["action"] == "pre_cierre_actualizar_nombre":
         return {"type": "CONDUCTOR_DATOS", "driver_rut": r["tax_id"], "old_value": viejo, "new_value": nuevo,
                 "message": f"Se actualizó el nombre del conductor {r['tax_id']} de '{viejo}' a '{nuevo}'."}

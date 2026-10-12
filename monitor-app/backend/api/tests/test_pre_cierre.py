@@ -76,8 +76,8 @@ def test_mismo_nombre_con_acentos_y_espacios_no_se_corrige():
 
 def test_rut_invalido_es_aviso_y_rut_sin_conductor_propone_el_nombre():
     c = clasificar(senales(conductores=[
-        Conductor(rut="X", es_canonico=False, names=["Ana"], driver_id=None, full_name=None, is_manual_override=False),
-        Conductor(rut="11111111-1", es_canonico=True, names=["Ana Paz"], driver_id=None, full_name=None, is_manual_override=False),
+        Conductor(rut="X", es_canonico=False, names=["Ana"], driver_id=None),
+        Conductor(rut="11111111-1", es_canonico=True, names=["Ana Paz"], driver_id=None),
     ]))
     assert c.escalations["CONDUCTOR_NO_REGISTRADO"] == [
         {"driver_rut": "X", "reason": "El TMS informó un RUT que no es válido"},
@@ -85,11 +85,12 @@ def test_rut_invalido_es_aviso_y_rut_sin_conductor_propone_el_nombre():
     ]
 
 
-def test_nombre_distinto_para_el_mismo_rut_se_corrige():
+def test_un_nombre_distinto_en_el_tms_no_es_una_correccion():
+    """P9 (12/10): el nombre lo gestiona el Directorio."""
     c = clasificar(senales(conductores=[Conductor(
-        rut="11111111-1", es_canonico=True, names=[" Ana Paz "], driver_id=D1,
-        full_name="Ana", is_manual_override=False)]))
-    assert [(r.driver_id, r.old_name, r.new_name) for r in c.renombres] == [(D1, "Ana", "Ana Paz")]
+        rut="11111111-1", es_canonico=True, names=[" Ana Paz "], driver_id=D1)]))
+    assert not hasattr(c, "renombres")
+    assert c.escalations["CONDUCTOR_NO_REGISTRADO"] == []
 
 
 def test_cliente_nuevo_de_una_patente_resuelta_se_vincula():
