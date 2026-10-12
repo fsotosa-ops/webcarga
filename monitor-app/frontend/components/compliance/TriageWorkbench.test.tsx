@@ -116,7 +116,7 @@ describe('TriageWorkbench', () => {
   // "Arrastra aquí" a un recuadro que ya no existe.
   it('desde la ficha si se puede subir', async () => {
     setup({ carrierId: 'acme', carrierName: 'ACME' })
-    expect(await screen.findByLabelText(/agrega los documentos de ACME a la bandeja/i))
+    expect(await screen.findByLabelText(/agrega los documentos de ACME a Sin clasificar/i))
       .toBeInTheDocument()
   })
 
@@ -407,7 +407,7 @@ describe('TriageWorkbench — soltar más de 50 archivos', () => {
   }
 
   async function zona() {
-    return screen.findByLabelText(/agrega los documentos a la bandeja/i)
+    return screen.findByLabelText(/agrega los documentos a Sin clasificar/i)
   }
 
   it('parte la tanda en lotes de 50 y los encadena de a uno', async () => {

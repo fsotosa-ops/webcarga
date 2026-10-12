@@ -132,7 +132,10 @@ describe('el glosario manda (spec D1 §8.5)', () => {
     // RenglonPendiente leen document_state en vez de urgencia.
     // 42 -> 21 en la Task 12: la ficha, Certificación, DocumentChecklist, el
     // banner, el panel, el slide-over y el mapeo leen document_state.
-    // 21 -> 3 en la Task 13. Queda CertificationStatusTable.tsx (pending_mandatory, Task 14).
+    // 21 -> 3 en la Task 13. Quedan 3 en CertificationStatusTable.tsx (pending_mandatory):
+    // Task 14 lo deja a propósito (R-E6). No es un estado del documento sino un
+    // conteo de la fila que la API manda tal cual; la tabla no lo recalcula, solo
+    // lo compara con 0 para pintar. Es el residuo final de este trinquete en D1.
     const DEUDA = 3
     const h = lecturasDeRecalculo()
     expect(h.length, `Lecturas de recálculo: ${h.length} (tope ${DEUDA}).\n${h.join('\n')}`).toBeLessThanOrEqual(DEUDA)

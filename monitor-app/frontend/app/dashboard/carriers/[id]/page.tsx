@@ -423,7 +423,7 @@ function EmpresaDetailPageInner() {
         </Link>
       )}
       <nav className="flex items-center gap-1.5 text-sm text-gray-400">
-        <a href="/dashboard/carriers" className="hover:text-accent transition-colors shrink-0">Empresas</a>
+        <a href="/dashboard/carriers" className="hover:text-accent transition-colors shrink-0">Directorio</a>
         <ChevronRight size={13} />
         <span className="text-text-primary font-medium truncate">{carrier.business_name || id}</span>
       </nav>

@@ -349,8 +349,8 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
                 suggestedLabel="Disponibles hoy"
                 notFoundHint={
                   <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-2">
-                    Si no aparece en la lista, hay que darlo de alta primero en{' '}
-                    <a href="/dashboard/carriers" className="underline font-semibold">Empresas</a> — no se puede crear el viaje sin un conductor vinculado al directorio real.
+                    Si no aparece en la lista, hay que darlo de alta primero en el{' '}
+                    <a href="/dashboard/carriers" className="underline font-semibold">Directorio</a> — no se puede crear el viaje sin un conductor vinculado al directorio real.
                   </p>
                 }
               />

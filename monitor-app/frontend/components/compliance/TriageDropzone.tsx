@@ -60,7 +60,7 @@ export function TriageDropzone({
         )}
         <p className="mt-2.5 text-[11px] text-gray-500 leading-relaxed">
           Puedes cerrar esta pestaña. El proceso sigue y al volver vas a encontrar
-          los archivos en la bandeja.
+          los archivos en Sin clasificar.
         </p>
       </div>
     )
@@ -96,7 +96,7 @@ export function TriageDropzone({
         </>
       ) : (
         <span className="text-[11px] text-gray-500">
-          Suelta archivos en cualquier parte de esta pantalla para agregarlos a la bandeja
+          Suelta archivos en cualquier parte de esta pantalla para agregarlos a Sin clasificar
         </span>
       )}
       {/* La etiqueta accesible sigue al texto visible: encogida, la zona ya no
@@ -104,7 +104,7 @@ export function TriageDropzone({
           pantalla a buscar un recuadro que no existe. */}
       <input
         type="file" multiple className="hidden"
-        aria-label={vacia ? `Arrastra aquí ${deQuien}` : `Agrega ${deQuien} a la bandeja`}
+        aria-label={vacia ? `Arrastra aquí ${deQuien}` : `Agrega ${deQuien} a Sin clasificar`}
         onChange={e => onArchivos(e.target.files ?? [])}
       />
     </label>

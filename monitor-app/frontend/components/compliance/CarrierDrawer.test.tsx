@@ -63,7 +63,7 @@ describe('CarrierDrawer', () => {
 
   it('la bandeja sigue existiendo, como destino y no como zona encima', async () => {
     setup()
-    const enlace = await screen.findByRole('link', { name: /bandeja/i })
+    const enlace = await screen.findByRole('link', { name: /sin clasificar/i })
     // La Bandeja tiene ruta propia (Task 5): un enlace interno que pasara por
     // el redirect de `?vista=documentos` seria deuda desde el dia uno.
     // Y con la empresa preseleccionada: el bloque es el MISMO componente que

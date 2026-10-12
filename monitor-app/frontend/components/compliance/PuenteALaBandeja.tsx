@@ -9,9 +9,9 @@ interface Props {
   carrierName: string
 }
 
-/** El puente de una empresa a la Bandeja.
+/** El puente de una empresa a Sin clasificar.
  *
- *  La Bandeja existe como DESTINO y no como zona encima del casillero: es el
+ *  Sin clasificar existe como DESTINO y no como zona encima del casillero: es el
  *  camino de "me llegaron veinte por correo", no el de "a esta persona le
  *  falta la licencia". Es un enlace justamente para que no compita con el
  *  renglón por el mismo archivo soltado.
@@ -37,7 +37,7 @@ export function PuenteALaBandeja({ carrierId, carrierName }: Props) {
         href={`/dashboard/compliance/inbox?empresa=${carrierId}`}
         className="font-semibold text-accion transition-opacity hover:opacity-70"
       >
-        Llévalos a la Bandeja
+        Llévalos a Sin clasificar
       </Link>
     </p>
   )

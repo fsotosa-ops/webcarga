@@ -441,8 +441,8 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
                   <div className="mt-2">
                     <Notice tone="warning">
                       <p>
-                        Si no aparece en la lista, hay que darlo de alta primero en{' '}
-                        <a href={empresasHandoffHref} className="font-semibold underline">Empresas</a>.
+                        Si no aparece en la lista, hay que darlo de alta primero en el{' '}
+                        <a href={empresasHandoffHref} className="font-semibold underline">Directorio</a>.
                       </p>
                     </Notice>
                   </div>

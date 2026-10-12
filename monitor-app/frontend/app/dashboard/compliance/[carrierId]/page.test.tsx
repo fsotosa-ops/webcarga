@@ -691,7 +691,7 @@ describe('FichaEmpresaPage', () => {
   // estado anterior.
   it('el puente a la Bandeja llega con la empresa ya elegida', async () => {
     montar([fila()])
-    const enlace = await screen.findByRole('link', { name: /bandeja/i })
+    const enlace = await screen.findByRole('link', { name: /sin clasificar/i })
     expect(enlace).toHaveAttribute('href', '/dashboard/compliance/inbox?empresa=c1')
   })
 
