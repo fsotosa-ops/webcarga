@@ -35,8 +35,9 @@ cierre y el monitor". Plan `docs/superpowers/plans/2026-10-12-directory-audit.md
 vigencia vía historial por trigger (cubre a Mage sin tocarlo) + override por campo + invalidación por dominio.
 
 **Siguiente paso exacto:**
-- [ ] El usuario decide: alternativa (A/B/C), si se hace ya el "bloque 0" (8 arreglos baratos e independientes, §5 del
-  informe) y si autoriza revisar `load_assets_04` de Mage (solo lectura). Responder las 21 preguntas P1-P21 (varias con Pablo).
+- [x] **12/10: el usuario elige B.** Mage ya no escribe empresas/conductores/equipos/asignaciones (todo migrado y gestionado
+  desde la app): F-27 sale y Mage deja de ser escritor en el mapa (§7 del informe).
+- [ ] Responder las 21 preguntas P1-P21 (varias con Pablo); P1, P5, P6 y P9 condicionan el diseño.
 - [ ] Luego: spec del bloque 0 / D1 "Una sola respuesta" (funciones `app.is_operating`, `app.carrier_of`,
   `app.carrier_operation_types`), intercalado con Certificación 2a (Sin clasificar).
 

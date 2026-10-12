@@ -323,3 +323,15 @@ Están agrupadas y sin repetir. Las que vienen de la auditoría de Sin clasifica
 - P19 (su 5). ¿Operaciones debe ver Sin clasificar? Hoy la ve con un contador rojo y sin poder actuar. Es la misma clase de problema que P2.
 - P20 (su 7). ¿Un solo nombre: "Sin clasificar" o "Bandeja"? Va junto con P16, en un glosario único.
 - P21 (su 1). ¿Qué tan frecuente es la tanda de documentos de varias empresas? Define si "de qué empresa es" es el primer paso de la subida, y por lo tanto cómo se enlaza la ficha única con la carga.
+
+## 7. Decisión del usuario (12/10)
+
+- **Alternativa B** aprobada.
+- **Mage ya no escribe empresas, conductores, equipos ni asignaciones:** todo está migrado a la base y se gestiona desde la
+  app. En consecuencia:
+  - F-27 (`load_assets_04` reescribiendo el tipo de operación) sale de la hoja de ruta;
+  - los bloques `load_carriers_02/09`, `load_drivers_03`, `load_assets_04`, `load_driver_assignments_06/07` dejan de contarse
+    como escritores en el mapa de fuente de verdad (§3);
+  - el historial de asignaciones y el override por campo se diseñan para los escritores de la app (Directorio, Certificación,
+    Monitor, pre-cierre del Cierre, padrón), sin la restricción de "cubrir a Mage sin tocarlo". El trigger sigue siendo la
+    forma de capturar a todos los escritores de la app.
