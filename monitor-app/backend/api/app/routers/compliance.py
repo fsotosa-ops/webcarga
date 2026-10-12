@@ -410,13 +410,24 @@ async def get_certification_status(
             -- predicado de vencimiento sobre `a` (contrato del alias).
             SELECT r.status, r.requirement_level, r.expiration_date, r.requirement_id,
                    r.entity_type, r.entity_id, r.issue_date, r.period_start,
-                   -- "¿De qué empresa es?": app.carrier_of (D1, spec §4.2). El
+                   -- "¿De qué empresa es?" es app.carrier_of (D1, spec §4.2), pero
+                   -- acá va escrita con los dos LEFT JOIN: la función tiene SET
+                   -- search_path, no se inlinea y se llama una vez por registro
+                   -- vigente (~5.700). Medido el 12/10 tras aplicar la migración:
+                   -- embudo 275 ms con carrier_of, 150 ms así; mismo resultado,
+                   -- porque los índices únicos parciales dejan una sola asignación
+                   -- ACTIVE por entidad (Task 6 Step 9, Ruling T6-X). El
                    -- finiquito de quien ya se fue sigue en la última empresa.
-                   CASE WHEN r.entity_type = 'DRIVER'
-                        THEN COALESCE(app.carrier_of('DRIVER', r.entity_id), {_empresa_que_dejo_sql('r')})
-                        ELSE app.carrier_of(r.entity_type, r.entity_id)
+                   CASE r.entity_type
+                       WHEN 'CARRIER' THEN r.entity_id
+                       WHEN 'DRIVER'  THEN COALESCE(da.carrier_id, {_empresa_que_dejo_sql('r')})
+                       WHEN 'ASSET'   THEN aa.carrier_id
                    END AS carrier_id
             FROM records r
+            LEFT JOIN public.driver_assignments da
+                ON r.entity_type = 'DRIVER' AND da.driver_id = r.entity_id AND da.status = 'ACTIVE'
+            LEFT JOIN public.asset_assignments aa
+                ON r.entity_type = 'ASSET' AND aa.asset_id = r.entity_id AND aa.status = 'ACTIVE'
         ){extra_cte}
         SELECT e.id::text AS entity_id, e.{cfg["name_col"]} AS entity_name,
                {carrier_cols},{funnel_cols}
