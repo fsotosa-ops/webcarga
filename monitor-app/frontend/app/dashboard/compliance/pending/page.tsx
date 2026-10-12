@@ -42,22 +42,29 @@ function Pending() {
     (groupBy === 'requirement' ? r.requirement_code === pedidoEnUrl : r.key === pedidoEnUrl)
   const desdeUrl = rows.find(esElPedido)
 
-  /** Lo último elegido desde la URL. Al subir el último documento que se debía
-   *  de ese documento o empresa, su fila sale del resumen que vuelve del
-   *  servidor; sin esto `elegido` saltaba a `rows[0]`, el panel se remontaba
-   *  (otra `key`) y se perdían el aviso de lo guardado y el resultado del lote,
-   *  mientras la URL seguía nombrando lo anterior. Se mantiene el mismo panel,
-   *  con sus cifras en cero, hasta que se elija otra cosa. */
-  const ultimo = useRef<{ groupBy: PendingGroupBy; row: PendingSummaryRow } | null>(null)
-  useEffect(() => {
-    if (desdeUrl) ultimo.current = { groupBy, row: desdeUrl }
-  }, [desdeUrl, groupBy])
-  const sostenido = !desdeUrl && resumen.isSuccess && ultimo.current?.groupBy === groupBy
-    && esElPedido(ultimo.current.row)
-    ? { ...ultimo.current.row, overdue: 0, expiring: 0, missing: 0 }
+  /** Lo último que mostró el panel, nombrado en la URL o no. Al subir el
+   *  último documento que se debía de ese documento o empresa, su fila sale
+   *  del resumen que vuelve del servidor; sin esto `elegido` saltaba a
+   *  `rows[0]`, el panel se remontaba (otra `key`) y se perdían el aviso de lo
+   *  guardado y el resultado del lote (y la URL seguía nombrando lo anterior).
+   *  Se mantiene el mismo panel, con sus cifras en cero, hasta que se elija
+   *  otra cosa. Sin nada en la URL (el escritorio muestra el primero sin que
+   *  se elija) vale lo mismo: lo que se estaba mostrando sigue, aunque ya no
+   *  sea el primero o ya no esté. */
+  const ultimo = useRef<{ groupBy: PendingGroupBy; row: PendingSummaryRow; desdeUrl: boolean } | null>(null)
+  const previo = resumen.isSuccess && ultimo.current?.groupBy === groupBy ? ultimo.current : null
+  const enCero = (r: PendingSummaryRow) => ({ ...r, overdue: 0, expiring: 0, missing: 0 })
+  // Lo nombrado en la URL: si salió del resumen, el que ya se mostraba.
+  const seleccion = pedidoEnUrl == null ? undefined
+    : desdeUrl ?? (previo && esElPedido(previo.row) ? enCero(previo.row) : undefined)
+  // Sin nada en la URL: el que se mostraba solo, con sus cifras frescas si sigue.
+  const implicito = pedidoEnUrl == null && previo && !previo.desdeUrl
+    ? rows.find(r => r.key === previo.row.key) ?? enCero(previo.row)
     : undefined
-  const seleccion = desdeUrl ?? sostenido
-  const elegido = seleccion ?? rows[0] ?? null
+  const elegido = seleccion ?? implicito ?? rows[0] ?? null
+  useEffect(() => {
+    if (elegido) ultimo.current = { groupBy, row: elegido, desdeUrl: seleccion != null }
+  })
 
   /** Elegir (doc, carrier, by) entra al historial: "Volver" del navegador
    *  —o el gesto del teléfono— vuelve a lo anterior. El filtro (`state`) lo

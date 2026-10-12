@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { PendingSummaryRow } from '@/lib/types'
+import type { PendingComplianceRow, PendingSummaryRow } from '@/lib/types'
 
 // La URL se mueve por test (mismo patrón que Sidebar.test.tsx).
 const nav = vi.hoisted(() => ({ qs: '', replace: vi.fn(), push: vi.fn() }))
@@ -199,6 +199,14 @@ describe('Pendientes — la URL', () => {
   })
 })
 
+const LIC_VENCIDA: PendingComplianceRow = {
+  id: 'p1', carrier_id: 'c1', carrier_name: 'Transportes Andes Ltda', carrier_tax_id: null,
+  carrier_operation_types: [], certification_type: 'BASICA', category: 'CHOFER', entity_type: 'DRIVER',
+  entity_id: 'd1', subject_name: 'Rojas Pérez, Andrés', requirement_id: 'req-lic', requirement_code: 'LIC',
+  document_name: 'Licencia de Conducir', status: 'APPROVED_MANUAL', expiration_date: null, tiene_archivo: true,
+  urgencia: 'VENCIDO', document_state: 'OVERDUE', expiration_policy: 'NONE', due_on: '2026-09-18',
+}
+
 describe('Pendientes — subir el último que se debía', () => {
   it('el panel sigue montado: avisa lo guardado, no salta a otro documento ni toca la URL', async () => {
     nav.qs = 'doc=LIC'
@@ -208,13 +216,7 @@ describe('Pendientes — subir el último que se debía', () => {
       .mockResolvedValueOnce({ rows: [F30, UNO] })
       .mockResolvedValue({ rows: [F30] })
     vi.mocked(complianceApi.listPending)
-      .mockResolvedValueOnce({ total: 1, rows: [{
-        id: 'p1', carrier_id: 'c1', carrier_name: 'Transportes Andes Ltda', carrier_tax_id: null,
-        carrier_operation_types: [], certification_type: 'BASICA', category: 'CHOFER', entity_type: 'DRIVER',
-        entity_id: 'd1', subject_name: 'Rojas Pérez, Andrés', requirement_id: 'req-lic', requirement_code: 'LIC',
-        document_name: 'Licencia de Conducir', status: 'APPROVED_MANUAL', expiration_date: null, tiene_archivo: true,
-        urgencia: 'VENCIDO', document_state: 'OVERDUE', expiration_policy: 'NONE', due_on: '2026-09-18',
-      }] })
+      .mockResolvedValueOnce({ total: 1, rows: [LIC_VENCIDA] })
       .mockResolvedValue({ total: 0, rows: [] })
     vi.mocked(complianceApi.uploadFile).mockResolvedValue({ status: 'APPROVED_MANUAL' } as never)
     montar()
@@ -232,6 +234,31 @@ describe('Pendientes — subir el último que se debía', () => {
     expect(complianceApi.listPending).not.toHaveBeenCalledWith(expect.objectContaining({ requirementCode: 'F30_1' }))
     // En el teléfono el panel sigue a la vista (la lista no reaparece encima).
     expect(screen.getByRole('region', { name: 'Licencia de Conducir' }).parentElement).not.toHaveClass('hidden')
+    expect(nav.push).not.toHaveBeenCalled()
+    expect(nav.replace).not.toHaveBeenCalled()
+  })
+
+  it('sin nada en la URL (el primero, elegido solo): tampoco salta al nuevo primero', async () => {
+    const UNO = { ...LIC, overdue: 1, expiring: 0, missing: 0 }
+    vi.mocked(complianceApi.pendingSummary)
+      .mockResolvedValueOnce({ rows: [UNO, F30] })
+      .mockResolvedValue({ rows: [F30] })
+    vi.mocked(complianceApi.listPending)
+      .mockResolvedValueOnce({ total: 1, rows: [LIC_VENCIDA] })
+      .mockResolvedValue({ total: 0, rows: [] })
+    vi.mocked(complianceApi.uploadFile).mockResolvedValue({ status: 'APPROVED_MANUAL' } as never)
+    montar()
+
+    await screen.findByText('Rojas Pérez, Andrés')
+    fireEvent.change(screen.getByTestId('archivo-p1'), {
+      target: { files: [new File(['x'], 'lic.pdf', { type: 'application/pdf' })] } })
+
+    await waitFor(() => expect(complianceApi.pendingSummary).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryAllByRole('status').map(e => e.textContent).join(' | '))
+      .toContain('Licencia de Conducir de Rojas Pérez, Andrés guardado · no quedan vencidos'))
+    expect(screen.getByRole('region', { name: 'Licencia de Conducir' })).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'F30-1' })).not.toBeInTheDocument()
+    expect(complianceApi.listPending).not.toHaveBeenCalledWith(expect.objectContaining({ requirementCode: 'F30_1' }))
     expect(nav.push).not.toHaveBeenCalled()
     expect(nav.replace).not.toHaveBeenCalled()
   })
