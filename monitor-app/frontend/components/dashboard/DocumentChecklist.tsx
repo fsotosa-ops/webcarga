@@ -10,7 +10,7 @@ import { PedirDatoDelDocumento } from '@/components/compliance/PedirDatoDelDocum
 import { ReassignDocument } from '@/components/compliance/ReassignDocument'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
 import type { ComplianceStatus, PoliticaVencimiento } from '@/lib/types'
-import { documentStateCounts, documentStateStyle, type AlertSeverity, type DocumentState } from '@/lib/states'
+import { alertSeverityStyle, documentStateCounts, documentStateStyle, type AlertSeverity, type DocumentState } from '@/lib/states'
 
 /** Fila del checklist — mapea 1:1 contra un public.compliance_records real
  *  (ver lib/utils/complianceChecklist.ts), no un catálogo hardcodeado. */
@@ -139,6 +139,12 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
         )}
       </div>
       <StatusChip tone={state.tone} icon={state.icon}>{state.label}</StatusChip>
+      {/* El aviso crítico es énfasis, no un estado (spec §3): se suma al chip del
+          estado. El aviso simple no necesita nada, Por vencer ya lo dice. */}
+      {item.alert_severity === 'critical' && (() => {
+        const aviso = alertSeverityStyle('critical')
+        return <StatusChip tone={aviso.tone} icon={aviso.icon}>{aviso.label}</StatusChip>
+      })()}
       {item.file_url && (
         <button
           type="button"

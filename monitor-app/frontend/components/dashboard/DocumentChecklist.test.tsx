@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { DocumentChecklist } from './DocumentChecklist'
 import { recordStateFields } from '@/lib/states.fixtures'
+import { alertSeverityStyle } from '@/lib/states'
 
 const ITEMS = [
   {
@@ -19,6 +20,21 @@ const ITEMS = [
 ]
 
 describe('DocumentChecklist', () => {
+  // Spec §3: el aviso crítico es énfasis junto al estado, con la palabra del glosario.
+  it('una fila con aviso crítico lo destaca; con aviso simple o sin aviso no', () => {
+    const critico = alertSeverityStyle('critical').label
+    const items = [
+      { ...ITEMS[0], id: 'a', label: 'Doc A', ...recordStateFields('EXPIRING'), alert_severity: 'critical' as const },
+      { ...ITEMS[0], id: 'b', label: 'Doc B', ...recordStateFields('EXPIRING'), alert_severity: 'warning' as const },
+      { ...ITEMS[0], id: 'c', label: 'Doc C', alert_severity: null },
+    ]
+    render(<DocumentChecklist items={items} canUpload={false} />)
+    expect(screen.getAllByText(critico)).toHaveLength(1)
+    expect(screen.getByTitle(/Doc A/).textContent).toContain(critico)
+    expect(screen.getByTitle(/Doc B/).textContent).not.toContain(critico)
+    expect(screen.getByTitle(/Doc C/).textContent).not.toContain(critico)
+  })
+
   // L4 (simulación local 11/10): los documentos creados desde Configuración
   // nacen con requires_file = false. Certificación los deja subir igual, pero
   // acá la fila quedaba sin ninguna acción: el modo "marcar a mano" depende de
