@@ -1,4 +1,5 @@
 import type { EstadoDocumental } from '@/lib/types'
+import { documentStateStyle } from '@/lib/states'
 
 interface Props {
   valor:     EstadoDocumental
@@ -10,11 +11,14 @@ interface Props {
   conteos?:  Partial<Record<EstadoDocumental, number>>
 }
 
+/** La escala del glosario (D1 §6.2). `falta` es el balde del resumen de
+ *  Certificación, que junta vencidos y faltantes: se nombra con las dos
+ *  palabras en vez de inventar una tercera (D-R12). */
 const OPCIONES: { id: EstadoDocumental; etiqueta: string }[] = [
   { id: 'todos',      etiqueta: 'Todo' },
-  { id: 'falta',      etiqueta: 'Falta' },
-  { id: 'por_vencer', etiqueta: 'Por vencer' },
-  { id: 'al_dia',     etiqueta: 'Al día' },
+  { id: 'falta',      etiqueta: `${documentStateStyle('OVERDUE').label} o ${documentStateStyle('MISSING').label.toLowerCase()}` },
+  { id: 'por_vencer', etiqueta: documentStateStyle('EXPIRING').label },
+  { id: 'al_dia',     etiqueta: documentStateStyle('UP_TO_DATE').label },
 ]
 
 /** El filtro de estado documental: qué mostrar de la carga de una empresa —

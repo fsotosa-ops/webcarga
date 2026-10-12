@@ -119,7 +119,8 @@ describe('el glosario manda (spec D1 §8.5)', () => {
     // (2), FiltroDeEstado (3), DocumentStatusBar (2), ComplianceBadge (2),
     // lib/compliance (3, Task 12) y el embudo (1, Task 14).
     // 19 -> 14 en la Task 12: salen ComplianceBadge (2) y lib/compliance (3).
-    const DEUDA = 14
+    // 14 -> 1 en la Task 13: Directorio, roster, tarjetas, vista rápida, FiltroDeEstado y DocumentStatusBar leen el glosario. Queda el embudo (Task 14).
+    const DEUDA = 1
     const h = etiquetasEscritasAMano()
     expect(h.length, `Etiquetas de estado fuera de lib/states.ts: ${h.length} (tope ${DEUDA}).\n${h.join('\n')}`)
       .toBeLessThanOrEqual(DEUDA)
@@ -130,7 +131,8 @@ describe('el glosario manda (spec D1 §8.5)', () => {
     // RenglonPendiente leen document_state en vez de urgencia.
     // 42 -> 21 en la Task 12: la ficha, Certificación, DocumentChecklist, el
     // banner, el panel, el slide-over y el mapeo leen document_state.
-    const DEUDA = 21
+    // 21 -> 3 en la Task 13. Queda CertificationStatusTable.tsx (pending_mandatory, Task 14).
+    const DEUDA = 3
     const h = lecturasDeRecalculo()
     expect(h.length, `Lecturas de recálculo: ${h.length} (tope ${DEUDA}).\n${h.join('\n')}`).toBeLessThanOrEqual(DEUDA)
   })

@@ -13,8 +13,9 @@ import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
 import { contactsApi } from '@/lib/api/contacts'
 import { StatusChip } from '@/components/ui/StatusChip'
-import { documentStateCounts, documentStateStyle, enablementStyle, isBlocking, lifecycleStyle, stateCountsLine } from '@/lib/states'
-import type { Driver, Asset, OperationalStatus, ComplianceHealth } from '@/lib/types'
+import { SEVERITY_ORDER, documentStateCounts, documentStateStyle, enablementStyle, isBlocking, lifecycleStyle, stateCountsLine, type ComplianceSummary, type DocumentState } from '@/lib/states'
+import { canonicalPlate, canonicalRut, plateSearchKey, rutDigits, rutSearchKey } from '@/lib/identity'
+import type { Driver, Asset, OperationalStatus } from '@/lib/types'
 import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { ContactCard, AddContactForm } from '@/components/dashboard/ContactCard'
 import { InsuranceSummaryCard } from '@/components/dashboard/InsuranceSummaryCard'
@@ -167,11 +168,11 @@ function EmpresaDetailPageInner() {
   const [selectedDriverId,  setSelectedDriverId]  = useState<string | null>(requestedDriverId)
   const [selectedAssetId,   setSelectedAssetId]   = useState<string | null>(requestedAssetId)
   const [driverQ,  setDriverQ]  = useState('')
-  const [driverHealthFilter, setDriverHealthFilter] = useState<ComplianceHealth | ''>('')
+  const [driverHealthFilter, setDriverHealthFilter] = useState<DocumentState | ''>('')
   const [driverShowAll, setDriverShowAll] = useState(false)
   const [assetQ,   setAssetQ]   = useState('')
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetType | 'todos'>('todos')
-  const [assetHealthFilter, setAssetHealthFilter] = useState<ComplianceHealth | ''>('')
+  const [assetHealthFilter, setAssetHealthFilter] = useState<DocumentState | ''>('')
   const [assetShowAll, setAssetShowAll] = useState(false)
 
   const [addDriverOpen,  setAddDriverOpen]  = useState(!!handoffDriverName)
@@ -348,29 +349,35 @@ function EmpresaDetailPageInner() {
     }
   }
 
-  const driverFacets = useMemo(() => ({
-    '': drivers.length,
-    PENDING: drivers.filter(d => d.compliance_health === 'PENDING').length,
-    OK: drivers.filter(d => d.compliance_health === 'OK').length,
-  }), [drivers])
-
-  const assetFacets = useMemo(() => ({
-    '': assets.length,
-    PENDING: assets.filter(a => a.compliance_health === 'PENDING').length,
-    OK: assets.filter(a => a.compliance_health === 'OK').length,
-  }), [assets])
+  // El roster se reparte por el peor estado que manda la API (D1 §6.1): una
+  // sola respuesta para "cómo está con sus documentos".
+  const facetsOf = (rows: { compliance_summary: ComplianceSummary }[]) => ({
+    '': rows.length,
+    ...Object.fromEntries(SEVERITY_ORDER.map(s => [s, rows.filter(r => r.compliance_summary.worst_state === s).length])),
+  }) as Record<'' | DocumentState, number>
+  const driverFacets = useMemo(() => facetsOf(drivers), [drivers])
+  const assetFacets  = useMemo(() => facetsOf(assets), [assets])
 
   const filteredDrivers = useMemo(() => drivers.filter(d => {
-    const matchesQ = !driverQ || d.full_name.toLowerCase().includes(driverQ.toLowerCase()) || d.tax_id.includes(driverQ)
-    const matchesHealth = !driverHealthFilter || d.compliance_health === driverHealthFilter
-    return matchesQ && matchesHealth
+    const q = driverQ.trim()
+    // RUT con o sin puntos (D1 §7.2): igualdad canónica, o la clave parcial del
+    // backend (dígitos y K, 4 o más, sin otras letras) contra el RUT guardado.
+    const rut = rutSearchKey(q)
+    const cq = canonicalRut(q)
+    const matchesRut = (cq !== null && cq === canonicalRut(d.tax_id))
+      || (rut !== '' && rutDigits(d.tax_id).includes(rut))
+    const matchesQ = !q || d.full_name.toLowerCase().includes(q.toLowerCase()) || matchesRut
+    const matchesState = !driverHealthFilter || d.compliance_summary.worst_state === driverHealthFilter
+    return matchesQ && matchesState
   }), [drivers, driverQ, driverHealthFilter])
 
   const filteredAssets = useMemo(() => assets.filter(a => {
-    const matchesQ = !assetQ || a.license_plate.toLowerCase().includes(assetQ.toLowerCase())
+    const pk = plateSearchKey(assetQ)
+    const matchesQ = !assetQ || (canonicalPlate(assetQ) !== null && canonicalPlate(assetQ) === canonicalPlate(a.license_plate))
+      || (pk !== '' && plateSearchKey(a.license_plate).includes(pk))
     const matchesType = assetTypeFilter === 'todos' || a.asset_type === assetTypeFilter
-    const matchesHealth = !assetHealthFilter || a.compliance_health === assetHealthFilter
-    return matchesQ && matchesType && matchesHealth
+    const matchesState = !assetHealthFilter || a.compliance_summary.worst_state === assetHealthFilter
+    return matchesQ && matchesType && matchesState
   }), [assets, assetQ, assetTypeFilter, assetHealthFilter])
 
   useEffect(() => { setDriverShowAll(false) }, [driverQ, driverHealthFilter])
@@ -633,15 +640,17 @@ function EmpresaDetailPageInner() {
           )}
         </div>
 
-        <div className="mb-3 max-w-md">
+        <div className="mb-3 max-w-xl">
           <AlertStatTiles
             tiles={[
               { id: '', label: 'Todos', value: driverFacets[''], tone: 'neutral' },
-              { id: 'PENDING', label: 'Pendientes', value: driverFacets.PENDING, tone: 'danger' },
-              { id: 'OK', label: 'Al día', value: driverFacets.OK, tone: 'success' },
+              ...SEVERITY_ORDER.map(s => ({
+                id: s, label: documentStateStyle(s).label, value: driverFacets[s],
+                tone: s === 'OVERDUE' ? 'danger' as const : s === 'UP_TO_DATE' ? 'success' as const : 'neutral' as const,
+              })),
             ]}
             active={driverHealthFilter}
-            onSelect={id => setDriverHealthFilter(id as ComplianceHealth | '')}
+            onSelect={id => setDriverHealthFilter(id as DocumentState | '')}
           />
         </div>
 
@@ -651,7 +660,7 @@ function EmpresaDetailPageInner() {
             <input
               value={driverQ}
               onChange={e => setDriverQ(e.target.value)}
-              placeholder="Filtrar por nombre o tax_id…"
+              placeholder="Filtrar por nombre o RUT…"
               className="pl-8 pr-4 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/30 w-56 bg-white"
             />
           </div>
@@ -715,15 +724,17 @@ function EmpresaDetailPageInner() {
           )}
         </div>
 
-        <div className="mb-3 max-w-md">
+        <div className="mb-3 max-w-xl">
           <AlertStatTiles
             tiles={[
               { id: '', label: 'Todos', value: assetFacets[''], tone: 'neutral' },
-              { id: 'PENDING', label: 'Pendientes', value: assetFacets.PENDING, tone: 'danger' },
-              { id: 'OK', label: 'Al día', value: assetFacets.OK, tone: 'success' },
+              ...SEVERITY_ORDER.map(s => ({
+                id: s, label: documentStateStyle(s).label, value: assetFacets[s],
+                tone: s === 'OVERDUE' ? 'danger' as const : s === 'UP_TO_DATE' ? 'success' as const : 'neutral' as const,
+              })),
             ]}
             active={assetHealthFilter}
-            onSelect={id => setAssetHealthFilter(id as ComplianceHealth | '')}
+            onSelect={id => setAssetHealthFilter(id as DocumentState | '')}
           />
         </div>
 

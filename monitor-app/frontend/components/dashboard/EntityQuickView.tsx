@@ -14,7 +14,7 @@ import {
   entitySummaryKey, fetchEntitySummary,
   type AssetSummary, type CarrierSummary, type DriverSummary, type EntityKind,
 } from '@/lib/api/entitySummary'
-import { fleetMemberStyle } from '@/lib/states'
+import { enablementStyle, fleetMemberStyle, isCarrierDeactivated, summaryStyle } from '@/lib/states'
 import { assetHref, carrierHref, driverHref } from '@/lib/navegacion/directory'
 import type { QuickViewTarget } from '@/lib/quickView'
 import { getInitials } from '@/lib/utils/avatar'
@@ -154,11 +154,16 @@ function Identity({ target, data }: { target: QuickViewTarget; data?: DriverSumm
               <StatusChip tone="action">{(data as AssetSummary).operation_type}</StatusChip>
             )}
             {(() => {
-              const s = fleetMemberStyle(
-                target.kind, data.operational_status,
-                target.kind === 'carrier' ? null : (data as DriverSummary | AssetSummary).carrier?.operational_status,
-              )
-              return <StatusChip tone={s.tone} icon={s.icon}>{s.label}</StatusChip>
+              const carrierStatus = target.kind === 'carrier' ? null : (data as DriverSummary | AssetSummary).carrier?.operational_status
+              const life = fleetMemberStyle(target.kind, data.operational_status, carrierStatus)
+              const active = isActive(data.operational_status) && !isCarrierDeactivated(carrierStatus)
+              const second = target.kind === 'carrier'
+                ? enablementStyle(data.compliance_summary, active)
+                : summaryStyle(data.compliance_summary, active)
+              return (<>
+                <StatusChip tone={life.tone} icon={life.icon}>{life.label}</StatusChip>
+                <StatusChip tone={second.tone} icon={second.icon}>{second.label}</StatusChip>
+              </>)
             })()}
           </div>
         )}
@@ -236,7 +241,7 @@ function DriverSections({ data, onNavigate }: { data: DriverSummary; onNavigate:
       <Section title="Contacto">
         <KeyValueList items={[{ label: 'Teléfono', value: <Phone phone={data.phone} /> }]} />
       </Section>
-      <Section title="Documentación"><DocumentStatusBar documents={data.documents} /></Section>
+      <Section title="Documentación"><DocumentStatusBar documents={data.documents} counts={data.compliance_summary.own} /></Section>
     </>
   )
 }
@@ -255,7 +260,7 @@ function AssetSections({ data, onNavigate }: { data: AssetSummary; onNavigate: (
         ]} />
         {!isActive(data.operational_status) && <InactiveNotice noun="equipo" />}
       </Section>
-      <Section title="Documentación"><DocumentStatusBar documents={data.documents} /></Section>
+      <Section title="Documentación"><DocumentStatusBar documents={data.documents} counts={data.compliance_summary.own} /></Section>
     </>
   )
 }
@@ -290,7 +295,9 @@ function CarrierSections({ data }: { data: CarrierSummary }) {
           ),
         }]} />
       </Section>
-      <Section title="Documentación de la empresa"><DocumentStatusBar documents={data.documents} /></Section>
+      <Section title="Documentación de la empresa">
+        <DocumentStatusBar documents={data.documents} counts={data.compliance_summary.own} fleet={data.compliance_summary.fleet} />
+      </Section>
     </>
   )
 }

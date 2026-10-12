@@ -6,7 +6,7 @@ import {
   Loader2, Check, RotateCcw, ShieldAlert, Search,
   FileWarning, AlertTriangle, PanelRightOpen,
 } from 'lucide-react'
-import type { Trip, TripsMeta } from '@/lib/types'
+import type { AssignmentWarning, Trip, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch } from '@/lib/api/trips'
 import { driversApi } from '@/lib/api/drivers'
 import { taxonomiesApi } from '@/lib/api/config'
@@ -75,6 +75,7 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
   const [fleetDraft, setFleetDraft]             = useState<FleetAssignValue>(EMPTY_FLEET_ASSIGN_VALUE)
   const [assigningFleet, setAssigningFleet]     = useState(false)
   const [fleetErr, setFleetErr]                 = useState<string | null>(null)
+  const [fleetWarnings, setFleetWarnings]       = useState<AssignmentWarning[]>([])
 
   const headingId = useId()
 
@@ -93,6 +94,7 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
     setUnlinkErr(null)
     setFleetDraft(EMPTY_FLEET_ASSIGN_VALUE)
     setFleetErr(null)
+    setFleetWarnings([])
   }, [trip.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // `collapsed` también resetea a expandido en cada viaje nuevo — decisión
@@ -144,7 +146,7 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
 
   async function handleAssignFleet() {
     if (!fleetDraft.carrier_id) return
-    setAssigningFleet(true); setFleetErr(null)
+    setAssigningFleet(true); setFleetErr(null); setFleetWarnings([])
     try {
       const updated = await tripsApi.assignFleetLink(trip.id, {
         carrier_id:       fleetDraft.carrier_id,
@@ -155,6 +157,9 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
       })
       onSaved(updated)
       setFleetDraft(EMPTY_FLEET_ASSIGN_VALUE)
+      // Se vinculó, pero la empresa no está habilitada (D1 §7.1). Se dice acá,
+      // fuera del bloque que se desmonta al quedar vinculado el viaje.
+      setFleetWarnings(updated.warnings ?? [])
     } catch (e) {
       setFleetErr(e instanceof Error ? e.message : 'Error al vincular')
     } finally {
@@ -321,6 +326,15 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
 
         {/* Conductor y flota — driver-first */}
         <Section title="Conductor y flota">
+          {fleetWarnings.length > 0 && (
+            <div role="status" className="mb-2 space-y-1">
+              {fleetWarnings.map(w => (
+                <Notice key={w.code} tone="warning" icon={<AlertTriangle size={13} className="mt-px shrink-0" aria-hidden />}>
+                  <p>{w.message}</p>
+                </Notice>
+              ))}
+            </div>
+          )}
           {trip.carrier_id ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between rounded-md border border-border bg-white px-3 py-2.5">

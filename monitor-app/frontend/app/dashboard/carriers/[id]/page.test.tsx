@@ -76,6 +76,8 @@ const CARRIER: Carrier = {
 
 const DRIVERS: CarrierDriverRosterItem[] = [
   { id: 'd1', tax_id: '22222222-2', full_name: 'Juan Pérez', operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary() },
+  { id: 'd2', tax_id: '12345678-5', full_name: 'Ana Rojas', operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null, pending_mandatory: 1, compliance_health: 'PENDING',
+    compliance_summary: complianceSummary({ worst_state: 'OVERDUE', own: { overdue: 1, expiring: 0, missing: 0 }, can_operate: false }) },
 ]
 
 const ASSETS: CarrierAssetRosterItem[] = [
@@ -280,8 +282,35 @@ describe('EmpresaDetailPage', () => {
     renderPage()
     await clickTab(/Conductores/)
     await screen.findByText('Juan Pérez')
-    fireEvent.change(screen.getByPlaceholderText('Filtrar por nombre o tax_id…'), { target: { value: 'nadie' } })
+    fireEvent.change(screen.getByPlaceholderText('Filtrar por nombre o RUT…'), { target: { value: 'nadie' } })
     await waitFor(() => expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument())
+  })
+
+  it('el roster filtra por el peor estado que manda la API', async () => {
+    renderPage()
+    await clickTab(/Conductores/)
+    // El nombre accesible del tile es "<cifra><etiqueta>" (AlertStatTiles pinta la cifra primero).
+    fireEvent.click(await screen.findByRole('button', { name: /^\d+\s*Vencido$/ }))
+    expect(screen.getByText('Ana Rojas')).toBeInTheDocument()
+    expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
+  })
+
+  it('un RUT con puntos encuentra al conductor guardado sin puntos (D1 §7.2)', async () => {
+    renderPage()
+    await clickTab(/Conductores/)
+    fireEvent.change(await screen.findByPlaceholderText(/Filtrar por nombre o RUT/), { target: { value: '12.345.678' } })
+    expect(screen.getByText('Ana Rojas')).toBeInTheDocument()
+    expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText(/Filtrar por nombre o RUT/), { target: { value: '12.345.678-5' } })
+    expect(screen.getByText('Ana Rojas')).toBeInTheDocument()
+    expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
+  })
+
+  it('una patente con guion encuentra al equipo', async () => {
+    renderPage()
+    await clickTab(/Equipos/)
+    fireEvent.change(await screen.findByPlaceholderText(/Filtrar por patente/), { target: { value: 'AB-CD' } })
+    expect(screen.getByText('ABCD12')).toBeInTheDocument()
   })
 
   it('filters the equipment roster by asset type', async () => {

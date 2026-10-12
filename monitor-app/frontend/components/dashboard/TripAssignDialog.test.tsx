@@ -6,6 +6,7 @@ import { tripsApi } from '@/lib/api/trips'
 import { driversApi } from '@/lib/api/drivers'
 import { shippersApi, locationsApi } from '@/lib/api/locations'
 import type { TripsMeta } from '@/lib/types'
+import { ApiError } from '@/lib/api/client'
 
 vi.mock('@/lib/api/trips', () => ({
   tripsApi: { create: vi.fn(), availableDrivers: vi.fn() },
@@ -67,6 +68,31 @@ beforeEach(() => {
 })
 
 describe('TripAssignDialog', () => {
+  it('si la API rechaza la asignación (409) muestra su mensaje y no cierra', async () => {
+    const onClose = vi.fn()
+    vi.mocked(tripsApi.create).mockRejectedValue(new ApiError(
+      'Transportes Sur Spa está dada de baja: no se le asignan viajes.', 409,
+      { code: 'CARRIER_NOT_ACTIVE', message: 'Transportes Sur Spa está dada de baja: no se le asignan viajes.' }))
+    renderCreate({ onClose })
+    await pickCliente(); await pickDriver()
+    fireEvent.click(screen.getByText('Crear viaje'))
+    expect(await screen.findByText('Transportes Sur Spa está dada de baja: no se le asignan viajes.')).toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('creado con aviso de empresa no habilitada: lo muestra antes de seguir', async () => {
+    const onCreated = vi.fn()
+    vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new',
+      warnings: [{ code: 'CARRIER_NOT_ENABLED', message: 'Transportes Sur Spa no está habilitada: tiene obligatorios vencidos.' }] } as never)
+    renderCreate({ onCreated })
+    await pickCliente(); await pickDriver()
+    fireEvent.click(screen.getByText('Crear viaje'))
+    expect(await screen.findByText('Transportes Sur Spa no está habilitada: tiene obligatorios vencidos.')).toBeInTheDocument()
+    expect(onCreated).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
+    expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 't-new' }))
+  })
+
   it('has dialog semantics and closes with Escape', () => {
     const onClose = vi.fn()
     renderCreate({ onClose })

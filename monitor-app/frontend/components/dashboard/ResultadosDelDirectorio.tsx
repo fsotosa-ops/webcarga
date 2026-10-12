@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { User, Truck } from 'lucide-react'
 import { isCarrierDeactivated } from '@/lib/states'
 import type { DirectorioBusqueda } from '@/lib/types'
-import { ChipDeBaja } from './ChipDeBaja'
+import { StatusChip } from '@/components/ui/StatusChip'
+import { fleetMemberStyle } from '@/lib/states'
 import { carrierPanelHref } from '@/lib/navegacion/directory'
 
 /**
@@ -100,7 +101,10 @@ function Fila({
         <p className="text-dato font-semibold text-text-primary truncate">{principal}</p>
         {secundario && <p className="text-etiqueta text-informativo font-mono truncate">{secundario}</p>}
       </div>
-      <ChipDeBaja estado={deBaja ? 'INACTIVE' : 'ACTIVE'} carrierStatus={empresaDeBaja ? 'INACTIVE' : null} className="shrink-0" />
+      {(deBaja || empresaDeBaja) && (() => {
+        const s = fleetMemberStyle('driver', deBaja ? 'INACTIVE' : 'ACTIVE', empresaDeBaja ? 'INACTIVE' : null)
+        return <span className="shrink-0"><StatusChip tone={s.tone} icon={s.icon}>{s.label}</StatusChip></span>
+      })()}
       <p className="text-etiqueta text-informativo truncate max-w-[45%] text-right">
         {/* Sin empresa no hay ficha donde abrirlo, y decirlo es más honesto que
             un link que lleva a una lista vacía. Son las personas que el

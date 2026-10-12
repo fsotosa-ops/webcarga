@@ -46,37 +46,54 @@ beforeEach(() => {
 })
 
 describe('EmpresasTransportePage', () => {
-  it('renders an Onboarding tab alongside Activas/Inactivas', async () => {
+  it('renders the En onboarding tab alongside Activas/Dadas de baja', async () => {
     renderPage()
     await waitFor(() => expect(carriersApi.list).toHaveBeenCalled())
     expect(screen.getByRole('button', { name: /^Activas/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^Inactivas/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^Onboarding/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Dadas de baja/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^En onboarding/ })).toBeInTheDocument()
   })
 
   it('selecting the Onboarding tab re-queries with operational_status: ONBOARDING', async () => {
     renderPage()
     await waitFor(() => expect(carriersApi.list).toHaveBeenCalled())
-    fireEvent.click(screen.getByRole('button', { name: /^Onboarding/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^En onboarding/ }))
     await waitFor(() => expect(carriersApi.list).toHaveBeenCalledWith(
       expect.objectContaining({ operational_status: ['ONBOARDING'] }),
     ))
-    expect(screen.getByRole('button', { name: /^Onboarding/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /^En onboarding/ })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('"Inactivas" pide los DOS estados de baja, no sólo el del padrón viejo', async () => {
+  it('"Dadas de baja" pide los DOS estados de baja, no sólo el del padrón viejo', async () => {
     // El resumen de esta misma pantalla cuenta LEGACY_INACTIVE + INACTIVE
     // ("214 inactivas") y la pestaña filtraba sólo el primero (206): las 8 que
     // faltaban eran las dadas de baja desde la app, y no aparecían en NINGUNA
     // de las tres pestañas.
     renderPage()
     await waitFor(() => expect(carriersApi.list).toHaveBeenCalled())
-    fireEvent.click(screen.getByRole('button', { name: /^Inactivas/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Dadas de baja/ }))
 
     await waitFor(() => expect(carriersApi.list).toHaveBeenCalledWith(
       expect.objectContaining({ operational_status: ['LEGACY_INACTIVE', 'INACTIVE'] }),
     ))
   })
+
+  it('las empresas activas se filtran por habilitación, no por compliance_health (D-R6)', async () => {
+    renderPage()
+    await waitFor(() => expect(carriersApi.list).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: /No habilitadas/ }))
+    await waitFor(() => expect(carriersApi.list).toHaveBeenCalledWith(
+      expect.objectContaining({ operational_status: ['ACTIVE'], enablement: 'not_enabled' }),
+    ))
+  })
+
+  it('una empresa dada de baja no cuenta como "No habilitada": la pestaña no ofrece el filtro', async () => {
+    renderPage()
+    await waitFor(() => expect(carriersApi.list).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: /^Dadas de baja/ }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: /No habilitadas/ })).not.toBeInTheDocument())
+  })
+
   // ── El buscador único (2026-09-07) ────────────────────────────────────────
   // Buscar "Pardo" —un conductor que existe— devolvía "Sin resultados, 0
   // empresas". La búsqueda por conductor y por patente vivía en Certificación,

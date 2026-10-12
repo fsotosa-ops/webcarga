@@ -195,4 +195,29 @@ describe('AsignarConductorPopover', () => {
     fireEvent.click(screen.getByRole('button', { name: /dar de alta/i }))
     expect(screen.getByText(/no va a aparecer en el cierre/i)).toBeInTheDocument()
   })
+
+  // ── Guarda de asignación (D1 §7.1) ───────────────────────────────────────
+  it('si la API rechaza la asignación (409) muestra su mensaje y no cierra', async () => {
+    const message = 'Transportes Sur está dada de baja: no se le asignan viajes.'
+    const onAsignar = vi.fn().mockRejectedValue(new ApiError(message, 409, { code: 'CARRIER_NOT_ACTIVE', message }))
+    const onCancelar = vi.fn()
+    render_(<AsignarConductorPopover {...base} onAsignar={onAsignar} onCancelar={onCancelar} candidatos={[CONTENIDO]} />)
+    fireEvent.click(screen.getByRole('button', { name: /Suarez Lopez Efrain/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Asignar a 13 viajes/i }))
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(onCancelar).not.toHaveBeenCalled()
+  })
+
+  it('asignado con aviso de empresa no habilitada: lo muestra y cierra recién con Continuar', async () => {
+    const message = 'Transportes Sur no está habilitada: tiene obligatorios vencidos.'
+    const onAsignar = vi.fn().mockResolvedValue([{ code: 'CARRIER_NOT_ENABLED', message }])
+    const onCancelar = vi.fn()
+    render_(<AsignarConductorPopover {...base} onAsignar={onAsignar} onCancelar={onCancelar} candidatos={[CONTENIDO]} />)
+    fireEvent.click(screen.getByRole('button', { name: /Suarez Lopez Efrain/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Asignar a 13 viajes/i }))
+    expect(await screen.findByText(message)).toBeInTheDocument()
+    expect(onCancelar).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar' }))
+    expect(onCancelar).toHaveBeenCalled()
+  })
 })

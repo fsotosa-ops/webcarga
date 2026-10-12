@@ -9,6 +9,13 @@ describe('FiltroDeEstado', () => {
     expect(screen.getByRole('button', { name: /al día/i })).toHaveAttribute('aria-pressed', 'false')
   })
 
+  it('usa la escala del glosario; el balde que junta dos estados los nombra a los dos (D-R12)', () => {
+    render(<FiltroDeEstado valor="todos" onCambiar={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Vencido o falta' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Por vencer' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Al día' })).toBeInTheDocument()
+  })
+
   it('avisa cuál se eligió', () => {
     const onCambiar = vi.fn()
     render(<FiltroDeEstado valor="falta" onCambiar={onCambiar} />)

@@ -1,23 +1,26 @@
 import type { ReactNode } from 'react'
+import { documentStateCount, documentStateStyle, stateCountsLine, type StateCounts } from '@/lib/states'
 
-export type DocumentState = 'expired' | 'expiring' | 'missing'
+/** El estado de un documento en la lista de atención. No es el `DocumentState`
+ *  del glosario (que viene en mayúsculas de la API). */
+export type AttentionState = 'expired' | 'expiring' | 'missing'
 
 export type DocumentSummary = {
   ok: number
   expiring: number
   expired: number
   missing: number
-  attention: { name: string; state: DocumentState; due_on: string | null }[]
+  attention: { name: string; state: AttentionState; due_on: string | null }[]
 }
 
-type Segment = { key: 'ok' | DocumentState; count: number; bar: string; label: (n: number) => string }
+type Segment = { key: 'ok' | AttentionState; count: number; bar: string; label: (n: number) => string }
 
 // En el orden en que se leen: lo que está bien, y después lo que falta atender.
-const SEGMENTS = (d: DocumentSummary): Segment[] => [
-  { key: 'ok',       count: d.ok,       bar: 'bg-resuelto',         label: n => `${n} al día` },
-  { key: 'expiring', count: d.expiring, bar: 'bg-warning',          label: n => `${n} por vencer` },
-  { key: 'expired',  count: d.expired,  bar: 'bg-status-incidente', label: n => `${n} ${n === 1 ? 'vencido' : 'vencidos'}` },
-  { key: 'missing',  count: d.missing,  bar: 'bg-informativo',      label: n => `${n} ${n === 1 ? 'falta' : 'faltan'}` },
+const SEGMENTS = (d: DocumentSummary, c: StateCounts): Segment[] => [
+  { key: 'ok',       count: d.ok,       bar: 'bg-resuelto',         label: n => documentStateCount('UP_TO_DATE', n) },
+  { key: 'expiring', count: c.expiring, bar: 'bg-warning',          label: n => documentStateCount('EXPIRING', n) },
+  { key: 'expired',  count: c.overdue,  bar: 'bg-status-incidente', label: n => documentStateCount('OVERDUE', n) },
+  { key: 'missing',  count: c.missing,  bar: 'bg-informativo',      label: n => documentStateCount('MISSING', n) },
 ]
 
 /** 2026-10-02 → 02/10, como lo lee el coordinador. */
@@ -26,20 +29,29 @@ function shortDate(iso: string): string {
   return `${d}/${m}`
 }
 
-function dueLabel(state: DocumentState, dueOn: string | null): ReactNode {
-  if (state === 'missing') return <span className="text-informativo">Falta</span>
+function dueLabel(state: AttentionState, dueOn: string | null): ReactNode {
+  if (state === 'missing') return <span className="text-informativo">{documentStateStyle('MISSING').label}</span>
   const date = dueOn ? ` ${shortDate(dueOn)}` : ''
   return state === 'expired'
-    ? <span className="text-status-incidente">Vencido{date}</span>
+    ? <span className="text-status-incidente">{documentStateStyle('OVERDUE').label}{date}</span>
     : <span className="text-warning">Vence{date}</span>
 }
 
 /** El estado de la documentación de una entidad: una barra con el peso de cada
  *  estado, la leyenda con sus cantidades (solo las que no son cero) y lo que hay
  *  que atender primero. Sin requisitos lo dice, en vez de dibujar una barra vacía
- *  que se lee como "todo mal". */
-export function DocumentStatusBar({ documents }: { documents: DocumentSummary }) {
-  const segments = SEGMENTS(documents).filter(s => s.count > 0)
+ *  que se lee como "todo mal".
+ *
+ *  Las cifras de atención salen de `counts` (el `compliance_summary` de la API,
+ *  D-R9); sin él, de los contadores del propio resumen. `fleet` agrega la línea
+ *  de la flota activa de una empresa. */
+export function DocumentStatusBar({ documents, counts, fleet }: {
+  documents: DocumentSummary
+  counts?: StateCounts
+  fleet?: StateCounts | null
+}) {
+  const c = counts ?? { overdue: documents.expired, expiring: documents.expiring, missing: documents.missing }
+  const segments = SEGMENTS(documents, c).filter(s => s.count > 0)
   const total = segments.reduce((sum, s) => sum + s.count, 0)
   if (total === 0) return <p className="text-dato text-informativo">Sin requisitos configurados</p>
 
@@ -68,6 +80,9 @@ export function DocumentStatusBar({ documents }: { documents: DocumentSummary })
             </li>
           ))}
         </ul>
+      )}
+      {fleet && (
+        <p className="mt-2 text-dato text-informativo">Flota activa: {stateCountsLine(fleet) ?? 'sin pendientes'}</p>
       )}
     </div>
   )

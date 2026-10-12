@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { X, Loader2, Plus, Search, User, MapPin, Link2 } from 'lucide-react'
 import type { Trip, TripsMeta, TripCreatePayload, TripStopCreatePayload } from '@/lib/types'
-import { tripsApi } from '@/lib/api/trips'
+import { tripsApi, type WithWarnings } from '@/lib/api/trips'
 import { useQuery } from '@tanstack/react-query'
 import { RouteEditor } from '@/components/dashboard/RouteEditor'
 import { FleetAssignSection, EMPTY_FLEET_ASSIGN_VALUE, type FleetAssignValue } from '@/components/dashboard/FleetAssignSection'
@@ -61,6 +61,7 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
   const [originTms, setOriginTms]   = useState('')
   const [stops, setStops]           = useState<TripStopCreatePayload[]>([])
   const [fleet, setFleet]           = useState<FleetAssignValue>(EMPTY_FLEET_ASSIGN_VALUE)
+  const [createdWithWarnings, setCreatedWithWarnings] = useState<WithWarnings<Trip> | null>(null)
   const [saving, setSaving]         = useState(false)
   const [err, setErr]               = useState<string | null>(null)
   const panelRef                    = useRef<HTMLDivElement>(null)
@@ -81,6 +82,7 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
       setStops([])
       setFleet(initialFleet ?? EMPTY_FLEET_ASSIGN_VALUE)
       setErr(null)
+      setCreatedWithWarnings(null)
     }
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -156,6 +158,10 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
         tractor_asset_id:        fleet.tractor_asset_id ?? undefined,
       }
       const created = await tripsApi.create(payload)
+      // Se asignó, pero la empresa no está habilitada: decirlo ANTES de seguir,
+      // no en un toast que se pierde al navegar (P14 abierta: bloquear después
+      // es una línea en la API). Un rechazo (409) llega como `e.message`.
+      if (created.warnings?.length) { setCreatedWithWarnings(created); return }
       onCreated(created)
       onClose()
     } catch (e) {
@@ -194,7 +200,19 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
           </button>
         </div>
 
-        {/* Body — form con Enter para crear */}
+        {createdWithWarnings ? (
+          <div role="status" className="p-6 space-y-3">
+            <p className="text-lectura font-semibold text-text-primary">Viaje creado.</p>
+            {createdWithWarnings.warnings!.map(w => (
+              <p key={w.code} className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-dato text-warning">{w.message}</p>
+            ))}
+            <button type="button" onClick={() => { onCreated(createdWithWarnings); onClose() }}
+                    className="rounded-md bg-accent px-3.5 py-2 text-dato font-semibold text-white hover:bg-accent/90">
+              Continuar
+            </button>
+          </div>
+        ) : (
+        /* Body — form con Enter para crear */
         <form
           className="flex-1 overflow-y-auto min-h-0 flex flex-col"
           onSubmit={e => { e.preventDefault(); handleCreate() }}
@@ -359,6 +377,7 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
             </button>
           </div>
         </form>
+        )}
       </div>
     </div>
   )

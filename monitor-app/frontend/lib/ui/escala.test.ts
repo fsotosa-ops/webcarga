@@ -70,7 +70,8 @@ describe('la escala tipografica', () => {
     // 214 -> 213 el 2026-10-12: la línea de empresa de DriverSearchPicker pasó a tokens (bloque 0, 0.9).
     // 213 -> 209 el 2026-10-12: los chips de ciclo de vida pasaron a StatusChip (D1, Task 11).
     // 209 -> 205 el 2026-10-12: las filas del checklist y del panel dejaron los 10px (D1, Task 12).
-    const DEUDA = 205
+    // 205 -> 201 el 2026-10-12: tarjetas y tabla del Directorio dejaron los 10px (D1, Task 13).
+    const DEUDA = 201
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

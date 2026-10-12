@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { UserPlus, AlertCircle, Loader2, Building2, X } from 'lucide-react'
-import type { CandidatoConductor } from '@/lib/types'
+import type { AssignmentWarning, CandidatoConductor } from '@/lib/types'
 import { ApiError } from '@/lib/api/client'
 import { TEXTO_APOYO, TEXTO_CUERPO } from '@/lib/ui/texto'
 import { nombreLegible } from '@/lib/utils/nombres'
@@ -27,13 +27,15 @@ type Props = {
   /** Cuántos viajes sin identificar trae ese mismo nombre (los da el backend). */
   viajesDeLaPersona: number
   cargando?: boolean
-  /** Puede rechazar: el popover muestra el error y NO se cierra. */
-  onAsignar: (driverId: string, aTodosSusViajes: boolean) => void | Promise<void>
+  /** Puede rechazar: el popover muestra el error y NO se cierra. Si devuelve
+   *  avisos (empresa no habilitada, D1 §7.1), se muestran antes de cerrar: el
+   *  que llama no cierra y el popover ofrece "Continuar". */
+  onAsignar: (driverId: string, aTodosSusViajes: boolean) => void | AssignmentWarning[] | Promise<void | AssignmentWarning[]>
   /** Sin él no se ofrece el alta: crear al conductor y vincularlo a su empresa
    *  pide `directory.edit`, además de `trips.edit_sensitive`. */
   onDarDeAlta?: (
     nombre: string, rut: string, aTodosSusViajes: boolean, carrierId: string | null,
-  ) => void | Promise<void>
+  ) => void | AssignmentWarning[] | Promise<void | AssignmentWarning[]>
   onCancelar: () => void
 }
 
@@ -92,16 +94,19 @@ export function AsignarConductorPopover({
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [yaExiste, setYaExiste] = useState<ConductorYaExiste | null>(null)
+  const [avisos, setAvisos] = useState<AssignmentWarning[]>([])
 
   // Un solo lugar donde se espera a la API, se muestra el error y se apaga el
   // botón. Antes cada `onClick` disparaba una promesa flotante: si rechazaba,
   // la excepción moría sin dueño y la pantalla no se enteraba.
-  async function ejecutar(accion: () => void | Promise<void>) {
+  async function ejecutar(accion: () => void | AssignmentWarning[] | Promise<void | AssignmentWarning[]>) {
     setError(null)
     setYaExiste(null)
+    setAvisos([])
     setGuardando(true)
     try {
-      await accion()
+      const resultado = await accion()
+      if (Array.isArray(resultado) && resultado.length > 0) setAvisos(resultado)
     } catch (e) {
       const existente = conductorYaExiste(e)
       if (existente) {
@@ -262,6 +267,19 @@ export function AsignarConductorPopover({
               Asignar a {nombreLegible(yaExiste.full_name)}
             </button>
           )}
+        </div>
+      )}
+
+      {avisos.length > 0 && (
+        <div role="status" className="mt-2.5 rounded-md border border-warning/25 bg-warning/10 px-2.5 py-2 space-y-1.5">
+          <p className="text-etiqueta font-medium text-text-primary">Asignado.</p>
+          {avisos.map(a => (
+            <p key={`${a.code}-${a.row ?? ''}-${a.message}`} className="text-etiqueta text-warning">{a.message}</p>
+          ))}
+          <button type="button" onClick={onCancelar}
+                  className="w-full rounded-md bg-accent px-2.5 py-1.5 text-dato text-white font-medium">
+            Continuar
+          </button>
         </div>
       )}
 

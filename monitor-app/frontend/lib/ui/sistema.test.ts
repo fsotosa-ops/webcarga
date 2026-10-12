@@ -105,7 +105,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 1.406 -> 1.405 el 2026-10-12: la línea de empresa de DriverSearchPicker pasó a tokens (bloque 0, 0.9).
     // 1.405 -> 1.392 el 2026-10-12: STATUS_CLS y los chips de ciclo de vida pasaron a StatusChip (D1, Task 11).
     // 1.392 -> 1.364 el 2026-10-12: la ficha de empresa, el checklist, el banner, el panel y el slide-over pintan con StatusChip y tokens (D1, Task 12).
-    const DEUDA = 1364
+    // 1364 -> 1348 el 2026-10-12: Directorio, roster y tarjetas usan StatusChip (D1, Task 13).
+    const DEUDA = 1348
 
     const total = usosDeColorCrudo()
     expect(

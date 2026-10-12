@@ -1,9 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { ChevronRight, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { StatusChip } from '@/components/ui/StatusChip'
-import { lifecycleStyle } from '@/lib/states'
+import { enablementStyle, lifecycleStyle } from '@/lib/states'
 import type { CarrierListItem } from '@/lib/types'
 
 interface Props {
@@ -14,13 +14,13 @@ interface Props {
 
 /** Tarjeta de empresa — vista Tarjetas del listado de Empresas y fallback
  *  mobile de la vista Tabla. Click abre el slide-over de resumen; el botón
- *  "Ver ficha" navega directo a la ficha completa. El pill de la derecha
- *  muestra compliance_health (pendientes de LEGAL_MANDATORY, mismo criterio
- *  que `mandatoryProblems` en la ficha) — antes mostraba un conteo plano de
- *  "N requisitos" que era igual para casi todas las empresas y no permitía
- *  distinguir cuáles necesitaban atención. */
+ *  "Ver ficha" navega directo a la ficha completa. Los dos chips son el
+ *  ciclo de vida (lo decide una persona) y la habilitación (la calcula la API
+ *  en `compliance_summary.can_operate`, D1 §6.2). Una empresa dada de baja
+ *  muestra la habilitación en gris: no está en falta. */
 export function TransporterCard({ item, onOpen, selected = false }: Props) {
   const lifecycle = lifecycleStyle('carrier', item.operational_status)
+  const enablement = enablementStyle(item.compliance_summary, item.operational_status === 'ACTIVE')
   return (
     <div
       role="button"
@@ -53,15 +53,7 @@ export function TransporterCard({ item, onOpen, selected = false }: Props) {
 
       <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/60">
         <StatusChip tone={lifecycle.tone} icon={lifecycle.icon}>{lifecycle.label}</StatusChip>
-        {item.compliance_health === 'PENDING' ? (
-          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600">
-            <ShieldAlert size={9} /> {item.pending_mandatory} pendiente{item.pending_mandatory === 1 ? '' : 's'}
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-700">
-            <ShieldCheck size={9} /> Al día
-          </span>
-        )}
+        <StatusChip tone={enablement.tone} icon={enablement.icon}>{enablement.label}</StatusChip>
       </div>
     </div>
   )

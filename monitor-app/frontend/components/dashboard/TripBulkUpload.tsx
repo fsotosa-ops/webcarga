@@ -5,7 +5,7 @@ import {
   X, Upload, Download, Loader2, CheckCircle2, AlertTriangle,
   FileText, XCircle, ArrowLeft, ArrowRight,
 } from 'lucide-react'
-import type { TripsMeta, CSVColumnDef, TripCreatePayload } from '@/lib/types'
+import type { AssignmentWarning, TripsMeta, CSVColumnDef, TripCreatePayload } from '@/lib/types'
 import { tripsApi } from '@/lib/api/trips'
 import { ApiError } from '@/lib/api/client'
 import { parseCSV, looksMojibake, normalizeDate, parseStopsColumn } from '@/lib/utils/csv'
@@ -28,6 +28,8 @@ interface ParsedRow {
 interface ImportResult {
   created: number
   rowErrors: { row: number; error: string }[]
+  /** Avisos de las filas que se importaron igual (empresa no habilitada, D1 §7.1). */
+  warnings: AssignmentWarning[]
   message?: string
 }
 
@@ -180,18 +182,20 @@ export function TripBulkUpload({ open, onClose, onImported, meta }: Props) {
     setImporting(true)
     try {
       const res = await tripsApi.bulkCreate(valid)
-      setResult({ created: res.created, rowErrors: [] })
+      setResult({ created: res.created, rowErrors: [], warnings: res.warnings ?? [] })
       setStep('result')
       onImported(res.created)
     } catch (e) {
-      // El backend devuelve errores estructurados por fila: {message, errors: [{row, error}]}
+      // El backend devuelve errores estructurados por fila:
+      // {code, message, errors: [{row, code, error}]} (409 de la guarda, D1 §7.1).
       const detail = e instanceof ApiError ? e.detail : null
       const structured = detail && typeof detail === 'object' && 'errors' in detail
-        ? detail as { message?: string; errors: { row: number; error: string }[] }
+        ? detail as { message?: string; errors: { row: number; code?: string; error: string }[] }
         : null
       setResult({
         created: 0,
         rowErrors: structured?.errors ?? [],
+        warnings: [],
         message: structured?.message ?? (e instanceof Error ? e.message : 'Error al importar'),
       })
       setStep('result')
@@ -409,6 +413,17 @@ export function TripBulkUpload({ open, onClose, onImported, meta }: Props) {
                     : result.message ?? 'Revisa los errores e intenta nuevamente.'}
                 </p>
               </div>
+
+              {result.warnings.length > 0 && (
+                <div role="status" className="space-y-1.5 max-h-44 overflow-y-auto">
+                  {result.warnings.map((w, i) => (
+                    <div key={i} className="rounded-lg border border-warning/25 bg-warning/10 px-3 py-2">
+                      {w.row != null && <p className="text-[10px] font-semibold text-warning">Fila {w.row}</p>}
+                      <p className="text-[10px] text-warning">{w.message}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {result.rowErrors.length > 0 && (
                 <div className="space-y-1.5 max-h-44 overflow-y-auto">

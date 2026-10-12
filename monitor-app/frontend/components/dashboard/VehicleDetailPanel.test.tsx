@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { VehicleDetailPanel } from './VehicleDetailPanel'
 import { assetsApi } from '@/lib/api/assets'
+import { ApiError } from '@/lib/api/client'
 import type { Asset, ComplianceRecord } from '@/lib/types'
 import { recordStateFields } from '@/lib/states.fixtures'
 
@@ -45,8 +46,9 @@ const RECORDS: ComplianceRecord[] = [{
 }]
 
 const DRIVERS = [
-  { id: 'd1', full_name: 'Juan Pérez' },
-  { id: 'd2', full_name: 'María López' },
+  { id: 'd1', full_name: 'Juan Pérez', operational_status: 'ACTIVE' },
+  { id: 'd2', full_name: 'María López', operational_status: 'ACTIVE' },
+  { id: 'd3', full_name: 'Pedro Baja', operational_status: 'INACTIVE' },
 ]
 
 function renderPanel(asset: Asset | null, opts: {
@@ -54,7 +56,7 @@ function renderPanel(asset: Asset | null, opts: {
   onPatch?: (...args: unknown[]) => Promise<void>
   onRemove?: () => Promise<void>
   carrierName?: string
-  drivers?: { id: string; full_name: string }[]
+  drivers?: { id: string; full_name: string; operational_status: string }[]
 } = {}) {
   return renderWithClient(
     <VehicleDetailPanel
@@ -190,6 +192,23 @@ describe('VehicleDetailPanel', () => {
     fireEvent.change(screen.getByLabelText('Asignar conductor habitual'), { target: { value: 'd2' } })
     fireEvent.click(screen.getByLabelText('Confirmar conductor habitual'))
     await waitFor(() => expect(assetsApi.assignDriver).toHaveBeenCalledWith('v1', 'd2'))
+  })
+
+  it('el selector de conductor habitual ofrece solo conductores activos (D1 §7.1)', async () => {
+    renderPanel(ASSET)
+    const select = await screen.findByLabelText('Asignar conductor habitual')
+    expect(within(select).getByRole('option', { name: 'María López' })).toBeInTheDocument()
+    expect(within(select).queryByRole('option', { name: 'Pedro Baja' })).not.toBeInTheDocument()
+  })
+
+  it('si la API rechaza la asignación (409) muestra su mensaje', async () => {
+    const message = 'El conductor está dado de baja: no se le asignan equipos.'
+    vi.mocked(assetsApi.assignDriver).mockRejectedValue(
+      new ApiError(message, 409, { code: 'DRIVER_INACTIVE', message }))
+    renderPanel(ASSET)
+    fireEvent.change(await screen.findByLabelText('Asignar conductor habitual'), { target: { value: 'd2' } })
+    fireEvent.click(screen.getByLabelText('Confirmar conductor habitual'))
+    expect(await screen.findByText(message)).toBeInTheDocument()
   })
 
   it('shows the assigned driver name and unassigns on click', async () => {

@@ -280,7 +280,7 @@ describe('FichaEmpresaPage', () => {
       expect.objectContaining({ entityId: 'd1', estado: 'todos' }),
     ))
 
-    fireEvent.click(screen.getByRole('button', { name: /^Falta/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Vencido o falta/i }))
 
     // La lista de abajo SÍ se acota al filtro (ya probado arriba, sin pedir
     // nada nuevo); la cabecera, no — sigue diciendo "1 al día · 1 falta", no
@@ -304,7 +304,7 @@ describe('FichaEmpresaPage', () => {
     ])
     await screen.findByText('Doc al día')
 
-    const chipFalta = screen.getByRole('button', { name: /^Falta/i })
+    const chipFalta = screen.getByRole('button', { name: /^Vencido o falta/i })
     const conteoDelChip = Number(within(chipFalta).getByText(/^\d+$/).textContent)
 
     fireEvent.click(chipFalta)
@@ -339,7 +339,7 @@ describe('FichaEmpresaPage', () => {
 
     // Con el filtro en "Falta" -la forma natural de trabajar esta pantalla-,
     // antes esto NO compartía caché con el diálogo de baja.
-    fireEvent.click(screen.getByRole('button', { name: /^Falta/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Vencido o falta/i }))
 
     fireEvent.click(screen.getByRole('button', { name: /acciones/i }))
     fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))
@@ -786,7 +786,7 @@ describe('FichaEmpresaPage', () => {
     ])
 
     fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
-    fireEvent.click(screen.getByRole('button', { name: /^Falta/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Vencido o falta/i }))
 
     fireEvent.click(screen.getByRole('button', { name: /acciones/i }))
     fireEvent.click(screen.getByRole('menuitem', { name: /Dar de baja/ }))

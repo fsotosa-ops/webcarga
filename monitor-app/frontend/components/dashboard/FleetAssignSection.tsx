@@ -2,7 +2,9 @@
 
 import { useState } from 'react'
 import { User } from 'lucide-react'
-import { type DriverPickCandidate } from '@/lib/types'
+import { type CarrierOperationalStatus, type DriverPickCandidate } from '@/lib/types'
+import { StatusChip } from '@/components/ui/StatusChip'
+import { lifecycleStyle } from '@/lib/states'
 import { DriverSearchPicker } from './DriverSearchPicker'
 
 export type FleetAssignValue = {
@@ -12,6 +14,8 @@ export type FleetAssignValue = {
   driver_phone:     string | null
   carrier_id:       string | null
   carrier_name:     string | null
+  /** Solo para avisar en pantalla; la decisión es de la API (D-R10). */
+  carrier_operational_status?: CarrierOperationalStatus | null
   tractor_asset_id: string | null
   tractor_plate:    string | null
   trailer_plate:    string | null
@@ -19,8 +23,8 @@ export type FleetAssignValue = {
 
 export const EMPTY_FLEET_ASSIGN_VALUE: FleetAssignValue = {
   driver_id: null, driver_name: null, driver_rut: null, driver_phone: null,
-  carrier_id: null, carrier_name: null, tractor_asset_id: null, tractor_plate: null,
-  trailer_plate: null,
+  carrier_id: null, carrier_name: null, carrier_operational_status: null,
+  tractor_asset_id: null, tractor_plate: null, trailer_plate: null,
 }
 
 interface Props {
@@ -48,19 +52,20 @@ export function FleetAssignSection({ value, onChange, suggested = [], suggestedL
 
   function pick(d: DriverPickCandidate) {
     setQuery('')
-    // La empresa se autocompleta solo si está ACTIVA (R10): ni de baja ni en
-    // alta (ONBOARDING), igual que antes de que la búsqueda trajera su estado.
-    const opera = (d.carrier_operational_status ?? 'ACTIVE') === 'ACTIVE'
+    // La empresa se autocompleta tal cual: si no puede recibir viajes, lo dice
+    // la API con un 409 (D1 §7.1, D-R10). Antes se descartaba acá en silencio y
+    // el viaje se creaba sin empresa, que es lo que la guarda viene a impedir.
     onChange({
       driver_id:        d.driver_id,
-      driver_name:       d.driver_name,
-      driver_rut:        d.driver_rut,
-      driver_phone:      d.driver_phone,
-      carrier_id:        opera ? d.carrier_id : null,
-      carrier_name:      opera ? d.carrier_name : null,
-      tractor_asset_id:  d.tractor_asset_id,
-      tractor_plate:     d.tractor_plate,
-      trailer_plate:     value.trailer_plate,
+      driver_name:      d.driver_name,
+      driver_rut:       d.driver_rut,
+      driver_phone:     d.driver_phone,
+      carrier_id:       d.carrier_id,
+      carrier_name:     d.carrier_name,
+      carrier_operational_status: d.carrier_operational_status ?? null,
+      tractor_asset_id: d.tractor_asset_id,
+      tractor_plate:    d.tractor_plate,
+      trailer_plate:    value.trailer_plate,
     })
   }
 
@@ -105,6 +110,10 @@ export function FleetAssignSection({ value, onChange, suggested = [], suggestedL
         <div>
           <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Empresa de transporte</label>
           <input type="text" value={value.carrier_name ?? ''} onChange={e => patch('carrier_name', e.target.value)} placeholder="Se autocompleta al elegir conductor" aria-label="Empresa de transporte" className={inputCls} />
+          {value.carrier_operational_status && value.carrier_operational_status !== 'ACTIVE' && (() => {
+            const s = lifecycleStyle('carrier', value.carrier_operational_status)
+            return <div className="mt-1"><StatusChip tone={s.tone} icon={s.icon}>{s.label}</StatusChip></div>
+          })()}
         </div>
         <div>
           <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Teléfono</label>
