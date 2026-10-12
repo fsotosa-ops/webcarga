@@ -28,10 +28,10 @@ async function clickTab(name: RegExp) {
 
 vi.mock('next/navigation', () => ({ useParams: vi.fn(), useRouter: vi.fn(), useSearchParams: vi.fn() }))
 vi.mock('@/lib/supabase/client', () => ({ createClient: vi.fn() }))
-// Por defecto Administración: edita y da de baja (directory.edit, directory.delete).
-const permisos = vi.hoisted(() => ({ darDeBaja: true }))
+// Por defecto lo tiene todo; cada test niega lo que necesita.
+const permisos = vi.hoisted(() => ({ darDeBaja: true, negados: new Set<string>() }))
 vi.mock('@/lib/authz/PermisosProvider', () => ({
-  usePermiso: (p: string) => (p === 'directory.delete' ? permisos.darDeBaja : true),
+  usePermiso: (p: string) => (p === 'directory.delete' ? permisos.darDeBaja : !permisos.negados.has(p)),
 }))
 vi.mock('@/lib/api/carriers', () => ({
   carriersApi: {
@@ -83,6 +83,7 @@ const pushMock = vi.fn()
 
 beforeEach(() => {
   permisos.darDeBaja = true
+  permisos.negados = new Set()
   vi.mocked(useParams).mockReturnValue({ id: 't1' })
   pushMock.mockReset()
   vi.mocked(useRouter).mockReturnValue({ push: pushMock } as unknown as ReturnType<typeof useRouter>)
@@ -109,6 +110,37 @@ beforeEach(() => {
 })
 
 describe('EmpresaDetailPage', () => {
+  it('sin directory.delete dice quién da de baja la empresa', async () => {
+    permisos.darDeBaja = false
+    renderPage()
+    expect(await screen.findByText('La baja de una empresa la hace Certificación.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Dar de baja$/ })).not.toBeInTheDocument()
+  })
+
+  it('el Operador (sin directory.edit) da de baja a un conductor desde su panel', async () => {
+    permisos.darDeBaja = false
+    permisos.negados = new Set(['directory.edit', 'policies.edit', 'policies.delete'])
+    vi.mocked(driversApi.get).mockResolvedValue({
+      id: 'd1', tax_id: '22222222-2', country_code: 'CL', full_name: 'Juan Pérez',
+      operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
+      total_requirements: 5, last_document_update: null,
+      home_location_id: null, home_location_name: null, home_location_shipper: null, suggested_home_location: null,
+    })
+    renderPage()
+    await clickTab(/Conductores/)
+    fireEvent.click(await screen.findByText('Juan Pérez'))
+    expect(await screen.findByRole('button', { name: 'Dar de baja' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Quitar del roster/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '+ Conductor' })).not.toBeInTheDocument()
+  })
+
+  it('"+ Póliza" se muestra con policies.edit, no con directory.edit', async () => {
+    permisos.negados = new Set(['policies.edit'])
+    renderPage()
+    await clickTab(/Seguros/)
+    expect(screen.queryByRole('button', { name: '+ Póliza' })).not.toBeInTheDocument()
+  })
+
   it('llegando desde el Cierre ofrece volver a él; sin ?next= no muestra nada de más', async () => {
     const cierre = '/dashboard/operations/closures?date=2026-10-08&tab=trips'
     vi.mocked(useSearchParams).mockReturnValue(

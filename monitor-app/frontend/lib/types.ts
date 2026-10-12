@@ -1420,7 +1420,7 @@ export type PreCierreEscalations = {
    *  `reason` sólo aparece cuando el TMS informó algo que ni siquiera es un
    *  RUT: ahí no hay a quién dar de alta. */
   CONDUCTOR_NO_REGISTRADO: { driver_rut: string; driver_name_tms?: string | null; reason?: string }[]
-  EMPRESA_ONBOARDING:      { carrier_id: string; carrier_name: string }[]
+  EMPRESA_ONBOARDING:      { carrier_id: string; carrier_name: string; operational_status?: string }[]
   /** Tracto activo sin Tractoreo/Equipo Completo. Trae la patente porque la
    *  acción es clasificar UN vehículo, y una empresa con cuatro tractos no
    *  dice cuál. Y sí bloquea el cierre, aunque no esté en

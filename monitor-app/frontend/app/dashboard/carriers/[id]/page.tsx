@@ -150,6 +150,10 @@ function EmpresaDetailPageInner() {
   const backLink            = returnLink(searchParams.get('next'))
   const canEdit = usePermiso('directory.edit')
   const canAdmin = usePermiso('directory.delete')
+  // Cada botón con el permiso de SU endpoint (bloque 0, 0.3): ninguno responde 403.
+  const canChangeFleetStatus = usePermiso('directory.fleet_status')
+  const canEditPolicies = usePermiso('policies.edit')
+  const canDeletePolicies = usePermiso('policies.delete')
   // Los documentos son de Certificación: subirlos y reasignarlos se decide con
   // SUS permisos, los mismos que exige la API (L5, 11/10).
   const canUploadDocuments = usePermiso('documents.upload')
@@ -469,6 +473,9 @@ function EmpresaDetailPageInner() {
                   Eliminar
                 </button>
               )}
+              {!canAdmin && (
+                <p className="text-etiqueta text-informativo">La baja de una empresa la hace Certificación.</p>
+              )}
             </div>
         </div>
       </div>
@@ -583,6 +590,7 @@ function EmpresaDetailPageInner() {
               key={c.id}
               contact={c}
               canEdit={canEdit}
+              canDelete={canAdmin}
               onSaved={patch => handleSaveContact(c.id, patch)}
               onDeleted={() => handleDeleteContact(c.id)}
             />
@@ -787,7 +795,7 @@ function EmpresaDetailPageInner() {
             >
               Ver en Seguros →
             </Link>
-            {canEdit && (
+            {canEditPolicies && (
               <button
                 onClick={() => setAddPolicyOpen(v => !v)}
                 className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition"
@@ -840,7 +848,8 @@ function EmpresaDetailPageInner() {
         driver={selectedDriver}
         carrierId={id}
         canEdit={canEdit}
-        canAdmin={canAdmin}
+        canChangeFleetStatus={canChangeFleetStatus}
+        canDeleteContacts={canAdmin}
         canUploadDocuments={canUploadDocuments}
         canReviewDocuments={canReviewDocuments}
         onClose={() => setSelectedDriverId(null)}
@@ -853,7 +862,7 @@ function EmpresaDetailPageInner() {
         asset={selectedAsset}
         carrierId={id}
         canEdit={canEdit}
-        canAdmin={canAdmin}
+        canChangeFleetStatus={canChangeFleetStatus}
         canUploadDocuments={canUploadDocuments}
         canReviewDocuments={canReviewDocuments}
         onClose={() => setSelectedAssetId(null)}
@@ -868,8 +877,8 @@ function EmpresaDetailPageInner() {
         displayName={carrier.business_name || carrier.tax_id}
         initialPolicyId={selectedPolicyId}
         onClose={() => setSelectedPolicyId(null)}
-        canAdmin={canAdmin}
-        canEdit={canEdit}
+        canAdmin={canDeletePolicies}
+        canEdit={canEditPolicies}
       />
 
       <TransferModal

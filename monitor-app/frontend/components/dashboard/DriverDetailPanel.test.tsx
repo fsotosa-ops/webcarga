@@ -47,7 +47,7 @@ const RECORDS: ComplianceRecord[] = [{
 }]
 
 function renderPanel(driver: Driver | null, opts: {
-  canEdit?: boolean; canAdmin?: boolean
+  canEdit?: boolean; canChangeFleetStatus?: boolean; canDeleteContacts?: boolean
   canUploadDocuments?: boolean; canReviewDocuments?: boolean
   onPatch?: (...args: unknown[]) => Promise<void>
   onRemove?: () => Promise<void>
@@ -57,7 +57,8 @@ function renderPanel(driver: Driver | null, opts: {
       driver={driver}
       carrierId="c1"
       canEdit={opts.canEdit ?? true}
-      canAdmin={opts.canAdmin ?? true}
+      canChangeFleetStatus={opts.canChangeFleetStatus ?? true}
+      canDeleteContacts={opts.canDeleteContacts ?? true}
       canUploadDocuments={opts.canUploadDocuments ?? true}
       canReviewDocuments={opts.canReviewDocuments ?? true}
       onClose={vi.fn()}
@@ -152,11 +153,11 @@ describe('DriverDetailPanel', () => {
 
   it('shows a "Transferir a otra empresa" button only for canEdit', () => {
     // Transferir se gatea con canEdit (Ronda de arreglo 1): la baja del
-    // sistema es la que sigue exigiendo canAdmin, ver el test de abajo.
+    // sistema es la que sigue exigiendo canChangeFleetStatus, ver el test de abajo.
     renderPanel(DRIVER, { canEdit: false })
     expect(screen.queryByRole('button', { name: /Transferir/ })).not.toBeInTheDocument()
 
-    renderPanel(DRIVER, { canEdit: true, canAdmin: false })
+    renderPanel(DRIVER, { canEdit: true, canChangeFleetStatus: false })
     expect(screen.getByRole('button', { name: /Transferir/ })).toBeInTheDocument()
   })
 
@@ -164,7 +165,7 @@ describe('DriverDetailPanel', () => {
     const onTransferClick = vi.fn()
     renderWithClient(
       <DriverDetailPanel
-        driver={DRIVER} carrierId="c1" canEdit={true} canAdmin={true} canUploadDocuments canReviewDocuments
+        driver={DRIVER} carrierId="c1" canEdit={true} canChangeFleetStatus={true} canDeleteContacts={true} canUploadDocuments canReviewDocuments
         onClose={vi.fn()} onPatch={vi.fn().mockResolvedValue(undefined)}
         onRemove={vi.fn().mockResolvedValue(undefined)}
         onTransferClick={onTransferClick}
@@ -202,10 +203,25 @@ describe('DriverDetailPanel', () => {
     expect(onPatch).toHaveBeenCalledWith('d1', { operational_status: 'ACTIVE' })
   })
 
-  it('does not show baja/reactivar buttons when canAdmin is false', () => {
-    renderPanel(DRIVER, { canAdmin: false })
+  it('does not show baja/reactivar buttons when canChangeFleetStatus is false', () => {
+    renderPanel(DRIVER, { canChangeFleetStatus: false })
     expect(screen.queryByRole('button', { name: 'Dar de baja' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reactivar' })).not.toBeInTheDocument()
+  })
+
+  it('el Operador ve la baja del conductor y nada que la API le rechace (Review Focus 5)', async () => {
+    renderPanel(DRIVER, { canEdit: false, canChangeFleetStatus: true, canDeleteContacts: false })
+    expect(screen.getByRole('button', { name: 'Dar de baja' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Quitar del roster/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Guardar' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Transferir/ })).not.toBeInTheDocument()
+  })
+
+  it('sin directory.delete no ofrece eliminar un contacto', async () => {
+    vi.mocked(driversApi.listContacts).mockResolvedValue(CONTACTS)
+    renderPanel(DRIVER, { canEdit: true, canDeleteContacts: false })
+    await screen.findByText('juan@example.com')
+    expect(screen.queryByRole('button', { name: 'Eliminar' })).not.toBeInTheDocument()
   })
 
   it('shows existing contacts with their phone and email', async () => {
@@ -311,7 +327,7 @@ describe('DriverDetailPanel', () => {
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <DriverDetailPanel
           driver={{ ...DRIVER, id: 'd2', home_location_id: null }}
-          carrierId="c1" canEdit canAdmin={false} canUploadDocuments canReviewDocuments
+          carrierId="c1" canEdit canChangeFleetStatus={false} canDeleteContacts={false} canUploadDocuments canReviewDocuments
           onClose={vi.fn()} onPatch={vi.fn()} onRemove={vi.fn()} onTransferClick={vi.fn()}
         />
       </QueryClientProvider>,

@@ -11,6 +11,9 @@ vi.mock('@/lib/api/carriers', () => ({
   carriersApi: { create: vi.fn(), patch: vi.fn(), assignDriver: vi.fn(), fleetDriverGap: vi.fn().mockResolvedValue({ rows: [] }) },
 }))
 
+const permisos = vi.hoisted(() => ({ negados: new Set<string>() }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: (p: string) => !permisos.negados.has(p) }))
+
 function status(overrides: Partial<DailyClosureStatus['pre_cierre']> = {}): DailyClosureStatus {
   return {
     business_date: '2026-08-04', closed: false, closure: null,
@@ -37,6 +40,7 @@ function renderSection() {
 }
 
 beforeEach(async () => {
+  permisos.negados = new Set()
   const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
   const { carriersApi } = await import('@/lib/api/carriers')
   vi.mocked(dailyClosuresApi.get).mockReset()
@@ -46,6 +50,43 @@ beforeEach(async () => {
 })
 
 describe('PreCierrePendingSection', () => {
+  it('sin directory.edit el pre-cierre no ofrece lo que la API rechazaría (Review Focus 5)', async () => {
+    permisos.negados = new Set(['directory.edit', 'directory.delete'])
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [{ tractor_plate: 'ZZZZ11', reason: 'La patente no existe en public.assets' }],
+        EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [{ driver_rut: '8245112-9', driver_name_tms: 'JAIME VIDAL' }],
+        EMPRESA_ONBOARDING: [{ carrier_id: 'c9', carrier_name: 'Transportes Nueva', operational_status: 'ONBOARDING' }],
+        SIN_TIPO_OPERACION: [],
+      },
+    }))
+    renderSection()
+    expect(await screen.findByText(/Transportes Nueva/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Activar empresa' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Crear empresa nueva' })).not.toBeInTheDocument()
+    expect(screen.getAllByText('Lo resuelve un supervisor desde el Directorio.').length).toBeGreaterThan(0)
+  })
+
+  it('una empresa en ONBOARDING se activa con directory.edit; una dada de baja pide directory.delete', async () => {
+    permisos.negados = new Set(['directory.delete'])
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
+        EMPRESA_ONBOARDING: [
+          { carrier_id: 'c9', carrier_name: 'Transportes Nueva', operational_status: 'ONBOARDING' },
+          { carrier_id: 'c8', carrier_name: 'Transportes Baja', operational_status: 'INACTIVE' },
+        ],
+        SIN_TIPO_OPERACION: [],
+      },
+    }))
+    renderSection()
+    await screen.findByText(/Transportes Baja/)
+    expect(screen.getAllByRole('button', { name: 'Activar empresa' })).toHaveLength(1)
+    expect(screen.getAllByText('Lo resuelve un supervisor desde el Directorio.')).toHaveLength(1)
+  })
+
   it('muestra las resoluciones automáticas (Tipo A)', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({

@@ -49,7 +49,7 @@ const DRIVERS = [
 ]
 
 function renderPanel(asset: Asset | null, opts: {
-  canEdit?: boolean; canAdmin?: boolean
+  canEdit?: boolean; canChangeFleetStatus?: boolean
   onPatch?: (...args: unknown[]) => Promise<void>
   onRemove?: () => Promise<void>
   drivers?: { id: string; full_name: string }[]
@@ -61,7 +61,7 @@ function renderPanel(asset: Asset | null, opts: {
       canEdit={opts.canEdit ?? true}
       canUploadDocuments
       canReviewDocuments
-      canAdmin={opts.canAdmin ?? true}
+      canChangeFleetStatus={opts.canChangeFleetStatus ?? true}
       onClose={vi.fn()}
       onPatch={opts.onPatch ?? vi.fn().mockResolvedValue(undefined)}
       onRemove={opts.onRemove ?? vi.fn().mockResolvedValue(undefined)}
@@ -131,11 +131,11 @@ describe('VehicleDetailPanel', () => {
 
   it('shows a "Transferir a otra empresa" button only for canEdit', () => {
     // Transferir se gatea con canEdit (Ronda de arreglo 1): la baja del
-    // sistema es la que sigue exigiendo canAdmin, ver el test de abajo.
+    // sistema es la que sigue exigiendo canChangeFleetStatus, ver el test de abajo.
     renderPanel(ASSET, { canEdit: false })
     expect(screen.queryByRole('button', { name: /Transferir/ })).not.toBeInTheDocument()
 
-    renderPanel(ASSET, { canEdit: true, canAdmin: false })
+    renderPanel(ASSET, { canEdit: true, canChangeFleetStatus: false })
     expect(screen.getByRole('button', { name: /Transferir/ })).toBeInTheDocument()
   })
 
@@ -167,10 +167,17 @@ describe('VehicleDetailPanel', () => {
     expect(onPatch).toHaveBeenCalledWith('v1', { operational_status: 'ACTIVE' })
   })
 
-  it('does not show baja/reactivar buttons when canAdmin is false', () => {
-    renderPanel(ASSET, { canAdmin: false })
+  it('does not show baja/reactivar buttons when canChangeFleetStatus is false', () => {
+    renderPanel(ASSET, { canChangeFleetStatus: false })
     expect(screen.queryByRole('button', { name: 'Dar de baja' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reactivar' })).not.toBeInTheDocument()
+  })
+
+  it('el Operador ve la baja del equipo sin ver lo que la API le rechace', () => {
+    renderPanel(ASSET, { canEdit: false, canChangeFleetStatus: true })
+    expect(screen.getByRole('button', { name: 'Dar de baja' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Quitar del roster/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Transferir/ })).not.toBeInTheDocument()
   })
 
   it('assigns the picked driver via assetsApi.assignDriver', async () => {
@@ -236,7 +243,7 @@ describe('VehicleDetailPanel', () => {
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <VehicleDetailPanel
           asset={{ ...ASSET, id: 'v2', webcarga_operation_type_id: 'ec' }}
-          carrierId="c1" canEdit canAdmin={false} canUploadDocuments canReviewDocuments
+          carrierId="c1" canEdit canChangeFleetStatus={false} canUploadDocuments canReviewDocuments
           onClose={vi.fn()} onPatch={vi.fn()} onRemove={vi.fn()} onTransferClick={vi.fn()}
           drivers={DRIVERS}
         />

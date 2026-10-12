@@ -25,7 +25,9 @@ interface Props {
    *  (`documents.review`): permisos de Certificación, no de editar la ficha. */
   canUploadDocuments: boolean
   canReviewDocuments: boolean
-  canAdmin:        boolean
+  /** Dar de baja y reactivar (`directory.fleet_status`): Operaciones lo tiene
+   *  aunque no edite la ficha (D-e, 12/10). */
+  canChangeFleetStatus: boolean
   onClose:         () => void
   onPatch:         (id: string, body: AssetPatchBody) => Promise<void>
   onRemove:        () => Promise<void>
@@ -51,7 +53,7 @@ interface Props {
  *  exige motivo—, así que un equipo importado por la ingesta sin clasificar
  *  bloqueaba el cierre sin que hubiera dónde arreglarlo. Pablo, 04/09: *"no
  *  puedo definir qué tractoreo, entonces no me lo muestra aquí"*. */
-export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, canUploadDocuments, canReviewDocuments, onClose, onPatch, onRemove, onTransferClick, drivers = [] }: Props) {
+export function VehicleDetailPanel({ asset, carrierId, canEdit, canChangeFleetStatus, canUploadDocuments, canReviewDocuments, onClose, onPatch, onRemove, onTransferClick, drivers = [] }: Props) {
   const open = !!asset
   const panelRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
@@ -389,7 +391,7 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canAdmin, canUpl
                   <ArrowRightLeft size={14} /> Transferir a otra empresa
                 </button>
               )}
-              {canAdmin && (
+              {canChangeFleetStatus && (
                 asset.operational_status === 'INACTIVE' ? (
                   <button
                     type="button"

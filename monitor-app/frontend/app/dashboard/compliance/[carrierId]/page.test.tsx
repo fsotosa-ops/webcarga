@@ -1071,6 +1071,12 @@ describe('FichaEmpresaPage', () => {
     expect(screen.queryByRole('button', { name: /^Reactivar$/ })).not.toBeInTheDocument()
   })
 
+  it('sin directory.delete dice quién da de baja la empresa', async () => {
+    permisos.admin = false
+    montar([fila()])
+    expect(await screen.findByText('La baja de una empresa la hace Certificación.')).toBeInTheDocument()
+  })
+
   it('una empresa dada de baja ofrece reactivarla, no darla de baja otra vez', async () => {
     permisos.admin = true
     vi.mocked(carriersApi.patch).mockResolvedValue(CARRIER)

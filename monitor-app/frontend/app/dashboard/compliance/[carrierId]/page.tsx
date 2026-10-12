@@ -853,6 +853,9 @@ export default function FichaEmpresaPage() {
             )}
           </div>
         )}
+        {!canAdmin && (
+          <p className="text-etiqueta text-informativo">La baja de una empresa la hace Certificación.</p>
+        )}
       </EncabezadoDePagina>
 
       {/* Dada de baja NO es "sin datos": es un expediente cerrado, y se lee.

@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, AlertTriangle, Info } from 'lucide-react'
 import { dailyClosuresApi } from '@/lib/api/dailyClosures'
 import { carriersApi } from '@/lib/api/carriers'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { NewCarrierPanel } from '../NewCarrierPanel'
 import { FleetDriverGapCard } from '../FleetDriverGapCard'
 import { AltaConductorDesdeCierre } from './AltaConductorDesdeCierre'
@@ -26,6 +27,15 @@ interface Props {
  *  veces. */
 export function PreCierrePendingSection({ fecha }: Props) {
   const queryClient = useQueryClient()
+  // Cada acción con el permiso de su endpoint (bloque 0, 0.3): crear, vincular
+  // y dar de alta piden directory.edit. Activar una empresa en onboarding
+  // también; reactivar una dada de baja es un cambio de estado y pide
+  // directory.delete.
+  const canEditDirectory = usePermiso('directory.edit')
+  const canChangeCarrierStatus = usePermiso('directory.delete')
+  const noPermission = (
+    <p className="text-etiqueta text-informativo">Lo resuelve un supervisor desde el Directorio.</p>
+  )
   const { data } = useQuery({
     queryKey: ['daily-closure', fecha],
     queryFn: () => dailyClosuresApi.get(fecha),
@@ -132,7 +142,7 @@ export function PreCierrePendingSection({ fecha }: Props) {
               todavía no manda tira sobre `undefined.map` y se lleva la SECCIÓN
               ENTERA, incluidas las escalaciones que sí llegaron. Medido:
               sacarlo rompe cinco tests. */}
-          {(escalations.CONDUCTOR_SIN_EMPRESA ?? []).map(esc => (
+          {(escalations.CONDUCTOR_SIN_EMPRESA ?? []).map(esc => canEditDirectory ? (
             <VincularConductorPropuesto
               key={esc.driver_id}
               driverId={esc.driver_id}
@@ -142,6 +152,8 @@ export function PreCierrePendingSection({ fecha }: Props) {
               viajes={esc.viajes}
               onVinculado={invalidate}
             />
+          ) : (
+            <div key={esc.driver_id}>{noPermission}</div>
           ))}
 
           {/* No bloquea el cierre desde el 01/10 (requirements-bug-12.md, RF-01
@@ -156,7 +168,7 @@ export function PreCierrePendingSection({ fecha }: Props) {
                 {esc.tms_carrier_name ? <>. El TMS la informa en &quot;{esc.tms_carrier_name}&quot;</> : null}.
                 {' '}No bloquea el cierre. ¿A qué empresa pertenece?
               </p>
-              {creatingFor === esc.tractor_plate ? (
+              {!canEditDirectory ? noPermission : creatingFor === esc.tractor_plate ? (
                 <NewCarrierPanel
                   open
                   initialBusinessName={esc.tms_carrier_name ?? undefined}
@@ -182,11 +194,16 @@ export function PreCierrePendingSection({ fecha }: Props) {
             </div>
           ))}
 
-          {escalations.EMPRESA_ONBOARDING.map(esc => (
+          {escalations.EMPRESA_ONBOARDING.map(esc => {
+            // ONBOARDING -> ACTIVE es una alta (directory.edit); cualquier otro
+            // estado de origen es una reactivación (directory.delete).
+            const canActivate = esc.operational_status === 'ONBOARDING' ? canEditDirectory : canChangeCarrierStatus
+            return (
             <div key={esc.carrier_id} className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 space-y-2">
               <p className="text-xs text-amber-800">
                 <span className="font-semibold">{esc.carrier_name}</span> está en onboarding. ¿Activarla para incluirla en el cierre?
               </p>
+              {!canActivate ? noPermission : (<>
               {activateError[esc.carrier_id] && (
                 <div className="space-y-1.5">
                   <p className="text-[11px] text-red-600">{activateError[esc.carrier_id]}</p>
@@ -217,8 +234,10 @@ export function PreCierrePendingSection({ fecha }: Props) {
               >
                 Activar empresa
               </button>
+              </>)}
             </div>
-          ))}
+            )
+          })}
 
           {/* Dice la consecuencia, no sólo que falta el dato: un tracto sin
               tipo de operación cuenta como Tractoreo y exige motivo, así que
@@ -275,13 +294,13 @@ export function PreCierrePendingSection({ fecha }: Props) {
                   : <>Conductor no registrado: RUT <span className="font-semibold">{esc.driver_rut}</span>
                       {esc.driver_name_tms ? <> — el TMS lo llama &quot;{esc.driver_name_tms}&quot;</> : null}.</>}
               </p>
-              {!esc.reason && (
+              {!esc.reason && (canEditDirectory ? (
                 <AltaConductorDesdeCierre
                   rut={esc.driver_rut}
                   nombreTms={esc.driver_name_tms ?? null}
                   onListo={invalidate}
                 />
-              )}
+              ) : noPermission)}
             </div>
           ))}
 

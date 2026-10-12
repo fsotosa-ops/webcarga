@@ -26,7 +26,11 @@ interface Props {
    *  (`documents.review`): permisos de Certificación, no de editar la ficha. */
   canUploadDocuments: boolean
   canReviewDocuments: boolean
-  canAdmin:        boolean
+  /** Dar de baja y reactivar (`directory.fleet_status`): Operaciones lo tiene
+   *  aunque no edite la ficha (D-e, 12/10). */
+  canChangeFleetStatus: boolean
+  /** Eliminar un contacto (`directory.delete`). */
+  canDeleteContacts: boolean
   onClose:         () => void
   onPatch:         (id: string, body: DriverPatchBody) => Promise<void>
   onRemove:        () => Promise<void>
@@ -38,7 +42,7 @@ interface Props {
  *  el roster, que solo expone el agregado) vía GET /drivers/{id}/compliance-records.
  *  Solo lectura desde Ronda 88 — subir/editar documentos se hace en
  *  Certificación, ver TransporterDocumentsPanel. */
-export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, canUploadDocuments, canReviewDocuments, onClose, onPatch, onRemove, onTransferClick }: Props) {
+export function DriverDetailPanel({ driver, carrierId, canEdit, canChangeFleetStatus, canDeleteContacts, canUploadDocuments, canReviewDocuments, onClose, onPatch, onRemove, onTransferClick }: Props) {
   const open = !!driver
   const panelRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
@@ -293,7 +297,7 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, canUpl
                   <ArrowRightLeft size={14} /> Transferir a otra empresa
                 </button>
               )}
-              {canAdmin && (
+              {canChangeFleetStatus && (
                 driver.operational_status === 'INACTIVE' ? (
                   <button
                     type="button"
@@ -366,6 +370,7 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canAdmin, canUpl
                     key={c.id}
                     contact={c}
                     canEdit={canEdit}
+                    canDelete={canDeleteContacts}
                     onSaved={patch => handleSaveContact(c.id, patch)}
                     onDeleted={() => handleDeleteContact(c.id)}
                   />

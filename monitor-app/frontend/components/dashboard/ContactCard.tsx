@@ -20,9 +20,11 @@ export type ContactAddBody = { contact_role: string; first_name?: string; last_n
  *  DriverDetailPanel (el usuario pidió poder registrar teléfono/email de
  *  conductores, aceptando más de uno). Múltiples teléfonos/emails se logran
  *  con varias filas de contacto, no con arrays en un solo contacto. */
-export function ContactCard({ contact, canEdit, onSaved, onDeleted }: {
+export function ContactCard({ contact, canEdit, canDelete, onSaved, onDeleted }: {
   contact: ContactLike
   canEdit: boolean
+  /** Eliminar un contacto pide `directory.delete`, no `directory.edit`. */
+  canDelete: boolean
   onSaved: (patch: ContactSavePatch) => Promise<void>
   onDeleted: () => Promise<void>
 }) {
@@ -85,7 +87,9 @@ export function ContactCard({ contact, canEdit, onSaved, onDeleted }: {
       {canEdit && (
         <div className="flex gap-2 mt-1">
           <button onClick={openEdit} className="text-[10px] text-gray-400 hover:text-accent">Editar</button>
-          <button onClick={onDeleted} className="text-[10px] text-gray-400 hover:text-red-500">Eliminar</button>
+          {canDelete && (
+            <button onClick={onDeleted} className="text-[10px] text-gray-400 hover:text-red-500">Eliminar</button>
+          )}
         </div>
       )}
     </div>
