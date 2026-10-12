@@ -842,6 +842,10 @@ export type PendingMatchFile = {
   reason: 'rut' | 'plate' | 'name' | null
   confidence: number | null
   candidates: PendingMatchCandidate[]
+  /** Otro archivo del lote va al mismo registro (regla P23): `outranked` si
+   *  el otro es estrictamente más fuerte y queda; `tie` si bajan todos. */
+  collision?: 'outranked' | 'tie' | null
+  collision_subject_label?: string | null
 }
 export type PendingMatchResponse = { files: PendingMatchFile[] }
 

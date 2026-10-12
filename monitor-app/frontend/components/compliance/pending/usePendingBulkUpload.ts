@@ -30,12 +30,54 @@ export type BulkRow = {
   item: BulkItem
   index: number
   group: BulkGroup
-  /** Otro archivo del lote va al mismo registro. */
-  collision: boolean
+  /** Otro archivo del lote va al mismo registro: `outranked` si el otro es
+   *  estrictamente más fuerte y se queda; `tie` si nadie gana y bajan todos. */
+  collision: BulkCollision | null
+  /** A quién va el archivo con el que choca. */
+  collisionLabel: string | null
   ready: boolean
 }
+export type BulkCollision = 'outranked' | 'tie'
 
 const CONCURRENCY = 3
+/** El mismo `_AMBIGUITY_MARGIN` del matcher del servidor. */
+const AMBIGUITY_MARGIN = 0.05
+
+/** La fuerza de un archivo en su registro. Guardado: ya lo ocupa, gana
+ *  siempre. Propuesta del servidor: identificador (RUT, patente) sobre nombre,
+ *  luego la confianza. Elección a mano: sin fuerza que comparar (empata). */
+type Strength = { saved: true } | { saved: false; strong: boolean; confidence: number } | null
+function strengthOf(it: BulkItem): Strength {
+  if (it.status === 'saved') return { saved: true }
+  if (it.via !== 'match' || !it.match.reason || it.match.confidence == null) return null
+  return { saved: false, strong: it.match.reason !== 'name', confidence: it.match.confidence }
+}
+function outranks(a: Strength, b: Strength): boolean {
+  if (!a || !b) return false
+  if (a.saved || b.saved) return a.saved && !b.saved
+  if (a.strong !== b.strong) return a.strong
+  return a.confidence - b.confidence > AMBIGUITY_MARGIN
+}
+
+/** Regla de choque del lote (P23): la MISMA que `resolve_owner_collisions`
+ *  en el servidor (`document_matcher.py`). Entre los archivos que van a un
+ *  mismo registro, si uno es estrictamente más fuerte que todos los demás,
+ *  se queda y solo los otros bajan (`outranked`); si no, bajan todos (`tie`).
+ *  Devuelve índice → motivo, solo de los que bajan. */
+export function resolveCollisions(list: BulkItem[]): Map<number, BulkCollision> {
+  const groups = new Map<string, number[]>()
+  list.forEach((it, i) => { if (it.recordId) groups.set(it.recordId, [...(groups.get(it.recordId) ?? []), i]) })
+  const demoted = new Map<number, BulkCollision>()
+  for (const idx of groups.values()) {
+    if (idx.length < 2) continue
+    const winner = idx.find(i => idx.every(j => j === i || outranks(strengthOf(list[i]), strengthOf(list[j]))))
+    for (const i of idx) {
+      if (i === winner || list[i].status === 'saved') continue
+      demoted.set(i, winner === undefined ? 'tie' : 'outranked')
+    }
+  }
+  return demoted
+}
 
 /** El período que se exige hoy (`YYYY-MM`), con la aritmética de la regla
  *  (respeta su desfase). Vacío si la regla no lo define: se pide a mano. */
@@ -91,14 +133,18 @@ export function usePendingBulkUpload(requirement: PendingSummaryRow) {
   const needs = pide?.dato ?? null
   const dateRequired = !!pide && pide.dato !== 'periodo' && pide.obligatorio
 
-  /** Agrupa y decide qué está listo. Dos archivos al mismo registro chocan:
-   *  ninguno está listo y los dos se piden elegir (uno ya guardado ocupa su
-   *  registro igual, así que el otro no lo pisa). */
+  /** Agrupa y decide qué está listo. Dos archivos al mismo registro chocan
+   *  (`resolveCollisions`): el que baja no está listo y se pide elegir (uno ya
+   *  guardado ocupa su registro, así que el otro no lo pisa). Un archivo que
+   *  el servidor ya bajó por un choque lo sigue diciendo hasta que se elija. */
   function rowsOf(list: BulkItem[]): BulkRow[] {
-    const count = new Map<string, number>()
-    for (const it of list) if (it.recordId) count.set(it.recordId, (count.get(it.recordId) ?? 0) + 1)
+    const demoted = resolveCollisions(list)
     return list.map((item, index) => {
-      const collision = item.status !== 'saved' && !!item.recordId && (count.get(item.recordId) ?? 0) > 1
+      const fromServer = !item.recordId && item.match.collision ? item.match.collision : null
+      const collision = demoted.get(index) ?? fromServer
+      const collisionLabel = !collision ? null
+        : fromServer ? item.match.collision_subject_label ?? null
+        : item.label
       const group: BulkGroup = item.status === 'saved' ? 'assigned'
         : collision ? 'choose'
         : item.recordId ? 'assigned'
@@ -108,7 +154,7 @@ export function usePendingBulkUpload(requirement: PendingSummaryRow) {
         : !dateRequired || !!item.date
       const ready = (item.status === 'pending' || item.status === 'error')
         && !!item.recordId && !collision && hasData
-      return { item, index, group, collision, ready }
+      return { item, index, group, collision, collisionLabel, ready }
     })
   }
 

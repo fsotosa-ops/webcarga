@@ -146,6 +146,23 @@ describe('BulkUploadReview', () => {
     expect(guardar()).toBeDisabled()
   })
 
+  it('en un choque RUT contra nombre, el de RUT queda y el otro ofrece elegir entre todos los que lo deben', async () => {
+    const porNombre = m({ file_name: 'cordillera spa.pdf', status: 'ambiguous', collision: 'outranked',
+      collision_subject_label: 'Transportes Cordillera SpA', candidates: [
+        { record_id: 'r1', subject_label: 'Transportes Cordillera SpA', carrier_name: 'Transportes Cordillera SpA', confidence: 0.72 }] })
+    await montar(F30, [CORDILLERA, porNombre])
+    expect(grupo(/^Asignados/).getByText('cordillera.pdf')).toBeInTheDocument()
+    const porElegir = grupo(/^Por elegir/)
+    expect(porElegir.getByText('Otro archivo ya va a Transportes Cordillera SpA')).toBeInTheDocument()
+    expect(screen.queryByText(/hay más de una empresa posible/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('A quién va cordillera spa.pdf')).not.toBeInTheDocument()
+    expect(guardar()).toHaveTextContent('Guardar 1 listo')
+    fireEvent.click(porElegir.getByRole('button', { name: 'Elegir a quién va cordillera spa.pdf' }))
+    await screen.findByLabelText('Buscar a quién va cordillera spa.pdf')
+    expect(await screen.findByRole('button', { name: /Fletes del Pacífico SpA/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Logística Norte SpA/ })).toBeInTheDocument()
+  })
+
   it('el período del lote se propone y se puede cambiar; viaja con cada archivo', async () => {
     await montar(F30, [CORDILLERA])
     const periodo = screen.getByLabelText('Período para todo el lote') as HTMLInputElement

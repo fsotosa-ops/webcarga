@@ -65,7 +65,7 @@ describe('usePendingBulkUpload', () => {
     const { result } = renderHook(() => usePendingBulkUpload(F30))
     await act(() => result.current.receive([archivo('a.pdf'), archivo('b.pdf'), archivo('c.pdf')]))
     expect(result.current.rows.map(r => r.group)).toEqual(['choose', 'choose', 'unassigned'])
-    expect(result.current.rows[0].collision).toBe(true)
+    expect(result.current.rows[0].collision).toBe('tie')
     expect(result.current.ready).toBe(0)
 
     // Cambiar uno deshace el choque: los dos vuelven a Asignados.
@@ -77,6 +77,29 @@ describe('usePendingBulkUpload', () => {
     act(() => result.current.choose(2, 'r1', { label: 'R1', carrier: 'R1' }))
     expect(result.current.rows.map(r => r.group)).toEqual(['choose', 'assigned', 'choose'])
     expect(result.current.ready).toBe(1)
+  })
+
+  it('en un choque, el de RUT queda asignado y solo baja el de nombre (misma regla que el servidor)', async () => {
+    const porNombre: PendingMatchFile = { ...asignado('cordillera spa.pdf', 'r1'), reason: 'name', confidence: 0.72 }
+    proponer(asignado('a.pdf', 'r1'), porNombre)
+    const { result } = renderHook(() => usePendingBulkUpload(F30))
+    await act(() => result.current.receive([archivo('a.pdf'), archivo('cordillera spa.pdf')]))
+    expect(result.current.rows.map(r => r.group)).toEqual(['assigned', 'choose'])
+    expect(result.current.rows.map(r => r.collision)).toEqual([null, 'outranked'])
+    expect(result.current.rows[1].collisionLabel).toBe('R1')
+    expect(result.current.ready).toBe(1)
+  })
+
+  it('el archivo que el servidor bajó por un choque dice a quién va el otro', async () => {
+    proponer(asignado('a.pdf', 'r1'), { ...sinAsignar('b.pdf'), status: 'ambiguous', collision: 'outranked',
+      collision_subject_label: 'R1' })
+    const { result } = renderHook(() => usePendingBulkUpload(F30))
+    await act(() => result.current.receive([archivo('a.pdf'), archivo('b.pdf')]))
+    expect(result.current.rows.map(r => r.group)).toEqual(['assigned', 'choose'])
+    expect(result.current.rows[1]).toMatchObject({ collision: 'outranked', collisionLabel: 'R1' })
+    // Elegir a quién va lo saca del choque.
+    act(() => result.current.choose(1, 'r2', { label: 'R2', carrier: 'R2' }))
+    expect(result.current.rows[1]).toMatchObject({ group: 'assigned', collision: null })
   })
 
   it('quitar un archivo lo saca del lote y no se sube', async () => {

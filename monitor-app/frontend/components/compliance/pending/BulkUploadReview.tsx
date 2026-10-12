@@ -172,11 +172,28 @@ export function BulkUploadReview({ requirement }: { requirement: PendingSummaryR
       const reason = reasonOf(row)
       return <span className="flex flex-wrap items-center gap-1.5">{who}{reason && <StatusChip tone={reason.tone}>{reason.text}</StatusChip>}</span>
     }
-    if (row.collision) {
+    const searchButton = (
+      <button type="button" disabled={locked} onClick={() => setPicking(index)} aria-label={`Elegir a quién va ${name}`}
+              className="rounded-md border border-warning/50 bg-white px-2 py-1 text-left text-dato text-informativo">
+        {owers.isSuccess ? `Buscar entre ${n(owerRows.length, 'que lo debe', 'que lo deben')}…` : 'Buscar entre quienes lo deben…'}
+      </button>
+    )
+    // Choque (regla P23): el que baja elige entre todos los que lo deben, no
+    // en un desplegable con el único registro que ya ocupa el otro.
+    if (row.collision === 'outranked') {
+      return (
+        <span className="flex flex-col items-start gap-1">
+          <span className="text-etiqueta text-warning">{`Otro archivo ya va a ${row.collisionLabel ?? 'ese registro'}`}</span>
+          {searchButton}
+        </span>
+      )
+    }
+    if (row.collision === 'tie') {
       return (
         <span className="flex flex-wrap items-center gap-1.5">
-          {who}
+          {who ?? (row.collisionLabel && <span className="text-text-primary">{row.collisionLabel}</span>)}
           <span className="text-etiqueta text-warning">otro archivo del lote va al mismo; cambia uno o quítalo</span>
+          {!item.recordId && searchButton}
         </span>
       )
     }
@@ -198,12 +215,7 @@ export function BulkUploadReview({ requirement }: { requirement: PendingSummaryR
         </select>
       )
     }
-    return (
-      <button type="button" disabled={locked} onClick={() => setPicking(index)} aria-label={`Elegir a quién va ${name}`}
-              className="rounded-md border border-warning/50 bg-white px-2 py-1 text-left text-dato text-informativo">
-        {owers.isSuccess ? `Buscar entre ${n(owerRows.length, 'que lo debe', 'que lo deben')}…` : 'Buscar entre quienes lo deben…'}
-      </button>
-    )
+    return searchButton
   }
 
   function status(row: BulkRow): ReactNode {
@@ -216,7 +228,7 @@ export function BulkUploadReview({ requirement }: { requirement: PendingSummaryR
     }
     const actions = (
       <>
-        {(row.group === 'assigned' || row.collision) && (
+        {(row.group === 'assigned' || (row.collision && item.recordId)) && (
           <button type="button" disabled={locked} onClick={() => setPicking(index)} aria-label={`Cambiar a quién va ${item.file.name}`}
                   className="text-etiqueta font-semibold text-accion hover:underline disabled:opacity-50">
             Cambiar
@@ -246,8 +258,13 @@ export function BulkUploadReview({ requirement }: { requirement: PendingSummaryR
     return <span className="flex items-center justify-end gap-3">{actions}</span>
   }
 
+  // "Hay más de una empresa posible" solo es cierto si nadie bajó por un choque.
+  const collided = byGroup.choose.filter(r => r.collision).length
+  const chooseHint = collided === 0 ? AMBIGUOUS[requirement.target_entity ?? 'CARRIER']
+    : collided === byGroup.choose.length ? 'hay archivos que van al mismo destino'
+    : 'elige a quién va cada uno'
   const groups = [
-    { key: 'choose', title: 'Por elegir', hint: AMBIGUOUS[requirement.target_entity ?? 'CARRIER'], rows: byGroup.choose },
+    { key: 'choose', title: 'Por elegir', hint: chooseHint, rows: byGroup.choose },
     { key: 'unassigned', title: 'Sin asignar',
       hint: 'el nombre no permite saber a quién va. Busca entre quienes lo deben; si ya está al día no aparece: quítalo y súbelo en Sin clasificar',
       rows: byGroup.unassigned },
