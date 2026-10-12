@@ -120,7 +120,8 @@ describe('el glosario manda (spec D1 §8.5)', () => {
     // lib/compliance (3, Task 12) y el embudo (1, Task 14).
     // 19 -> 14 en la Task 12: salen ComplianceBadge (2) y lib/compliance (3).
     // 14 -> 1 en la Task 13: Directorio, roster, tarjetas, vista rápida, FiltroDeEstado y DocumentStatusBar leen el glosario. Queda el embudo (Task 14).
-    const DEUDA = 1
+    // 1 -> 0 en la Task 14: el embudo lee el glosario.
+    const DEUDA = 0
     const h = etiquetasEscritasAMano()
     expect(h.length, `Etiquetas de estado fuera de lib/states.ts: ${h.length} (tope ${DEUDA}).\n${h.join('\n')}`)
       .toBeLessThanOrEqual(DEUDA)

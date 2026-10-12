@@ -106,7 +106,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 1.405 -> 1.392 el 2026-10-12: STATUS_CLS y los chips de ciclo de vida pasaron a StatusChip (D1, Task 11).
     // 1.392 -> 1.364 el 2026-10-12: la ficha de empresa, el checklist, el banner, el panel y el slide-over pintan con StatusChip y tokens (D1, Task 12).
     // 1364 -> 1348 el 2026-10-12: Directorio, roster y tarjetas usan StatusChip (D1, Task 13).
-    const DEUDA = 1348
+    // 1348 -> 1339 el 2026-10-12: el embudo de Certificación pinta con tokens y StatusChip (D1, Task 14, Parte A).
+    const DEUDA = 1339
 
     const total = usosDeColorCrudo()
     expect(

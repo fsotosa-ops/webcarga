@@ -1,7 +1,13 @@
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { CertificationFunnel } from './CertificationFunnel'
-import type { CertificationStatusRow, FunnelGroup } from '@/lib/types'
+import type { CertificationStatusRow } from '@/lib/types'
+import type { ComplianceSummary } from '@/lib/states'
+
+const RESUMEN: ComplianceSummary = {
+  worst_state: 'MISSING', can_operate: false,
+  own: { overdue: 0, expiring: 0, missing: 2 }, fleet: { overdue: 1, expiring: 0, missing: 3 },
+}
 
 function fila(over: Partial<CertificationStatusRow> = {}): CertificationStatusRow {
   return {
@@ -10,8 +16,8 @@ function fila(over: Partial<CertificationStatusRow> = {}): CertificationStatusRo
     operational_status: 'ACTIVE',
     total_count: 93, satisfied_count: 3, pending_count: 90,
     pending_mandatory: 88, unclassified_count: 0,
-    expired_count: 0, management_types: ['TRACTOREO'], trips_30d: 0,
-    funnel_group: 'en_proceso' as FunnelGroup,
+    management_types: ['TRACTOREO'], trips_30d: 0,
+    funnel_bucket: 'not_enabled', compliance_summary: RESUMEN,
     ...over,
   }
 }
@@ -31,68 +37,113 @@ function setup(over: Partial<Props> = {}) {
 }
 
 describe('CertificationFunnel', () => {
-  it('agrupa por etapa y nombra la cantidad de cada grupo', () => {
-    setup({
-      rows: [
-        fila({ funnel_group: 'sin_documentos', entity_id: 'a', entity_name: 'Los Nogales' }),
-        fila({ funnel_group: 'en_proceso', entity_id: 'b', entity_name: 'Charlotte' }),
-        fila({ funnel_group: 'en_proceso', entity_id: 'c', entity_name: 'Parras' }),
-      ],
-    })
-
-    expect(screen.getByText('Sin documentos')).toBeInTheDocument()
-    const enProceso = screen.getByTestId('grupo-en_proceso')
-    expect(within(enProceso).getByText('2')).toBeInTheDocument()
+  it('agrupa las empresas activas por su balde y nombra la cantidad', () => {
+    setup({ rows: [
+      fila({ entity_id: 'a', entity_name: 'Nogales', funnel_bucket: 'not_enabled' }),
+      fila({ entity_id: 'b', entity_name: 'Charlotte', funnel_bucket: 'expiring' }),
+      fila({ entity_id: 'c', entity_name: 'Parras', funnel_bucket: 'expiring' }),
+    ] })
+    expect(within(screen.getByTestId('grupo-expiring')).getByText('2')).toBeInTheDocument()
+    expect(within(screen.getByTestId('grupo-not_enabled')).getByText('1')).toBeInTheDocument()
   })
 
-  // Los cinco nombres son del MISMO tipo: el estado en que está la empresa.
-  // Antes mezclaban estado ("Recién creadas"), acción ("Hay que renovar") y
-  // sobrante ("Resto del catálogo"), y esa inconsistencia es parte de por qué
-  // la lista no se leía como una secuencia. El test los fija juntos, no de a
-  // uno: lo que importa es que sigan siendo la misma forma gramatical.
-  it('nombra los grupos por el estado de la empresa', () => {
+  // Spec §3: los baldes hablan el glosario. Ninguno nombra el ciclo de vida.
+  it('los grupos usan las palabras del glosario y ninguno es "No activas"', () => {
     setup({ rows: [] })
-    for (const titulo of ['Sin documentos', 'Incompletas', 'Con vencimientos', 'Al día', 'No activas']) {
-      expect(screen.getByText(titulo)).toBeInTheDocument()
+    for (const titulo of ['No habilitada', 'Por vencer', 'Al día']) {
+      expect(screen.getByRole('heading', { level: 2, name: new RegExp(titulo) })).toBeInTheDocument()
+    }
+    for (const viejo of ['No activas', 'Sin documentos', 'Incompletas', 'Con vencimientos']) {
+      expect(screen.queryByText(viejo)).not.toBeInTheDocument()
     }
   })
 
-  // El grupo tiene que MANDAR sobre sus filas. Iba en un `span` de 10px
-  // versalitas y quedaba más débil que las empresas que contiene, así que se
-  // leía como una franja de color y no como algo que se abre. Un encabezado
-  // real además deja saltar de grupo en grupo con lector de pantalla.
-  it('el título del grupo es un encabezado, no un texto suelto', () => {
-    setup({ rows: [fila({ funnel_group: 'en_proceso', entity_id: 'b', entity_name: 'Charlotte' })] })
-    const encabezados = screen.getAllByRole('heading', { level: 2 })
-    expect(encabezados.map(h => h.textContent)).toEqual(
-      expect.arrayContaining([expect.stringContaining('Incompletas')]),
-    )
-  })
-
-  // El orden es el del embudo, no el alfabetico ni el de completitud: la
-  // pantalla sirve a mover empresas de izquierda a derecha.
-  it('respeta el orden del embudo', () => {
-    setup({
-      rows: [
-        fila({ funnel_group: 'al_dia', entity_id: 'd', entity_name: 'Ya Lista' }),
-        fila({ funnel_group: 'renovar', entity_id: 'c', entity_name: 'Aguilera' }),
-        fila({ funnel_group: 'sin_documentos', entity_id: 'a', entity_name: 'Nogales' }),
-        fila({ funnel_group: 'en_proceso', entity_id: 'b', entity_name: 'Charlotte' }),
-      ],
-    })
-
-    const encabezados = screen.getAllByTestId(/^grupo-/).map(e => e.dataset.testid)
-    expect(encabezados).toEqual([
-      'grupo-sin_documentos', 'grupo-en_proceso', 'grupo-renovar',
-      'grupo-al_dia', 'grupo-catalogo',
+  it('primero lo que no deja operar, después lo que vence, al final lo que está al día', () => {
+    setup({ rows: [fila({ funnel_bucket: 'up_to_date' })] })
+    expect(screen.getAllByTestId(/^grupo-/).map(e => e.dataset.testid)).toEqual([
+      'grupo-not_enabled', 'grupo-expiring', 'grupo-up_to_date',
     ])
   })
 
-  it('un grupo vacio no desaparece: dice cero', () => {
-    setup({ rows: [fila({ funnel_group: 'en_proceso' })] })
+  // Conflicto 1 de la auditoría: el ciclo de vida es un filtro, no un balde.
+  it('el ciclo de vida es un filtro con las pestañas del Directorio, y arranca en Activas', () => {
+    setup()
+    const filtro = screen.getByRole('group', { name: 'Ciclo de vida' })
+    expect(within(filtro).getByRole('button', { name: /Activas/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(filtro).getByRole('button', { name: /En onboarding/ })).toBeInTheDocument()
+    expect(within(filtro).getByRole('button', { name: /Dadas de baja/ })).toBeInTheDocument()
+    expect(screen.queryByTestId('grupo-catalogo')).not.toBeInTheDocument()
+  })
 
-    const alDia = screen.getByTestId('grupo-al_dia')
-    expect(within(alDia).getByText('0')).toBeInTheDocument()
+  // R-E2: una no activa con archivos sin clasificar llega en el alcance activo,
+  // pero nunca cae en "No habilitada".
+  it('una empresa no activa nunca cae en un balde, aunque llegue en el alcance activo', () => {
+    setup({ rows: [
+      fila({ entity_id: 'x', entity_name: 'Baja Con Archivos', operational_status: 'INACTIVE',
+             funnel_bucket: 'not_enabled', unclassified_count: 3 }),
+    ] })
+    expect(screen.queryByText('Baja Con Archivos')).not.toBeInTheDocument()
+    expect(within(screen.getByTestId('grupo-not_enabled')).getByText('0')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Dadas de baja/ }))
+    expect(screen.getByText('Baja Con Archivos')).toBeInTheDocument()
+  })
+
+  // R-E2: ONBOARDING sigue en el alcance activo (decisión del usuario), sin balde.
+  it('una empresa en onboarding se ve en su pestaña sin pedir el catálogo, y nunca en un balde', () => {
+    const p = setup({ rows: [
+      fila({ entity_id: 'o', entity_name: 'Recién Creada', operational_status: 'ONBOARDING', funnel_bucket: null }),
+    ] })
+    expect(screen.queryByText('Recién Creada')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /En onboarding/ })).toHaveTextContent('1')
+    fireEvent.click(screen.getByRole('button', { name: /En onboarding/ }))
+    expect(screen.getByText('Recién Creada')).toBeInTheDocument()
+    expect(p.onExpandCatalog).not.toHaveBeenCalled()
+  })
+
+  it('elegir Dadas de baja pide el catálogo, y si falla lo dice y deja reintentar', () => {
+    const p = setup({ catalogEstado: 'error' })
+    fireEvent.click(screen.getByRole('button', { name: /Dadas de baja/ }))
+    expect(p.onExpandCatalog).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('alert')).toHaveTextContent(/No se pudo cargar/)
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+    expect(p.onExpandCatalog).toHaveBeenCalledTimes(2)
+  })
+
+  it('el catálogo sin pedir no inventa un cero en su pestaña', () => {
+    setup()
+    expect(screen.getByRole('button', { name: /Dadas de baja/ })).not.toHaveTextContent(/\d/)
+  })
+
+  // Spec §3: la empresa no activa se muestra en gris y con su ciclo de vida.
+  it('en Dadas de baja la fila dice su ciclo de vida y la habilitación va en gris', () => {
+    setup({ catalogEstado: 'listo', catalogRows: [
+      fila({ entity_id: 'v', entity_name: 'Vieja Ltda', operational_status: 'LEGACY_INACTIVE', funnel_bucket: null }),
+    ] })
+    fireEvent.click(screen.getByRole('button', { name: /Dadas de baja/ }))
+    const enlace = screen.getByRole('link', { name: /Vieja Ltda/ })
+    expect(within(enlace).getByText('Dada de baja')).toBeInTheDocument()
+    expect(enlace.innerHTML).not.toMatch(/status-incidente/)
+  })
+
+  // Spec §1: las cifras de la empresa son las de Pendientes, lo propio más la flota.
+  it('las cifras de la fila salen de compliance_summary, propias más flota', () => {
+    setup({ rows: [fila()] })
+    const enlace = screen.getByRole('link', { name: /Transportes Charlotte Spa/ })
+    expect(within(enlace).getByTestId('counts-overdue')).toHaveTextContent('1')
+    expect(within(enlace).getByTestId('counts-expiring')).toHaveTextContent('0')
+    expect(within(enlace).getByTestId('counts-missing')).toHaveTextContent('5')
+  })
+
+  it('"Al día" arranca plegado y los otros dos abiertos', () => {
+    setup()
+    expect(screen.getByTestId('grupo-up_to_date')).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByTestId('grupo-not_enabled')).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('la barra se pinta de resuelto solo con el balde Al día, no recalcula pendientes', () => {
+    setup({ rows: [fila({ funnel_bucket: 'up_to_date', pending_count: 5 })] })
+    fireEvent.click(screen.getByTestId('grupo-up_to_date'))
+    expect(screen.getByRole('link').innerHTML).toMatch(/bg-resuelto/)
   })
 
   it('muestra el avance de cada empresa', () => {
@@ -138,72 +189,6 @@ describe('CertificationFunnel', () => {
     expect(screen.queryByText(/tractoreo/i)).not.toBeInTheDocument()
   })
 
-  it('el catalogo esta plegado y solo se pide al abrirlo', () => {
-    const p = setup()
-
-    expect(p.onExpandCatalog).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByTestId('grupo-catalogo'))
-    expect(p.onExpandCatalog).toHaveBeenCalled()
-  })
-
-  it('el catalogo plegado no muestra un cero: todavia no sabe cuantas son', () => {
-    setup()
-
-    // Un "0" al lado de un grupo plegado se lee como "aca no hay nada", y
-    // entonces nadie lo abre: las 209 empresas del catalogo quedan invisibles
-    // detras de un numero que significa "todavia no pregunte".
-    expect(screen.getByTestId('grupo-catalogo')).not.toHaveTextContent('0')
-  })
-
-  it('con el catalogo ya cargado si muestra su conteo', () => {
-    setup({
-      catalogEstado: 'listo',
-      catalogRows: [fila({
-        funnel_group: 'catalogo', entity_id: 'x', entity_name: 'Vieja Ltda',
-        operational_status: 'LEGACY_INACTIVE',
-      })],
-    })
-
-    expect(screen.getByTestId('grupo-catalogo')).toHaveTextContent('1')
-  })
-
-  // Cargado y de verdad vacio es distinto de "todavia no pregunte": aca el cero
-  // SI informa, porque hay dato detras.
-  it('cargado y realmente vacio si dice cero', () => {
-    setup({ catalogEstado: 'listo', catalogRows: [] })
-    expect(screen.getByTestId('grupo-catalogo')).toHaveTextContent('0')
-  })
-
-  // Un fallo de red se dibujaba igual que un catalogo vacio: sin numero, sin
-  // aviso, y el cuerpo desplegado decia "Ninguna aca". El usuario concluia que
-  // no habia empresas cuando en realidad la consulta habia fallado.
-  it('si el catalogo falla lo dice, en vez de parecer vacio', () => {
-    setup({ catalogEstado: 'error', catalogRows: [] })
-
-    const encabezado = screen.getByTestId('grupo-catalogo')
-    expect(encabezado).toHaveTextContent(/no se pudo cargar/i)
-    expect(encabezado).not.toHaveTextContent('0')
-  })
-
-  it('el cuerpo del catalogo fallado no dice "ninguna aca"', () => {
-    setup({ catalogEstado: 'error', catalogRows: [] })
-
-    fireEvent.click(screen.getByTestId('grupo-catalogo'))
-    expect(screen.getByText(/no se pudo cargar el catálogo/i)).toBeInTheDocument()
-  })
-
-  it('al abrir el catalogo muestra sus filas', () => {
-    setup({
-      catalogRows: [fila({
-        funnel_group: 'catalogo', entity_id: 'x', entity_name: 'Vieja Ltda',
-        operational_status: 'LEGACY_INACTIVE',
-      })],
-    })
-
-    fireEvent.click(screen.getByTestId('grupo-catalogo'))
-    expect(screen.getByText('Vieja Ltda')).toBeInTheDocument()
-  })
-
   // La fila NAVEGA a la ficha, asi que es un enlace: mientras fue un
   // `role="button"` con `aria-expanded`, un lector de pantalla anunciaba
   // "boton, contraido" y activarlo sacaba de la pantalla.
@@ -215,22 +200,8 @@ describe('CertificationFunnel', () => {
     expect(enlace).not.toHaveAttribute('aria-expanded')
   })
 
-  // REGRESION (revision de rama, 2026-08-15): antes, con `rows` vacio se
-  // devolvia un estado vacio ANTES de dibujar los encabezados. Como el
-  // catalogo solo se carga al desplegarlo —y ese desplegable vivia dentro del
-  // arbol recien cortocircuitado—, buscar el nombre de cualquiera de las 209
-  // empresas no activas daba "no hay empresas" SIN forma de llegar a ellas.
-  // Contradecia el contrato de alcances "disjuntos y exhaustivos".
-  it('sin coincidencias activas, el catalogo sigue siendo alcanzable', () => {
-    const p = setup({ rows: [] })
-
-    expect(screen.getByTestId('grupo-catalogo')).toBeInTheDocument()
-    fireEvent.click(screen.getByTestId('grupo-catalogo'))
-    expect(p.onExpandCatalog).toHaveBeenCalled()
-  })
-
-  it('un grupo desplegado y vacio lo dice, en vez de quedar mudo', () => {
+  it('sin coincidencias activas, los baldes siguen y dicen que no hay ninguna', () => {
     setup({ rows: [] })
-    expect(screen.getAllByText(/ninguna acá/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Ninguna').length).toBeGreaterThan(0)
   })
 })

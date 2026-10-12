@@ -418,8 +418,8 @@ export function TripBulkUpload({ open, onClose, onImported, meta }: Props) {
                 <div role="status" className="space-y-1.5 max-h-44 overflow-y-auto">
                   {result.warnings.map((w, i) => (
                     <div key={i} className="rounded-lg border border-warning/25 bg-warning/10 px-3 py-2">
-                      {w.row != null && <p className="text-[10px] font-semibold text-warning">Fila {w.row}</p>}
-                      <p className="text-[10px] text-warning">{w.message}</p>
+                      {w.row != null && <p className="text-etiqueta font-semibold text-warning">Fila {w.row}</p>}
+                      <p className="text-etiqueta text-warning">{w.message}</p>
                     </div>
                   ))}
                 </div>

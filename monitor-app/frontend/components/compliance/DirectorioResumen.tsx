@@ -5,6 +5,7 @@ import { carriersApi } from '@/lib/api/carriers'
 import { directoryKeys } from '@/lib/queries/directorio'
 import { Cifra } from '@/components/ui/Cifra'
 import { TEXTO_APOYO } from '@/lib/ui/texto'
+import { CARRIER_LIFECYCLE_GROUP_LABELS as CICLO } from '@/lib/states'
 
 /** El directorio que existía en el módulo de Empresas y se perdió al mover la
  *  carga documental a Certificación.
@@ -37,8 +38,8 @@ export function DirectorioResumen() {
       <Cifra valor={data?.empresas.total} etiqueta="empresas" cargando={isPending} />
       {data && (
         <span className={`text-etiqueta ${TEXTO_APOYO}`}>
-          {data.empresas.activas} activas · {data.empresas.inactivas} inactivas
-          {data.empresas.onboarding > 0 && <> · {data.empresas.onboarding} en onboarding</>}
+          {data.empresas.activas} {CICLO.active.toLowerCase()} · {data.empresas.inactivas} {CICLO.inactive.toLowerCase()}
+          {data.empresas.onboarding > 0 && <> · {data.empresas.onboarding} {CICLO.onboarding.toLowerCase()}</>}
         </span>
       )}
       {data && (

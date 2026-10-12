@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   alertSeverityStyle, documentEvidenceStyle, documentStateCount, documentStateCounts, documentStateStyle,
-  enablementStyle, fleetMemberStyle, isBlocking, lifecycleStyle, stateCountsLine, summaryStyle,
+  enablementStyle, enablementStyleFromFlag, FUNNEL_BUCKET_ORDER, funnelBucketStyle, fleetMemberStyle, isBlocking, lifecycleStyle, stateCountsLine, summaryStyle,
   type ComplianceSummary,
 } from './states'
 
@@ -85,5 +85,18 @@ describe('glosario de estados (spec D1 §3)', () => {
   it('cuenta registros por el estado que mandó la API', () => {
     const c = documentStateCounts([{ document_state: 'UP_TO_DATE' }, { document_state: 'UP_TO_DATE' }, { document_state: 'MISSING' }])
     expect(c).toEqual({ UP_TO_DATE: 2, EXPIRING: 0, OVERDUE: 0, MISSING: 1, NOT_REQUIRED: 0 })
+  })
+
+  it('habilitación desde el flag: la misma tabla que enablementStyle', () => {
+    for (const can of [true, false]) for (const active of [true, false]) {
+      expect(enablementStyleFromFlag(can, active)).toEqual(enablementStyle(summary({ can_operate: can }), active))
+    }
+  })
+
+  it('baldes del embudo: orden de trabajo y palabras del glosario', () => {
+    expect(FUNNEL_BUCKET_ORDER).toEqual(['not_enabled', 'expiring', 'up_to_date'])
+    expect(funnelBucketStyle('not_enabled')).toMatchObject({ label: 'No habilitada', tone: 'urgent' })
+    expect(funnelBucketStyle('expiring')).toMatchObject({ label: 'Por vencer', tone: 'warning' })
+    expect(funnelBucketStyle('up_to_date')).toMatchObject({ label: 'Al día', tone: 'resolved' })
   })
 })

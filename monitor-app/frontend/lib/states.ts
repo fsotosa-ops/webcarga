@@ -4,7 +4,7 @@ import {
   OctagonAlert, ShieldAlert, ShieldCheck, ShieldOff, TriangleAlert,
 } from 'lucide-react'
 import type { StatusTone } from '@/components/ui/StatusChip'
-import type { DirectoryEntity } from './types'
+import type { DirectoryEntity, FunnelBucket } from './types'
 
 /**
  * El glosario de estados en código (spec D1 §3 y §6.4): el ÚNICO lugar del
@@ -151,11 +151,25 @@ export function summaryStyle(summary: ComplianceSummary, lifecycleActive: boolea
 /** Habilitada / No habilitada. Lo calcula la API (`can_operate`); en gris si la
  *  empresa no está activa, que no es lo mismo que estar en falta (spec §3). */
 export function enablementStyle(summary: ComplianceSummary, lifecycleActive: boolean): StateStyle {
-  const label = summary.can_operate ? 'Habilitada' : 'No habilitada'
+  return enablementStyleFromFlag(summary.can_operate, lifecycleActive)
+}
+
+/** La misma tabla para quien solo tiene el booleano (`carrier_can_operate`, el balde del embudo). */
+export function enablementStyleFromFlag(canOperate: boolean, lifecycleActive: boolean): StateStyle {
+  const label = canOperate ? 'Habilitada' : 'No habilitada'
   if (!lifecycleActive) return { label, tone: 'neutral', icon: ShieldOff }
-  return summary.can_operate
+  return canOperate
     ? { label, tone: 'resolved', icon: ShieldCheck }
     : { label, tone: 'urgent', icon: ShieldAlert }
+}
+
+/** Los baldes del embudo de Certificación, en el orden en que se trabajan.
+ *  No tienen palabras propias: son las del glosario (§3). */
+export const FUNNEL_BUCKET_ORDER: FunnelBucket[] = ['not_enabled', 'expiring', 'up_to_date']
+
+export function funnelBucketStyle(bucket: FunnelBucket): StateStyle {
+  if (bucket === 'not_enabled') return enablementStyleFromFlag(false, true)
+  return documentStateStyle(bucket === 'expiring' ? 'EXPIRING' : 'UP_TO_DATE')
 }
 
 export const ENABLEMENT_GROUP_LABELS = { enabled: 'Habilitadas', not_enabled: 'No habilitadas' } as const

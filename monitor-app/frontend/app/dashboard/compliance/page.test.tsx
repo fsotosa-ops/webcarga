@@ -53,11 +53,11 @@ const FILA = {
   carrier_id: 'c1', carrier_name: 'Test Empresa Webcarga', operational_status: 'ACTIVE',
   total_count: 12, satisfied_count: 9, pending_count: 3, pending_mandatory: 1,
   unclassified_count: 3,
-  // Agrupando por empresa la lista es el embudo, y el embudo ubica cada fila
-  // por su etapa: sin `funnel_group` la fila no pertenece a ningun grupo y no
-  // se dibuja en ninguna parte.
-  expired_count: 0, management_types: ['TRACTOREO'], trips_30d: 0,
-  funnel_group: 'en_proceso',
+  // El embudo ubica cada fila por su balde (`funnel_bucket`, lo calcula la API):
+  // sin él la fila no pertenece a ningún grupo y no se dibuja.
+  management_types: ['TRACTOREO'], trips_30d: 0,
+  funnel_bucket: 'not_enabled',
+  compliance_summary: { worst_state: 'MISSING', can_operate: false, own: { overdue: 0, expiring: 0, missing: 1 }, fleet: { overdue: 0, expiring: 0, missing: 0 } },
 } satisfies CertificationStatusRow
 
 function setup() {
