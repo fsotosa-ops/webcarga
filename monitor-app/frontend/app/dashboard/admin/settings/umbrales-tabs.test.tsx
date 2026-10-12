@@ -11,6 +11,7 @@ import { AlertasMonitorTab, AlertasVencimientoTab } from './umbrales-tabs'
 import { configApi } from '@/lib/api/config'
 
 vi.mock('@/lib/api/config', () => ({
+  GLOBAL_ALERT_THRESHOLD: 'documento_por_vencer',
   revisionesApi: { list: vi.fn().mockResolvedValue([]), confirm: vi.fn() },
   configApi: { getMonitorAlertRules: vi.fn(), patchMonitorAlertRules: vi.fn(), getAlertThresholds: vi.fn(), patchAlertThreshold: vi.fn() },
 }))
@@ -73,10 +74,10 @@ describe('solo lectura (revisión final RBAC, hallazgo 3)', () => {
   it('Alertas de vencimiento es de Certificación: con operations.configure se ve pero no se edita', async () => {
     permisos.dados = new Set(['operations.configure'])
     vi.mocked(configApi.getAlertThresholds).mockResolvedValue([
-      { doc_type: 'LICENCIA', label: 'Licencia', warning_days: 30, error_days: 7 },
+      { doc_type: 'documento_por_vencer', label: 'Aviso general', warning_days: 30, error_days: 0 },
     ] as never)
     render(<AlertasVencimientoTab />)
-    expect(await screen.findByLabelText('Advertencia de Licencia')).toBeDisabled()
+    expect(await screen.findByLabelText(/Aviso \(días/)).toBeDisabled()
     expect(screen.queryByRole('button', { name: /guardar/i })).not.toBeInTheDocument()
   })
 
@@ -88,3 +89,59 @@ describe('solo lectura (revisión final RBAC, hallazgo 3)', () => {
   })
 })
 
+const GLOBAL = { doc_type: 'documento_por_vencer', label: 'Aviso general de vencimiento de documentos (días)', warning_days: 30, error_days: 0 }
+
+describe('Alertas de vencimiento: solo el aviso general (D1-R4)', () => {
+  // Mientras la API vieja siga en el aire manda las diez filas, ordenadas, y
+  // la primera es "circulacion": la pantalla busca la global por su clave.
+  it('muestra un solo par de umbrales, el general, aunque lleguen filas por documento', async () => {
+    vi.mocked(configApi.getAlertThresholds).mockResolvedValue([
+      { doc_type: 'circulacion', label: 'P. Circulación', warning_days: 45, error_days: 0 },
+      GLOBAL,
+      { doc_type: 'license_expiry', label: 'Licencia de conducir', warning_days: 20, error_days: 0 },
+    ])
+    render(<AlertasVencimientoTab />)
+    expect(await screen.findByLabelText(/Aviso \(días/)).toHaveValue(30)
+    expect(screen.getByLabelText(/Crítico \(días/)).toHaveValue(0)
+    expect(screen.getAllByRole('spinbutton')).toHaveLength(2)
+    expect(screen.queryByText('Licencia de conducir')).not.toBeInTheDocument()
+    expect(screen.queryByText('P. Circulación')).not.toBeInTheDocument()
+  })
+
+  // Conflicto 11: la pantalla prometía una "alerta roja" que nadie calculaba.
+  it('describe lo que de verdad pasa con cada umbral', async () => {
+    vi.mocked(configApi.getAlertThresholds).mockResolvedValue([GLOBAL])
+    render(<AlertasVencimientoTab />)
+    expect(await screen.findByText(/se muestra como Por vencer/)).toBeInTheDocument()
+    expect(screen.getByText(/no quita la habilitación/)).toBeInTheDocument()
+    expect(screen.getByText(/semáforo del Monitor/)).toBeInTheDocument()
+    expect(screen.getByText(/licencia o la cédula del conductor/)).toBeInTheDocument()
+    expect(screen.queryByText(/alerta roja|alerta amarilla/)).not.toBeInTheDocument()
+  })
+
+  it('guarda el crítico del aviso general con su clave', async () => {
+    vi.mocked(configApi.getAlertThresholds).mockResolvedValue([GLOBAL])
+    vi.mocked(configApi.patchAlertThreshold).mockResolvedValue({ ...GLOBAL, error_days: 7 })
+    render(<AlertasVencimientoTab />)
+    fireEvent.change(await screen.findByLabelText(/Crítico \(días/), { target: { value: '7' } })
+    fireEvent.click(screen.getByRole('button', { name: /Guardar/ }))
+    await waitFor(() => expect(configApi.patchAlertThreshold).toHaveBeenCalledWith('documento_por_vencer', { error_days: 7 }))
+  })
+
+  // El backend rechaza un crítico que no sea menor que el aviso (422): se muestra su mensaje.
+  it('si la API rechaza el crítico (422), muestra su mensaje', async () => {
+    vi.mocked(configApi.getAlertThresholds).mockResolvedValue([GLOBAL])
+    vi.mocked(configApi.patchAlertThreshold).mockRejectedValue(new Error('El crítico debe ser menor que el aviso'))
+    render(<AlertasVencimientoTab />)
+    fireEvent.change(await screen.findByLabelText(/Crítico \(días/), { target: { value: '31' } })
+    fireEvent.click(screen.getByRole('button', { name: /Guardar/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/El crítico debe ser menor que el aviso/)
+  })
+
+  it('si la fila global no viene, lo dice como error y no dibuja un formulario vacío', async () => {
+    vi.mocked(configApi.getAlertThresholds).mockResolvedValue([])
+    render(<AlertasVencimientoTab />)
+    expect(await screen.findByRole('alert')).toHaveTextContent(/No se encontró el aviso general/)
+    expect(screen.queryAllByRole('spinbutton')).toHaveLength(0)
+  })
+})

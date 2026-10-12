@@ -1,5 +1,6 @@
 import type { StatusTone } from '@/components/ui/StatusChip'
 import { camposQuePide, expiryRelative, nombreDelPeriodo } from './compliance'
+import { documentStateStyle } from './states'
 import { corta, periodoQueSeExige, vigenciaDe } from './vigencia'
 import { hoyEnChile } from './utils/datetime'
 import type { PendingComplianceRow, PendingFilter, PendingSummaryRow } from './types'
@@ -39,20 +40,23 @@ export function pendingRowStatus(fila: PendingComplianceRow, hoy: string = hoyEn
   }
 
   if (fila.document_state === 'OVERDUE') {
-    return { label: vence ? `Venció el ${diaMes(vence)}` : 'Vencido', tone: 'urgent', action: 'Subir' }
+    const s = documentStateStyle('OVERDUE')
+    return { label: vence ? `Venció el ${diaMes(vence)}` : s.label, tone: s.tone, action: 'Subir' }
   }
 
   if (fila.document_state === 'EXPIRING') {
+    const s = documentStateStyle('EXPIRING')
     const relativo = vence ? expiryRelative(vence, false, hoy) : null
     const label = relativo && vence
       ? `${relativo.replace(/^./, c => c.toUpperCase())} · ${diaMes(vence)}`
-      : 'Por vencer'
-    return { label, tone: 'warning', action: 'Subir la nueva' }
+      : s.label
+    return { label, tone: s.tone, action: 'Subir la nueva' }
   }
 
+  const falta = documentStateStyle('MISSING')
   return fila.entered_on
-    ? { label: 'Falta', tone: 'neutral', action: 'Subir', detail: haceDias(fila.entered_on, hoy) }
-    : { label: 'Falta', tone: 'neutral', action: 'Subir' }
+    ? { label: falta.label, tone: falta.tone, action: 'Subir', detail: haceDias(fila.entered_on, hoy) }
+    : { label: falta.label, tone: falta.tone, action: 'Subir' }
 }
 
 /** "período septiembre · vence el 18/10": el período que se exige hoy de un

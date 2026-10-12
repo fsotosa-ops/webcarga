@@ -9,6 +9,7 @@ import { assetsApi } from '@/lib/api/assets'
 import { contactsApi } from '@/lib/api/contacts'
 import { createClient } from '@/lib/supabase/client'
 import type { Carrier, CarrierDriverRosterItem, CarrierAssetRosterItem } from '@/lib/types'
+import { complianceSummary, recordStateFields } from '@/lib/states.fixtures'
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -63,21 +64,24 @@ const CARRIER: Carrier = {
   operational_status: 'ACTIVE', legacy_admin_id: null, erp_id: null, is_manual_override: false,
   overridden_by: null, overridden_at: null, created_at: null, updated_at: null,
   management_types: null,
+  compliance_summary: complianceSummary({ worst_state: 'MISSING', own: { overdue: 0, expiring: 0, missing: 1 }, fleet: { overdue: 2, expiring: 0, missing: 0 }, can_operate: false }),
   contacts: [],
   compliance_records: [{
     id: 'cr1', requirement_id: 'req1', requirement_code: 'F30', name: 'F30 Multas',
     requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'MISSING',
     expiration_date: null, file_url: null, metadata: {}, is_manual_override: false,
-    is_expired: false, is_expiring_soon: false, updated_at: null,
+    is_expired: false, is_expiring_soon: false, ...recordStateFields('MISSING'), updated_at: null,
   }],
 }
 
 const DRIVERS: CarrierDriverRosterItem[] = [
-  { id: 'd1', tax_id: '22222222-2', full_name: 'Juan Pérez', operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK' },
+  { id: 'd1', tax_id: '22222222-2', full_name: 'Juan Pérez', operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary() },
+  { id: 'd2', tax_id: '12345678-5', full_name: 'Ana Rojas', operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null, pending_mandatory: 1, compliance_health: 'PENDING',
+    compliance_summary: complianceSummary({ worst_state: 'OVERDUE', own: { overdue: 1, expiring: 0, missing: 0 }, can_operate: false }) },
 ]
 
 const ASSETS: CarrierAssetRosterItem[] = [
-  { id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', fleet_service_type_id: null, fleet_service_type_label: null, fleet_service_type_bg_color: null, fleet_service_type_text_color: null, webcarga_operation_type_id: null, webcarga_operation_type_label: null, webcarga_operation_type_code: null, total_requirements: 3, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK' },
+  { id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', fleet_service_type_id: null, fleet_service_type_label: null, fleet_service_type_bg_color: null, fleet_service_type_text_color: null, webcarga_operation_type_id: null, webcarga_operation_type_label: null, webcarga_operation_type_code: null, total_requirements: 3, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary() },
 ]
 
 const pushMock = vi.fn()
@@ -111,6 +115,26 @@ beforeEach(() => {
 })
 
 describe('EmpresaDetailPage', () => {
+  it('la cabecera separa el ciclo de vida de la habilitación: dos chips', async () => {
+    renderPage()
+    expect(await screen.findByText('Activa')).toBeInTheDocument()
+    expect(screen.getByText('No habilitada')).toHaveClass('text-status-incidente')
+  })
+
+  it('una empresa dada de baja no se ve en rojo: "No habilitada" en gris', async () => {
+    vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'LEGACY_INACTIVE' as Carrier['operational_status'] })
+    renderPage()
+    expect(await screen.findByText('Dada de baja')).toBeInTheDocument()
+    expect(screen.getByText('No habilitada')).toHaveClass('text-informativo')
+  })
+
+  it('el resumen cuenta lo que manda la API, propio y de la flota activa', async () => {
+    renderPage()
+    expect(await screen.findByText('1 falta')).toBeInTheDocument()
+    expect(screen.getByText('Flota activa: 2 vencidos')).toBeInTheDocument()
+    expect(screen.getByText('0 de 1 al día')).toBeInTheDocument()
+  })
+
   it('sin directory.delete dice quién da de baja la empresa', async () => {
     permisos.darDeBaja = false
     renderPage()
@@ -258,8 +282,35 @@ describe('EmpresaDetailPage', () => {
     renderPage()
     await clickTab(/Conductores/)
     await screen.findByText('Juan Pérez')
-    fireEvent.change(screen.getByPlaceholderText('Filtrar por nombre o tax_id…'), { target: { value: 'nadie' } })
+    fireEvent.change(screen.getByPlaceholderText('Filtrar por nombre o RUT…'), { target: { value: 'nadie' } })
     await waitFor(() => expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument())
+  })
+
+  it('el roster filtra por el peor estado que manda la API', async () => {
+    renderPage()
+    await clickTab(/Conductores/)
+    // El nombre accesible del tile es "<cifra><etiqueta>" (AlertStatTiles pinta la cifra primero).
+    fireEvent.click(await screen.findByRole('button', { name: /^\d+\s*Vencido$/ }))
+    expect(screen.getByText('Ana Rojas')).toBeInTheDocument()
+    expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
+  })
+
+  it('un RUT con puntos encuentra al conductor guardado sin puntos (D1 §7.2)', async () => {
+    renderPage()
+    await clickTab(/Conductores/)
+    fireEvent.change(await screen.findByPlaceholderText(/Filtrar por nombre o RUT/), { target: { value: '12.345.678' } })
+    expect(screen.getByText('Ana Rojas')).toBeInTheDocument()
+    expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText(/Filtrar por nombre o RUT/), { target: { value: '12.345.678-5' } })
+    expect(screen.getByText('Ana Rojas')).toBeInTheDocument()
+    expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
+  })
+
+  it('una patente con guion encuentra al equipo', async () => {
+    renderPage()
+    await clickTab(/Equipos/)
+    fireEvent.change(await screen.findByPlaceholderText(/Filtrar por patente/), { target: { value: 'AB-CD' } })
+    expect(screen.getByText('ABCD12')).toBeInTheDocument()
   })
 
   it('filters the equipment roster by asset type', async () => {
@@ -276,7 +327,7 @@ describe('EmpresaDetailPage', () => {
       operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null,
   home_location_id: null, home_location_name: null,
   home_location_shipper: null, suggested_home_location: null,
-      pending_mandatory: 0, compliance_health: 'OK',
+      pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary(),
     }))
     vi.mocked(carriersApi.listDrivers).mockResolvedValue(manyDrivers)
     renderPage()
@@ -346,7 +397,7 @@ describe('EmpresaDetailPage', () => {
   it('lands on Resumen by default with a compact score, not the full itemized alert list', async () => {
     renderPage()
     expect(await screen.findByText('0 de 1 al día')).toBeInTheDocument()
-    expect(screen.getByText('1 obligatorio pendiente')).toBeInTheDocument()
+    expect(screen.getByText('1 falta')).toBeInTheDocument()
     expect(screen.queryByText('Documentos obligatorios pendientes o vencidos')).not.toBeInTheDocument()
   })
 

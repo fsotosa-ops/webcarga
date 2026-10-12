@@ -247,7 +247,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                   <span className={`font-identificador text-dato font-bold shrink-0 ${primaryPlate ? 'text-text-primary' : 'text-gray-400 italic font-normal text-dato'}`}>
                     {primaryPlate ?? 'sin patente'}
                   </span>
-                  <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_pending_docs_critical} label="Tracto" compact />
+                  <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_has_critical_alert} label="Tracto" compact />
                   <TmsChip tms={trip.source_system ?? ''} meta={meta} />
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -281,7 +281,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                 <span className="text-dato text-gray-500 truncate">
                   {trip.driver_name ?? <span className="text-gray-400 italic text-etiqueta">sin conductor</span>}
                 </span>
-                <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_pending_docs_critical} label="Conductor" compact />
+                <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_has_critical_alert} label="Conductor" compact />
               </div>
 
               {/* fila 3: EETT + origen */}
@@ -290,7 +290,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                   ? <span className="font-medium text-gray-500 truncate max-w-[160px]">{trip.carrier_name}</span>
                   : <span className="italic">sin EETT</span>}
                 <InsuranceAlertBadge alert={trip.insurance_alert} compact />
-                <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_pending_docs_critical} label="Empresa" compact />
+                <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_has_critical_alert} label="Empresa" compact />
                 {trip.origin && <><span>·</span><span className="truncate max-w-[100px]">{trip.origin}</span></>}
               </div>
 
@@ -504,7 +504,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                             </span>
                           )}
                         </div>
-                        <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_pending_docs_critical} label="Tracto" compact />
+                        <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_has_critical_alert} label="Tracto" compact />
                       </div>
                     </td>
 
@@ -521,7 +521,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                           puedeEditar={Boolean(onAsignarConductor)}
                           onAsignar={() => onAsignarConductor?.(trip)}
                         />
-                        <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_pending_docs_critical} label="Conductor" compact />
+                        <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_has_critical_alert} label="Conductor" compact />
                       </div>
                       {/* El telefono vive bajo el conductor, no en su propia
                           columna: es un atributo suyo, y como columna aparte
@@ -551,7 +551,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                           </span>
                           <div className="flex items-center gap-1 mt-0.5">
                             <InsuranceAlertBadge alert={trip.insurance_alert} />
-                            <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_pending_docs_critical} label="Empresa" />
+                            <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_has_critical_alert} label="Empresa" />
                           </div>
                         </>
                       ) : (

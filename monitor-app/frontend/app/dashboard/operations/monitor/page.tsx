@@ -734,9 +734,12 @@ export default function DiarioPage() {
                 const ids = aTodos
                   ? candidatosQuery.data?.trip_ids_de_la_persona ?? [asignando.id]
                   : [asignando.id]
-                await tripsApi.assignDriver(driverId, ids)
-                setAsignando(null)
+                const asignado = await tripsApi.assignDriver(driverId, ids)
                 await queryClient.invalidateQueries({ queryKey: ['trips'] })
+                // Con aviso (empresa no habilitada) el popover queda abierto
+                // para mostrarlo; "Continuar" lo cierra (D1 §7.1).
+                if (asignado.warnings?.length) return asignado.warnings
+                setAsignando(null)
               }}
               // NO lleva try/catch acá a propósito: la promesa se le devuelve al
               // popover, que es quien tiene el botón y por lo tanto quien puede
@@ -753,12 +756,13 @@ export default function DiarioPage() {
                 const ids = aTodos
                   ? candidatosQuery.data?.trip_ids_de_la_persona ?? [asignando.id]
                   : [asignando.id]
-                await tripsApi.assignDriver(creado.id, ids)
-                setAsignando(null)
+                const asignado = await tripsApi.assignDriver(creado.id, ids)
                 await queryClient.invalidateQueries({ queryKey: ['trips'] })
                 await invalidateDirectory(queryClient, {
                   entity: 'driver', id: creado.id, type: 'create', carrierIds: [carrierId],
                 })
+                if (asignado.warnings?.length) return asignado.warnings
+                setAsignando(null)
               }}
             />
           </div>

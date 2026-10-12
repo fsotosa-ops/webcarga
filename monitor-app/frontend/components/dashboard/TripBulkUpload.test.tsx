@@ -96,6 +96,35 @@ describe('TripBulkUpload', () => {
     expect(onImported).toHaveBeenCalledWith(2)
   })
 
+  it('un 409 de la guarda muestra su mensaje y el error de cada fila (D1 §7.1)', async () => {
+    vi.mocked(tripsApi.bulkCreate).mockRejectedValue(
+      new ApiError('Hay filas con una empresa que no puede recibir viajes', 409, {
+        code: 'CARRIER_NOT_ACTIVE',
+        message: 'Hay filas con una empresa que no puede recibir viajes',
+        errors: [{ row: 2, code: 'CARRIER_NOT_ACTIVE', error: 'Transportes Sur está dada de baja' }],
+      }),
+    )
+    render(<TripBulkUpload open onClose={vi.fn()} onImported={vi.fn()} meta={meta} />)
+    uploadCSV('fecha_planificacion,cliente\n2026-07-06,Walmart\n')
+    fireEvent.click(await screen.findByText(/Importar 1 viaje/))
+    expect(await screen.findByText('Hay filas con una empresa que no puede recibir viajes')).toBeInTheDocument()
+    expect(screen.getByText('Fila 2')).toBeInTheDocument()
+    expect(screen.getByText('Transportes Sur está dada de baja')).toBeInTheDocument()
+  })
+
+  it('importado con avisos: muestra los avisos de cada fila', async () => {
+    vi.mocked(tripsApi.bulkCreate).mockResolvedValue({
+      created: 2, ids: ['a', 'b'],
+      warnings: [{ code: 'CARRIER_NOT_ENABLED', row: 3, message: 'Transportes Sur no está habilitada: tiene obligatorios vencidos.' }],
+    } as never)
+    render(<TripBulkUpload open onClose={vi.fn()} onImported={vi.fn()} meta={meta} />)
+    uploadCSV('fecha_planificacion,cliente\n2026-07-06,Walmart\n2026-07-07,Colun\n')
+    fireEvent.click(await screen.findByText(/Importar 2 viajes/))
+    expect(await screen.findByText('2 viajes importados')).toBeInTheDocument()
+    expect(screen.getByText('Fila 3')).toBeInTheDocument()
+    expect(screen.getByText('Transportes Sur no está habilitada: tiene obligatorios vencidos.')).toBeInTheDocument()
+  })
+
   it('closes with Escape', () => {
     const onClose = vi.fn()
     render(<TripBulkUpload open onClose={onClose} onImported={vi.fn()} meta={meta} />)

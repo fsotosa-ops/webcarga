@@ -1,14 +1,16 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, Circle, AlertTriangle, Upload, Eye } from 'lucide-react'
-import { COMPLIANCE_STATUS_CONFIG, expiryRelative, formatExpiry } from '@/lib/compliance'
+import { AlertTriangle, Upload, Eye } from 'lucide-react'
+import { dueRelative, fileHistoryLabel, formatExpiry } from '@/lib/compliance'
+import { StatusChip } from '@/components/ui/StatusChip'
 import { useGestoDeCarga } from '@/hooks/useGestoDeCarga'
 import type { DatosDelDocumento } from '@/lib/compliance'
 import { PedirDatoDelDocumento } from '@/components/compliance/PedirDatoDelDocumento'
 import { ReassignDocument } from '@/components/compliance/ReassignDocument'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
 import type { ComplianceStatus, PoliticaVencimiento } from '@/lib/types'
+import { alertSeverityStyle, documentStateCounts, documentStateStyle, type AlertSeverity, type DocumentState } from '@/lib/states'
 
 /** Fila del checklist — mapea 1:1 contra un public.compliance_records real
  *  (ver lib/utils/complianceChecklist.ts), no un catálogo hardcodeado. */
@@ -21,8 +23,9 @@ export type ChecklistItem = {
   status:            ComplianceStatus
   requires_file:     boolean
   expiration_date:   string | null
-  is_expired:        boolean
-  is_expiring_soon:  boolean
+  document_state:    DocumentState
+  days_to_expiry:    number | null
+  alert_severity:    AlertSeverity | null
   file_url:          string | null
   /** Qué hace su requisito con la fecha de vencimiento. Sin esto la ficha
    *  subía el archivo y dejaba que el servidor lo rechazara con 422 —el mismo
@@ -58,32 +61,11 @@ interface Props {
   onReassigned?:       () => void
 }
 
-/** PENDING_REVIEW excluido a propósito, mismo criterio que
- *  TransporterDocumentsPanel: no existe un proceso de due diligence
- *  separado del negocio hoy — subir un documento ya lo aprueba
- *  (decisión explícita del usuario 2026-07-18). */
+/** Lo único que se guarda a mano en un requisito sin archivo (auditoría B: en
+ *  uso solo MISSING y APPROVED_MANUAL). Se dice como historial del archivo, no
+ *  como estado: el estado lo calcula la API (D-R16). */
 const STATUS_OPTIONS: { value: ComplianceStatus; label: string }[] =
-  (Object.entries(COMPLIANCE_STATUS_CONFIG) as [ComplianceStatus, { label: string }][])
-    .filter(([value]) => value !== 'PENDING_REVIEW')
-    .map(([value, cfg]) => ({ value, label: cfg.label }))
-
-function nodeState(item: ChecklistItem): 'ok' | 'overdue' | 'pending' {
-  const approved = item.status === 'APPROVED' || item.status === 'APPROVED_MANUAL'
-  if (approved) return item.is_expired ? 'overdue' : 'ok'
-  if (item.status === 'EXPIRED' || item.status === 'REJECTED') return 'overdue'
-  return 'pending'
-}
-
-function stateLabel(state: 'ok' | 'overdue' | 'pending'): string {
-  return state === 'ok' ? 'al día' : state === 'overdue' ? 'vencido' : 'pendiente'
-}
-
-/** Cuenta cuántos documentos están "al día" — compartido con quien
- *  necesite mostrar el mismo porcentaje fuera de esta lista (ej. un
- *  anillo de progreso en el panel de detalle). */
-export function checklistCompletion(items: ChecklistItem[]): { ok: number; total: number } {
-  return { ok: items.filter(item => nodeState(item) === 'ok').length, total: items.length }
-}
+  (['MISSING', 'APPROVED_MANUAL'] as const).map(value => ({ value, label: fileHistoryLabel(value) }))
 
 function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, onExpirationChange, onDelete, carrierId, onReassigned }: {
   item: ChecklistItem
@@ -97,7 +79,7 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
   onReassigned?: () => void
 }) {
   const [previewOpen, setPreviewOpen] = useState(false)
-  const state = nodeState(item)
+  const state = documentStateStyle(item.document_state)
   /** EL MISMO gesto que Certificación, no una segunda versión: recibe el
    *  archivo, pide la fecha si el requisito la exige, y no sube nada hasta
    *  estar completo. Es un hook y no el componente `RenglonPendiente` porque
@@ -119,28 +101,20 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
   const marcaAMano = !item.requires_file && !!onStatusChange
   const conArchivo = !marcaAMano
   const zona = conArchivo && !item.file_url ? carga.propsDeZona() : {}
-  const iconCls = state === 'ok'
-    ? 'bg-green-500 border-green-500 text-white'
-    : state === 'overdue'
-      ? 'bg-red-500 border-red-500 text-white'
-      : 'bg-white border-amber-400 text-amber-500'
-  const relative = expiryRelative(item.expiration_date, item.is_expired)
+  const relative = dueRelative(item.days_to_expiry)
 
   const fechaId = `vence-ficha-${item.id}`
 
   return (
     <div
-      title={`${item.label} — ${stateLabel(state)}`}
+      title={`${item.label} — ${state.label}`}
       className="px-3 py-2 rounded-lg bg-gray-50"
       {...zona}
     >
     <div className="flex items-center gap-2.5">
-      <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${iconCls}`}>
-        {state === 'ok' ? <Check size={11} /> : state === 'overdue' ? <AlertTriangle size={10} /> : <Circle size={10} />}
-      </span>
       <div className="flex-1 min-w-0">
         <span className="text-xs font-semibold text-text-primary truncate block">{item.label}</span>
-        {(item.expiration_date || (canUpload && onExpirationChange)) && (
+        {(item.expiration_date || relative || (canUpload && onExpirationChange)) && (
           <div className="flex items-center gap-1.5 mt-0.5">
             {item.expiration_date && (
               <span className="text-[10px] text-gray-400">
@@ -148,7 +122,7 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
               </span>
             )}
             {relative && (
-              <span className={`text-[10px] ${item.is_expired ? 'text-red-500 font-semibold' : item.is_expiring_soon ? 'text-amber-600 font-semibold' : 'text-gray-400'}`}>
+              <span className="text-etiqueta text-informativo">
                 ({relative})
               </span>
             )}
@@ -164,6 +138,13 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
           </div>
         )}
       </div>
+      <StatusChip tone={state.tone} icon={state.icon}>{state.label}</StatusChip>
+      {/* El aviso crítico es énfasis, no un estado (spec §3): se suma al chip del
+          estado. El aviso simple no necesita nada, Por vencer ya lo dice. */}
+      {item.alert_severity === 'critical' && (() => {
+        const aviso = alertSeverityStyle('critical')
+        return <StatusChip tone={aviso.tone} icon={aviso.icon}>{aviso.label}</StatusChip>
+      })()}
       {item.file_url && (
         <button
           type="button"
@@ -265,12 +246,12 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
  *  requisito sin archivo (`requires_file = false`) y solo si quien llama pasa
  *  `onStatusChange`; un mismo carrier/driver/asset puede mezclar los dos. */
 export function DocumentChecklist({ items, canUpload, canReview = false, onUpload, onStatusChange, onExpirationChange, onDelete, hideCounter, carrierId, onReassigned }: Props) {
-  const { ok: okCount } = checklistCompletion(items)
+  const upToDate = documentStateCounts(items).UP_TO_DATE
 
   return (
     <div>
       {items.length > 0 && !hideCounter && (
-        <p className="text-xs text-gray-400 mb-2">{okCount} de {items.length} completos</p>
+        <p className="text-xs text-gray-400 mb-2">{upToDate} de {items.length} {documentStateStyle('UP_TO_DATE').label.toLowerCase()}</p>
       )}
       <div className="flex flex-col gap-1.5">
         {items.map(item => (

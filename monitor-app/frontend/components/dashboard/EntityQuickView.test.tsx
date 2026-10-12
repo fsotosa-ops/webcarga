@@ -10,6 +10,7 @@ vi.mock('@/lib/api/entitySummary', async original => ({
 import { fetchEntitySummary } from '@/lib/api/entitySummary'
 import { EntityQuickView } from './EntityQuickView'
 import type { QuickViewTarget } from '@/lib/quickView'
+import { complianceSummary } from '@/lib/states.fixtures'
 
 const DOCS = { ok: 12, expiring: 3, expired: 2, missing: 0,
   attention: [{ name: 'Licencia A5', state: 'expired' as const, due_on: '2026-10-02' }] }
@@ -17,7 +18,14 @@ const DOCS = { ok: 12, expiring: 3, expired: 2, missing: 0,
 const DRIVER = {
   id: 'd1', full_name: 'Vidal Gallardo Jaime Guillermo', tax_id: '15987654-3', operational_status: 'ACTIVE',
   carrier: { id: 'c1', name: 'Soc. de Transportes Hueraman' }, home_location: { name: 'CD Lo Aguirre', shipper: 'Walmart' },
-  usual_tractor: { id: 'a1', plate: 'HFVP14' }, phone: '+56987654321', documents: DOCS,
+  usual_tractor: { id: 'a1', plate: 'HFVP14' }, phone: '+56987654321', documents: DOCS, compliance_summary: complianceSummary(),
+}
+
+const CARRIER = {
+  id: 'c1', business_name: 'Hueraman', tax_id: '76111111-1', operational_status: 'ACTIVE',
+  shippers: [], active_drivers: 3, active_assets: 2, primary_contact: null, documents: DOCS,
+  compliance_summary: complianceSummary({ worst_state: 'MISSING', own: { overdue: 0, expiring: 0, missing: 2 },
+    fleet: { overdue: 1, expiring: 0, missing: 0 }, can_operate: false }),
 }
 
 function renderView(target: QuickViewTarget, props: Partial<Parameters<typeof EntityQuickView>[0]> = {}) {
@@ -48,6 +56,23 @@ describe('EntityQuickView', () => {
     expect(screen.getByRole('link', { name: '+56987654321' })).toHaveAttribute('href', 'tel:+56987654321')
     expect(screen.getByText('12 al día')).toBeInTheDocument()
     expect(screen.getByText('Activo')).toBeInTheDocument()
+  })
+
+  it('empresa: ciclo de vida y habilitación, con la línea de su flota activa', async () => {
+    vi.mocked(fetchEntitySummary).mockResolvedValue(CARRIER as never)
+    renderView({ kind: 'carrier', id: 'c1', label: 'Hueraman' })
+    expect(await screen.findByText('Activa')).toBeInTheDocument()
+    expect(screen.getByText('No habilitada')).toBeInTheDocument()
+    expect(screen.getByText('2 faltan')).toBeInTheDocument()
+    expect(screen.getByText('Flota activa: 1 vencido')).toBeInTheDocument()
+  })
+
+  it('conductor: el par ciclo de vida + resumen documental', async () => {
+    vi.mocked(fetchEntitySummary).mockResolvedValue(
+      { ...DRIVER, compliance_summary: complianceSummary({ worst_state: 'EXPIRING', own: { overdue: 0, expiring: 1, missing: 0 } }) } as never)
+    renderView({ kind: 'driver', id: 'd1', label: 'Vidal' })
+    expect(await screen.findByText('Activo')).toBeInTheDocument()
+    expect(screen.getByText('Por vencer')).toBeInTheDocument()
   })
 
   it('un nombre dentro del panel cambia el panel a esa entidad', async () => {
@@ -88,7 +113,7 @@ describe('EntityQuickView', () => {
     vi.mocked(fetchEntitySummary).mockResolvedValueOnce({
       id: 'a1', license_plate: 'HFVP14', asset_type: 'TRACTOCAMION', manufacture_year: 2019, operation_type: 'Tractoreo',
       operational_status: 'ACTIVE', carrier: { id: 'c1', name: 'Hueraman' }, usual_driver: { id: 'd1', name: 'Vidal' },
-      documents: DOCS,
+      documents: DOCS, compliance_summary: complianceSummary(),
     } as never)
     renderView({ kind: 'asset', id: 'a1', label: 'HFVP14' })
     expect(await screen.findByText('Tractocamión · 2019')).toBeInTheDocument()
@@ -100,7 +125,7 @@ describe('EntityQuickView', () => {
     vi.mocked(fetchEntitySummary).mockResolvedValueOnce({
       id: 'c1', business_name: 'Hueraman', tax_id: '76543210-1', operational_status: 'ACTIVE',
       shippers: [{ id: 's1', name: 'Walmart' }], active_drivers: 8, active_assets: 9,
-      primary_contact: { name: 'María Soto', phone: '+56912345678' }, documents: DOCS,
+      primary_contact: { name: 'María Soto', phone: '+56912345678' }, documents: DOCS, compliance_summary: complianceSummary(),
     } as never)
     renderView({ kind: 'carrier', id: 'c1', label: 'Hueraman' })
     expect(await screen.findByText('Walmart')).toBeInTheDocument()

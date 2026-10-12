@@ -9,6 +9,7 @@ vi.mock('@/lib/authz/PermisosProvider', () => ({
   usePermiso: (p: string) => p !== 'documents.review' || permisos.revisar,
 }))
 import type { ComplianceRecord } from '@/lib/types'
+import { recordStateFields } from '@/lib/states.fixtures'
 
 vi.mock('@/lib/api/compliance', () => ({
   complianceApi: {
@@ -21,13 +22,13 @@ const RECORDS: ComplianceRecord[] = [
     id: 'cr1', requirement_id: 'req1', requirement_code: 'ROL_SII', name: 'Rol SII',
     requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'APPROVED',
     expiration_date: null, file_url: null, metadata: {}, is_manual_override: false,
-    is_expired: false, is_expiring_soon: false, updated_at: null,
+    is_expired: false, is_expiring_soon: false, ...recordStateFields('UP_TO_DATE'), updated_at: null,
   },
   {
     id: 'cr2', requirement_id: 'req2', requirement_code: 'F30', name: 'F30',
     requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'REJECTED',
     expiration_date: '2026-01-01', file_url: null, metadata: {}, is_manual_override: true,
-    is_expired: true, is_expiring_soon: false, updated_at: null,
+    is_expired: false, is_expiring_soon: false, ...recordStateFields('OVERDUE'), updated_at: null,
   },
 ]
 
@@ -91,7 +92,7 @@ describe('TransporterDocumentsPanel', () => {
     render(<TransporterDocumentsPanel records={RECORDS} />)
     fireEvent.click(screen.getAllByTitle('Ver historial de versiones')[0])
     await waitFor(() => expect(complianceApi.listFiles).toHaveBeenCalledWith('cr1'))
-    const entry = await screen.findByText(/REJECTED · reemplazado/)
+    const entry = await screen.findByText(/Rechazado · reemplazado/)
     expect(entry.textContent).not.toMatch(/undefined/)
     expect(entry.textContent).toContain('01-06-26')
   })
@@ -111,8 +112,22 @@ describe('TransporterDocumentsPanel', () => {
     render(<TransporterDocumentsPanel records={RECORDS} />)
     fireEvent.click(screen.getAllByTitle('Ver historial de versiones')[0])
     await waitFor(() => expect(complianceApi.listFiles).toHaveBeenCalledWith('cr1'))
-    const entry = await screen.findByText(/APPROVED_MANUAL · vigente/)
+    const entry = await screen.findByText(/Aprobado a mano · vigente/)
     expect(entry).toBeInTheDocument()
+  })
+
+  it('pinta el estado de la API, no el guardado', () => {
+    render(<TransporterDocumentsPanel records={[{ ...RECORDS[1], status: 'APPROVED_MANUAL', expiration_date: '2025-09-01' }]} />)
+    expect(screen.getByText('Vencido')).toBeInTheDocument()
+    expect(screen.queryByText('Aprobado (manual)')).not.toBeInTheDocument()
+  })
+
+  it('cuenta al día lo que la API dice al día, no lo aprobado', () => {
+    render(<TransporterDocumentsPanel records={[
+      { ...RECORDS[0], id: 'a', status: 'APPROVED_MANUAL', ...recordStateFields('OVERDUE') },
+      { ...RECORDS[0], id: 'b', status: 'APPROVED_MANUAL', ...recordStateFields('UP_TO_DATE') },
+    ]} />)
+    expect(screen.getByText('1 de 2 al día')).toBeInTheDocument()
   })
 
   it('does not show the version history trigger for records that do not require a file', () => {

@@ -17,6 +17,7 @@ import type { DatosDelDocumento } from '@/lib/compliance'
 import type {
   EntityType, PendingComplianceRow, PendingFilter, PendingGroupBy, PendingSummaryResponse, PendingSummaryRow,
 } from '@/lib/types'
+import { DOCUMENT_STATE_GROUP_LABELS } from '@/lib/states'
 import { BulkUploadReview } from './BulkUploadReview'
 import { PendingLoadError, PendingSkeleton } from './PendingStates'
 
@@ -144,9 +145,9 @@ export function PendingHoldersPanel({ groupBy, selected, state, onStateChange, c
             value={state}
             onChange={onStateChange}
             options={[
-              { id: 'overdue', label: 'Vencidos', badge: String(cifras.overdue) },
-              { id: 'expiring', label: 'Por vencer', badge: String(cifras.expiring) },
-              { id: 'missing', label: 'Faltan', badge: String(cifras.missing) },
+              { id: 'overdue', label: DOCUMENT_STATE_GROUP_LABELS.OVERDUE, badge: String(cifras.overdue) },
+              { id: 'expiring', label: DOCUMENT_STATE_GROUP_LABELS.EXPIRING, badge: String(cifras.expiring) },
+              { id: 'missing', label: DOCUMENT_STATE_GROUP_LABELS.MISSING, badge: String(cifras.missing) },
               { id: 'all', label: 'Todos', badge: String(cifras.overdue + cifras.expiring + cifras.missing) },
             ]}
           />

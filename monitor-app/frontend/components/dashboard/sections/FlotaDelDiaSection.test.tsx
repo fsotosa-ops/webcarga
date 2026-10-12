@@ -365,7 +365,7 @@ describe('FlotaDelDiaSection', () => {
     expect(onSelectTrip).toHaveBeenCalledWith('t1')
   })
 
-  it('MISMATCH sin trip_id muestra "Revisar en Empresas" con link a la ficha del carrier', async () => {
+  it('MISMATCH sin trip_id muestra "Revisar en Directorio" con link a la ficha del carrier', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
@@ -376,7 +376,7 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Luis Rojas')
 
-    const link = screen.getByRole('link', { name: /Revisar en Empresas/ })
+    const link = screen.getByRole('link', { name: /Revisar en Directorio/ })
     expect(link).toHaveAttribute('href', '/dashboard/carriers/c9')
   })
 

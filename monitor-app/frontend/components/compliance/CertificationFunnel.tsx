@@ -2,56 +2,41 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { ChevronRight } from 'lucide-react'
+import type { CertificationStatusRow, ManagementType } from '@/lib/types'
+import type { CarrierOperationalStatus, FunnelBucket } from '@/lib/types'
 import {
-  AlertTriangle, Building2, Check, ChevronRight, Clock, Loader2, Plus,
-} from 'lucide-react'
-import type {
-  CertificationStatusRow, FunnelGroup, ManagementType,
-} from '@/lib/types'
+  CARRIER_LIFECYCLE_GROUP_LABELS, FUNNEL_BUCKET_ORDER,
+  funnelBucketStyle, lifecycleStyle, enablementStyleFromFlag,
+} from '@/lib/states'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { StatusChip } from '@/components/ui/StatusChip'
+import { Estado } from '@/components/ui/Estado'
+import { ComplianceCounts } from '@/components/ui/ComplianceCounts'
 
 interface Props {
-  /** Las empresas del alcance `active`: operativas más cualquiera con
-   *  documentos esperando. */
-  rows:             CertificationStatusRow[]
-  /** El complemento, que se pide recién al desplegar el grupo. */
-  catalogRows:      CertificationStatusRow[]
-  /** Los cuatro estados del catálogo, NOMBRADOS. Antes se deducían de un
-   *  booleano más el largo del arreglo, y eso dejaba "no pedí", "vino vacío" y
-   *  "falló" indistinguibles: los tres se dibujaban igual y un error se veía
-   *  como un catálogo vacío. Es la misma clase de defecto —un valor con varios
-   *  significados— que este componente ya tuvo con el "0". */
-  catalogEstado:    'sin-pedir' | 'cargando' | 'listo' | 'error'
-  onExpandCatalog:  () => void
+  /** El alcance `active`: empresas activas más cualquiera con archivos esperando. */
+  rows:            CertificationStatusRow[]
+  /** El complemento (`scope=catalog`), que se pide recién al elegir un ciclo de vida no activo. */
+  catalogRows:     CertificationStatusRow[]
+  /** Los cuatro estados del catálogo, NOMBRADOS: "no pedí", "vino vacío" y
+   *  "falló" no se pueden dibujar igual. */
+  catalogEstado:   'sin-pedir' | 'cargando' | 'listo' | 'error'
+  onExpandCatalog: () => void
 }
 
-/** El embudo de certificación.
- *
- *  El eje NO es "cuánto le falta a cada empresa": las 39 activas tienen el
- *  mismo denominador y entre 1 y 3 documentos cubiertos, así que ordenar por
- *  completitud no discrimina nada — la diferencia entre la primera fila y la
- *  trigésima es un documento. Ese fue el error del diseño anterior.
- *
- *  El eje es **en qué punto de la certificación está cada empresa**, porque el
- *  usuario no vigila un tablero: mueve empresas por un embudo. */
-/** Los nombres son TODOS del mismo tipo: el estado en que está la empresa.
- *
- *  Antes mezclaban tres formas —estado ("Recién creadas", "Certificadas y al
- *  día"), acción ("Hay que renovar") y sobrante ("Resto del catálogo")—, y esa
- *  inconsistencia es parte de por qué la lista no se leía como una secuencia.
- *  Es el patrón de ISNetworld y Avetta: el grupo describe en qué estado está el
- *  proveedor, no qué hay que hacerle. "Resto del catálogo" además no decía
- *  nada; son las empresas que no operan, y así se llaman.
- *
- *  EL TINTE ES DE UNO SOLO, a propósito. Cinco franjas de color competían entre
- *  sí y con las insignias de las filas, y cuando todo tiene color el color deja
- *  de avisar (§9). Se queda el único grupo con trabajo que vence. */
-const ETAPAS: { id: FunnelGroup; titulo: string; icono: typeof Plus; tono: string }[] = [
-  { id: 'sin_documentos', titulo: 'Sin documentos',   icono: Plus,          tono: '' },
-  { id: 'en_proceso',     titulo: 'Incompletas',      icono: Clock,         tono: '' },
-  { id: 'renovar',        titulo: 'Con vencimientos', icono: AlertTriangle, tono: 'bg-amber-50 text-amber-800' },
-  { id: 'al_dia',         titulo: 'Al día',           icono: Check,         tono: '' },
-  { id: 'catalogo',       titulo: 'No activas',       icono: Building2,     tono: '' },
+/** Qué códigos agrupa cada pestaña. Las etiquetas son las del glosario: acá
+ *  solo se agrupan códigos. INACTIVE y LEGACY_INACTIVE se muestran igual (§3).
+ *  `fromCatalog`: la pestaña necesita el catálogo; ONBOARDING no, porque sigue
+ *  en el alcance activo (R-E2, decisión del usuario). */
+const LIFECYCLE_TABS: { id: 'active' | 'onboarding' | 'inactive'; label: string;
+                        status: CarrierOperationalStatus[]; fromCatalog: boolean }[] = [
+  { id: 'active',     label: CARRIER_LIFECYCLE_GROUP_LABELS.active,     status: ['ACTIVE'],                      fromCatalog: false },
+  { id: 'onboarding', label: CARRIER_LIFECYCLE_GROUP_LABELS.onboarding, status: ['ONBOARDING'],                  fromCatalog: false },
+  { id: 'inactive',   label: CARRIER_LIFECYCLE_GROUP_LABELS.inactive,   status: ['INACTIVE', 'LEGACY_INACTIVE'], fromCatalog: true },
 ]
+
+type LifecycleTab = (typeof LIFECYCLE_TABS)[number]
 
 /** Las etiquetas visibles salen de acá y no del backend, que habla códigos: un
  *  renombre en `app.status_taxonomies` —hubo dos en dos días— no tiene por qué
@@ -67,122 +52,104 @@ function etiquetaGestion(tipos?: ManagementType[] | null): string | null {
   return tipos.map(t => GESTION[t]).join(' + ')
 }
 
-export function CertificationFunnel({
-  rows, catalogRows, catalogEstado, onExpandCatalog,
-}: Props) {
-  // Los dos grupos del fondo arrancan plegados: uno está vacío y el otro son
-  // 209 empresas sin actividad. Ninguno es el trabajo de hoy.
-  const [plegados, setPlegados] = useState<Set<FunnelGroup>>(
-    () => new Set<FunnelGroup>(['al_dia', 'catalogo']),
-  )
+/** El embudo de certificación (D1).
+ *
+ *  Dos ejes que no se mezclan (spec §2, E-b):
+ *  - el CICLO DE VIDA es un filtro arriba — Activas, En onboarding, Dadas de
+ *    baja —, con las mismas pestañas que el Directorio;
+ *  - entre las activas, el BALDE sale de `funnel_bucket`, que calcula la API
+ *    con la misma regla que Pendientes. Este componente no decide ningún estado.
+ *
+ *  Antes "No activas" era un quinto balde y mezclaba el ciclo de vida con los
+ *  documentos (conflicto 1 de la auditoría de estados). */
+export function CertificationFunnel({ rows, catalogRows, catalogEstado, onExpandCatalog }: Props) {
+  const [tab, setTab] = useState<LifecycleTab>(LIFECYCLE_TABS[0])
+  const [plegados, setPlegados] = useState<Set<FunnelBucket>>(() => new Set<FunnelBucket>(['up_to_date']))
 
-  function alternar(etapa: FunnelGroup) {
-    setPlegados(prev => {
-      const next = new Set(prev)
-      if (next.has(etapa)) {
-        next.delete(etapa)
-        // El catálogo se pide recién acá: son 209 filas que casi nunca se
-        // miran, y traerlas siempre cuesta una consulta que nadie leyó.
-        if (etapa === 'catalogo') onExpandCatalog()
-      } else {
-        next.add(etapa)
-      }
-      return next
-    })
+  const esActiva = (r: CertificationStatusRow) => r.operational_status === 'ACTIVE'
+  const activas = rows.filter(esActiva)
+  // Las no activas llegan por dos caminos: el alcance activo (ONBOARDING, y
+  // las dadas de baja con archivos esperando) y el catálogo. Son disjuntos por
+  // construcción del backend.
+  const noActivas = [...rows.filter(r => !esActiva(r)), ...catalogRows]
+  const deLaPestaña = (t: LifecycleTab) =>
+    noActivas.filter(r => (t.status as string[]).includes(r.operational_status ?? ''))
+
+  function elegir(id: string) {
+    const t = LIFECYCLE_TABS.find(x => x.id === id)!
+    setTab(t)
+    if (t.fromCatalog && catalogEstado !== 'listo' && catalogEstado !== 'cargando') onExpandCatalog()
   }
+
+  const opciones = LIFECYCLE_TABS.map(t => ({
+    id: t.id,
+    label: t.label,
+    // Un cero sin haber preguntado se lee como "no hay ninguna" (regresión ya vista con el catálogo).
+    badge: t.id === 'active' ? String(activas.length)
+      : !t.fromCatalog || catalogEstado === 'listo' ? String(deLaPestaña(t).length) : undefined,
+  }))
+
+  const filas = deLaPestaña(tab)
+  const pidiendo = tab.fromCatalog && (catalogEstado === 'cargando' || catalogEstado === 'sin-pedir')
+  const fallo = tab.fromCatalog && catalogEstado === 'error'
 
   return (
     <div>
-      {ETAPAS.map(({ id, titulo, icono: Icono, tono }) => {
-        const deEstaEtapa = id === 'catalogo'
-          ? catalogRows
-          : rows.filter(r => r.funnel_group === id)
-        const plegado = plegados.has(id)
-        const vencidos = deEstaEtapa.reduce((n, r) => n + (r.expired_count ?? 0), 0)
+      <div className="px-4 py-2.5 border-b border-border">
+        <SegmentedControl label="Ciclo de vida" options={opciones} value={tab.id} onChange={elegir} />
+      </div>
 
-        return (
-          <section key={id}>
-            {/* Encabezado DE VERDAD, y no un `span` con estilo. El grupo tiene
-                que mandar sobre sus filas: antes iba en 10px versalitas
-                —"andamiaje", para no competir con el sujeto— y el efecto era
-                el contrario, quedaba MÁS DÉBIL que las empresas que contiene,
-                así que se leía como una franja más y no como algo que se abre.
-                De paso lo arregla para quien navega por encabezados: un lector
-                de pantalla ahora puede saltar de grupo en grupo. */}
-            <h2>
-            <button
-              type="button"
-              data-testid={`grupo-${id}`}
-              onClick={() => alternar(id)}
-              aria-expanded={!plegado}
-              className={`w-full flex items-center gap-2.5 px-4 py-2.5 border-b border-border cursor-pointer transition-colors hover:bg-bg-main ${tono}`}
-            >
-              <ChevronRight
-                size={15}
-                className={`shrink-0 transition-transform ${plegado ? '' : 'rotate-90'}`}
-                aria-hidden="true"
-              />
-              <Icono size={14} className="shrink-0" aria-hidden="true" />
-              {/* font-bold y no semibold: la fila de empresa TAMBIÉN es
-                  semibold, así que con el mismo peso el escalón quedaba en
-                  1,5px de tamaño — medido en pantalla, eso no se lee como
-                  jerarquía. El nombre de la empresa no se debilita porque es lo
-                  que se escanea (§9); el que sube es el grupo. */}
-              <span className="text-lectura font-bold text-text-primary">
-                {titulo}
-              </span>
-              <span className="ml-auto flex items-center gap-2 text-etiqueta font-medium tabular-nums">
-                {id === 'renovar' && vencidos > 0 && (
-                  <span className="font-normal">
-                    {vencidos === 1 ? '1 documento vencido' : `${vencidos} documentos vencidos`}
+      {tab.status.includes('ACTIVE') ? (
+        FUNNEL_BUCKET_ORDER.map(bucket => {
+          const { label, icon: Icono, tone } = funnelBucketStyle(bucket)
+          const delBalde = activas.filter(r => r.funnel_bucket === bucket)
+          const plegado = plegados.has(bucket)
+          return (
+            <section key={bucket}>
+              <h2>
+                <button
+                  type="button"
+                  data-testid={`grupo-${bucket}`}
+                  aria-expanded={!plegado}
+                  onClick={() => setPlegados(prev => {
+                    const next = new Set(prev)
+                    if (next.has(bucket)) next.delete(bucket); else next.add(bucket)
+                    return next
+                  })}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 border-b border-border cursor-pointer transition-colors hover:bg-bg-main"
+                >
+                  <ChevronRight size={15} aria-hidden="true"
+                                className={`shrink-0 transition-transform ${plegado ? '' : 'rotate-90'}`} />
+                  <Icono size={14} className="shrink-0" aria-hidden="true" />
+                  <span className="text-lectura font-bold text-text-primary">{label}</span>
+                  <span className="ml-auto">
+                    <StatusChip tone={delBalde.length ? tone : 'neutral'}>{delBalde.length}</StatusChip>
                   </span>
-                )}
-                {/* Cada estado del catálogo se dibuja distinto, porque decir lo
-                 *  mismo para todos fue el defecto anterior: "0" mientras no se
-                 *  había pedido invitaba a no abrir el grupo, y 209 empresas
-                 *  quedaban invisibles detrás de ese cero. El conteo sólo
-                 *  aparece cuando de verdad hay dato que contar. */}
-                {id !== 'catalogo'
-                  ? deEstaEtapa.length
-                  : catalogEstado === 'cargando'
-                    ? <Loader2 size={11} className="motion-safe:animate-spin" />
-                    : catalogEstado === 'error'
-                      ? <span className="text-[--accion] font-normal">No se pudo cargar · reintentar</span>
-                      : catalogEstado === 'listo'
-                        ? deEstaEtapa.length
-                        : null}
-              </span>
-            </button>
-            </h2>
-
-            {!plegado && !deEstaEtapa.length && (
-              <p className="px-4 py-2 text-etiqueta text-gray-400 border-b border-border">
-                {id !== 'catalogo' ? 'Ninguna acá'
-                  : catalogEstado === 'cargando' ? 'Cargando…'
-                  : catalogEstado === 'error'    ? 'No se pudo cargar el catálogo. Vuelve a desplegar el grupo para reintentar.'
-                  : 'Ninguna acá'}
-              </p>
-            )}
-
-            {/* La sangría y la línea son la mitad del arreglo: sin ellas, la
-                relación padre/hijo dependía sólo del color de la franja, y con
-                cinco grupos seguidos se perdía dónde terminaba uno y empezaba
-                el siguiente. */}
-            {/* pl-6 y no pl-4: medido en pantalla, con pl-4 el nombre de la
-                empresa caía 9px a la IZQUIERDA del título de su grupo — la
-                sangría se leía al revés. Con 24px queda alineado con el título
-                (149px contra 150px), que es lo que dice "estas filas son de ese
-                encabezado". */}
-            {!plegado && deEstaEtapa.length > 0 && (
-              <div className="pl-6 border-l-2 border-border">
-                {deEstaEtapa.map(r => (
-                  <FilaEmpresa key={r.entity_id} row={r} />
-                ))}
-              </div>
-            )}
-          </section>
-        )
-      })}
+                </button>
+              </h2>
+              {!plegado && (delBalde.length
+                ? <div className="pl-6 border-l-2 border-border">{delBalde.map(r => <FilaEmpresa key={r.entity_id} row={r} />)}</div>
+                : <p className="px-4 py-2 text-etiqueta text-informativo border-b border-border">Ninguna</p>)}
+            </section>
+          )
+        })
+      ) : (
+        <>
+          {filas.length > 0 && <div>{filas.map(r => <FilaEmpresa key={r.entity_id} row={r} />)}</div>}
+          {pidiendo ? (
+            <Estado tipo="cargando" />
+          ) : fallo ? (
+            <Estado tipo="error" titulo="No se pudo cargar esta lista" detalle="Las empresas siguen guardadas.">
+              <button type="button" onClick={onExpandCatalog}
+                      className="rounded-md border border-border bg-white px-3 py-1.5 text-dato font-semibold text-text-primary hover:bg-bg-main">
+                Reintentar
+              </button>
+            </Estado>
+          ) : filas.length === 0 ? (
+            <Estado tipo="vacio" titulo="Ninguna empresa en este ciclo de vida" />
+          ) : null}
+        </>
+      )}
     </div>
   )
 }
@@ -200,22 +167,23 @@ function FilaEmpresa({ row }: { row: CertificationStatusRow }) {
   const pct = row.total_count > 0
     ? Math.round((row.satisfied_count / row.total_count) * 100)
     : 0
-  const alDia = row.total_count > 0 && row.pending_count === 0
+  const activa = row.operational_status === 'ACTIVE'
+  const alDia = row.funnel_bucket === 'up_to_date'
   const gestion = etiquetaGestion(row.management_types)
 
   return (
     <Link
       href={`/dashboard/compliance/${row.entity_id}`}
-      className="flex items-center gap-2.5 px-4 py-2 border-b border-border transition-colors hover:bg-gray-50"
+      className="flex items-center gap-2.5 px-4 py-2 border-b border-border transition-colors hover:bg-bg-main"
     >
-      <ChevronRight size={12} className="text-gray-400 shrink-0" aria-hidden="true" />
+      <ChevronRight size={12} className="text-informativo shrink-0" aria-hidden="true" />
       {/* El sujeto es lo más fuerte de la fila: es lo que se escanea (§9). */}
       <span className="flex-1 min-w-0 truncate text-[13.5px] font-semibold text-text-primary">
         {row.entity_name}
       </span>
 
       {gestion && (
-        <span className="hidden sm:inline text-etiqueta text-gray-500 shrink-0">
+        <span className="hidden sm:inline text-etiqueta text-informativo shrink-0">
           {gestion}
         </span>
       )}
@@ -227,7 +195,7 @@ function FilaEmpresa({ row }: { row: CertificationStatusRow }) {
           priorizar por actividad prometería una anticipación que los datos
           no tienen. */}
       {(row.trips_30d ?? 0) > 0 && (
-        <span className="hidden md:inline text-etiqueta text-gray-500 shrink-0 tabular-nums">
+        <span className="hidden md:inline text-etiqueta text-informativo shrink-0 tabular-nums">
           {row.trips_30d} viajes · 30 días
         </span>
       )}
@@ -237,15 +205,28 @@ function FilaEmpresa({ row }: { row: CertificationStatusRow }) {
           distintas y tienen que verse distinto, asi que cualquier avance
           mayor a cero ocupa al menos 3px. La barra deja de ser proporcional
           en el extremo bajo a proposito: ahi lo que importa es si arranco. */}
-      <span className="h-1.5 w-24 rounded-full bg-gray-200 overflow-hidden shrink-0">
+      <span className="h-1.5 w-24 rounded-full bg-border overflow-hidden shrink-0">
         <span
           className={`block h-full rounded-full ${alDia ? 'bg-resuelto' : 'bg-accion'}`}
           style={{ width: pct > 0 ? `max(3px, ${pct}%)` : 0 }}
         />
       </span>
-      <span className="text-etiqueta text-gray-500 tabular-nums whitespace-nowrap shrink-0 w-16 text-right">
+      <span className="text-etiqueta text-informativo tabular-nums whitespace-nowrap shrink-0 w-16 text-right">
         {row.satisfied_count} de {row.total_count}
       </span>
+
+      {row.compliance_summary && <ComplianceCounts summary={row.compliance_summary} muted={!activa} />}
+
+      {!activa && (() => {
+        const ciclo = lifecycleStyle('carrier', row.operational_status ?? '')
+        const hab = enablementStyleFromFlag(row.compliance_summary?.can_operate ?? false, false)
+        return (
+          <>
+            <StatusChip tone={ciclo.tone} icon={ciclo.icon}>{ciclo.label}</StatusChip>
+            <StatusChip tone={hab.tone} icon={hab.icon}>{hab.label}</StatusChip>
+          </>
+        )
+      })()}
 
       {row.unclassified_count > 0 && (
         <span

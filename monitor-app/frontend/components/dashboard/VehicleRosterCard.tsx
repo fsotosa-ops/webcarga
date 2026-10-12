@@ -1,9 +1,10 @@
 // components/dashboard/VehicleRosterCard.tsx
 'use client'
 
-import { Truck, ShieldAlert, ShieldCheck } from 'lucide-react'
-import { ASSET_TYPE_LABELS, isCarrierDeactivated, type AssetType, type CarrierAssetRosterItem, type CarrierOperationalStatus } from '@/lib/types'
-import { ChipDeBaja } from './ChipDeBaja'
+import { Truck } from 'lucide-react'
+import { StatusChip } from '@/components/ui/StatusChip'
+import { fleetMemberStyle, isCarrierDeactivated, summaryStyle } from '@/lib/states'
+import { ASSET_TYPE_LABELS, type AssetType, type CarrierAssetRosterItem, type CarrierOperationalStatus } from '@/lib/types'
 
 interface Props {
   vehicle: CarrierAssetRosterItem
@@ -12,10 +13,10 @@ interface Props {
   onOpen:  () => void
 }
 
-/** Tarjeta compacta del roster de equipos — patente + tipo + pill de
- *  compliance_health (mismo criterio y componente visual que TransporterCard
- *  en el listado de Empresas) — reemplaza el conteo plano "N requisitos".
- *  El detalle por documento vive en VehicleDetailPanel.
+/** Tarjeta compacta del roster de equipos: patente, tipo y el par de chips de
+ *  la spec §6.2 (D-R8): ciclo de vida y peor estado de sus documentos, el
+ *  segundo en gris si el equipo está de baja. El detalle por documento vive en
+ *  VehicleDetailPanel.
  *
  *  Muestra TRES clasificaciones distintas, que en pantalla se confundían:
  *  el rol físico (`asset_type`: Tracto/Rampla), el subtipo de carrocería
@@ -65,17 +66,17 @@ export function VehicleRosterCard({ vehicle, carrierStatus, onOpen }: Props) {
             </span>
           )}
         </div>
-        {vehicle.operational_status !== 'ACTIVE' || isCarrierDeactivated(carrierStatus) ? (
-          <ChipDeBaja estado={vehicle.operational_status} carrierStatus={carrierStatus} />
-        ) : vehicle.compliance_health === 'PENDING' ? (
-          <span className="inline-flex items-center gap-1 text-etiqueta font-semibold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 mt-0.5">
-            <ShieldAlert size={9} /> {vehicle.pending_mandatory} pendiente{vehicle.pending_mandatory === 1 ? '' : 's'}
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 text-etiqueta font-semibold px-1.5 py-0.5 rounded-full bg-green-50 text-green-700 mt-0.5">
-            <ShieldCheck size={9} /> Al día
-          </span>
-        )}
+        <div className="mt-0.5 flex flex-wrap gap-1">
+          {(() => {
+            const life = fleetMemberStyle('asset', vehicle.operational_status, carrierStatus)
+            const docs = summaryStyle(vehicle.compliance_summary,
+              vehicle.operational_status === 'ACTIVE' && !isCarrierDeactivated(carrierStatus))
+            return (<>
+              <StatusChip tone={life.tone} icon={life.icon}>{life.label}</StatusChip>
+              <StatusChip tone={docs.tone} icon={docs.icon}>{docs.label}</StatusChip>
+            </>)
+          })()}
+        </div>
       </div>
     </button>
   )

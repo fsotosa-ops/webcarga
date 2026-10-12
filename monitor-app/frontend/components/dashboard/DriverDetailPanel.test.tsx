@@ -6,6 +6,7 @@ import { driversApi } from '@/lib/api/drivers'
 import { contactsApi } from '@/lib/api/contacts'
 import { locationsApi } from '@/lib/api/locations'
 import type { Driver, ComplianceRecord, Contact } from '@/lib/types'
+import { recordStateFields } from '@/lib/states.fixtures'
 
 vi.mock('@/lib/api/drivers', () => ({
   driversApi: { listComplianceRecords: vi.fn(), listContacts: vi.fn(), createContact: vi.fn() },
@@ -43,7 +44,7 @@ const RECORDS: ComplianceRecord[] = [{
   id: 'cr1', requirement_id: 'req1', requirement_code: 'EPP', name: 'EPP',
   requirement_level: 'LEGAL_MANDATORY', requires_file: false, status: 'MISSING',
   expiration_date: null, file_url: null, metadata: {}, is_manual_override: false,
-  is_expired: false, is_expiring_soon: false, updated_at: null,
+  is_expired: false, is_expiring_soon: false, ...recordStateFields('MISSING'), updated_at: null,
 }]
 
 function renderPanel(driver: Driver | null, opts: {

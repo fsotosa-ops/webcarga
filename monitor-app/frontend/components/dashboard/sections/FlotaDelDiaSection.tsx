@@ -815,7 +815,7 @@ export function FlotaDelDiaSection({
                         href={r.carrierId ? `/dashboard/carriers/${r.carrierId}` : '/dashboard/carriers'}
                         className="text-[11px] text-red-500 hover:text-red-700 hover:underline flex items-center gap-1"
                       >
-                        <AlertTriangle size={11} /> Revisar en Empresas
+                        <AlertTriangle size={11} /> Revisar en Directorio
                       </a>
                     )
                   )}

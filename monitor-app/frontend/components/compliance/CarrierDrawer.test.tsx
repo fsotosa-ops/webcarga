@@ -28,10 +28,17 @@ function pendiente(over: Partial<PendingComplianceRow> = {}): PendingComplianceR
     entity_type: 'CARRIER', entity_id: 'c1', subject_name: null,
     requirement_id: 'r1', requirement_code: 'F30', document_name: 'F30',
     status: 'MISSING', expiration_date: null, tiene_archivo: false,
-    urgencia: 'FALTA', expiration_policy: 'NONE',
+    urgencia: 'FALTA', document_state: 'MISSING', expiration_policy: 'NONE',
     ...over,
+    // El backend manda las dos con el mismo mapa: el fixture que solo declara
+    // `urgencia` recibe el `document_state` que le corresponde.
+    ...(over.urgencia && !over.document_state ? { document_state: ESTADO_DE_URGENCIA[over.urgencia] } : {}),
   } as PendingComplianceRow
 }
+
+const ESTADO_DE_URGENCIA = {
+  FALTA: 'MISSING', VENCIDO: 'OVERDUE', POR_VENCER: 'EXPIRING', AL_DIA: 'UP_TO_DATE', NO_EXIGIBLE: 'NOT_REQUIRED',
+} as const
 
 function setup(rows: PendingComplianceRow[] = [pendiente()], total = rows.length) {
   vi.mocked(complianceApi.listPending).mockResolvedValue({ total, rows })
@@ -56,7 +63,7 @@ describe('CarrierDrawer', () => {
 
   it('la bandeja sigue existiendo, como destino y no como zona encima', async () => {
     setup()
-    const enlace = await screen.findByRole('link', { name: /bandeja/i })
+    const enlace = await screen.findByRole('link', { name: /sin clasificar/i })
     // La Bandeja tiene ruta propia (Task 5): un enlace interno que pasara por
     // el redirect de `?vista=documentos` seria deuda desde el dia uno.
     // Y con la empresa preseleccionada: el bloque es el MISMO componente que

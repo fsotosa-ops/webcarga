@@ -241,8 +241,8 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
       if (!res.errors.length) {
         setUltimoLote(null)
         setNotice(res.reverted.length === 1
-          ? '1 archivo volvió a la bandeja'
-          : `${res.reverted.length} archivos volvieron a la bandeja`)
+          ? '1 archivo volvió a Sin clasificar'
+          : `${res.reverted.length} archivos volvieron a Sin clasificar`)
         return
       }
       // Con errores el aviso NO se cierra: cerrarlo pierde los ids y con ellos

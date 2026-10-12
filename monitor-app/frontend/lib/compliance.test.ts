@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { COMPLIANCE_STATUS_CONFIG, evidenciaDeDocumento, expiryRelative, puedeCorregirVencimiento, updatedRelative } from './compliance'
+import { dueRelative, fileHistoryLabel, expiryRelative, puedeCorregirVencimiento, updatedRelative } from './compliance'
 
 describe('expiryRelative', () => {
   it('returns null when there is no expiration date', () => {
@@ -39,52 +39,6 @@ describe('updatedRelative', () => {
   it('returns "sin actualizar hace N días" for older timestamps', () => {
     expect(updatedRelative('2026-06-06T12:00:00Z', NOW)).toBe('sin actualizar hace 40 días')
     expect(updatedRelative('2026-07-15T12:00:00Z', NOW)).toBe('sin actualizar hace 1 día')
-  })
-})
-
-describe('evidenciaDeDocumento — los dos ejes no se colapsan', () => {
-  it('sin fecha y sin archivo, no sabemos nada del documento', () => {
-    expect(evidenciaDeDocumento('MISSING', null, false).label).toBe('Falta')
-  })
-
-  it('con fecha y sin archivo, lo que falta es el papel', () => {
-    // El caso de Pablo: cargó las fechas que tenía en un Excel sin subir el
-    // histórico. Decirle "Falta" a secas esconde que ya sabemos cuándo vence.
-    expect(evidenciaDeDocumento('MISSING', '2026-09-12', false).label).toBe('Falta el archivo')
-  })
-
-  it('la fecha NO aprueba el documento', () => {
-    // La regla que ninguna plataforma de cumplimiento rompe: una fecha sin
-    // evidencia no cuenta como cumplido. Si el estilo cambiara al de aprobado,
-    // cargar 1.326 fechas pondría empresas en verde sin que nadie vea un papel.
-    const conFecha = evidenciaDeDocumento('MISSING', '2026-09-12', false)
-    expect(conFecha.cls).toBe(COMPLIANCE_STATUS_CONFIG.MISSING.cls)
-    expect(conFecha.cls).not.toBe(COMPLIANCE_STATUS_CONFIG.APPROVED_MANUAL.cls)
-  })
-
-  it('con archivo cargado vuelve a mandar el estado, no la fecha', () => {
-    expect(evidenciaDeDocumento('APPROVED_MANUAL', '2026-09-12', true).label)
-      .toBe(COMPLIANCE_STATUS_CONFIG.APPROVED_MANUAL.label)
-    // Un MISSING con archivo es raro pero existe (un rechazo que conserva el
-    // blob): ahí "Falta el archivo" mentiría.
-    expect(evidenciaDeDocumento('MISSING', '2026-09-12', true).label).toBe('Falta')
-  })
-})
-
-describe('evidenciaDeDocumento — dónde se ve de verdad', () => {
-  it('la etiqueta nueva sólo puede aparecer en una fila PENDIENTE', () => {
-    // El click-through del 23/08 encontró que la ficha de empresa parte sus
-    // filas por `urgencia`: las AL_DIA llevan pill y las pendientes llevan zona
-    // de arrastre, sin pill. O sea que ahí "Falta el archivo" no podía
-    // renderizarse nunca: un MISSING no es AL_DIA. Las superficies que sí
-    // dibujan pill para pendientes son TransporterSlideOver y
-    // TransporterAlertBanner, y son las que consumen esta función.
-    //
-    // Este test fija la combinación, no la pantalla: si alguien la llama con
-    // un estado aprobado esperando la etiqueta nueva, no la va a obtener.
-    expect(evidenciaDeDocumento('MISSING', '2026-09-20', false).label).toBe('Falta el archivo')
-    expect(evidenciaDeDocumento('APPROVED_MANUAL', '2026-09-20', false).label)
-      .not.toBe('Falta el archivo')
   })
 })
 
@@ -129,14 +83,18 @@ import { vigenciaDeLaFila } from './compliance'
 describe('vigenciaDeLaFila', () => {
   const HOY = '2026-10-08'
   const base = {
-    urgencia: 'AL_DIA' as const, expiration_date: null, vence_el: null, exigible_desde: null,
+    document_state: 'UP_TO_DATE' as const, expiration_date: null, vence_el: null, exigible_desde: null,
     falta_dato_de_vigencia: false, issue_date: null, period_start: null,
     expiration_policy: 'NONE' as const,
   }
 
   it('lo que aún no se exige dice desde cuándo', () => {
-    expect(vigenciaDeLaFila({ ...base, urgencia: 'NO_EXIGIBLE', exigible_desde: '2026-11-01' }, HOY))
+    expect(vigenciaDeLaFila({ ...base, document_state: 'NOT_REQUIRED', exigible_desde: '2026-11-01' }, HOY))
       .toBe('Se exige desde el 01-11-26')
+  })
+
+  it('lo que aún no se exige y no trae fecha usa la palabra del glosario', () => {
+    expect(vigenciaDeLaFila({ ...base, document_state: 'NOT_REQUIRED' }, HOY)).toBe('Aún no se exige')
   })
 
   it('un mensual al día dice qué mes cubre y hasta cuándo sirve', () => {
@@ -147,17 +105,17 @@ describe('vigenciaDeLaFila', () => {
 
   it('un mensual vencido lo dice con su mes', () => {
     expect(vigenciaDeLaFila({
-      ...base, urgencia: 'VENCIDO', expiration_policy: 'CALENDAR_PERIOD',
+      ...base, document_state: 'OVERDUE', expiration_policy: 'CALENDAR_PERIOD',
       period_start: '2026-08-01', vence_el: '2026-10-05',
     }, HOY)).toBe('Agosto 2026 · vencido hace 3 días')
   })
 
   it('cargado sin el dato que su tipo necesita dice cuál falta', () => {
     expect(vigenciaDeLaFila({
-      ...base, urgencia: 'VENCIDO', expiration_policy: 'CALENDAR_PERIOD', falta_dato_de_vigencia: true,
+      ...base, document_state: 'OVERDUE', expiration_policy: 'CALENDAR_PERIOD', falta_dato_de_vigencia: true,
     }, HOY)).toBe('Falta indicar el período')
     expect(vigenciaDeLaFila({
-      ...base, urgencia: 'VENCIDO', expiration_policy: 'ISSUE_PLUS_MONTHS', falta_dato_de_vigencia: true,
+      ...base, document_state: 'OVERDUE', expiration_policy: 'ISSUE_PLUS_MONTHS', falta_dato_de_vigencia: true,
     }, HOY)).toBe('Falta indicar la fecha de emisión')
   })
 
@@ -169,13 +127,13 @@ describe('vigenciaDeLaFila', () => {
 
   it('la fecha del documento por vencer usa el relativo de siempre', () => {
     expect(vigenciaDeLaFila({
-      ...base, urgencia: 'POR_VENCER', expiration_policy: 'REQUIRED',
+      ...base, document_state: 'EXPIRING', expiration_policy: 'REQUIRED',
       expiration_date: '2026-10-13', vence_el: '2026-10-13',
     }, HOY)).toBe('vence en 5 días')
   })
 
   it('lo que falta no dice nada: el renglón ya pide el archivo', () => {
-    expect(vigenciaDeLaFila({ ...base, urgencia: 'FALTA' }, HOY)).toBeNull()
+    expect(vigenciaDeLaFila({ ...base, document_state: 'MISSING' }, HOY)).toBeNull()
   })
 })
 
@@ -194,5 +152,22 @@ describe('puedeCorregirVencimiento', () => {
   })
   it('sin poder cargar, nunca', () => {
     expect(puedeCorregirVencimiento('PENDING_REVIEW', { puedeCargar: false, puedeRevisar: true })).toBe(false)
+  })
+})
+
+describe('dueRelative: los días los cuenta la API (days_to_expiry)', () => {
+  it('dice cuánto falta o hace cuánto venció', () => {
+    expect(dueRelative(0)).toBe('vence hoy')
+    expect(dueRelative(1)).toBe('vence en 1 día')
+    expect(dueRelative(5)).toBe('vence en 5 días')
+    expect(dueRelative(-12)).toBe('vencido hace 12 días')
+    expect(dueRelative(null)).toBeNull()
+  })
+})
+
+describe('fileHistoryLabel: lo que pasó con el archivo, nunca su vigencia', () => {
+  it('no usa ninguna palabra del glosario de estados', () => {
+    expect(fileHistoryLabel('APPROVED_MANUAL')).toBe('Aprobado a mano')
+    expect(fileHistoryLabel('MISSING')).toBe('Sin cargar')
   })
 })

@@ -154,6 +154,13 @@ describe('TripTable — documentación pendiente (conductor/tracto/empresa)', ()
     expect(screen.getAllByTitle('Tracto: 7 documento(s) pendiente(s)').length).toBeGreaterThan(0)
   })
 
+  // R-E5: el caso real de hoy es la licencia faltante; la API lo manda como driver_has_critical_alert.
+  it('el badge del conductor se pone urgente con driver_has_critical_alert, no con el campo viejo', () => {
+    render(<TripTable trips={[makeTrip('t1', { driver_pending_docs: 2, driver_has_critical_alert: true, driver_pending_docs_critical: false })]}
+                      selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
+    expect(screen.getAllByTitle(/Conductor: 2/)[0].className).toContain('text-status-incidente')
+  })
+
   it('does not show a pending-docs badge when the count is 0 or null', () => {
     render(<TripTable trips={[makeTrip('t1', { driver_pending_docs: 0, tractor_pending_docs: null })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.queryByTitle(/documento/)).not.toBeInTheDocument()

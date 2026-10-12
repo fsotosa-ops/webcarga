@@ -4,7 +4,9 @@ import { CeldaDeRevision, BotonConfirmar, MarcaDeRevision, useRevisiones } from 
 import { usePuedeEditarSeccion } from './secciones'
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, Trash2, Loader2, Check, BellRing } from 'lucide-react'
-import { configApi } from '@/lib/api/config'
+import { configApi, GLOBAL_ALERT_THRESHOLD } from '@/lib/api/config'
+import { Estado } from '@/components/ui/Estado'
+import { documentStateStyle, alertSeverityStyle } from '@/lib/states'
 import type { AlertThresholdMeta, TemperatureRangeMeta, MonitorAlertRules } from '@/lib/types'
 import { INPUT, useConfigList, LoadState, useRowFeedback, SaveRowButton } from './shared'
 
@@ -16,75 +18,71 @@ export function AlertasVencimientoTab() {
   const puedeEditar = usePuedeEditarSeccion('expiry-alerts')
   const fetcher = useCallback(() => configApi.getAlertThresholds(), [])
   const { items, setItems, loading, error, reload } = useConfigList<AlertThresholdMeta>(fetcher)
-  const [drafts, setDrafts] = useState<Record<string, Partial<AlertThresholdMeta>>>({})
+  const [draft, setDraft] = useState<Partial<AlertThresholdMeta>>({})
   const fb = useRowFeedback()
 
-  const merged = (row: AlertThresholdMeta) => ({ ...row, ...drafts[row.doc_type] })
-  const isDirty = (row: AlertThresholdMeta) => !!drafts[row.doc_type] && Object.keys(drafts[row.doc_type]).length > 0
+  // Por su clave y no "la primera fila" (ver el test): durante el despliegue
+  // la API vieja puede mandar las diez.
+  const global = items.find(r => r.doc_type === GLOBAL_ALERT_THRESHOLD)
+  const m = global ? { ...global, ...draft } : null
+  const dirty = Object.keys(draft).length > 0
+  const porVencer = documentStateStyle('EXPIRING').label
+  const aviso = alertSeverityStyle('warning').label
+  const critico = alertSeverityStyle('critical').label
 
-  function setDraft(key: string, patch: Partial<AlertThresholdMeta>) {
-    setDrafts(d => ({ ...d, [key]: { ...d[key], ...patch } }))
-  }
-
-  async function save(row: AlertThresholdMeta) {
-    const draft = drafts[row.doc_type]
-    if (!draft) return
-    await fb.run(row.doc_type, async () => {
-      const updated = await configApi.patchAlertThreshold(row.doc_type, draft)
-      setItems(prev => prev.map(r => (r.doc_type === row.doc_type ? updated : r)))
-      setDrafts(d => { const n = { ...d }; delete n[row.doc_type]; return n })
+  async function save() {
+    if (!global || !dirty) return
+    await fb.run(global.doc_type, async () => {
+      const updated = await configApi.patchAlertThreshold(global.doc_type, draft)
+      setItems(prev => prev.map(r => (r.doc_type === updated.doc_type ? updated : r)))
+      setDraft({})
       // Guardar cuenta como revisar, y lo registró el servidor.
       revisiones.invalidar()
     })
   }
 
   return (
-    <div className="p-4 md:p-5 space-y-3">
-      <p className="text-xs text-gray-400">
-        Cuántos días antes del vencimiento de cada documento se enciende la alerta amarilla (advertencia) y la roja (crítico).
-      </p>
+    <div className="p-4 md:p-5 space-y-4 max-w-2xl">
       <LoadState loading={loading} error={error} onRetry={reload} />
-      {!loading && !error && (
-        <fieldset disabled={!puedeEditar} className="min-w-0 border-0 p-0 m-0">
-        <table className="w-full text-xs max-w-2xl">
-          <thead>
-            <tr className="text-[10px] font-bold text-gray-400 uppercase tracking-wide border-b border-border">
-              <th className="py-2 pr-3 text-left">Documento</th>
-              <th className="py-2 pr-3 text-left">Advertencia (días antes)</th>
-              <th className="py-2 pr-3 text-left">Crítico (días antes)</th>
-              <th className="py-2 pr-3 text-left">Revisión</th>
-              <th className="py-2 text-right w-[90px]" aria-label="Acciones" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/50">
-            {items.map(row => {
-              const m = merged(row)
-              return (
-                <tr key={row.doc_type} className={isDirty(row) ? 'bg-accent/[0.03]' : ''}>
-                  <td className="py-2.5 pr-3 font-medium text-slate-700">{row.label}</td>
-                  <td className="py-2.5 pr-3">
-                    <input type="number" min={1} value={m.warning_days}
-                      onChange={e => setDraft(row.doc_type, { warning_days: Number(e.target.value) })}
-                      aria-label={`Advertencia de ${row.label}`} className={INPUT + ' w-20'} />
-                  </td>
-                  <td className="py-2.5 pr-3">
-                    <input type="number" min={0} value={m.error_days}
-                      onChange={e => setDraft(row.doc_type, { error_days: Number(e.target.value) })}
-                      aria-label={`Crítico de ${row.label}`} className={INPUT + ' w-20'} />
-                  </td>
-                  <td className="py-2.5 pr-3">
-                    <CeldaDeRevision id={row.doc_type} revisiones={revisiones} />
-                  </td>
-                  <td className="py-2.5 text-right">
-                    {puedeEditar && <SaveRowButton dirty={isDirty(row)} saving={fb.saving === row.doc_type}
-                      saved={!!fb.savedAt[row.doc_type]} onClick={() => save(row)} />}
-                    {fb.errors[row.doc_type] && <p className="text-[9px] text-red-500 mt-1">{fb.errors[row.doc_type]}</p>}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+      {!loading && !error && !m && (
+        <Estado tipo="error" titulo="No se encontró el aviso general de vencimiento"
+                detalle={`Sin él, ningún documento pasa a ${porVencer}. Avisa al equipo.`} />
+      )}
+      {m && (
+        <fieldset disabled={!puedeEditar} className="min-w-0 border-0 p-0 m-0 space-y-4">
+          <div>
+            <label htmlFor="umbral-aviso" className="block text-dato font-semibold text-text-primary">
+              {aviso} (días antes del vencimiento)
+            </label>
+            <input id="umbral-aviso" type="number" min={1} value={m.warning_days}
+                   onChange={e => setDraft(d => ({ ...d, warning_days: Number(e.target.value) }))}
+                   className={INPUT + ' w-20 mt-1'} />
+            <p className="mt-1 text-etiqueta text-informativo">
+              Desde ese día el documento se muestra como {porVencer} en el Directorio, Certificación y Pendientes.
+              {' '}{porVencer} no quita la habilitación de la empresa. Los documentos con días de aviso propios en
+              Condiciones de documentos usan los suyos.
+            </p>
+          </div>
+          <div>
+            <label htmlFor="umbral-critico" className="block text-dato font-semibold text-text-primary">
+              {critico} (días antes del vencimiento)
+            </label>
+            <input id="umbral-critico" type="number" min={0} value={m.error_days}
+                   onChange={e => setDraft(d => ({ ...d, error_days: Number(e.target.value) }))}
+                   className={INPUT + ' w-20 mt-1'} />
+            <p className="mt-1 text-etiqueta text-informativo">
+              Dentro de ese plazo el documento se destaca en la ficha de la empresa y el semáforo del Monitor pasa a
+              rojo. Con 0, solo el día en que vence. No cambia su estado ni la habilitación. Tiene que ser menor que
+              el {aviso.toLowerCase()}. El semáforo también se pone rojo, con cualquier plazo, si falta o venció la
+              licencia o la cédula del conductor.
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <CeldaDeRevision id={m.doc_type} revisiones={revisiones} />
+            {puedeEditar && <SaveRowButton dirty={dirty} saving={fb.saving === m.doc_type}
+                                           saved={!!fb.savedAt[m.doc_type]} onClick={save} />}
+          </div>
+          {fb.errors[m.doc_type] && <p role="alert" className="text-dato text-status-incidente">{fb.errors[m.doc_type]}</p>}
         </fieldset>
       )}
     </div>

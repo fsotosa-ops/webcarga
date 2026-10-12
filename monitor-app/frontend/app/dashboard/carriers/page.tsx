@@ -4,14 +4,15 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, ChevronLeft, ChevronRight, Search, Loader2, ShieldAlert, ShieldCheck, Plus } from 'lucide-react'
-import type { CarrierListFacets, CarrierListItem, CarrierOperationalStatus, ComplianceHealth } from '@/lib/types'
+import { Building2, ChevronLeft, ChevronRight, Search, Loader2, Plus } from 'lucide-react'
+import type { CarrierListFacets, CarrierListItem, CarrierOperationalStatus } from '@/lib/types'
 import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
 import { useTransporters } from '@/hooks/useTransporters'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { statusLabel } from '@/lib/types'
-import { TransporterCard, STATUS_CLS } from '@/components/dashboard/TransporterCard'
+import { StatusChip } from '@/components/ui/StatusChip'
+import { CARRIER_LIFECYCLE_GROUP_LABELS, ENABLEMENT_GROUP_LABELS, enablementStyle, lifecycleStyle } from '@/lib/states'
+import { TransporterCard } from '@/components/dashboard/TransporterCard'
 import { ResultadosDelDirectorio } from '@/components/dashboard/ResultadosDelDirectorio'
 import { TransporterSlideOver } from '@/components/dashboard/TransporterSlideOver'
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
@@ -23,7 +24,7 @@ import { directoryKeys, invalidateDirectory } from '@/lib/queries/directorio'
 
 
 type TransporterTab = 'active' | 'legacy' | 'onboarding'
-type HealthTab = '' | ComplianceHealth
+type EnablementTab = '' | 'enabled' | 'not_enabled'
 
 const LIMIT = 100
 const VIEW_MODE_STORAGE_KEY = 'empresas:vista'
@@ -33,7 +34,7 @@ const VIEW_LABELS = { tablero: 'Tarjetas', tabla: 'Tabla' }
  *  mira. Filtrar server-side, no sobre una sola página — 214 > el límite de 100
  *  por página del backend.
  *
- *  "Inactivas" manda LOS DOS estados de baja. `LEGACY_INACTIVE` es la empresa
+ *  "Dadas de baja" manda LOS DOS estados de baja. `LEGACY_INACTIVE` es la empresa
  *  que llegó inactiva desde el padrón viejo; `INACTIVE` es la que alguien dio
  *  de baja desde la app. La distinción existe en la base y no le importa a
  *  nadie acá: hasta el 2026-09-07 la pestaña filtraba sólo la primera, así que
@@ -43,23 +44,23 @@ const VIEW_LABELS = { tablero: 'Tarjetas', tabla: 'Tabla' }
  *
  *  ONBOARDING (empresa creada sin tax_id) es la tercera tab. */
 const TABS: { id: TransporterTab; label: string; status: CarrierOperationalStatus[] }[] = [
-  { id: 'active', label: 'Activas', status: ['ACTIVE'] },
-  { id: 'legacy', label: 'Inactivas', status: ['LEGACY_INACTIVE', 'INACTIVE'] },
-  { id: 'onboarding', label: 'Onboarding', status: ['ONBOARDING'] },
+  { id: 'active',     label: CARRIER_LIFECYCLE_GROUP_LABELS.active,     status: ['ACTIVE'] },
+  { id: 'legacy',     label: CARRIER_LIFECYCLE_GROUP_LABELS.inactive,   status: ['LEGACY_INACTIVE', 'INACTIVE'] },
+  { id: 'onboarding', label: CARRIER_LIFECYCLE_GROUP_LABELS.onboarding, status: ['ONBOARDING'] },
 ]
 
-/** Segundo eje de filtrado, independiente de Activas/Inactivo — agrupa por
- *  documentación obligatoria pendiente (mismo criterio que la ficha de
- *  empresa). Los conteos vienen de `facets`, ya acotados a la tab
- *  operational_status + búsqueda actuales (no cambian al clickear un
- *  health tab, igual que en /dashboard/insurance). */
-const HEALTH_TABS: { id: HealthTab; label: string; facetKey: keyof CarrierListFacets }[] = [
-  { id: '',        label: 'Todas',       facetKey: 'total' },
-  { id: 'PENDING', label: 'Pendientes',  facetKey: 'pending' },
-  { id: 'OK',      label: 'Al día',      facetKey: 'ok' },
+/** Segundo eje, solo para las activas: Habilitada / No habilitada lo calcula la
+ *  API (`compliance_summary.can_operate`, D-R6). Una empresa dada de baja o en
+ *  onboarding no cuenta como "No habilitada" en una cola (spec §3). Los
+ *  conteos vienen de `facets`, acotados a la pestaña y la búsqueda actuales
+ *  (no cambian al elegir un filtro). */
+const ENABLEMENT_TABS: { id: EnablementTab; label: string; facetKey: keyof CarrierListFacets }[] = [
+  { id: '',            label: 'Todas',                             facetKey: 'total' },
+  { id: 'not_enabled', label: ENABLEMENT_GROUP_LABELS.not_enabled, facetKey: 'not_enabled' },
+  { id: 'enabled',     label: ENABLEMENT_GROUP_LABELS.enabled,     facetKey: 'enabled' },
 ]
 
-const EMPTY_FACETS: CarrierListFacets = { pending: 0, ok: 0, total: 0 }
+const EMPTY_FACETS: CarrierListFacets = { pending: 0, ok: 0, total: 0, enabled: 0, not_enabled: 0 }
 
 export default function EmpresasTransportePage() {
   return (
@@ -82,7 +83,7 @@ function EmpresasTransportePageInner() {
   const searchParams = useSearchParams()
   const [q, setQ]                 = useState('')
   const [tab, setTab]             = useState<TransporterTab>('active')
-  const [healthTab, setHealthTab] = useState<HealthTab>('')
+  const [enablementTab, setEnablementTab] = useState<EnablementTab>('')
   const [page, setPage]           = useState(1)
   const [viewMode, setViewMode]   = useState<ViewMode>('tablero')
   const [selected, setSelected]   = useState<CarrierListItem | null>(null)
@@ -113,9 +114,11 @@ function EmpresasTransportePageInner() {
 
   const currentStatus = TABS.find(t => t.id === tab)!.status
 
-  useEffect(() => { setPage(1) }, [tab, healthTab, qDebounced])
+  useEffect(() => { setEnablementTab('') }, [tab])
 
-  const query = useTransporters({ q: qDebounced, operational_status: currentStatus, health: healthTab, page, limit: LIMIT })
+  useEffect(() => { setPage(1) }, [tab, enablementTab, qDebounced])
+
+  const query = useTransporters({ q: qDebounced, operational_status: currentStatus, enablement: tab === 'active' ? enablementTab : '', page, limit: LIMIT })
 
   // El mismo texto busca las tres cosas. Con menos de dos letras no se pide
   // nada: el resultado seria el padron entero, que no es una respuesta.
@@ -127,7 +130,7 @@ function EmpresasTransportePageInner() {
   })
   const items = useMemo(() => query.data?.data ?? [], [query.data])
   const tabTotal = query.data?.count ?? 0
-  const healthFacets = query.data?.facets ?? EMPTY_FACETS
+  const facets = query.data?.facets ?? EMPTY_FACETS
   const loading  = query.isPending
   const fetching = query.isFetching
   const error = query.error ? (query.error instanceof Error ? query.error.message : 'Error cargando empresas') : null
@@ -142,12 +145,12 @@ function EmpresasTransportePageInner() {
       queryFn: () => carriersApi.list({ q: qDebounced, operational_status: t.status, limit: 1 }),
     })),
   })
-  // healthFacets.total = conteo real de la tab actual sin el filtro de health
+  // facets.total = conteo real de la tab actual sin el filtro de habilitación
   // (a diferencia de tabTotal, que sí lo aplica) — así el badge de la tab no
-  // cambia al clickear un health tab.
+  // cambia al elegir un filtro de habilitación.
   const tabCounts: Record<TransporterTab, number> = TABS.reduce((acc, t) => {
     if (t.id === tab) {
-      acc[t.id] = healthFacets.total
+      acc[t.id] = facets.total
     } else {
       const idx = otherTabs.findIndex(ot => ot.id === t.id)
       acc[t.id] = otherCountQueries[idx]?.data?.count ?? 0
@@ -219,17 +222,19 @@ function EmpresasTransportePageInner() {
         })}
       </div>
 
-      {/* ── Tiles de alertas — segundo eje, viene de compliance_health.
-         Clickeables (filtran), no solo informativos: dejan triagear y
-         actuar rápido sin competir por espacio con Activas/Inactivo. ── */}
-      <AlertStatTiles
-        tiles={HEALTH_TABS.map(t => ({
-          id: t.id, label: t.label, value: healthFacets[t.facetKey],
-          tone: t.id === 'PENDING' ? 'danger' : t.id === 'OK' ? 'success' : 'neutral',
-        }))}
-        active={healthTab}
-        onSelect={id => setHealthTab(id as HealthTab)}
-      />
+      {/* ── Tiles de habilitación — segundo eje, lo calcula la API. Solo en
+         las activas: una dada de baja no es "No habilitada" (spec §3).
+         Clickeables (filtran), no solo informativos. ── */}
+      {tab === 'active' && (
+        <AlertStatTiles
+          tiles={ENABLEMENT_TABS.map(t => ({
+            id: t.id, label: t.label, value: facets[t.facetKey],
+            tone: t.id === 'not_enabled' ? 'danger' : t.id === 'enabled' ? 'success' : 'neutral',
+          }))}
+          active={enablementTab}
+          onSelect={id => setEnablementTab(id as EnablementTab)}
+        />
+      )}
 
       <div className="bg-white border border-border rounded-2xl px-3.5 py-2.5 flex items-center gap-2 flex-wrap">
         <div className="relative shrink-0">
@@ -277,13 +282,15 @@ function EmpresasTransportePageInner() {
                   <th className="px-3 py-3 text-left">Empresa</th>
                   <th className="px-3 py-3 text-left w-32">Tax ID</th>
                   <th className="px-3 py-3 text-left w-24">Estado</th>
-                  <th className="px-3 py-3 text-left w-32">Documentación</th>
+                  <th className="px-3 py-3 text-left w-32">Habilitación</th>
                   <th className="px-3 py-3 text-left w-28">Última actualización</th>
                   <th className="px-3 py-3 w-8"></th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((item, i) => (
+                {items.map((item, i) => {
+                  const lifecycle = lifecycleStyle('carrier', item.operational_status)
+                  return (
                   <tr
                     key={item.id}
                     onClick={() => setSelected(item)}
@@ -303,20 +310,13 @@ function EmpresasTransportePageInner() {
                     </td>
                     <td className="px-3 py-3 font-mono text-xs text-gray-500">{item.tax_id}</td>
                     <td className="px-3 py-3">
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_CLS[item.operational_status]}`}>
-                        {statusLabel('carrier', item.operational_status)}
-                      </span>
+                      <StatusChip tone={lifecycle.tone} icon={lifecycle.icon}>{lifecycle.label}</StatusChip>
                     </td>
                     <td className="px-3 py-3">
-                      {item.compliance_health === 'PENDING' ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600">
-                          <ShieldAlert size={9} /> {item.pending_mandatory} pendiente{item.pending_mandatory === 1 ? '' : 's'}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-700">
-                          <ShieldCheck size={9} /> Al día
-                        </span>
-                      )}
+                      {(() => {
+                        const s = enablementStyle(item.compliance_summary, item.operational_status === 'ACTIVE')
+                        return <StatusChip tone={s.tone} icon={s.icon}>{s.label}</StatusChip>
+                      })()}
                     </td>
                     <td className="px-3 py-3 text-xs text-gray-500">{updatedRelative(item.last_document_update) ?? '—'}</td>
                     <td className="px-3 py-3 text-center">
@@ -333,7 +333,8 @@ function EmpresasTransportePageInner() {
                       </Link>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

@@ -1,63 +1,5 @@
-import type { ComplianceStatus, PoliticaVencimiento, Urgencia } from './types'
-
-/** Estilo compartido para el estado de un compliance_record (7 valores del
- *  CHECK constraint real de public.compliance_records.status, ver lib/types.ts)
- *  — usado en DocumentChecklist y en cualquier badge/select que muestre el
- *  status de un documento. */
-export const COMPLIANCE_STATUS_CONFIG: Record<ComplianceStatus, { cls: string; label: string }> = {
-  MISSING:         { cls: 'bg-gray-100 text-gray-500',   label: 'Falta' },
-  PENDING_REVIEW:  { cls: 'bg-amber-50 text-amber-600',  label: 'En revisión' },
-  APPROVED_MANUAL: { cls: 'bg-teal-50 text-teal-700',    label: 'Aprobado (manual)' },
-  APPROVED:        { cls: 'bg-green-100 text-green-700', label: 'Aprobado' },
-  REJECTED:        { cls: 'bg-red-100 text-red-600',     label: 'Rechazado' },
-  EXPIRED:         { cls: 'bg-red-100 text-red-600',     label: 'Vencido' },
-  ARCHIVED:        { cls: 'bg-gray-100 text-gray-400',   label: 'Archivado' },
-}
-
-/** El eje de la EVIDENCIA, afinado con lo que la fila ya sabe de si misma.
- *
- *  Las plataformas de cumplimiento de proveedores y de flota (ISNetworld,
- *  Avetta, Veriforce; Fleetio, Samsara) no guardan UN estado por requisito
- *  sino dos independientes: **evidencia** (¿tenemos el papel?) y **vigencia**
- *  (¿está al día?). Un documento puede estar vigente y sin evidencia, y eso no
- *  es un error de dato: en Fleetio los recordatorios de renovación existen sin
- *  documento adjunto, que es exactamente el caso que pidió Pablo — cargar las
- *  fechas que tiene en un Excel sin subir dos mil archivos históricos.
- *
- *  Acá los dos ejes YA se dibujan por separado: el pill de estado y la celda
- *  de vencimiento son dos elementos distintos de la misma fila. Lo único que
- *  faltaba es que "Falta" dejara de significar dos cosas — "no sé nada de este
- *  documento" y "sé cuándo vence, me falta el papel"—, que es la sexta vez que
- *  un mensaje con dos causas aparece en este módulo.
- *
- *  LA REGLA QUE NO SE ROMPE: una fecha sin evidencia nunca cuenta como
- *  cumplido. Por eso el estilo no cambia —sigue siendo el gris de "falta"— y
- *  sólo se precisa la palabra. La urgencia la lleva la fecha, al lado.
- */
-export function evidenciaDeDocumento(
-  status: ComplianceStatus,
-  expirationDate: string | null | undefined,
-  tieneArchivo: boolean,
-): { cls: string; label: string } {
-  const base = COMPLIANCE_STATUS_CONFIG[status]
-  if (status === 'MISSING' && expirationDate && !tieneArchivo) {
-    return { cls: base.cls, label: 'Falta el archivo' }
-  }
-  return base
-}
-
-/** Estado de alerta de vencimiento — 'ok' | 'expiring_soon' | 'expired'.
- *  El backend ya calcula is_expired/is_expiring_soon por compliance_record
- *  (GET /carriers/{id}, /drivers/{id}/compliance-records, etc.); no hay
- *  date-math que hacer client-side (a diferencia del modelo viejo, que
- *  calculaba esto acá desde columnas `governance` con fechas sueltas). */
-export type AlertStatus = 'ok' | 'expiring_soon' | 'expired'
-
-export function complianceAlertStatus(isExpired: boolean, isExpiringSoon: boolean): AlertStatus {
-  if (isExpired) return 'expired'
-  if (isExpiringSoon) return 'expiring_soon'
-  return 'ok'
-}
+import type { ComplianceStatus, PoliticaVencimiento } from './types'
+import { documentStateStyle, type DocumentState } from './states'
 
 /** "vence en 5 días" / "vencido hace 12 días" / "vence hoy" — mismo patrón
  *  que dueRelative() en lib/utils/installments.ts, pero para documentos
@@ -166,12 +108,12 @@ export function nombreDelPeriodo(inicio: string): string {
 
 /** Lo que una fila dice de su vigencia, en una línea (HU-C1, entrega 2b).
  *
- *  Sale de lo que calculó el backend —`urgencia`, `vence_el`, `exigible_desde`,
+ *  Sale de lo que calculó el backend —`document_state`, `vence_el`, `exigible_desde`,
  *  `falta_dato_de_vigencia`—, no de comparar fechas acá: el vencimiento tiene
  *  una sola definición (`app/services/vencimientos.py`). Lo único que se hace
  *  en el cliente es decirlo en palabras, con el mes o la emisión a la vista. */
 export function vigenciaDeLaFila(fila: {
-  urgencia: Urgencia
+  document_state: DocumentState
   expiration_policy?: PoliticaVencimiento
   expiration_date?: string | null
   vence_el?: string | null
@@ -180,23 +122,23 @@ export function vigenciaDeLaFila(fila: {
   issue_date?: string | null
   period_start?: string | null
 }, hoy: string = new Date().toISOString().slice(0, 10)): string | null {
-  if (fila.urgencia === 'NO_EXIGIBLE') {
-    return fila.exigible_desde ? `Se exige desde el ${formatExpiry(fila.exigible_desde)}` : 'Todavía no se exige'
+  if (fila.document_state === 'NOT_REQUIRED') {
+    return fila.exigible_desde ? `Se exige desde el ${formatExpiry(fila.exigible_desde)}` : documentStateStyle('NOT_REQUIRED').label
   }
-  if (fila.urgencia === 'FALTA') return null
+  if (fila.document_state === 'MISSING') return null
   if (fila.falta_dato_de_vigencia) {
     return camposQuePide(fila.expiration_policy ?? 'NONE').periodo
       ? 'Falta indicar el período'
       : 'Falta indicar la fecha de emisión'
   }
   const vence = fila.vence_el ?? fila.expiration_date ?? null
-  const vencido = fila.urgencia === 'VENCIDO'
+  const vencido = fila.document_state === 'OVERDUE'
   const relativo = vence ? expiryRelative(vence, vencido, hoy) : null
   const mes = fila.period_start
     ? nombreDelPeriodo(fila.period_start).replace(/^./, c => c.toUpperCase())
     : null
 
-  if (fila.urgencia === 'AL_DIA') {
+  if (fila.document_state === 'UP_TO_DATE') {
     if (mes && vence) return `${mes} · sirve hasta el ${formatExpiry(vence)}`
     if (fila.issue_date && vence) return `Emitido el ${formatExpiry(fila.issue_date)} · vence el ${formatExpiry(vence)}`
     return null
@@ -217,3 +159,23 @@ export function puedeCorregirVencimiento(
 ): boolean {
   return p.puedeCargar && (!ESTADOS_APROBADOS.has(status) || p.puedeRevisar)
 }
+
+/** "vence en 5 días" / "vencido hace 12 días" / "vence hoy", desde los días
+ *  que contó la API (`days_to_expiry`, día de Chile). Reemplaza la resta de
+ *  fechas en el navegador, que con el huso UTC cruzaba de día desde las 21:00. */
+export function dueRelative(days: number | null | undefined): string | null {
+  if (days == null) return null
+  if (days === 0) return 'vence hoy'
+  if (days > 0) return `vence en ${days} día${days === 1 ? '' : 's'}`
+  const n = Math.abs(days)
+  return `vencido hace ${n} día${n === 1 ? '' : 's'}`
+}
+
+/** Lo que pasó con el archivo (`compliance_records.status`), para el
+ *  historial. NUNCA como estado del documento (spec D1 §3, conflicto 10): el
+ *  estado es `document_state`. */
+const FILE_HISTORY: Record<ComplianceStatus, string> = {
+  MISSING: 'Sin cargar', PENDING_REVIEW: 'En revisión', APPROVED_MANUAL: 'Aprobado a mano',
+  APPROVED: 'Aprobado', REJECTED: 'Rechazado', EXPIRED: 'Marcado como vencido', ARCHIVED: 'Archivado',
+}
+export const fileHistoryLabel = (s: ComplianceStatus): string => FILE_HISTORY[s] ?? s

@@ -4,7 +4,8 @@ import { Search, Loader2, User } from 'lucide-react'
 import { driversApi } from '@/lib/api/drivers'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useQuery } from '@tanstack/react-query'
-import { CARRIER_DEACTIVATED_LABEL, isCarrierDeactivated, type DriverPickCandidate } from '@/lib/types'
+import { CARRIER_DEACTIVATED_LABEL, isCarrierDeactivated } from '@/lib/states'
+import type { DriverPickCandidate } from '@/lib/types'
 
 interface Props {
   query:          string

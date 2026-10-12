@@ -12,6 +12,7 @@ import { InsurancePolicyModal } from '@/components/dashboard/InsurancePolicyModa
 import type { CarrierInsuranceOverviewItem, CarrierOperationalStatus, InsuranceOverviewFacets } from '@/lib/types'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
+import { CARRIER_LIFECYCLE_GROUP_LABELS } from '@/lib/states'
 
 
 const LIMIT = 50
@@ -35,13 +36,13 @@ const TABS: { id: HealthTab; label: string; facetKey: keyof InsuranceOverviewFac
  *  y mismo concepto Activo/Inactivo (no Activo/Legacy) que la landing de
  *  Empresas (pedido explícito del usuario 2026-07-18: Seguros debe tener
  *  la misma separación). */
-/** "Inactivas" agrupa los dos estados de baja, igual que en Empresas: una
+/** "Dadas de baja" agrupa los dos estados de baja, igual que en Empresas: una
  *  empresa dada de baja desde la app queda en `INACTIVE` y con un solo estado
  *  no aparecía en ninguna de las dos pestañas. Ver el comentario largo en
  *  app/dashboard/carriers/page.tsx. */
 const STATUS_TABS: { id: StatusTab; label: string; status: CarrierOperationalStatus[] }[] = [
-  { id: 'active', label: 'Activas',   status: ['ACTIVE'] },
-  { id: 'legacy', label: 'Inactivas', status: ['LEGACY_INACTIVE', 'INACTIVE'] },
+  { id: 'active', label: CARRIER_LIFECYCLE_GROUP_LABELS.active,   status: ['ACTIVE'] },
+  { id: 'legacy', label: CARRIER_LIFECYCLE_GROUP_LABELS.inactive, status: ['LEGACY_INACTIVE', 'INACTIVE'] },
 ]
 
 const EMPTY_FACETS: InsuranceOverviewFacets = {

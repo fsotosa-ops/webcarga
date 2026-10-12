@@ -6,7 +6,7 @@ import {
   Loader2, Check, RotateCcw, ShieldAlert, Search,
   FileWarning, AlertTriangle, PanelRightOpen,
 } from 'lucide-react'
-import type { Trip, TripsMeta } from '@/lib/types'
+import type { AssignmentWarning, Trip, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch } from '@/lib/api/trips'
 import { driversApi } from '@/lib/api/drivers'
 import { taxonomiesApi } from '@/lib/api/config'
@@ -17,6 +17,8 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
 import { PendingDocsBadge } from '@/components/ui/PendingDocsBadge'
+import { StatusChip } from '@/components/ui/StatusChip'
+import { alertSeverityStyle, enablementStyleFromFlag } from '@/lib/states'
 import { Section } from '@/components/ui/Section'
 import { KeyValueList } from '@/components/ui/KeyValueList'
 
@@ -75,6 +77,7 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
   const [fleetDraft, setFleetDraft]             = useState<FleetAssignValue>(EMPTY_FLEET_ASSIGN_VALUE)
   const [assigningFleet, setAssigningFleet]     = useState(false)
   const [fleetErr, setFleetErr]                 = useState<string | null>(null)
+  const [fleetWarnings, setFleetWarnings]       = useState<AssignmentWarning[]>([])
 
   const headingId = useId()
 
@@ -93,6 +96,7 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
     setUnlinkErr(null)
     setFleetDraft(EMPTY_FLEET_ASSIGN_VALUE)
     setFleetErr(null)
+    setFleetWarnings([])
   }, [trip.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // `collapsed` también resetea a expandido en cada viaje nuevo — decisión
@@ -144,7 +148,7 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
 
   async function handleAssignFleet() {
     if (!fleetDraft.carrier_id) return
-    setAssigningFleet(true); setFleetErr(null)
+    setAssigningFleet(true); setFleetErr(null); setFleetWarnings([])
     try {
       const updated = await tripsApi.assignFleetLink(trip.id, {
         carrier_id:       fleetDraft.carrier_id,
@@ -155,6 +159,9 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
       })
       onSaved(updated)
       setFleetDraft(EMPTY_FLEET_ASSIGN_VALUE)
+      // Se vinculó, pero la empresa no está habilitada (D1 §7.1). Se dice acá,
+      // fuera del bloque que se desmonta al quedar vinculado el viaje.
+      setFleetWarnings(updated.warnings ?? [])
     } catch (e) {
       setFleetErr(e instanceof Error ? e.message : 'Error al vincular')
     } finally {
@@ -321,15 +328,24 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
 
         {/* Conductor y flota — driver-first */}
         <Section title="Conductor y flota">
+          {fleetWarnings.length > 0 && (
+            <div role="status" className="mb-2 space-y-1">
+              {fleetWarnings.map(w => (
+                <Notice key={w.code} tone="warning" icon={<AlertTriangle size={13} className="mt-px shrink-0" aria-hidden />}>
+                  <p>{w.message}</p>
+                </Notice>
+              ))}
+            </div>
+          )}
           {trip.carrier_id ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between rounded-md border border-border bg-white px-3 py-2.5">
                 <div className="min-w-0 flex items-center gap-2 flex-wrap">
                   <p className="text-dato font-semibold text-text-primary truncate">{trip.carrier_name ?? '—'}</p>
                   <InsuranceAlertBadge alert={trip.insurance_alert} />
-                  <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_pending_docs_critical} label="Empresa" />
-                  <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_pending_docs_critical} label="Conductor" />
-                  <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_pending_docs_critical} label="Tracto" />
+                  <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_has_critical_alert} label="Empresa" />
+                  <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_has_critical_alert} label="Conductor" />
+                  <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_has_critical_alert} label="Tracto" />
                 </div>
                 <button
                   type="button"
@@ -351,13 +367,23 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
                   </p>
                 </Notice>
               )}
-              {trip.driver_pending_docs_critical && (
+              {trip.driver_has_critical_alert && (
                 <Notice tone="urgent" icon={<FileWarning size={13} className="mt-px shrink-0" aria-hidden />}>
                   <p>
-                    Falta Licencia de Conducir o Carnet del conductor —{' '}
+                    {alertSeverityStyle('critical').label}: la licencia o la cédula del conductor falta, venció o vence dentro
+                    del plazo crítico, o hay otro documento suyo en aviso crítico —{' '}
                     <a href={`/dashboard/carriers/${trip.carrier_id}?tab=conductores`} className="font-semibold underline">
-                      revisar en Empresas
+                      revisar en Directorio
                     </a>.
+                  </p>
+                </Notice>
+              )}
+              {trip.carrier_can_operate === false && (
+                <Notice tone="warning">
+                  <p className="flex items-center gap-1.5 flex-wrap">
+                    <StatusChip tone={enablementStyleFromFlag(false, true).tone}>{enablementStyleFromFlag(false, true).label}</StatusChip>
+                    La empresa no está habilitada para operar; el viaje se puede asignar igual —{' '}
+                    <a href={`/dashboard/carriers/${trip.carrier_id}`} className="font-semibold underline">revisar en Directorio</a>.
                   </p>
                 </Notice>
               )}
@@ -366,7 +392,7 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
                   <p>
                     El conductor pertenece a <span className="font-semibold">{trip.fleet_match_driver_home_carrier}</span>, distinta de la empresa de este viaje —{' '}
                     <a href={`/dashboard/carriers/${trip.carrier_id}?tab=conductores`} className="font-semibold underline">
-                      revisar en Empresas
+                      revisar en Directorio
                     </a>.
                   </p>
                 </Notice>
@@ -415,8 +441,8 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
                   <div className="mt-2">
                     <Notice tone="warning">
                       <p>
-                        Si no aparece en la lista, hay que darlo de alta primero en{' '}
-                        <a href={empresasHandoffHref} className="font-semibold underline">Empresas</a>.
+                        Si no aparece en la lista, hay que darlo de alta primero en el{' '}
+                        <a href={empresasHandoffHref} className="font-semibold underline">Directorio</a>.
                       </p>
                     </Notice>
                   </div>

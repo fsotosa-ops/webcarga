@@ -52,8 +52,8 @@ describe('FleetAssignSection', () => {
     fireEvent.click(screen.getByText('Juan Pérez'))
     expect(spy).toHaveBeenCalledWith({
       driver_id: 'd1', driver_name: 'Juan Pérez', driver_rut: '11.111.111-1', driver_phone: '+56911112222',
-      carrier_id: 'c1', carrier_name: 'TransCargo', tractor_asset_id: 'a1', tractor_plate: 'ABCD12',
-      trailer_plate: null,
+      carrier_id: 'c1', carrier_name: 'TransCargo', carrier_operational_status: null,
+      tractor_asset_id: 'a1', tractor_plate: 'ABCD12', trailer_plate: null,
     })
   })
 
@@ -109,11 +109,12 @@ describe('FleetAssignSection', () => {
     expect(screen.queryByText('Alta en Empresas')).not.toBeInTheDocument()
   })
 
-  it('no autocompleta una empresa dada de baja (R10)', () => {
+  it('autocompleta la empresa aunque no esté activa y avisa: decide la API (D-R10)', () => {
     const spy = vi.fn()
     render(<Harness onChangeSpy={spy} suggested={[{ ...CANDIDATE, carrier_operational_status: 'INACTIVE' }]} />)
     fireEvent.click(screen.getByText('Juan Pérez'))
-    expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ driver_id: 'd1', carrier_id: null, carrier_name: null }))
+    expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ carrier_id: 'c1', carrier_operational_status: 'INACTIVE' }))
+    expect(screen.getByText('Dada de baja')).toBeInTheDocument()
   })
 
   it('autocompleta la empresa cuando opera', () => {
@@ -123,10 +124,11 @@ describe('FleetAssignSection', () => {
     expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ carrier_id: 'c1', carrier_name: 'TransCargo' }))
   })
 
-  it('no autocompleta una empresa en alta (ONBOARDING)', () => {
+  it('una empresa en alta (ONBOARDING) también se autocompleta y se marca', () => {
     const spy = vi.fn()
     render(<Harness onChangeSpy={spy} suggested={[{ ...CANDIDATE, carrier_operational_status: 'ONBOARDING' }]} />)
     fireEvent.click(screen.getByText('Juan Pérez'))
-    expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ driver_id: 'd1', carrier_id: null, carrier_name: null }))
+    expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ carrier_id: 'c1', carrier_operational_status: 'ONBOARDING' }))
+    expect(screen.getByText('En onboarding')).toBeInTheDocument()
   })
 })

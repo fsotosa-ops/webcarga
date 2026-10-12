@@ -68,7 +68,12 @@ describe('la escala tipografica', () => {
     // viaje dejaron los 9-10 px (pasada visual del detalle), más bajas previas
     // que no se habían descontado.
     // 214 -> 213 el 2026-10-12: la línea de empresa de DriverSearchPicker pasó a tokens (bloque 0, 0.9).
-    const DEUDA = 213
+    // 213 -> 209 el 2026-10-12: los chips de ciclo de vida pasaron a StatusChip (D1, Task 11).
+    // 209 -> 205 el 2026-10-12: las filas del checklist y del panel dejaron los 10px (D1, Task 12).
+    // 205 -> 201 el 2026-10-12: tarjetas y tabla del Directorio dejaron los 10px (D1, Task 13).
+    // 201 -> 199 el 2026-10-12: los avisos de TripBulkUpload usan text-etiqueta (D1, Task 14).
+    // 199 -> 197 el 2026-10-12: Alertas de vencimiento dejó los 10px (D1, Task 14, Parte C).
+    const DEUDA = 197
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

@@ -39,4 +39,13 @@ describe('DocumentStatusBar', () => {
     expect(screen.getByText('Vence 18/10')).toBeInTheDocument()
     expect(screen.getByText('Falta')).toBeInTheDocument()
   })
+
+  it('las cifras de atención salen del resumen de la API y la flota va en su línea (D-R9)', () => {
+    render(<DocumentStatusBar documents={docs({ expired: 9, expiring: 9 })}
+                              counts={{ overdue: 2, expiring: 1, missing: 0 }}
+                              fleet={{ overdue: 3, expiring: 0, missing: 4 }} />)
+    expect(screen.getByText('2 vencidos')).toBeInTheDocument()
+    expect(screen.queryByText('9 vencidos')).toBeNull()
+    expect(screen.getByText('Flota activa: 3 vencidos · 4 faltan')).toBeInTheDocument()
+  })
 })

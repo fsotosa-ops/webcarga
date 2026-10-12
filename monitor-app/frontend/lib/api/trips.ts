@@ -1,4 +1,4 @@
-import type { CandidatosConductorResponse, Trip, TripCreatePayload, TripNote, AvailableDriver, AvailableAssetsResponse, FleetDailyOverviewResponse, CierreViajesResponse, ClientFacet } from '@/lib/types'
+import type { AssignmentWarning, CandidatosConductorResponse, Trip, TripCreatePayload, TripNote, AvailableDriver, AvailableAssetsResponse, FleetDailyOverviewResponse, CierreViajesResponse, ClientFacet } from '@/lib/types'
 import { apiFetch } from './client'
 
 export type TripListResponse = {
@@ -52,6 +52,11 @@ export type FleetLinkPayload = {
   trailer_plate?:    string
   driver_name?:      string
 }
+
+/** La respuesta de una asignación que salió bien, con el aviso si la empresa no
+ *  está habilitada (D1 §7.1). Un rechazo llega como ApiError 409 con
+ *  `detail = {code, message}`. */
+export type WithWarnings<T> = T & { warnings?: AssignmentWarning[] }
 
 export const tripsApi = {
   list: (params?: {
@@ -110,13 +115,13 @@ export const tripsApi = {
   },
 
   create: (body: TripCreatePayload) =>
-    apiFetch<Trip>('/api/v1/trips', {
+    apiFetch<WithWarnings<Trip>>('/api/v1/trips', {
       method: 'POST',
       body: JSON.stringify(body),
     }),
 
   bulkCreate: (rows: TripCreatePayload[]) =>
-    apiFetch<{ created: number; ids: string[] }>('/api/v1/trips/bulk', {
+    apiFetch<WithWarnings<{ created: number; ids: string[] }>>('/api/v1/trips/bulk', {
       method: 'POST',
       body: JSON.stringify(rows),
     }),
@@ -189,7 +194,7 @@ export const tripsApi = {
     }),
 
   assignFleetLink: (id: string, body: FleetLinkPayload) =>
-    apiFetch<Trip>(`/api/v1/trips/${id}/fleet-link`, {
+    apiFetch<WithWarnings<Trip>>(`/api/v1/trips/${id}/fleet-link`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
@@ -208,7 +213,7 @@ export const tripsApi = {
    *  Conserva la empresa y el tracto ya resueltos: un vínculo manual es
    *  terminal y el resolvedor no los volvería a llenar. */
   assignDriver: (driverId: string, tripIds: string[]) =>
-    apiFetch<{ asignados: number }>(`/api/v1/trips/assign-driver`, {
+    apiFetch<WithWarnings<{ asignados: number }>>(`/api/v1/trips/assign-driver`, {
       method: 'POST',
       body: JSON.stringify({ driver_id: driverId, trip_ids: tripIds }),
     }),

@@ -9,7 +9,8 @@ import type { Asset } from '@/lib/types'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
 import { taxonomiesApi } from '@/lib/api/config'
 import { directoryKeys, invalidateDirectory } from '@/lib/queries/directorio'
-import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
+import { DocumentChecklist } from './DocumentChecklist'
+import { documentStateCounts } from '@/lib/states'
 import { CompletionRing } from './CompletionRing'
 import { BajaReasonModal } from './BajaReasonModal'
 import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
@@ -40,8 +41,10 @@ interface Props {
    *  "conductor habitual" (Fase 1 del hardening del Diario, 2026-07-18).
    *  Forma mínima a propósito: acepta tanto Driver[] como
    *  CarrierDriverRosterItem[] (la lista ya cargada en la página de
-   *  detalle de empresa), sin forzar un tipo más ancho del que hace falta. */
-  drivers?:        { id: string; full_name: string }[]
+   *  detalle de empresa), sin forzar un tipo más ancho del que hace falta.
+   *  Solo se ofrecen los ACTIVOS: la API rechaza con 409 (DRIVER_INACTIVE) a
+   *  uno dado de baja, así que no se le ofrece al usuario (D1 §7.1). */
+  drivers?:        { id: string; full_name: string; operational_status: string }[]
 }
 
 /** Modal de detalle de un equipo — mismo lenguaje inmersivo que
@@ -201,7 +204,8 @@ export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, can
   if (!open) return null
 
   const items = complianceRecordsToChecklistItems(complianceQuery.data ?? [])
-  const { ok, total } = checklistCompletion(items)
+  const ok = documentStateCounts(items).UP_TO_DATE
+  const total = items.length
 
   return (
     <>
@@ -356,7 +360,7 @@ export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, can
                     className="flex-1 min-w-0 text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
                   >
                     <option value="">Sin asignar</option>
-                    {drivers.map(d => <option key={d.id} value={d.id}>{d.full_name}</option>)}
+                    {drivers.filter(d => d.operational_status === 'ACTIVE').map(d => <option key={d.id} value={d.id}>{d.full_name}</option>)}
                   </select>
                   <button
                     type="button"

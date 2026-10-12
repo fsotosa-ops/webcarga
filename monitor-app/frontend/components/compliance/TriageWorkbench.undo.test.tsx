@@ -140,7 +140,7 @@ describe('TriageWorkbench — deshacer un lote', () => {
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /^deshacer$/i })).not.toBeInTheDocument(),
     )
-    expect(screen.getByText(/2 archivos volvieron a la bandeja/i)).toBeInTheDocument()
+    expect(screen.getByText(/2 archivos volvieron a Sin clasificar/i)).toBeInTheDocument()
   })
 
   it('si el deshacer falla por red, lo dice', async () => {
@@ -208,7 +208,7 @@ describe('TriageWorkbench — todas las operaciones refrescan lo mismo', () => {
     }
 
     await clavesDe('subir', () => {
-      fireEvent.change(screen.getByLabelText(/agrega los documentos a la bandeja/i), {
+      fireEvent.change(screen.getByLabelText(/agrega los documentos a Sin clasificar/i), {
         target: { files: [new File(['x'], 'd.pdf', { type: 'application/pdf' })] },
       })
     })

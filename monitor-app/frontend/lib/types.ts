@@ -1,3 +1,6 @@
+export type { AlertSeverity, ComplianceSummary, DocumentState, StateCounts } from './states'
+import type { AlertSeverity, ComplianceSummary, DocumentState } from './states'
+
 export type Json =
   | string
   | number
@@ -563,6 +566,12 @@ export type Trip = {
   tractor_pending_docs_critical?:  boolean | null
   carrier_pending_docs?:           number | null
   carrier_pending_docs_critical?:  boolean | null
+  /** Por entidad (D1): alerta crítica del conductor, del tracto y de la empresa,
+   *  y si la empresa puede operar. Los pinta la Task 14. */
+  driver_has_critical_alert?:      boolean | null
+  tractor_has_critical_alert?:     boolean | null
+  carrier_has_critical_alert?:     boolean | null
+  carrier_can_operate?:            boolean | null
   /** Nota humana más reciente en la bitácora del viaje (excluye notas
    *  note_type='sistema') — usado para saber si una alerta activa ya tuvo
    *  seguimiento. Ver kpis.ts:needsBitacoraFollowup. */
@@ -651,13 +660,10 @@ export type LocationPatchPayload = Partial<Omit<LocationCreatePayload, 'entity_t
 
 // ── Empresas (public.carriers/drivers/assets/contacts + vistas de H1) ──────
 
-export type OperationalStatus = 'ACTIVE' | 'INACTIVE' | 'LEGACY_INACTIVE'
-/** Solo para filas a nivel EMPRESA (Carrier/CarrierListItem/
- *  CarrierInsuranceOverviewItem) — conductores/equipos no tienen concepto
- *  de onboarding, siguen tipando contra OperationalStatus. Una empresa
- *  creada sin tax_id queda en ONBOARDING (POST /carriers, tarea backend
- *  previa) hasta completar el RUT. */
-export type CarrierOperationalStatus = OperationalStatus | 'ONBOARDING'
+/** Conductor y equipo: el CHECK de la base admite solo estos dos (D1, §4.4). */
+export type OperationalStatus = 'ACTIVE' | 'INACTIVE'
+/** Empresa: los cuatro de `carriers_operational_status_check`. */
+export type CarrierOperationalStatus = 'ACTIVE' | 'INACTIVE' | 'LEGACY_INACTIVE' | 'ONBOARDING'
 export type EntityType = 'CARRIER' | 'DRIVER' | 'ASSET'
 export type RequirementLevel = 'LEGAL_MANDATORY' | 'SHIPPER_REQUIRED' | 'CONDITIONAL_OPTIONAL'
 
@@ -688,6 +694,12 @@ export type ComplianceRecord = {
   is_manual_override: boolean
   is_expired:         boolean
   is_expiring_soon:   boolean
+  /** El estado según la definición única del backend (D1, despliegue 1). */
+  document_state:     DocumentState
+  /** Días de Chile hasta el vencimiento; negativo si venció; null si no vence. */
+  days_to_expiry:     number | null
+  /** Aviso calculado (no es un estado): null si no corresponde. */
+  alert_severity:     AlertSeverity | null
   /** Última vez que cambió status/expiration_date — para "sin actualizar
    *  hace X días" (pedido explícito del usuario 2026-07-16: las alertas
    *  eran binarias MISSING/vencido sin decir desde cuándo). */
@@ -806,9 +818,6 @@ export type Urgencia = 'VENCIDO' | 'POR_VENCER' | 'FALTA' | 'AL_DIA'
  *  backend y reproduce el comportamiento anterior a la ficha. */
 export type EstadoDocumental = 'todos' | 'falta' | 'por_vencer' | 'al_dia'
 
-/** El estado de un documento: la definición única del backend
- *  (`vencimientos.document_state_sql`). */
-export type DocumentState = 'NOT_REQUIRED' | 'UP_TO_DATE' | 'OVERDUE' | 'EXPIRING' | 'MISSING'
 /** Qué trae Pendientes: un estado o los tres que se deben juntos. */
 export type PendingState = 'overdue' | 'expiring' | 'missing' | 'pending' | 'all'
 /** El filtro de la pantalla de Pendientes (un subconjunto de `PendingState`). */
@@ -953,42 +962,6 @@ export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
  *  vista rápida (`lib/api/entitySummary.ts`) es un alias de esta. */
 export type DirectoryEntity = 'carrier' | 'driver' | 'asset'
 
-/** El estado operativo, dicho en español. La ficha de empresa imprimía el enum
- *  crudo —un chip que decía "ACTIVE" en una interfaz en español— y eso alimentó
- *  la confusión que Pablo trajo el 04/09: *"¿qué es lo mejor? ¿lo da de baja o
- *  le pone inactivo? Porque en un lado te decía dar de baja y en otro dejaba
- *  ahí la empresa inactivo"*. Son el mismo eje escrito de dos maneras.
- *
- *  `LEGACY_INACTIVE` e `INACTIVE` se dicen igual a propósito: la diferencia
- *  —de dónde vino la baja— no cambia nada para quien mira. */
-export const OPERATIONAL_STATUS_LABELS: Record<CarrierOperationalStatus, string> = {
-  ACTIVE:          'Activa',
-  INACTIVE:        'Dada de baja',
-  LEGACY_INACTIVE: 'Dada de baja',
-  ONBOARDING:      'En onboarding',
-}
-
-/** Conductor y equipo: masculino. Con `OPERATIONAL_STATUS_LABELS` (empresa,
- *  femenino) son el ÚNICO diccionario de estados (bloque 0, 0.7). "Inactiva" se
- *  retiró: el mismo estado se llamaba distinto según la pantalla (F-35). */
-const FLEET_STATUS_LABELS: Record<OperationalStatus, string> = {
-  ACTIVE:          'Activo',
-  INACTIVE:        'Dado de baja',
-  LEGACY_INACTIVE: 'Dado de baja',
-}
-
-export function statusLabel(entity: DirectoryEntity, status: string): string {
-  const labels: Record<string, string> = entity === 'carrier' ? OPERATIONAL_STATUS_LABELS : FLEET_STATUS_LABELS
-  return labels[status] ?? status
-}
-
-/** La empresa está dada de baja (no "en onboarding"). Su flota queda vinculada
- *  como historial (P1) y se marca en lugar de decir "Activo" (bloque 0, 0.9). */
-export function isCarrierDeactivated(status: string | null | undefined): boolean {
-  return status === 'INACTIVE' || status === 'LEGACY_INACTIVE'
-}
-export const CARRIER_DEACTIVATED_LABEL = 'Empresa dada de baja'
-
 /** Una cabecera de la ficha de empresa: la empresa misma, o uno de sus
  *  conductores o vehículos, con sus cuatro cifras — sin las filas de
  *  detalle. Esas se piden aparte, sólo al desplegar el sujeto
@@ -1061,12 +1034,15 @@ export type CarrierListItem = {
    *  mismo criterio que `mandatoryProblems` en la ficha de empresa. */
   pending_mandatory:     number
   compliance_health:     ComplianceHealth
+  compliance_summary:    ComplianceSummary
 }
 
 export type CarrierListFacets = {
   pending: number
   ok:      number
   total:   number
+  enabled:     number
+  not_enabled: number
 }
 
 export type CarrierListResponse = {
@@ -1096,6 +1072,7 @@ export type Carrier = {
   updated_at:          string | null
   contacts:            Contact[]
   compliance_records:  ComplianceRecord[]
+  compliance_summary:  ComplianceSummary
 }
 
 /** Tarea 8 (plan 3.1, minuta 2026-08-03) — GET /carriers/fleet-driver-gap,
@@ -1118,6 +1095,7 @@ export type CarrierDriverRosterItem = {
   last_document_update:  string | null
   pending_mandatory:     number
   compliance_health:     ComplianceHealth
+  compliance_summary:    ComplianceSummary
 }
 
 export type CarrierAssetRosterItem = {
@@ -1142,6 +1120,7 @@ export type CarrierAssetRosterItem = {
   last_document_update:        string | null
   pending_mandatory:           number
   compliance_health:           ComplianceHealth
+  compliance_summary:          ComplianceSummary
 }
 
 /** GET /carriers/{id}/shippers — generadores de carga (public.shippers) con
@@ -1970,7 +1949,17 @@ export type CertificationStatusRow = {
   management_types?:  ManagementType[] | null
   trips_30d?:         number
   funnel_group?:      FunnelGroup
+  funnel_bucket?:     FunnelBucket | null
+  compliance_summary?: ComplianceSummary
 }
+
+/** La guarda de asignación (D1 §7.1): 409 con `detail = {code, message}`. */
+export type AssignmentConflictCode = 'CARRIER_NOT_ACTIVE' | 'DRIVER_INACTIVE' | 'ASSET_INACTIVE'
+/** Se asignó igual, con aviso: la empresa no está habilitada (P14 abierta).
+ *  `row` viaja en las respuestas masivas. */
+export type AssignmentWarning = { code: 'CARRIER_NOT_ENABLED'; message: string; row?: number }
+/** Los baldes del embudo por el resumen (D1-R2): conviven con `funnel_group` hasta la Task 16. */
+export type FunnelBucket = 'up_to_date' | 'expiring' | 'not_enabled'   // NULL en la fila si la empresa no está activa
 
 export type CertificationStatus = {
   total_pending:      number
