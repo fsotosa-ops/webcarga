@@ -16,55 +16,69 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
-### 2026-10-11 — Rediseño de Certificación, bloque 1 "Pendientes": SPEC APROBADA por el usuario (se ejecuta en otra sesión)
+### 2026-10-11 — Auditoría UX de "Sin clasificar" (insumo del bloque 2; solo lectura)
 
-**Spec aprobada (11/10, "estoy ok con el spec").** El siguiente paso es `superpowers:writing-plans` sobre la spec y
-elegir el método de ejecución.
+Informe: `docs/superpowers/plans/2026-10-11-sin-clasificar-ux-audit.md`. Las capturas son `.playwright-mcp/sinclasificar-*.png`.
+El recorrido se hizo en la copia local, con un lote ficticio que quedó en el volumen `webcarga-sim`. No se tocó
+código de la app.
 
-**Concesión deliberada, explicada al usuario:**
-- Este bloque deja la definición única de estado y alcance y la usa en Pendientes.
-- Los otros cinco lectores (avisos del viaje, vista rápida, roster del Directorio, Cierre y frontend) migran en el
-  bloque 3.
-- Mientras tanto pueden discrepar de Pendientes, como discrepan hoy entre sí. No es un parche, porque no se agrega
-  código que después haya que deshacer.
-
-**Corrección del usuario (11/10) sobre seguros:** el seguro que se carga en Certificación (SEGURO_*) es documentación
-de la empresa; Seguros (`insurance_policies`) gestiona las pólizas. La separación es intencional, no un duplicado.
-- Se corrigió la auditoría (punto 6).
-- La respuesta para Pablo (3.4 / 09/10 "¿habla con Seguros?") pasa a ser: **no, a propósito**. Son dos propósitos
-  distintos: certificar a la empresa y gestionar la póliza.
-
-Spec: `docs/superpowers/specs/2026-10-11-pending-documents-design.md`. El diseño se aprobó por secciones en el chat (brainstorming, camino de arquitectura).
-
-**Maquetas aprobadas.** Están en `.superpowers/brainstorm/84727-1791741985/content/`, fuera de git:
-- `cubo-opciones.html`: se eligió la opción A;
-- `pendientes-estados.html`;
-- `pendientes-carga-en-lote.html`.
-
-**Se leyeron las transcripciones** de Granola del 09/10 y del 02/10, además de las minutas. El cubo por documento con carga "al tiro" es el pedido central de Pablo. Él quiere Certificación como tareas y el Directorio "solo para mirar".
-
-**Decisiones del usuario (11/10):**
-- D1: el nombre es "Pendientes".
-- D2: lista y detalle.
-- D3: tres estados (Vencido, Por vencer, Falta).
-- D4: ver por documento o por empresa.
-- D5: carga en lote con asignación automática y revisión.
-- D6: extender lo que existe (`/pending`, `vencimientos.py`, `document_matcher`).
-- D7: Operaciones ve y "Pide a Certificación". Esto va en el bloque 3 y falta validarlo con Pablo.
-- D8: alcance solo activos, aplicado al leer.
-
-**Los cuatro bloques del rediseño:**
-1. Pendientes (esta spec).
-2. Certificación como tareas y el Directorio solo para mirar; se retira la segunda ficha.
-3. Panel de consulta único y "Pedir a Certificación".
-4. Configuración › Certificación: un flujo para activar, variantes por cliente y L7.
+- **Hay 18 hallazgos.** Los 2 bloqueantes:
+  - H1: la sugerencia AUTO es decorativa. El ítem no recibe `carrier_id` y el formulario no la lee.
+  - H2: un error de la cola se muestra como "0 sin clasificar".
+- **Altos:**
+  - H3: callejón sin salida al elegir empresa.
+  - H4: mientras carga, dice "no tiene pendientes".
+  - H5: no hay lote real (`classify-batch` acepta 1 archivo).
+  - H6: la empresa elegida queda pegada a las subidas siguientes.
+- **Recomendación: Opción B**, cola de excepciones con revisión agrupada (modelo Ramp/Dext). La revisión es la
+  misma que `BulkUploadReview`. "Enviar a Sin clasificar" se cablea junto con B y lleva el tipo ya conocido.
+- **"Denso" no está registrado en ningún documento.** Lo más cercano es Pablo, 02/10, en Granola: "navegar
+  dentro de aquí es enredado".
 
 **Siguiente paso exacto:**
-- [ ] El usuario revisa la spec.
-- [x] Plan escrito y aprobado: `docs/superpowers/plans/2026-10-11-pending-documents.md` (11 tareas, rulings R1-R4).
-- [ ] **PRÓXIMA SESIÓN: ejecutar el plan con `superpowers:subagent-driven-development`** (elegido por el usuario el 11/10).
-  Arranca en la Task 1. Para la Task 11 (recorrido Playwright), levantar `.superpowers/local-sim/`.
-- [ ] Al ejecutar: medir primero el resumen con reglas activas (objetivo < 300 ms), usar la copia local para el recorrido y desplegar a dev cuando esté en verde.
+- [ ] El usuario decide entre A, B y C, y responde las preguntas de la §6, algunas con Pablo.
+- [ ] Antes del rediseño, corregir H2 y H4 (estados de carga y error contados como vacío).
+
+### 2026-10-11/12 — Certificación bloque 1 "Pendientes": EJECUTADO (subagent-driven) y DESPLEGADO en dev (`2f036cf2..094ee266`)
+
+Spec `docs/superpowers/specs/2026-10-11-pending-documents-design.md` · plan `docs/superpowers/plans/2026-10-11-pending-documents.md`.
+Workflows `Deploy Monitor API` y `Deploy Frontend` en verde (12/10 ~00:38 UTC). Ruta `/dashboard/compliance/pending`,
+ítem "Pendientes" en Certificación. Nada a `main`, Mage sin tocar.
+
+**Qué quedó:**
+- Backend: `document_state_sql` + `in_scope_sql` (única definición, `vencimientos.py`), con rama ON_ENTITY_END (decisión del
+  usuario 11/10: el finiquito entra si la empresa de la ÚLTIMA asignación está activa) y `ultima_empresa_sql` compartida con
+  `resolved_carrier_id`. `/pending?state=` (alcance solo con `state`; sin `state` todo igual), `document_state`, `due_on`,
+  `missing_validity_data`, `entered_on`. `GET /pending/summary?group_by=requirement|carrier`. `POST /pending/match` (no
+  escribe; `match_owner` puro; RUT/patente gana al nombre; colisión: gana el estrictamente más fuerte, empate → todos "Por elegir").
+- Frontend: lista y detalle por documento/empresa, URL `?by&doc&carrier&state`, "Todos" = lo pendiente, seis estados, teléfono,
+  carga en fila (re-sube para "Completar") y en lote (de a 3, reintento sin repetir, `beforeunload`). `SegmentedControl` en
+  `components/ui`, `periodoQueSeExige` y `hoyEnChile()` compartidos.
+- Rulings: R1-R4 del plan + P1-P24 en el ledger de la ejecución (resumen en el mensaje de cierre de la sesión).
+
+**Verificación:** backend del área 286 + 158 verdes; frontend 1452 (área) + 638 tras los últimos arreglos; tsc y build OK.
+Rendimiento (lectura, base real, 5.704 registros / 36 reglas activas): resumen 43 ms plan + ~210 ms ejecución en el servidor
+(< 300 ms); ~350 ms con la red. Recorrido completo en la copia local (`.playwright-mcp/pendientes-*.png`), con 4 hallazgos ya
+arreglados. Revisión final de toda la rama: 2 importantes arreglados (panel que se remontaba, doble "última asignación").
+
+**Pendiente / deuda anotada:**
+- [ ] **Mirar en dev con datos reales, escritorio y 390 px, sin subir nada** (falta sesión iniciada en el navegador de Playwright).
+  Confirmar que la portada de Certificación, la ficha de empresa y el cajón siguen iguales, y que "Guardar" del lote no queda
+  tapado por la barra inferior (arreglo `pb-24` solo verificado por clase).
+- [ ] `periodoSugerido` (gesto de carga individual) ignora `period_offset_months`: hoy inocuo (F30_1 offset 1), pero la fila y el
+  lote podrían proponer meses distintos. Migrar a `periodoQueSeExige`.
+- [ ] La barra inferior móvil probablemente tapa el final de otras pantallas: arreglarlo una vez en `app/dashboard/layout.tsx`.
+- [ ] Menores: subtítulos de empresa de la maqueta ("Tractoreo · 2 conductores"), chips "con error/por resolver", etiqueta
+  "Ver por"; patentes en Bandeja (`match_document`) siguen sin aceptar guion; cada archivo guardado refresca toda Certificación
+  (vigilar Disk IO); "Completar" requiere volver a subir el archivo.
+- Sigue abierto del bloque: validar con Pablo D7 ("Pedir a Certificación", bloque 3) y responderle que el seguro de
+  Certificación (SEGURO_*) no habla con Seguros (`insurance_policies`) a propósito. Bloques restantes: 2 Certificación como
+  tareas (+ Sin clasificar), 3 panel de consulta único + "Pedir a Certificación", 4 Configuración › Certificación (L7).
+  La spec/decisiones D1-D8 completas quedaron archivadas en `AGENTLOG_ARCHIVE.md`.
+- "Enviar a Sin clasificar" desde el lote: **NO se hace** hasta rediseñar Sin clasificar (decisión del usuario 11/10).
+
+**Siguiente paso exacto:** el usuario elige la opción (A/B/C) de la auditoría de Sin clasificar (entrada de arriba) y responde
+sus preguntas abiertas; luego brainstorming → spec del bloque 2 con Sin clasificar como cola de excepciones conectada a Pendientes.
 
 ### 2026-10-11 — Auditoría de Certificación: simulación en copia local + bugs L1-L5 cerrados
 
