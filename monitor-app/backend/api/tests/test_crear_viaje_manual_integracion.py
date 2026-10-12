@@ -21,21 +21,26 @@ from fastapi import HTTPException
 
 from app.routers.trips import TripCreateBody, TripStopCreate, assign_fleet_link, create_trip
 from tests.conftest import PoolDeUnaConexion, _usuario_real, cliente_de_prueba
+from tests.d1_subjects import apply_fleet_facts, make_test_fleet
 
 pytestmark = pytest.mark.integracion
 
 
+@pytest.fixture(autouse=True)
+async def _hechos_de_la_flota(conexion_revertida):
+    """D1: la guarda de asignación (Task 8) y la lectura del viaje (Task 7) leen
+    app.carrier_of, app.active_fleet y fleet_compliance; hasta la Task 10 la
+    migración no está aplicada."""
+    await apply_fleet_facts(conexion_revertida)
+
+
 async def _conductor_con_empresa(conn):
-    fila = await conn.fetchrow(
-        """
-        SELECT da.driver_id, da.carrier_id, d.full_name
-        FROM public.driver_assignments da
-        JOIN public.drivers d ON d.id = da.driver_id
-        WHERE da.status = 'ACTIVE'
-        ORDER BY da.driver_id
-        LIMIT 1
-        """)
-    return str(fila["driver_id"]), str(fila["carrier_id"]), fila["full_name"]
+    """Un conductor activo con su empresa activa y habilitada, creados por el
+    test (D1 Task 8). Antes salía de producción con un LIMIT 1, y desde la
+    guarda caía en una empresa de baja: un 409 ajeno a lo que se prueba."""
+    flota = await make_test_fleet(conn, enabled=True)
+    nombre = await conn.fetchval("SELECT full_name FROM public.drivers WHERE id = $1", flota["driver"])
+    return flota["driver"], flota["carrier"], nombre
 
 
 async def _un_estado(conn) -> str:

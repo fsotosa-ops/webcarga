@@ -19,6 +19,7 @@ from app.routers.trips import (
 )
 from app.services.cierre_viajes import SQL_GRUPOS_CIERRE
 from tests.conftest import PoolDeUnaConexion, _usuario_real, cliente_de_prueba, credenciales_integracion
+from tests.d1_subjects import apply_fleet_facts, make_test_fleet
 
 pytestmark = pytest.mark.integracion
 
@@ -52,9 +53,19 @@ async def insert_tms_trip(conn, status: str, fleet: dict) -> str:
     return trip_id
 
 
+@pytest.fixture(autouse=True)
+async def _hechos_de_la_flota(conexion_revertida):
+    """D1: la guarda de asignación (Task 8) y la lectura del viaje (Task 7) leen
+    app.carrier_of, app.active_fleet y fleet_compliance; hasta la Task 10 la
+    migración no está aplicada."""
+    await apply_fleet_facts(conexion_revertida)
+
+
 async def any_driver_id(conn) -> str:
-    return str(await conn.fetchval(
-        "SELECT id FROM public.drivers WHERE operational_status = 'ACTIVE' ORDER BY id LIMIT 1"))
+    """Un conductor activo de una empresa activa y habilitada, creado por el
+    test (D1 Task 8). Antes era el primer conductor activo de producción, y su
+    empresa podía estar de baja: la guarda de asignación respondía 409."""
+    return (await make_test_fleet(conn, enabled=True))["driver"]
 
 
 async def link_driver(conn, trip_id: str) -> None:

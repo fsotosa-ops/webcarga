@@ -25,6 +25,7 @@ from ..schemas.trip import (
     STOP_FIELD_PERMISSIONS, TRIP_FIELD_PERMISSIONS,
 )
 from ..services.audit import log_change
+from ..services.assignment_guard import AssignmentSubjects, check_assignments, enforce_assignment
 from ..services.anular_viajes import (
     SQL_COLUMNAS_ANULABLE, SQL_JOIN_ANULABLE, anotar_anulable, anular_viajes, exigir_vigentes, revertir_anulacion,
 )
@@ -1843,6 +1844,18 @@ async def _activo_de_la_patente(conn, patente: str | None, asset_id: str | None)
     return None, None
 
 
+async def _assignment_subjects(conn, body: TripCreateBody) -> AssignmentSubjects | None:
+    """Lo que el alta va a vincular, para la guarda (D1 §7.1). Nada si no hay
+    empresa: sin empresa el alta no escribe vínculo manual y lo resuelve el
+    trigger (C-R7). El equipo sale de la patente, igual que en _insert_trip."""
+    if not body.carrier_id:
+        return None
+    tractor_id, _ = await _activo_de_la_patente(conn, body.tractor_plate, body.tractor_asset_id)
+    trailer_id, _ = await _activo_de_la_patente(conn, body.trailer_plate, body.trailer_asset_id)
+    return AssignmentSubjects(carrier_id=body.carrier_id, driver_id=body.driver_id,
+                              asset_ids=tuple(a for a in (tractor_id, trailer_id) if a))
+
+
 async def _escribir_link_manual(
     conn, trip_id: str, *, user: dict,
     carrier_id: str | None, driver_id: str | None,
@@ -2057,9 +2070,13 @@ async def create_trip(
     # reintento del usuario creaba otro (7 copias del mismo viaje el 23/09).
     async with pool.acquire() as conn:
         async with conn.transaction():
+            # La guarda antes de cualquier INSERT: un 409 no deja nada.
+            warnings = await enforce_assignment(conn, await _assignment_subjects(conn, body))
             trip_id = await _insert_trip(conn, body, user, valid_statuses)
     await _log_system_note(pool, trip_id, user, "Creó el viaje manualmente")
-    return await get_trip(trip_id, pool, user)
+    trip = await get_trip(trip_id, pool, user)
+    trip["warnings"] = warnings
+    return trip
 
 
 @router.post("/bulk")
@@ -2088,6 +2105,11 @@ async def bulk_create_trips(
                 preparadas.append((i + 1, await _preparar_cliente(conn, trip)))
             except HTTPException as e:
                 errors.append({"row": i + 1, "error": str(e.detail)})
+        # La guarda, para todo el lote y antes de abrir la transacción. Dos
+        # consultas en total, no dos por fila (Review Focus 4 de D1).
+        con_vinculo = [(fila, s) for fila, trip in preparadas
+                       if (s := await _assignment_subjects(conn, trip)) is not None]
+        checks = await check_assignments(conn, [s for _, s in con_vinculo])
     for fila, trip in preparadas:
         tid = _manual_trip_id(trip)
         if tid in seen_ids:
@@ -2099,6 +2121,18 @@ async def bulk_create_trips(
             seen_ids[tid] = fila
     if errors:
         raise HTTPException(422, {"message": "Filas con errores — no se importó nada", "errors": errors})
+    bloqueadas = [{"row": fila, "code": c.blocking["code"], "error": c.blocking["message"]}
+                  for (fila, _), c in zip(con_vinculo, checks) if c.blocking]
+    if bloqueadas:
+        n = len(bloqueadas)
+        # `errors` con la forma que TripBulkUpload ya lee (C-R10).
+        raise HTTPException(409, {
+            "code": bloqueadas[0]["code"],
+            "message": f"No se importó nada: {n} fila{'s' if n != 1 else ''} asigna{'n' if n != 1 else ''} "
+                       "flota que no puede operar",
+            "errors": bloqueadas,
+        })
+    warnings = [{"row": fila, **w} for (fila, _), c in zip(con_vinculo, checks) for w in c.warnings]
 
     ids: list[str] = []
     try:
@@ -2119,7 +2153,7 @@ async def bulk_create_trips(
 
     for trip_id in ids:
         await _log_system_note(pool, trip_id, user, "Creó el viaje vía carga masiva (CSV)")
-    return {"created": len(ids), "ids": ids, "errors": []}
+    return {"created": len(ids), "ids": ids, "errors": [], "warnings": warnings}
 
 
 async def _log_tms_divergence_once(pool, trip_id: str, user: dict, d: dict) -> None:
@@ -2180,6 +2214,8 @@ async def assign_driver_bulk(
 
     async with pool.acquire() as conn:
         async with conn.transaction():
+            # La empresa del conductor, no la que el vínculo ya traía (C-R6).
+            warnings = await enforce_assignment(conn, AssignmentSubjects(driver_id=body.driver_id))
             filas = await conn.fetch(
                 """
                 INSERT INTO app.trip_fleet_links AS fl
@@ -2227,7 +2263,7 @@ async def assign_driver_bulk(
     except Exception:
         pass
 
-    return {"asignados": len(filas)}
+    return {"asignados": len(filas), "warnings": warnings}
 
 
 @router.get("/driver-candidates")
@@ -2724,6 +2760,22 @@ async def bulk_reopen_trips(
     return {"ok": True, "reopened": len(ids)}
 
 
+async def _patch_plate_subjects(conn, data: dict) -> AssignmentSubjects | None:
+    """Los equipos de las patentes que trae el PATCH, para la guarda. Misma
+    búsqueda que _activo_de_la_patente (patente canónica); una patente vacía
+    limpia el campo y una fuera del directorio no apunta a ningún equipo: ninguna
+    de las dos tiene qué evaluar. `conn.fetch` y no `fetchval`, como la guarda."""
+    plates = [p.strip() for p in (data.get("tractor_plate"), data.get("trailer_plate")) if p and p.strip()]
+    if not plates:
+        return None
+    filas = await conn.fetch(
+        "SELECT id::text FROM public.assets "
+        "WHERE license_plate IN (SELECT public.canonical_plate(p) FROM unnest($1::text[]) AS p)",
+        plates,
+    )
+    return AssignmentSubjects(asset_ids=tuple(f["id"] for f in filas), check_carrier=False)
+
+
 @router.patch("/{trip_id}")
 async def patch_trip(
     trip_id: str,
@@ -2795,6 +2847,12 @@ async def patch_trip(
     async with pool.acquire() as conn:
         async with conn.transaction():
             await _lock_trip_for_update(conn, trip_id)
+
+            # Una patente nueva apunta a un equipo: si está dado de baja, no se
+            # vincula (D1 §7.1, Ruling F4). Antes de cualquier escritura del
+            # vínculo. El conductor de este PATCH es texto libre (driver_name_raw),
+            # sin id que evaluar, y la empresa del vínculo no cambia: solo el equipo.
+            warnings = await enforce_assignment(conn, await _patch_plate_subjects(conn, data))
 
             # driver_name goes to trip_fleet_links.driver_name_raw (not app.trips)
             if "driver_name" in data:
@@ -2914,7 +2972,9 @@ async def patch_trip(
             f"Estableció estado operativo manual: {data['manual_status']}",
         )
 
-    return await get_trip(trip_id, pool, user)
+    trip = await get_trip(trip_id, pool, user)
+    trip["warnings"] = warnings
+    return trip
 
 
 @router.patch("/{trip_id}/stops/{stop_id}")
@@ -3005,6 +3065,9 @@ async def assign_fleet_link(
                 conn, body.get("tractor_plate"), body.get("tractor_asset_id"))
             trailer_asset_id, trailer_plate = await _activo_de_la_patente(
                 conn, body.get("trailer_plate"), body.get("trailer_asset_id"))
+            warnings = await enforce_assignment(conn, AssignmentSubjects(
+                carrier_id=carrier_id, driver_id=driver_id,
+                asset_ids=tuple(a for a in (tractor_asset_id, trailer_asset_id) if a)))
             await _escribir_link_manual(
                 conn, trip_id, user=user,
                 carrier_id=carrier_id, driver_id=driver_id,
@@ -3030,7 +3093,9 @@ async def assign_fleet_link(
         )
         vinculado.append(f"empresa transportista: {carrier_name or carrier_id}")
     await _log_system_note(pool, trip_id, user, "Vinculó " + " · ".join(vinculado))
-    return await get_trip(trip_id, pool, user)
+    trip = await get_trip(trip_id, pool, user)
+    trip["warnings"] = warnings
+    return trip
 
 
 @router.delete("/{trip_id}/fleet-link")

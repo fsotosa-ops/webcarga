@@ -20,7 +20,8 @@ from fastapi import HTTPException
 from app.routers.trips import assign_driver_bulk, assign_fleet_link, driver_candidates
 from app.schemas.trip import AsignarConductorBody
 from tests.conftest import PoolDeUnaConexion, _usuario_real
-from tests.d1_subjects import apply_fleet_facts
+from tests import d1_subjects
+from tests.d1_subjects import apply_fleet_facts, make_test_fleet
 
 pytestmark = pytest.mark.integracion
 
@@ -28,7 +29,8 @@ pytestmark = pytest.mark.integracion
 @pytest.fixture(autouse=True)
 async def _hechos_de_la_flota(conexion_revertida):
     """D1 Task 7: el Monitor y /drivers leen app.carrier_of / app.active_fleet;
-    hasta la Task 10 la migración no está aplicada."""
+    hasta la Task 10 la migración no está aplicada. Desde la Task 8 la guarda
+    de asignación también los lee (app.carrier_of y fleet_compliance)."""
     await apply_fleet_facts(conexion_revertida)
 
 
@@ -39,40 +41,33 @@ async def _un_viaje(conn) -> str:
     return str(trip_id)
 
 
+# Los sujetos los crea el test (D1 Task 8). Antes salian de produccion con un
+# `LIMIT 1`, y desde la guarda de asignacion caian en empresas o conductores de
+# baja (215 de 251 empresas no estan activas): un 409 que no tenia que ver con
+# lo que el test prueba. "Un test que elige datos de produccion cambia de color."
+
+
 async def _un_conductor(conn) -> str:
-    return str(await conn.fetchval(
-        "SELECT id FROM public.drivers WHERE tax_id IS NOT NULL LIMIT 1"))
+    """Un conductor activo de una empresa activa y habilitada."""
+    return (await make_test_fleet(conn, enabled=True))["driver"]
+
+
+async def _una_empresa(conn) -> str:
+    """Una empresa activa y habilitada."""
+    return (await make_test_fleet(conn, enabled=True))["carrier"]
 
 
 async def _conductor_sin_empresa(conn) -> str:
-    """Un conductor que el padron NO vincula a ninguna empresa.
-
-    `_un_conductor` sirve para "hace falta un conductor cualquiera", pero no
-    para afirmar nada sobre su empresa: hoy 87 de los 96 conductores con RUT
-    tienen asignacion activa, y cual devuelve `LIMIT 1` sin ORDER BY depende
-    del orden fisico de la tabla. Un test que elige su sujeto de los datos de
-    produccion cambia de color solo."""
-    return str(await conn.fetchval(
-        """
-        SELECT d.id FROM public.drivers d
-        WHERE d.tax_id IS NOT NULL
-          AND NOT EXISTS (SELECT 1 FROM public.driver_assignments da
-                          WHERE da.driver_id = d.id AND da.status = 'ACTIVE')
-        LIMIT 1
-        """))
+    """Un conductor activo que el padron NO vincula a ninguna empresa: sin
+    asignacion, creado por el test."""
+    return await d1_subjects.driver(conn, None)
 
 
-async def _conductor_con_empresa(conn):
-    """Un conductor con asignacion activa, y la empresa que el padron le da."""
-    fila = await conn.fetchrow(
-        """
-        SELECT da.driver_id, da.carrier_id
-        FROM public.driver_assignments da
-        JOIN public.drivers d ON d.id = da.driver_id AND d.tax_id IS NOT NULL
-        WHERE da.status = 'ACTIVE'
-        LIMIT 1
-        """)
-    return str(fila["driver_id"]), str(fila["carrier_id"])
+async def _conductor_con_empresa(conn) -> tuple[str, str]:
+    """Un conductor con asignacion ACTIVE, y la empresa que el padron le da
+    (activa y habilitada)."""
+    flota = await make_test_fleet(conn, enabled=True)
+    return flota["driver"], flota["carrier"]
 
 
 # ── Task 1: la empresa deja de ser obligatoria ────────────────────────────
@@ -138,7 +133,7 @@ async def test_sigue_pudiendo_vincular_solo_la_empresa(conexion_revertida):
     """El camino viejo no se rompe: la empresa sola sigue siendo valida."""
     conn = conexion_revertida
     trip_id = await _un_viaje(conn)
-    carrier_id = str(await conn.fetchval("SELECT id FROM public.carriers LIMIT 1"))
+    carrier_id = await _una_empresa(conn)
 
     await assign_fleet_link(
         trip_id, {"carrier_id": carrier_id}, PoolDeUnaConexion(conn), await _usuario_real(conn),
@@ -388,12 +383,7 @@ async def test_tambien_encuentra_cuando_al_tms_le_SOBRA_un_nombre(conexion_rever
 # un conductor que si la tiene.
 
 
-async def _conductor_con_empresa(conn) -> tuple[str, str]:
-    """Un conductor del padron con asignacion ACTIVE, y su empresa."""
-    fila = await conn.fetchrow(
-        "SELECT da.driver_id, da.carrier_id FROM public.driver_assignments da "
-        "WHERE da.status = 'ACTIVE' LIMIT 1")
-    return str(fila["driver_id"]), str(fila["carrier_id"])
+# `_conductor_con_empresa` esta definido arriba (Task 1): una sola definicion.
 
 
 async def test_el_vinculo_manual_sin_empresa_la_hereda_del_conductor(conexion_revertida):
@@ -426,8 +416,7 @@ async def test_una_empresa_elegida_a_mano_NO_se_pisa(conexion_revertida):
     conn = conexion_revertida
     trip_id = await _un_viaje(conn)
     driver_id, carrier_del_padron = await _conductor_con_empresa(conn)
-    otra = str(await conn.fetchval(
-        "SELECT id FROM public.carriers WHERE id <> $1::uuid LIMIT 1", carrier_del_padron))
+    otra = await _una_empresa(conn)
     # Sin esto el test podria pasar por vacio: si la empresa elegida fuera la
     # MISMA del padron, no habria contradiccion que proteger y la asercion de
     # abajo se cumpliria sola, con guarda o sin ella.
@@ -469,7 +458,7 @@ async def test_la_patente_corregida_manda_sobre_el_tracto_habitual(conexion_reve
     trip_id = await _un_viaje(conn)
     habitual_id, _ = await _tracto(conn)
     corregido_id, patente_corregida = await _tracto(conn)
-    carrier_id = str(await conn.fetchval("SELECT id FROM public.carriers LIMIT 1"))
+    carrier_id = await _una_empresa(conn)
 
     await assign_fleet_link(
         trip_id,
@@ -489,7 +478,7 @@ async def test_una_patente_fuera_del_directorio_no_hereda_el_tracto_habitual(con
     conn = conexion_revertida
     trip_id = await _un_viaje(conn)
     habitual_id, _ = await _tracto(conn)
-    carrier_id = str(await conn.fetchval("SELECT id FROM public.carriers LIMIT 1"))
+    carrier_id = await _una_empresa(conn)
 
     await assign_fleet_link(
         trip_id,

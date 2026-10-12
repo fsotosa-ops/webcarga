@@ -121,3 +121,31 @@ async def record(conn, requirement_id: str, entity_type: str, entity_id: str, *,
 async def without_seeding(conn, *entity_ids: str) -> None:
     await conn.execute(
         "DELETE FROM public.compliance_records WHERE entity_id = ANY($1::uuid[])", list(entity_ids))
+
+
+async def make_test_fleet(conn, *, carrier_status: str = "ACTIVE", driver_status: str = "ACTIVE",
+                          asset_status: str = "ACTIVE", enabled: bool | None = None) -> dict:
+    """Una empresa, un conductor y un tracto creados por el test (prefijo
+    ZZ-TEST-D1), con asignaciones ACTIVE, dentro de la transacción revertida
+    (Task 8). Arma sobre carrier/driver/asset de este archivo.
+
+    `enabled` fija la habilitación sin depender del catálogo real:
+      None  deja lo que sembraron los triggers;
+      True  borra esa siembra: empresa activa sin pendientes, Habilitada
+            (Review Focus 1 de D1);
+      False además le deja un obligatorio que falta, con un requisito propio
+            del test (is_active = false: la siembra no lo ve, la base de
+            Pendientes sí, porque no filtra is_active)."""
+    c = await carrier(conn, status=carrier_status)
+    # El mismo sufijo en la empresa y el conductor: los tests buscan
+    # "Empresa <s>" y "Conductor <s>" en los mensajes de la guarda.
+    s = await conn.fetchval("SELECT split_part(business_name, ' ', 3) FROM public.carriers WHERE id = $1", c)
+    d = await driver(conn, c, status=driver_status, name=f"{PREFIX} Conductor {s}")
+    a = await asset(conn, c, status=asset_status)
+    plate = await conn.fetchval("SELECT license_plate FROM public.assets WHERE id = $1", a)
+    if enabled is not None:
+        await without_seeding(conn, c, d, a)
+    if enabled is False:
+        req = await requirement(conn, entity="CARRIER")
+        await record(conn, req, "CARRIER", c, status="MISSING")
+    return {"carrier": c, "driver": d, "asset": a, "plate": plate, "suffix": s}

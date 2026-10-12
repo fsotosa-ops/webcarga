@@ -8,6 +8,7 @@ from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require, require_fields
 from ..db import get_pool
 from ..schemas.asset import ASSET_FIELD_PERMISSIONS, AssetCreateBody, AssetPatchBody
+from ..services.assignment_guard import AssignmentSubjects, enforce_assignment
 from ..services.audit import log_change, record_manual_edit
 from ..services.entity_summary import asset_summary
 from ..services.fleet_compliance import compliance_record_columns_sql
@@ -166,20 +167,6 @@ async def get_asset_driver_assignment(
     return dict(row) if row else None
 
 
-async def _require_active_driver(conn, driver_id: str) -> None:
-    """spec §7.1: "Conductor habitual" deja de admitir dados de baja. La Task 8
-    reemplaza este helper por la guarda compartida (assignment_guard)."""
-    estado = await conn.fetchval("SELECT operational_status FROM public.drivers WHERE id = $1", driver_id)
-    if estado is None:
-        raise HTTPException(404, "Conductor no encontrado")
-    if estado != "ACTIVE":
-        raise HTTPException(409, {
-            "code": "DRIVER_INACTIVE",
-            "message": "Ese conductor está dado de baja: no puede ser el conductor habitual "
-                       "de un equipo. Reactívalo en el Directorio antes de asignarlo.",
-        })
-
-
 @router.post("/{asset_id}/driver-assignment", status_code=201)
 async def assign_driver_to_asset(
     asset_id: str, body: dict, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
@@ -197,7 +184,13 @@ async def assign_driver_to_asset(
         async with conn.transaction():
             if not await conn.fetchval("SELECT 1 FROM public.assets WHERE id = $1", asset_id):
                 raise HTTPException(404, "Activo no encontrado")
-            await _require_active_driver(conn, driver_id)
+            if not await conn.fetchval("SELECT 1 FROM public.drivers WHERE id = $1", driver_id):
+                raise HTTPException(404, "Conductor no encontrado")
+            # Un conductor o un equipo de baja no se asigna (D1 §7.1, C-R16).
+            # No es un viaje: la empresa no se evalúa. La guarda compartida
+            # reemplaza el chequeo propio de la Task 7 (Ruling F14).
+            warnings = await enforce_assignment(conn, AssignmentSubjects(
+                driver_id=driver_id, asset_ids=(asset_id,), check_carrier=False))
 
             # Desactivar la asignación ACTIVE previa de este vehículo (a
             # cualquier conductor) antes de insertar la nueva — el índice
@@ -232,7 +225,8 @@ async def assign_driver_to_asset(
                 conn, actor=user["sub"], entity_type="ASSET", entity_id=asset_id,
                 action="assign_driver", field="driver_id", new_value=driver_id, source="api",
             )
-    return {"ok": True}
+    # La misma forma que las otras rutas de asignación (Ruling F21).
+    return {"ok": True, "warnings": warnings}
 
 
 @router.delete("/{asset_id}/driver-assignment")
