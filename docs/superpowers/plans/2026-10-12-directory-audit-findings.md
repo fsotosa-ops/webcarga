@@ -380,3 +380,5 @@ Están agrupadas y sin repetir. Las que vienen de la auditoría de Sin clasifica
   escritor `pre_cierre.py:327`, que agrega y nunca quita). Mismo patrón que el origen habitual (HU-28).
 - **Hoja de ruta (12/10):** "editar clientes" (F-30) pasa de D3 a **D2**: un solo servicio de relaciones con vigencia
   (conductor–empresa, equipo–empresa, empresa–cliente): agregar, quitar con fecha, reincorporar, historia.
+- **P14 resuelta (12/10): solo aviso, nunca bloqueo.** Las empresas están operativas y sus sistemas legacy les dan el visto
+  bueno; asignar flota de una empresa "No habilitada" se permite con el aviso `CARRIER_NOT_ENABLED` (ya implementado en D1).

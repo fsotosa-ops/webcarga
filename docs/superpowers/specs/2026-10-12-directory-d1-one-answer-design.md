@@ -181,7 +181,7 @@ la base real. Es la misma meta que el resumen de Pendientes (~210 ms).
 ### 7.1 Guarda de asignación en la API
 - Una sola validación compartida por `POST /trips`, `/trips/{id}/fleet-link`, `/trips/assign-driver` y `/trips/bulk`.
 - **Rechaza con 409 y un mensaje claro:** empresa no activa, conductor dado de baja, tracto dado de baja.
-- **Empresa No habilitada:** se asigna con aviso en la respuesta y en el Monitor (P14 abierta; bloquear después es una línea).
+- **Empresa No habilitada:** se asigna con aviso en la respuesta y en el Monitor (P14 resuelta 12/10: solo aviso, nunca bloqueo).
 - **"Conductor habitual"** y `/driver-candidates` dejan de ofrecer dados de baja.
 
 ### 7.2 Identidad de RUT y patente
@@ -247,6 +247,6 @@ Todo a `dev`. Nada a `main`. Mage no se toca.
 | Tipo de operación de un conductor de empresa mixta según el tracto del día (borde c de P8) y desglose por tipo en la firma | D2 |
 | Corregir RUT y patente, normalizar `carriers.tax_id` guardado (F-29) | D3 |
 | Una ficha por empresa; mover `GestionDeclarada` al Directorio con permiso para Certificación | D4 |
-| P14: bloquear o avisar al asignar flota No habilitada | Pregunta abierta (Pablo) |
+| P14: bloquear o avisar al asignar flota No habilitada | **Resuelta 12/10: solo aviso** (están operativas y sus sistemas legacy les dan el visto bueno); es lo implementado |
 | Sin clasificar opción B (cola de excepciones) | Certificación 2a, en paralelo |
 | Tracto GPRZ30 sin tipo ni empresa (28 viajes fuera del Cierre) | Carga de datos de Operaciones |
