@@ -246,6 +246,8 @@ export function FlotaDelDiaSection({
      *  y bloqueando el cierre sin que se vea por qué. */
     tractoPropio?: { assetId: string; reasonId: string | null } | null
     soloConductor?: boolean   // conductor que no es habitual de ningún tracto
+    /** Ya no está en el roster, pero su línea del día cuenta para la firma (0.4). */
+    outOfRoster?: boolean
     primary: string           // Conductor (ambos tipos; en Equipo Completo puede ser "mejor esfuerzo")
     secondary: string | null  // Tracto/Equipo habitual (ambos tipos)
     assetId?: string | null   // el tracto de `secondary`, si está en el directorio (vista rápida)
@@ -341,7 +343,14 @@ export function FlotaDelDiaSection({
 
   // Vista fusionada: una fila por patente, con la línea del conductor habitual
   // encima cuando los dos cuentan lo mismo ese día.
-  const conductorPorId = new Map(drivers.drivers.map(d => [d.driver_id, d]))
+  // 0.4: quien salió del roster sigue teniendo su línea del día, y esa línea
+  // bloquea la firma. Va en su propio grupo, arriba, y nunca se funde con la
+  // fila de un tracto: ya no es el habitual de nadie en la empresa de hoy.
+  const enRoster = drivers.drivers.filter(d => d.in_roster !== false)
+  const filasFueraDelRoster: Row[] = drivers.drivers
+    .filter(d => d.in_roster === false)
+    .map(d => filaDeConductor(d, { outOfRoster: true }))
+  const conductorPorId = new Map(enRoster.map(d => [d.driver_id, d]))
   const conductoresCubiertos = new Set<string>()
   const filasDeTractoreo: Row[] = tractoreo.equipment.map(e => {
     const d = e.driver_id ? conductorPorId.get(e.driver_id) : undefined
@@ -378,12 +387,12 @@ export function FlotaDelDiaSection({
   // del directorio, y ayuda a entender por qué el conductor va aparte.
   const patenteHabitual = new Map(
     tractoreo.equipment.filter(e => e.driver_id).map(e => [e.driver_id!, e.tractor_plate]))
-  const filasDeConductoresSinTracto: Row[] = drivers.drivers
+  const filasDeConductoresSinTracto: Row[] = enRoster
     .filter(d => !conductoresCubiertos.has(d.driver_id))
     .map(d => filaDeConductor(d, { soloConductor: true, secondary: patenteHabitual.get(d.driver_id) ?? null }))
 
   const rows: Row[] = esTractoreo
-    ? [...filasDeTractoreo, ...filasDeConductoresSinTracto]
+    ? [...filasFueraDelRoster, ...filasDeTractoreo, ...filasDeConductoresSinTracto]
     : equiposCompletos.equipment.map(filaDeTracto)
 
   const noAsignado = (r: Row) => r.categoria === 'SIN_RESOLVER' || r.categoria === 'TRABAJANDO_SIN_ASIGNACION'
@@ -475,7 +484,7 @@ export function FlotaDelDiaSection({
   // faltante: la pantalla lo nombra y dice dónde se arregla, en vez de dejar
   // una columna llena de "Sin origen" sin explicación.
   const sinOrigen = rows.filter(r => !r.cd).length
-  const filasTractoreoTotales = [...filasDeTractoreo, ...filasDeConductoresSinTracto]
+  const filasTractoreoTotales = [...filasFueraDelRoster, ...filasDeTractoreo, ...filasDeConductoresSinTracto]
   // Lo que bloquea la firma, contado sobre las dos familias de líneas: una
   // fila fusionada cuenta una vez, y un tracto con motivo propio pendiente
   // también bloquea aunque su conductor ya tenga motivo.
@@ -636,6 +645,14 @@ export function FlotaDelDiaSection({
               {/* El grupo de los conductores sin tracto se anuncia una vez, en la
                   primera de sus filas, mientras la tabla esté en su orden
                   natural (con un orden por columna se mezclan a propósito). */}
+              {esTractoreo && !orden && r.outOfRoster && !paged[i - 1]?.outOfRoster && (
+                <tr>
+                  <td colSpan={11} className="px-3 py-2 bg-bg-main text-etiqueta text-informativo">
+                    <span className="font-bold uppercase tracking-wide">Ya no están en el roster</span>
+                    <span className="ml-2">Su línea del día sigue contando para la firma.</span>
+                  </td>
+                </tr>
+              )}
               {esTractoreo && !orden && r.soloConductor && !paged[i - 1]?.soloConductor && (
                 <tr>
                   <td colSpan={11} className="px-3 py-2 bg-bg-main text-etiqueta font-bold uppercase tracking-wide text-informativo">

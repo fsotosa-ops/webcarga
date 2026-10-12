@@ -70,9 +70,10 @@ SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name
        -- también para quien no trabajó. `today_trip_origin` de acá arriba es
        -- otra cosa —de dónde salió la carga de hoy— y van por separado.
        dds.home_location_id::text AS home_cd_id,
-       hcd.name                   AS home_cd_name
+       hcd.name                   AS home_cd_name,
+       (ar.driver_id IS NOT NULL) AS in_roster
 FROM {LINEAS_CONDUCTORES} dds
-JOIN active_roster ar ON ar.driver_id = dds.driver_id
+LEFT JOIN active_roster ar ON ar.driver_id = dds.driver_id
 JOIN public.drivers d ON d.id = dds.driver_id
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = da.carrier_id
@@ -147,7 +148,13 @@ LEFT JOIN LATERAL (
     ORDER BY t3.status_reported_at DESC NULLS LAST
     LIMIT 1
 ) today_trip ON true
+-- Bloque 0 (0.4): la firma cuenta TODAS las líneas del día; quien salió del roster
+-- después de calcularse su línea sigue bloqueando y se muestra, marcado. Solo desde el
+-- primer día firmado (Cierre en vivo): antes no había firma que contar. Con
+-- closure_signatures vacía el min es NULL, la comparación da NULL y no se agrega nada.
 WHERE dds.business_date = $1
+  AND (ar.driver_id IS NOT NULL
+       OR dds.business_date >= (SELECT min(business_date) FROM app.closure_signatures))
 ORDER BY d.full_name
 """
 
@@ -165,9 +172,10 @@ SELECT dds.driver_id, dds.business_date, d.full_name, d.tax_id, c.business_name 
        COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names,
        -- Origen habitual (HU-28): el pivot de Reportería puede cortar por CD sin
        -- recalcular nada, porque la línea ya lo trae congelado.
-       hcd.name AS home_cd_name
+       hcd.name AS home_cd_name,
+       (ar.driver_id IS NOT NULL) AS in_roster
 FROM {LINEAS_CONDUCTORES} dds
-JOIN active_roster ar ON ar.driver_id = dds.driver_id
+LEFT JOIN active_roster ar ON ar.driver_id = dds.driver_id
 JOIN public.drivers d ON d.id = dds.driver_id
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = da.carrier_id
@@ -180,7 +188,13 @@ LEFT JOIN LATERAL (
     {join_cliente('t', 'sh')}
     WHERE fl.driver_id = dds.driver_id AND t.planning_date = dds.business_date AND t.client_name IS NOT NULL
 ) clients ON true
+-- Bloque 0 (0.4): la firma cuenta TODAS las líneas del día; quien salió del roster
+-- después de calcularse su línea sigue bloqueando y se muestra, marcado. Solo desde el
+-- primer día firmado (Cierre en vivo): antes no había firma que contar. Con
+-- closure_signatures vacía el min es NULL, la comparación da NULL y no se agrega nada.
 WHERE dds.business_date BETWEEN $1 AND $2
+  AND (ar.driver_id IS NOT NULL
+       OR dds.business_date >= (SELECT min(business_date) FROM app.closure_signatures))
 ORDER BY dds.business_date, d.full_name
 """
 

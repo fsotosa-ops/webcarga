@@ -603,6 +603,36 @@ describe('FlotaDelDiaSection', () => {
     expect(within(filaConductor).getByText('No asignado')).toBeInTheDocument()
   })
 
+  it('quien salió del roster aparece arriba, en su grupo, y cuenta para la firma (0.4)', async () => {
+    await soloConductores()
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...DRIVERS_STATUS,
+      drivers: [
+        driverRow({ driver_id: 'd1', full_name: 'Ana Soto', status: 'ASSIGNED', today_trip_id: 't1', in_roster: true }),
+        driverRow({ driver_id: 'd9', full_name: 'Pedro Fuera', status: 'UNASSIGNED', in_roster: false }),
+      ],
+    })
+    renderSection()
+
+    const titulo = await screen.findByText('Ya no están en el roster')
+    const filas = screen.getAllByRole('row')
+    const iGrupo = filas.findIndex(f => f.contains(titulo))
+    // El grupo va primero (antes de cualquier otra fila de datos) porque bloquea.
+    expect(iGrupo).toBe(1)
+    expect(within(filas[iGrupo + 1]).getByText('Pedro Fuera')).toBeInTheDocument()
+    // Se resuelve igual que siempre: con su motivo.
+    expect(screen.getByRole('combobox', { name: 'Motivo de Pedro Fuera' })).toBeInTheDocument()
+    // Y la tarjeta cuenta lo mismo que la firma.
+    expect(screen.getByText('1 sin motivo — bloquean el cierre')).toBeInTheDocument()
+  })
+
+  it('sin la marca (backend anterior) no aparece el grupo', async () => {
+    renderSection()
+    await screen.findByText('Ana Soto')
+    expect(screen.queryByText('Ya no están en el roster')).not.toBeInTheDocument()
+  })
+
   it('la tarjeta de Tractoreo cuenta lo que bloquea el cierre en tractos y conductores', async () => {
     // DTBY52 (tracto sin motivo) y Ana Soto (conductor sin tracto, sin motivo).
     renderSection()

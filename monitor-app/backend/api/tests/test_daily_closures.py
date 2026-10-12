@@ -113,14 +113,16 @@ def test_detail_sql_uses_shared_tractoreo_roster_cte():
     from app.routers.daily_closures import _DETAIL_SQL, TRACTOREO_ROSTER_CTE
     assert TRACTOREO_ROSTER_CTE in _DETAIL_SQL
     assert "wot.code = 'TRACTOREO'" in _DETAIL_SQL
-    assert "JOIN active_roster ar ON ar.driver_id = dds.driver_id" in _DETAIL_SQL
+    assert "LEFT JOIN active_roster ar ON ar.driver_id = dds.driver_id" in _DETAIL_SQL
+    assert "min(business_date) FROM app.closure_signatures" in _DETAIL_SQL
 
 
 def test_report_sql_uses_shared_tractoreo_roster_cte():
     from app.routers.daily_closures import _REPORT_SQL, TRACTOREO_ROSTER_CTE
     assert TRACTOREO_ROSTER_CTE in _REPORT_SQL
     assert "wot.code = 'TRACTOREO'" in _REPORT_SQL
-    assert "JOIN active_roster ar ON ar.driver_id = dds.driver_id" in _REPORT_SQL
+    assert "LEFT JOIN active_roster ar ON ar.driver_id = dds.driver_id" in _REPORT_SQL
+    assert "min(business_date) FROM app.closure_signatures" in _REPORT_SQL
 
 
 def test_detail_sql_keeps_driver_assignments_and_carriers_as_left_join():

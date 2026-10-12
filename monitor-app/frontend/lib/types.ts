@@ -1362,6 +1362,10 @@ export type DriverDayStatusRow = {
    *  está la patente nomás, no está el número de viaje, nada"*. */
   today_trip_code:             string | null
   today_trip_origin:           string | null
+  /** Bloque 0 del Directorio (0.4): false si el conductor ya no está en el roster
+   *  vivo pero su línea del día sigue contando para la firma. Opcional: un
+   *  backend anterior no lo manda, y entonces se lee como true. */
+  in_roster?:                  boolean
   /** Texto libre de quien cierra el día. El motivo dice la categoría —"Panne"—
    *  y esto dice el caso. Vacío y ausente son lo mismo: los dos llegan null. */
   comentario:                  string | null
