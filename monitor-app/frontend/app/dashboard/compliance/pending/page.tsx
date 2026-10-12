@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense } from 'react'
+import { Suspense, useEffect, useRef } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { complianceApi } from '@/lib/api/compliance'
@@ -12,7 +12,7 @@ import { Estado } from '@/components/ui/Estado'
 import { PendingSummaryList } from '@/components/compliance/pending/PendingSummaryList'
 import { PendingHoldersPanel } from '@/components/compliance/pending/PendingHoldersPanel'
 import { PendingLoadError, PendingSkeleton } from '@/components/compliance/pending/PendingStates'
-import type { PendingFilter, PendingGroupBy } from '@/lib/types'
+import type { PendingFilter, PendingGroupBy, PendingSummaryRow } from '@/lib/types'
 
 const FILTROS: readonly PendingFilter[] = ['overdue', 'expiring', 'missing', 'all']
 
@@ -37,10 +37,27 @@ function Pending() {
     queryFn: () => complianceApi.pendingSummary(groupBy),
   })
   const rows = resumen.data?.rows ?? []
-  const desdeUrl = groupBy === 'requirement'
-    ? rows.find(r => r.requirement_code != null && r.requirement_code === params.get('doc'))
-    : rows.find(r => r.key === params.get('carrier'))
-  const elegido = desdeUrl ?? rows[0] ?? null
+  const pedidoEnUrl = params.get(groupBy === 'requirement' ? 'doc' : 'carrier')
+  const esElPedido = (r: PendingSummaryRow) => pedidoEnUrl != null &&
+    (groupBy === 'requirement' ? r.requirement_code === pedidoEnUrl : r.key === pedidoEnUrl)
+  const desdeUrl = rows.find(esElPedido)
+
+  /** Lo último elegido desde la URL. Al subir el último documento que se debía
+   *  de ese documento o empresa, su fila sale del resumen que vuelve del
+   *  servidor; sin esto `elegido` saltaba a `rows[0]`, el panel se remontaba
+   *  (otra `key`) y se perdían el aviso de lo guardado y el resultado del lote,
+   *  mientras la URL seguía nombrando lo anterior. Se mantiene el mismo panel,
+   *  con sus cifras en cero, hasta que se elija otra cosa. */
+  const ultimo = useRef<{ groupBy: PendingGroupBy; row: PendingSummaryRow } | null>(null)
+  useEffect(() => {
+    if (desdeUrl) ultimo.current = { groupBy, row: desdeUrl }
+  }, [desdeUrl, groupBy])
+  const sostenido = !desdeUrl && resumen.isSuccess && ultimo.current?.groupBy === groupBy
+    && esElPedido(ultimo.current.row)
+    ? { ...ultimo.current.row, overdue: 0, expiring: 0, missing: 0 }
+    : undefined
+  const seleccion = desdeUrl ?? sostenido
+  const elegido = seleccion ?? rows[0] ?? null
 
   /** Elegir (doc, carrier, by) entra al historial: "Volver" del navegador
    *  —o el gesto del teléfono— vuelve a lo anterior. El filtro (`state`) lo
@@ -75,16 +92,16 @@ function Pending() {
         <div className="overflow-hidden rounded-lg border border-border bg-white"><PendingSkeleton rows={6} /></div>
       )}
       {resumen.isError && <PendingLoadError onRetry={() => void resumen.refetch()} />}
-      {resumen.isSuccess && rows.length === 0 && (
+      {resumen.isSuccess && !elegido && (
         <Estado tipo="vacio" titulo="Todo al día" detalle="Ninguna empresa, conductor ni equipo activo debe documentos." />
       )}
       {resumen.isSuccess && elegido && (
         <div className="grid overflow-hidden rounded-lg border border-border bg-white md:min-h-[330px] md:grid-cols-[300px_1fr]">
           {/* Teléfono: una columna. La lista, o —si se eligió algo— quién lo debe. */}
-          <div className={`border-border md:border-r ${desdeUrl ? 'hidden md:block' : ''}`}>
+          <div className={`border-border md:border-r ${seleccion ? 'hidden md:block' : ''}`}>
             <PendingSummaryList rows={rows} groupBy={groupBy} selectedKey={elegido.key} onSelect={elegir} />
           </div>
-          <div className={`min-w-0 ${desdeUrl ? '' : 'hidden md:block'}`}>
+          <div className={`min-w-0 ${seleccion ? '' : 'hidden md:block'}`}>
             <PendingHoldersPanel
               key={`${groupBy}:${elegido.key}`}
               groupBy={groupBy}
