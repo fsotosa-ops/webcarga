@@ -36,3 +36,27 @@ Una a la vez, restaurada y verificada con `git diff` vacío.
 
 Antes de aplicar se agregó `ALTER TABLE … ALTER COLUMN operational_status SET NOT NULL` en carriers, drivers y
 assets (0 filas NULL el 12/10), con su test (`test_el_ciclo_de_vida_no_puede_quedar_vacio`).
+Ensayo con ROLLBACK (MCP de Supabase, archivo pegado dos veces): sin error; `af_drivers` 85, `af_assets` 130,
+conductores de empresas activas 78; `carrier_management_types` cambia 0 empresas ACTIVE y 1 no activa (A-R1, F5);
+3 CHECK validados y 3 columnas NOT NULL. Nada quedó después del ROLLBACK.
+
+Aplicada el 12/10 a las 16:41 (Chile), sin extracción en vuelo, sin transacciones largas, 2 min después de la
+última escritura de Mage en `app.trips`. Mismas cifras fuera de la transacción. El MCP la registró con la versión
+`20261012194100` (no la del nombre del archivo).
+
+## Rendimiento, EXPLAIN ANALYZE después de aplicar (Execution Time; plan aparte)
+
+| Consulta | Antes del fallback | Final |
+|---|---|---|
+| Directorio, filas (`list_carriers`) | 93-103 ms | 95-112 ms (plan 31-37) |
+| Embudo (`/compliance-records/status`, carrier) | 266-276 ms | 154 ms (plan 51) |
+| Pendientes, resumen por empresa | 210 ms | 212 ms |
+| `_PENDING_ROWS_SQL` (cola global, `state=pending`) | 354 ms | 358 ms (SQL sin cambios de D1 salvo la cláusula de RUT de la T9) |
+| `_attach_carrier_can_operate` (`carrier_compliance` filtrado por ids) | 81-105 ms | 84-88 ms (plan 23-25) |
+| Guarda de asignación, `carrier_compliance` por id | 80 ms | 82 ms |
+
+- **T6-X:** `app.carrier_of` dentro de `attributed` costaba ~125 ms extra (275 vs 150 ms, ~5.700 registros
+  vigentes; la función tiene `SET search_path` y no se inlinea). Se aplicó el fallback de la Task 6: los dos
+  LEFT JOIN con un comentario. Resultado idéntico (37 filas iguales).
+- **T7-P:** `_attach_carrier_can_operate` suma ~110 ms en el servidor (plan + ejecución) más un viaje de red.
+  Bajo el umbral de 150 ms.
