@@ -37,6 +37,7 @@ import { clientesDelFiltro } from '@/lib/monitor/clientesDelFiltro'
 import { AvisoFueraDeEnCurso } from '@/components/dashboard/AvisoFueraDeEnCurso'
 import { driversApi } from '@/lib/api/drivers'
 import { carriersApi } from '@/lib/api/carriers'
+import { invalidateDirectory } from '@/lib/queries/directorio'
 import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
@@ -755,6 +756,9 @@ export default function DiarioPage() {
                 await tripsApi.assignDriver(creado.id, ids)
                 setAsignando(null)
                 await queryClient.invalidateQueries({ queryKey: ['trips'] })
+                await invalidateDirectory(queryClient, {
+                  entity: 'driver', id: creado.id, type: 'create', carrierIds: [carrierId],
+                })
               }}
             />
           </div>

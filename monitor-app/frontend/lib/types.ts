@@ -947,6 +947,10 @@ export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   RAMPLA:       'Rampla',
 }
 
+/** Las tres entidades del Directorio. La única definición: `EntityKind` de la
+ *  vista rápida (`lib/api/entitySummary.ts`) es un alias de esta. */
+export type DirectoryEntity = 'carrier' | 'driver' | 'asset'
+
 /** El estado operativo, dicho en español. La ficha de empresa imprimía el enum
  *  crudo —un chip que decía "ACTIVE" en una interfaz en español— y eso alimentó
  *  la confusión que Pablo trajo el 04/09: *"¿qué es lo mejor? ¿lo da de baja o

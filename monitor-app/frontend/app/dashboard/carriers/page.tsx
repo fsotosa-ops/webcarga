@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Building2, ChevronLeft, ChevronRight, Search, Loader2, ShieldAlert, ShieldCheck, Plus } from 'lucide-react'
 import type { CarrierListFacets, CarrierListItem, CarrierOperationalStatus, ComplianceHealth } from '@/lib/types'
 import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
@@ -18,6 +18,7 @@ import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { updatedRelative } from '@/lib/compliance'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
+import { directoryKeys, invalidateDirectory } from '@/lib/queries/directorio'
 
 
 type TransporterTab = 'active' | 'legacy' | 'onboarding'
@@ -76,6 +77,7 @@ export default function EmpresasTransportePage() {
  *  "+ Conductor"/"+ Equipo" ahí. */
 function EmpresasTransportePageInner() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   const [q, setQ]                 = useState('')
   const [tab, setTab]             = useState<TransporterTab>('active')
@@ -94,7 +96,8 @@ function EmpresasTransportePageInner() {
    *  a la ficha recién creada, donde ya existen los flujos reales de alta
    *  de conductores/equipos/contactos/pólizas ("+ Conductor"/"+ Equipo"/
    *  "+ Póliza"), no hace falta duplicarlos acá. */
-  function handleCarrierCreated(created: CarrierCreateResult) {
+  async function handleCarrierCreated(created: CarrierCreateResult) {
+    await invalidateDirectory(queryClient, { entity: 'carrier', id: created.id, type: 'create' })
     // Ronda 43 (Hallazgo F): si venimos del flujo guiado de "Sin
     // identificar", reenviar conductor/patente ya reportados por el TMS
     // para pre-cargar "+ Conductor"/"+ Equipo" en la ficha recién creada.
@@ -116,7 +119,7 @@ function EmpresasTransportePageInner() {
   // El mismo texto busca las tres cosas. Con menos de dos letras no se pide
   // nada: el resultado seria el padron entero, que no es una respuesta.
   const busqueda = useQuery({
-    queryKey: ['directorio-buscar', qDebounced],
+    queryKey: directoryKeys.search(qDebounced),
     queryFn: () => carriersApi.buscar(qDebounced),
     enabled: qDebounced.trim().length >= 2,
     staleTime: 30_000,
@@ -134,7 +137,7 @@ function EmpresasTransportePageInner() {
   const otherTabs = TABS.filter(t => t.id !== tab)
   const otherCountQueries = useQueries({
     queries: otherTabs.map(t => ({
-      queryKey: ['carriers-count', t.status, qDebounced],
+      queryKey: directoryKeys.carrierCount(t.status, qDebounced),
       queryFn: () => carriersApi.list({ q: qDebounced, operational_status: t.status, limit: 1 }),
     })),
   })

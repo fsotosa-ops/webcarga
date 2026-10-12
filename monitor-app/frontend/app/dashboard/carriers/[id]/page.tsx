@@ -33,6 +33,7 @@ import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceCheckli
 import { expiryRelative, updatedRelative } from '@/lib/compliance'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { returnLink } from '@/lib/navegacion/directory'
+import { directoryKeys, invalidateDirectory, type DirectoryChange } from '@/lib/queries/directorio'
 
 const ROSTER_PAGE_SIZE = 9
 
@@ -193,25 +194,25 @@ function EmpresaDetailPageInner() {
   const [selectedPolicyId, setSelectedPolicyId] = useState<string | null>(null)
 
 
-  const carrierQuery = useQuery({ queryKey: ['carrier-detail', id], queryFn: () => carriersApi.get(id) })
+  const carrierQuery = useQuery({ queryKey: directoryKeys.carrierDetail(id), queryFn: () => carriersApi.get(id) })
 
   // La propuesta de gestión a partir de lo que la empresa declaró se fue con
   // el formulario a `AltaDeFlota` (2026-08-27), junto con los catálogos de
   // subtipo y gestión: viven donde se usan, y así las dos pantallas que dan de
   // alta se comportan igual sin que nadie tenga que acordarse de las dos.
 
-  const driversQuery = useQuery({ queryKey: ['carrier-drivers', id], queryFn: () => carriersApi.listDrivers(id) })
-  const assetsQuery  = useQuery({ queryKey: ['carrier-assets-roster', id], queryFn: () => carriersApi.listAssets(id) })
+  const driversQuery = useQuery({ queryKey: directoryKeys.carrierDrivers(id), queryFn: () => carriersApi.listDrivers(id) })
+  const assetsQuery  = useQuery({ queryKey: directoryKeys.carrierAssets(id), queryFn: () => carriersApi.listAssets(id) })
   const policiesQuery = useQuery({ queryKey: ['carrier-policies', id], queryFn: () => carriersApi.listPolicies(id) })
   const shippersQuery = useQuery({ queryKey: ['carrier-shippers', id], queryFn: () => carriersApi.listShippers(id) })
 
   const selectedDriverQuery = useQuery({
-    queryKey: ['driver-detail', selectedDriverId],
+    queryKey: directoryKeys.driverDetail(selectedDriverId),
     queryFn: () => driversApi.get(selectedDriverId!),
     enabled: !!selectedDriverId,
   })
   const selectedAssetQuery = useQuery({
-    queryKey: ['asset-detail', selectedAssetId],
+    queryKey: directoryKeys.assetDetail(selectedAssetId),
     queryFn: () => assetsApi.get(selectedAssetId!),
     enabled: !!selectedAssetId,
   })
@@ -221,52 +222,52 @@ function EmpresaDetailPageInner() {
   const assets  = assetsQuery.data ?? []
   const policies = policiesQuery.data ?? []
 
-  function invalidateCarrier() { queryClient.invalidateQueries({ queryKey: ['carrier-detail', id] }) }
-  function invalidateDrivers() { queryClient.invalidateQueries({ queryKey: ['carrier-drivers', id] }) }
-  function invalidateAssets()  { queryClient.invalidateQueries({ queryKey: ['carrier-assets-roster', id] }) }
   function invalidatePolicies(){ queryClient.invalidateQueries({ queryKey: ['carrier-policies', id] }) }
+  /** Todo cambio pasa por acá: una sola lista de qué queda obsoleto. */
+  async function afterChange(change: DirectoryChange) {
+    await invalidateDirectory(queryClient, change)
+  }
 
   async function handleSaveBusinessName(value: string) {
     await carriersApi.patch(id, { business_name: value })
-    invalidateCarrier()
+    await afterChange({ entity: 'carrier', id, type: 'update' })
   }
   async function handleChangeOperationalStatus(value: string) {
     await carriersApi.patch(id, { operational_status: value as OperationalStatus })
-    invalidateCarrier()
+    await afterChange({ entity: 'carrier', id, type: 'update' })
   }
   async function handleDeactivateCarrier() {
     await carriersApi.patch(id, { operational_status: 'INACTIVE' })
-    invalidateCarrier()
+    await afterChange({ entity: 'carrier', id, type: 'update' })
   }
   async function handleReactivateCarrier() {
     await carriersApi.patch(id, { operational_status: 'ACTIVE' })
-    invalidateCarrier()
+    await afterChange({ entity: 'carrier', id, type: 'update' })
   }
   async function handleDeleteCarrier() {
     await carriersApi.delete(id)
+    await afterChange({ entity: 'carrier', id, type: 'delete' })
     router.push('/dashboard/carriers')
   }
 
   async function handlePatchDriver(driverId: string, body: DriverPatchBody) {
     await driversApi.patch(driverId, body)
-    queryClient.invalidateQueries({ queryKey: ['driver-detail', driverId] })
-    invalidateDrivers()
+    await afterChange({ entity: 'driver', id: driverId, type: 'update', carrierIds: [id] })
   }
   async function handleRemoveDriver(driverId: string) {
     await carriersApi.unassignDriver(id, driverId)
     setSelectedDriverId(null)
-    invalidateDrivers()
+    await afterChange({ entity: 'driver', id: driverId, type: 'assignment', carrierIds: [id] })
   }
 
   async function handlePatchAsset(assetId: string, body: AssetPatchBody) {
     await assetsApi.patch(assetId, body)
-    queryClient.invalidateQueries({ queryKey: ['asset-detail', assetId] })
-    invalidateAssets()
+    await afterChange({ entity: 'asset', id: assetId, type: 'update', carrierIds: [id] })
   }
   async function handleRemoveAsset(assetId: string) {
     await carriersApi.unassignAsset(id, assetId)
     setSelectedAssetId(null)
-    invalidateAssets()
+    await afterChange({ entity: 'asset', id: assetId, type: 'assignment', carrierIds: [id] })
   }
 
   async function handleConfirmTransfer(toCarrierId: string) {
@@ -274,12 +275,12 @@ function EmpresaDetailPageInner() {
     if (transferTarget.kind === 'driver') {
       await carriersApi.assignDriver(toCarrierId, transferTarget.id)
       setSelectedDriverId(null)
-      invalidateDrivers()
     } else {
       await carriersApi.assignAsset(toCarrierId, transferTarget.id)
       setSelectedAssetId(null)
-      invalidateAssets()
     }
+    // Origen y destino: los dos rosters cambiaron.
+    await afterChange({ entity: transferTarget.kind, id: transferTarget.id, type: 'assignment', carrierIds: [id, toCarrierId] })
     setTransferTarget(null)
   }
 
@@ -307,15 +308,15 @@ function EmpresaDetailPageInner() {
 
   async function handleSaveContact(contactId: string, patch: { first_name?: string; last_name?: string; phone?: string; email?: string }) {
     await contactsApi.patch(contactId, patch)
-    invalidateCarrier()
+    await afterChange({ entity: 'carrier', id, type: 'contact' })
   }
   async function handleDeleteContact(contactId: string) {
     await contactsApi.delete(contactId)
-    invalidateCarrier()
+    await afterChange({ entity: 'carrier', id, type: 'contact' })
   }
   async function handleAddContact(body: { contact_role: string; first_name?: string; last_name?: string; phone?: string; email?: string }) {
     await carriersApi.createContact(id, body)
-    invalidateCarrier()
+    await afterChange({ entity: 'carrier', id, type: 'contact' })
   }
 
   // HU-08 (Fase 0): export en bloque de documentos — pedido de Fabián en la
@@ -660,7 +661,7 @@ function EmpresaDetailPageInner() {
               prefill={handoffDriverName ?? undefined}
               abierto={addDriverOpen}
               onAbiertoChange={setAddDriverOpen}
-              onCreado={invalidateDrivers}
+              onCreado={() => afterChange({ entity: 'driver', type: 'create', carrierIds: [id] })}
             />
           </div>
         )}
@@ -758,7 +759,7 @@ function EmpresaDetailPageInner() {
               prefill={handoffTractorPlate ?? undefined}
               abierto={addAssetOpen}
               onAbiertoChange={setAddAssetOpen}
-              onCreado={invalidateAssets}
+              onCreado={() => afterChange({ entity: 'asset', type: 'create', carrierIds: [id] })}
             />
           </div>
         )}

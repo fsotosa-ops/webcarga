@@ -9,6 +9,7 @@ import type { Driver } from '@/lib/types'
 import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
 import { locationsApi } from '@/lib/api/locations'
 import { contactsApi } from '@/lib/api/contacts'
+import { invalidateDirectory } from '@/lib/queries/directorio'
 import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 import { CompletionRing } from './CompletionRing'
 import { BajaReasonModal } from './BajaReasonModal'
@@ -115,19 +116,24 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canChangeFleetSt
   function invalidateContacts() {
     if (driver) queryClient.invalidateQueries({ queryKey: ['driver-contacts', driver.id] })
   }
+  async function afterContactChange() {
+    invalidateContacts()
+    // El teléfono de la vista rápida sale del contacto principal.
+    if (driver) await invalidateDirectory(queryClient, { entity: 'driver', id: driver.id, type: 'contact' })
+  }
 
   async function handleSaveContact(contactId: string, patch: { first_name?: string; last_name?: string; phone?: string; email?: string }) {
     await contactsApi.patch(contactId, patch)
-    invalidateContacts()
+    await afterContactChange()
   }
   async function handleDeleteContact(contactId: string) {
     await contactsApi.delete(contactId)
-    invalidateContacts()
+    await afterContactChange()
   }
   async function handleAddContact(body: { contact_role: string; first_name?: string; last_name?: string; phone?: string; email?: string }) {
     if (!driver) return
     await driversApi.createContact(driver.id, body)
-    invalidateContacts()
+    await afterContactChange()
   }
 
   async function handleSaveDatos() {

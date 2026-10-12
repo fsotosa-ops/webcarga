@@ -19,6 +19,7 @@ import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { Cifra } from '@/components/ui/Cifra'
 import { Estado } from '@/components/ui/Estado'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
+import { invalidateDirectory } from '@/lib/queries/directorio'
 import { useFilaAbierta } from '@/hooks/useFilaAbierta'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 
@@ -128,8 +129,9 @@ function CertificationPageInner() {
     router.replace(v === 'empresas' ? '/dashboard/compliance' : `/dashboard/compliance?vista=${v}`)
   }
 
-  function handleCarrierCreated(created: CarrierCreateResult) {
+  async function handleCarrierCreated(created: CarrierCreateResult) {
     setNewCarrierOpen(false)
+    await invalidateDirectory(qc, { entity: 'carrier', id: created.id, type: 'create' })
     // Cuarto y ultimo punto de fuga al Empresas legacy, y ronda de arreglo 1
     // de la Task 5: cuando la vista Empresas abria el cajon en la misma
     // pantalla, aterrizar en `?abierta=<id>` bastaba. Ahora que la fila
@@ -319,7 +321,10 @@ function CertificationPageInner() {
             } else {
               await carriersApi.assignAsset(carrierId, asignandoEmpresa.entity_id)
             }
-            await invalidarCertificacion(qc)
+            await invalidateDirectory(qc, {
+              entity: group === 'driver' ? 'driver' : 'asset', id: asignandoEmpresa.entity_id,
+              type: 'assignment', carrierIds: [carrierId],
+            })
             setAsignandoEmpresa(null)
           }}
         />

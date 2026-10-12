@@ -8,6 +8,7 @@ import { Check, Loader2, X, ArrowRightLeft, Truck, Trash2, User, UserX, External
 import type { Asset } from '@/lib/types'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
 import { taxonomiesApi } from '@/lib/api/config'
+import { directoryKeys, invalidateDirectory } from '@/lib/queries/directorio'
 import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 import { CompletionRing } from './CompletionRing'
 import { BajaReasonModal } from './BajaReasonModal'
@@ -83,7 +84,7 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canChangeFleetSt
   })
 
   const driverAssignmentQuery = useQuery({
-    queryKey: ['asset-driver-assignment', asset?.id],
+    queryKey: directoryKeys.assetDriverAssignment(asset?.id),
     queryFn: () => assetsApi.getDriverAssignment(asset!.id),
     enabled: !!asset,
   })
@@ -183,7 +184,7 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canChangeFleetSt
     setAssigningDriver(true); setDriverErr(null)
     try {
       await assetsApi.assignDriver(asset.id, driverPick)
-      await queryClient.invalidateQueries({ queryKey: ['asset-driver-assignment', asset.id] })
+      await invalidateDirectory(queryClient, { entity: 'asset', id: asset.id, type: 'assignment', carrierIds: [carrierId] })
       setDriverPick('')
     } catch (e) {
       setDriverErr(e instanceof Error ? e.message : 'Error al asignar')
@@ -197,7 +198,7 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canChangeFleetSt
     setAssigningDriver(true); setDriverErr(null)
     try {
       await assetsApi.unassignDriver(asset.id)
-      await queryClient.invalidateQueries({ queryKey: ['asset-driver-assignment', asset.id] })
+      await invalidateDirectory(queryClient, { entity: 'asset', id: asset.id, type: 'assignment', carrierIds: [carrierId] })
     } catch (e) {
       setDriverErr(e instanceof Error ? e.message : 'Error al quitar')
     } finally {

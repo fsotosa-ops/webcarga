@@ -2,6 +2,7 @@
 
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { carriersApi, type CarrierListParams } from '@/lib/api/carriers'
+import { directoryKeys } from '@/lib/queries/directorio'
 
 /**
  * Lista de empresas vía TanStack Query — mismo patrón que hooks/useTrips.ts.
@@ -10,7 +11,7 @@ import { carriersApi, type CarrierListParams } from '@/lib/api/carriers'
  */
 export function useTransporters(params: CarrierListParams) {
   return useQuery({
-    queryKey: ['carriers', params],
+    queryKey: directoryKeys.carrierList(params),
     queryFn: () => carriersApi.list(params),
     placeholderData: keepPreviousData,
   })

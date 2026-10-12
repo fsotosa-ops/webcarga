@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { carriersApi } from '@/lib/api/carriers'
+import { directoryKeys } from '@/lib/queries/directorio'
 import { Cifra } from '@/components/ui/Cifra'
 import { TEXTO_APOYO } from '@/lib/ui/texto'
 
@@ -23,7 +24,7 @@ import { TEXTO_APOYO } from '@/lib/ui/texto'
  */
 export function DirectorioResumen() {
   const { data, isPending, error } = useQuery({
-    queryKey: ['carriers-directorio'],
+    queryKey: directoryKeys.summary(),
     queryFn:  () => carriersApi.directorio(),
   })
 

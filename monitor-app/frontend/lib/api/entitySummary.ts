@@ -1,9 +1,10 @@
 import type { DocumentSummary } from '@/components/ui/DocumentStatusBar'
+import type { DirectoryEntity } from '@/lib/types'
 import { apiFetch } from './client'
 
 /** El resumen de solo lectura de una entidad para la vista rápida del Cierre
  *  (GET /{drivers|assets|carriers}/{id}/summary, HU 20261011/01). */
-export type EntityKind = 'carrier' | 'driver' | 'asset'
+export type EntityKind = DirectoryEntity
 
 export type EntityRef = { id: string; name: string }
 

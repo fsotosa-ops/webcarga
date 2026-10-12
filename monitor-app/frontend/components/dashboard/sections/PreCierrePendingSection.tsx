@@ -12,6 +12,7 @@ import { AltaConductorDesdeCierre } from './AltaConductorDesdeCierre'
 import { VincularConductorPropuesto } from './VincularConductorPropuesto'
 import { Estado } from '@/components/ui/Estado'
 import type { CarrierCreateResult } from '@/lib/api/carriers'
+import { invalidateDirectory, type DirectoryChange } from '@/lib/queries/directorio'
 
 interface Props {
   fecha: string
@@ -46,7 +47,11 @@ export function PreCierrePendingSection({ fecha }: Props) {
   const [activateError, setActivateError] = useState<Record<string, string>>({})
   const [taxIdDraft, setTaxIdDraft] = useState<Record<string, string>>({})
 
-  async function invalidate() {
+  async function afterChange(change: DirectoryChange) {
+    await invalidateDirectory(queryClient, change)
+    // Esta pantalla ES el Cierre: se relee ya, para traer `pendiente_desde` y que
+    // el aviso y la relectura de 15 s arranquen (0.6). Desde otras pantallas el
+    // Cierre solo queda marcado viejo (R9).
     await queryClient.invalidateQueries({ queryKey: ['daily-closure', fecha] })
     await queryClient.invalidateQueries({ queryKey: ['equipment-closures', fecha] })
   }
@@ -56,7 +61,7 @@ export function PreCierrePendingSection({ fecha }: Props) {
     setActivateError(prev => ({ ...prev, [carrierId]: '' }))
     try {
       await carriersApi.patch(carrierId, { operational_status: 'ACTIVE' })
-      await invalidate()
+      await afterChange({ entity: 'carrier', id: carrierId, type: 'update' })
     } catch (e) {
       // El 422 de "falta RUT" puede venir en 2 formas distintas según el
       // endpoint que lo dispare (ver AGENTLOG) — en vez de parsear la forma
@@ -77,7 +82,7 @@ export function PreCierrePendingSection({ fecha }: Props) {
     setActivating(carrierId)
     try {
       await carriersApi.patch(carrierId, { tax_id: taxId, operational_status: 'ACTIVE' })
-      await invalidate()
+      await afterChange({ entity: 'carrier', id: carrierId, type: 'update' })
     } catch (e) {
       setActivateError(prev => ({
         ...prev,
@@ -150,7 +155,9 @@ export function PreCierrePendingSection({ fecha }: Props) {
               carrierId={esc.carrier_id}
               carrierName={esc.carrier_name}
               viajes={esc.viajes}
-              onVinculado={invalidate}
+              onVinculado={() => afterChange({
+                entity: 'driver', id: esc.driver_id, type: 'assignment', carrierIds: [esc.carrier_id],
+              })}
             />
           ) : (
             <div key={esc.driver_id}>{noPermission}</div>
@@ -175,7 +182,7 @@ export function PreCierrePendingSection({ fecha }: Props) {
                   onClose={() => setCreatingFor(null)}
                   onCreated={(carrier: CarrierCreateResult) => {
                     setCreatingFor(null)
-                    void invalidate()
+                    void afterChange({ entity: 'carrier', id: carrier.id, type: 'create' })
                     // La empresa queda creada; asignarle esta patente requiere
                     // que el activo exista en public.assets (a veces no,
                     // ver "reason" arriba) — se completa desde la ficha.
@@ -298,7 +305,7 @@ export function PreCierrePendingSection({ fecha }: Props) {
                 <AltaConductorDesdeCierre
                   rut={esc.driver_rut}
                   nombreTms={esc.driver_name_tms ?? null}
-                  onListo={invalidate}
+                  onListo={carrierId => afterChange({ entity: 'driver', type: 'create', carrierIds: [carrierId] })}
                 />
               ) : noPermission)}
             </div>

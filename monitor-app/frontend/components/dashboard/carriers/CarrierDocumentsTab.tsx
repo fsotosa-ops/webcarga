@@ -6,6 +6,7 @@ import { TriageWorkbench } from '@/components/compliance/TriageWorkbench'
 import { TransporterAlertBanner } from '@/components/dashboard/TransporterAlertBanner'
 import { TransporterDocumentsPanel } from '@/components/dashboard/TransporterDocumentsPanel'
 import type { ComplianceRecord } from '@/lib/types'
+import { directoryKeys } from '@/lib/queries/directorio'
 
 interface Props {
   carrierId:    string
@@ -58,7 +59,7 @@ export function CarrierDocumentsTab({
         <TransporterDocumentsPanel
           records={records}
           carrierId={carrierId}
-          onChanged={() => queryClient.invalidateQueries({ queryKey: ['carrier-detail', carrierId] })}
+          onChanged={() => queryClient.invalidateQueries({ queryKey: directoryKeys.carrierDetail(carrierId) })}
         />
       </div>
     </>

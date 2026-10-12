@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import { X, Phone, Mail, ArrowRight } from 'lucide-react'
 import type { CarrierListItem } from '@/lib/types'
 import { carriersApi } from '@/lib/api/carriers'
+import { directoryKeys } from '@/lib/queries/directorio'
 import { InsuranceSummaryCard } from './InsuranceSummaryCard'
 import { CompletionRing } from './CompletionRing'
 import { STATUS_LABELS, STATUS_CLS } from './TransporterCard'
@@ -39,7 +40,7 @@ export function TransporterSlideOver({ item, onClose }: Props) {
   const panelRef = useRef<HTMLDivElement>(null)
 
   const query = useQuery({
-    queryKey: ['carriers', 'detail', item?.id],
+    queryKey: directoryKeys.carrierDetail(item?.id),
     queryFn: () => carriersApi.get(item!.id),
     enabled: !!item,
   })

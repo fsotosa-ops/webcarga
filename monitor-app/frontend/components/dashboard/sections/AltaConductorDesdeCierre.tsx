@@ -14,7 +14,8 @@ interface Props {
   /** El nombre que reporta el TMS, si es único entre los viajes de ese RUT.
    *  Puede venir vacío: entonces lo escribe la persona. */
   nombreTms: string | null
-  onListo: () => Promise<void> | void
+  /** Recibe la empresa elegida (o `null`), para refrescar su roster. */
+  onListo: (carrierId: string | null) => Promise<void> | void
 }
 
 /**
@@ -57,7 +58,7 @@ export function AltaConductorDesdeCierre({ rut, nombreTms, onListo }: Props) {
     try {
       const creado = await driversApi.create({ tax_id: rut, full_name: nombre.trim() })
       if (empresa) await carriersApi.assignDriver(empresa.id, creado.id)
-      await onListo()
+      await onListo(empresa?.id ?? null)
       setAbierto(false)
     } catch (e) {
       // Un 409 acá es raro pero posible (dos coordinadores a la vez); igual se

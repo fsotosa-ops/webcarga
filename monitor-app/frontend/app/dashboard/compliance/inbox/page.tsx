@@ -4,6 +4,7 @@ import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { carriersApi } from '@/lib/api/carriers'
+import { directoryKeys } from '@/lib/queries/directorio'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { TriageWorkbench } from '@/components/compliance/TriageWorkbench'
 
@@ -16,7 +17,7 @@ import { TriageWorkbench } from '@/components/compliance/TriageWorkbench'
 function EmpresaDelEnlace() {
   const empresaId = useSearchParams().get('empresa')
   const empresaQuery = useQuery({
-    queryKey: ['carrier-detail', empresaId],
+    queryKey: directoryKeys.carrierDetail(empresaId),
     queryFn: () => carriersApi.get(empresaId!),
     enabled: !!empresaId,
   })

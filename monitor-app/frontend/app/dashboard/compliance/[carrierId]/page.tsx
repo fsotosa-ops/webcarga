@@ -30,6 +30,7 @@ import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
 import { STATUS_LABELS, STATUS_CLS } from '@/components/dashboard/TransporterCard'
 import { evidenciaDeDocumento, formatExpiry } from '@/lib/compliance'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
+import { directoryKeys, invalidateDirectory } from '@/lib/queries/directorio'
 import { claveDeSujeto, tituloDeSujeto } from '@/lib/utils/agruparPorSujeto'
 import { ASSET_TYPE_LABELS } from '@/lib/types'
 import type { ComplianceSummarySubject, EstadoDocumental, PendingComplianceRow } from '@/lib/types'
@@ -501,7 +502,7 @@ export default function FichaEmpresaPage() {
   const [transfiriendo, setTransfiriendo] = useState<ComplianceSummarySubject | null>(null)
 
   /** La baja real, de un sujeto puntual: qué endpoint según lo que es, y
-   *  después `invalidarCertificacion` — la lista se redibuja desde ahí, la
+   *  después `invalidateDirectory` — la lista se redibuja desde ahí, la
    *  única fuente. Nunca se quita la fila a mano: eso la convierte en un
    *  fantasma que parpadea si el pedido falla.
    *
@@ -514,7 +515,9 @@ export default function FichaEmpresaPage() {
   async function ejecutarBaja(s: ComplianceSummarySubject) {
     if (s.entity_type === 'ASSET') await carriersApi.unassignAsset(carrierId, s.entity_id)
     else await carriersApi.unassignDriver(carrierId, s.entity_id)
-    await invalidarCertificacion(queryClient)
+    await invalidateDirectory(queryClient, {
+      entity: s.entity_type === 'ASSET' ? 'asset' : 'driver', id: s.entity_id, type: 'assignment', carrierIds: [carrierId],
+    })
   }
 
   async function confirmarBaja() {
@@ -536,15 +539,13 @@ export default function FichaEmpresaPage() {
    *  `BajaReasonModal` ya lo muestra y se queda abierto para reintentar. */
   async function cambiarEstadoEmpresa(estado: 'ACTIVE' | 'INACTIVE') {
     await carriersApi.patch(carrierId, { operational_status: estado })
-    // Las DOS invalidaciones, y ninguna alcanza sola. `carrier-detail` es la
-    // cabecera; `invalidarCertificacion` es todo lo demás de esta pantalla y
-    // del módulo —el resumen, los pendientes, el embudo del que la empresa
-    // acaba de entrar o salir—. Con sólo la primera, durante los 60 s de
-    // `staleTime` la cabecera decía "Inactivo" y el cuerpo mostraba 457
-    // requisitos. `lib/queries/certificacion.ts` existe por esto: su docstring
-    // cuenta que esa lista de raíces "ya perdió una raíz dos veces".
-    await queryClient.invalidateQueries({ queryKey: ['carrier-detail', carrierId] })
-    await invalidarCertificacion(queryClient)
+    // La cabecera (`carrier-detail`) Y todo lo demás de esta pantalla y del
+    // módulo —el resumen, los pendientes, el embudo del que la empresa acaba
+    // de entrar o salir—. Con sólo la cabecera, durante los 60 s de
+    // `staleTime` decía "Inactivo" y el cuerpo mostraba 457 requisitos.
+    // `invalidateDirectory` cubre las dos y además el Directorio, el Monitor
+    // y el Cierre (bloque 0, 0.5).
+    await invalidateDirectory(queryClient, { entity: 'carrier', id: carrierId, type: 'update' })
   }
 
   async function darDeBajaEmpresa() {
@@ -576,7 +577,7 @@ export default function FichaEmpresaPage() {
   const [viendoLabel, setViendoLabel] = useState('')
 
   const carrierQuery = useQuery({
-    queryKey: ['carrier-detail', carrierId],
+    queryKey: directoryKeys.carrierDetail(carrierId),
     queryFn: () => carriersApi.get(carrierId),
   })
 
@@ -807,16 +808,15 @@ export default function FichaEmpresaPage() {
                 lo tenían cargado, así que esas reglas no le aplicaban a nadie.
                 El PATCH siempre lo aceptó; faltaba la puerta.
 
-                Las DOS invalidaciones, igual que `cambiarEstadoEmpresa`:
-                `carrier-detail` es la cabecera —de donde sale este valor— y no
-                está entre las raíces de Certificación. */}
+                Invalida igual que `cambiarEstadoEmpresa`: `carrier-detail` es
+                la cabecera —de donde sale este valor— y no está entre las
+                raíces de Certificación; `invalidateDirectory` cubre las dos. */}
             <GestionDeclarada
               carrierId={carrierId}
               declarado={carrier.management_types}
               canEdit={puedeGestionarFlota}
               onGuardado={async () => {
-                await queryClient.invalidateQueries({ queryKey: ['carrier-detail', carrierId] })
-                await invalidarCertificacion(queryClient)
+                await invalidateDirectory(queryClient, { entity: 'carrier', id: carrierId, type: 'update' })
               }}
             />
           </div>
@@ -1010,13 +1010,13 @@ export default function FichaEmpresaPage() {
             <AltaDeFlota
               carrierId={carrierId}
               tipo="conductor"
-              onCreado={async () => { await invalidarCertificacion(queryClient) }}
+              onCreado={async () => { await invalidateDirectory(queryClient, { entity: 'driver', type: 'create', carrierIds: [carrierId] }) }}
             />
             <AltaDeFlota
               carrierId={carrierId}
               tipo="equipo"
               gestionesDeclaradas={carrier.management_types}
-              onCreado={async () => { await invalidarCertificacion(queryClient) }}
+              onCreado={async () => { await invalidateDirectory(queryClient, { entity: 'asset', type: 'create', carrierIds: [carrierId] }) }}
             />
           </div>
         )}
@@ -1074,7 +1074,11 @@ export default function FichaEmpresaPage() {
             const s = transfiriendo
             if (s.entity_type === 'ASSET') await carriersApi.assignAsset(destino, s.entity_id)
             else await carriersApi.assignDriver(destino, s.entity_id)
-            await invalidarCertificacion(queryClient)
+            // Origen y destino: los dos rosters cambiaron.
+            await invalidateDirectory(queryClient, {
+              entity: s.entity_type === 'ASSET' ? 'asset' : 'driver', id: s.entity_id, type: 'assignment',
+              carrierIds: [carrierId, destino],
+            })
           }}
         />
       )}
