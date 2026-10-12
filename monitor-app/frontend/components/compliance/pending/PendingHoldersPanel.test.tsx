@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { PendingHoldersPanel } from './PendingHoldersPanel'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 import type { PendingComplianceRow, PendingSummaryRow } from '@/lib/types'
+import { hoyEnChile } from '@/lib/utils/datetime'
 
 vi.mock('@/lib/api/compliance', () => ({ complianceApi: { listPending: vi.fn(), uploadFile: vi.fn() } }))
 import { complianceApi } from '@/lib/api/compliance'
@@ -29,6 +30,13 @@ function montar(props: Partial<Parameters<typeof PendingHoldersPanel>[0]> = {}, 
   )
   return qc
 }
+/** Hoy en Chile ± n días, como lo cuenta la pantalla: con la fecha UTC, entre
+ *  las 21:00 y medianoche de Chile ya es "mañana" y el test daba 11 días. */
+function diasDesdeHoyEnChile(n: number): string {
+  const d = new Date(`${hoyEnChile()}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
 const nuevoQc = () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
 /** Un documento que no pide dato: elegir el archivo lo sube de una. */
@@ -51,9 +59,9 @@ describe('PendingHoldersPanel', () => {
       fila({ id: 'a', subject_name: 'Rojas Pérez, Andrés', due_on: '2026-09-29' }),
       fila({ id: 'b', subject_name: 'Díaz Lagos, Pedro', missing_validity_data: true }),
       fila({ id: 'c', subject_name: 'Soto Muñoz, Carla', document_state: 'EXPIRING', urgencia: 'POR_VENCER',
-             due_on: new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10) }),
+             due_on: diasDesdeHoyEnChile(10) }),
       fila({ id: 'd', subject_name: 'Vera Castro, Miguel', document_state: 'MISSING', urgencia: 'FALTA', tiene_archivo: false,
-             entered_on: new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10) }),
+             entered_on: diasDesdeHoyEnChile(-10) }),
     ] })
     montar({ state: 'all' })
     const enFila = async (id: string) => within(await screen.findByTestId(`renglon-${id}`))
@@ -65,7 +73,7 @@ describe('PendingHoldersPanel', () => {
     expect((await enFila('c')).getByText('Subir la nueva')).toBeInTheDocument()
     expect((await enFila('b')).getByText('El archivo está cargado; sin la fecha no vale')).toBeInTheDocument()
     expect((await enFila('d')).getByText('Falta')).toBeInTheDocument()
-    expect((await enFila('d')).getByText(/^Ingresó hace (9|10|11) días$/)).toBeInTheDocument()
+    expect((await enFila('d')).getByText('Ingresó hace 10 días')).toBeInTheDocument()
     expect((await enFila('d')).getByText('Subir')).toBeInTheDocument()
     // Quien debe y de qué empresa.
     expect((await enFila('a')).getByText('Rojas Pérez, Andrés')).toBeInTheDocument()
