@@ -18,6 +18,7 @@ from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_
 from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente
 from ..services.origen_del_viaje import origen_del_viaje
 from ..utils.document_storage import resolve_signed_url
+from ..utils.identity import canonical_rut, rut_matches_sql
 
 router = APIRouter(prefix="/drivers", tags=["drivers"])
 
@@ -40,7 +41,7 @@ async def list_drivers(
     if len(q.strip()) < 2:
         return []
     rows = await pool.fetch(
-        """
+        f"""
         SELECT
             d.id       AS driver_id,
             d.full_name AS driver_name,
@@ -64,7 +65,7 @@ async def list_drivers(
         LEFT JOIN public.vehicle_driver_assignments vda ON vda.driver_id = d.id AND vda.status = 'ACTIVE'
         LEFT JOIN public.assets a ON a.id = vda.asset_id
         WHERE d.operational_status = 'ACTIVE'
-          AND (d.full_name ILIKE '%'||$1||'%' OR d.tax_id ILIKE '%'||$1||'%')
+          AND (d.full_name ILIKE '%'||$1||'%' OR {rut_matches_sql('d.tax_id', '$1')})
         ORDER BY d.full_name
         LIMIT $2
         """,
@@ -98,6 +99,8 @@ async def fuzzy_match_drivers(
     # El TMS suele adjuntar el RUT ("NOMBRE / 12345678-9") y puntuación/tabs
     # sueltos — se limpia antes de comparar para no penalizar la similitud
     # por ruido que no es parte del nombre.
+    rut_match = re.search(r"/\s*([\w.-]+)$", name.strip())
+    rut = canonical_rut(rut_match.group(1)) if rut_match else None
     cleaned = re.sub(r"\s*/\s*[\w.-]+$", "", name.strip())
     cleaned = re.sub(r"[\s.]+$", "", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
@@ -125,11 +128,11 @@ async def fuzzy_match_drivers(
         LEFT JOIN public.vehicle_driver_assignments vda ON vda.driver_id = d.id AND vda.status = 'ACTIVE'
         LEFT JOIN public.assets a ON a.id = vda.asset_id
         WHERE d.operational_status = 'ACTIVE'
-          AND similarity(upper(d.full_name), upper($1)) >= $2
-        ORDER BY similarity DESC
+          AND (similarity(upper(d.full_name), upper($1)) >= $2 OR d.tax_id = $4::text)
+        ORDER BY (d.tax_id = $4::text) DESC NULLS LAST, similarity DESC
         LIMIT $3
         """,
-        cleaned, _FUZZY_MATCH_MIN_SIMILARITY, limit,
+        cleaned, _FUZZY_MATCH_MIN_SIMILARITY, limit, rut,
     )
     return [dict(r) for r in rows]
 

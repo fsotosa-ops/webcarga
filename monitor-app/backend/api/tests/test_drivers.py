@@ -262,7 +262,7 @@ def test_list_drivers_searches_active_roster_with_resolved_carrier_and_vehicle()
     assert "operational_status = 'ACTIVE'" in query
     assert "public.vehicle_driver_assignments" in query
     assert "d.full_name ILIKE" in query
-    assert "d.tax_id ILIKE" in query
+    assert "public.canonical_rut(d.tax_id)" in query  # D1 §7.2: el RUT se compara en forma canónica
 
 
 # ── GET /drivers/fuzzy-match (HU-06, Fase 3) ─────────────────────────────────

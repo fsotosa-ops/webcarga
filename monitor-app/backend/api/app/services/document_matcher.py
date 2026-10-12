@@ -13,6 +13,8 @@ import unicodedata
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
+from ..utils.identity import canonical_plate, canonical_rut, plate_in_tokens
+
 # Debajo de esto ni siquiera se propone: es ruido.
 _FUZZY_FLOOR = 0.80
 # Desde acá se aplica sin intervención humana.
@@ -37,21 +39,6 @@ def normalize_text(value: str) -> str:
     return " ".join(re.sub(r"[^A-Z0-9]+", " ", upper).split())
 
 
-def rut_dv(rut_digits: str) -> str:
-    """Dígito verificador chileno (módulo 11)."""
-    total = 0
-    multiplier = 2
-    for digit in reversed(rut_digits):
-        total += int(digit) * multiplier
-        multiplier = 2 if multiplier == 7 else multiplier + 1
-    remainder = 11 - (total % 11)
-    if remainder == 11:
-        return "0"
-    if remainder == 10:
-        return "K"
-    return str(remainder)
-
-
 def extract_ruts(file_name: str) -> list[str]:
     """RUTs con DV VÁLIDO presentes en el nombre, normalizados a '12345678-9'.
 
@@ -60,9 +47,9 @@ def extract_ruts(file_name: str) -> list[str]:
     """
     found = []
     for raw_digits, raw_dv in _RUT_RE.findall(file_name):
-        digits = raw_digits.replace(".", "")
-        if rut_dv(digits) == raw_dv.upper():
-            found.append(f"{digits}-{raw_dv.upper()}")
+        canon = canonical_rut(f"{raw_digits}-{raw_dv}")
+        if canon:
+            found.append(canon)
     return found
 
 
@@ -112,13 +99,23 @@ class MatchCandidate:
     evidence: dict
 
 
+def _same_identifier(entity_type: str, stored, declared: str) -> bool:
+    """RUT o patente en forma canónica cuando las dos lo son; si no, el texto normalizado de siempre."""
+    canon = canonical_plate if entity_type == "ASSET" else canonical_rut
+    a, b = canon(str(stored or "")), canon(declared)
+    if a is not None and b is not None:
+        return a == b
+    return normalize_text(str(stored or "")) == normalize_text(declared)
+
+
 def _from_manifest(row: dict, catalog: Catalog, universe: EntityUniverse):
     """Resuelve una fila del manifiesto contra el universo.
 
     `identificador` es RUT de empresa, RUT de conductor o patente — se prueba
     contra los tres, así el operador no tiene que declarar de qué tipo es.
     """
-    identifier = normalize_text(str(row.get("identificador") or ""))
+    declared = str(row.get("identificador") or "")
+    identifier = normalize_text(declared)
     code = str(row.get("requirement_code") or "").strip().upper()
     if not identifier:
         return None
@@ -130,7 +127,7 @@ def _from_manifest(row: dict, catalog: Catalog, universe: EntityUniverse):
     )
     for entity_type, rows in lookups:
         for entity_id, raw_identifier in rows:
-            if normalize_text(str(raw_identifier or "")) != identifier:
+            if not _same_identifier(entity_type, raw_identifier, declared):
                 continue
             requirement = next(
                 (a for a in catalog.aliases
@@ -275,7 +272,7 @@ def match_document(
     ruts = extract_ruts(file_name)
     for rut in ruts:
         for entity_id, tax_id, _name in universe.carriers:
-            if tax_id != rut:
+            if canonical_rut(tax_id) != rut:
                 continue
             requirement = _match_requirement(normalized, catalog, "CARRIER")
             candidates.append(MatchCandidate(
@@ -295,10 +292,9 @@ def match_document(
     # Vehículo por patente. No hay que "reconocer" un formato: se busca cuál de
     # las patentes que existen aparece en el nombre. Diccionario cerrado ⇒ no
     # se puede inventar un vehículo que no está en la flota.
-    name_tokens = set(normalized.split())
+    token_list = normalized.split()
     for entity_id, license_plate in universe.assets:
-        plate = normalize_text(license_plate)
-        if not plate or plate not in name_tokens:
+        if not plate_in_tokens(license_plate, token_list):
             continue
         requirement = _match_requirement(normalized, catalog, "ASSET")
         candidates.append(MatchCandidate(
@@ -322,7 +318,7 @@ def match_document(
     # de este cambio nada más abajo lo recogía.
     for rut in ruts:
         for entity_id, tax_id, _name in universe.drivers:
-            if tax_id != rut:
+            if canonical_rut(tax_id) != rut:
                 continue
             requirement = _match_requirement(normalized, catalog, "DRIVER")
             candidates.append(MatchCandidate(
@@ -342,7 +338,7 @@ def match_document(
     # Conductor por nombre de persona. Es el caso dominante en SharePoint:
     # el nombre del archivo trae la persona, no su RUT.
     for entity_id, tax_id, full_name in universe.drivers:
-        if tax_id and tax_id in ruts:
+        if canonical_rut(tax_id) in ruts:
             continue  # ya resuelto por identificador fuerte más arriba
         ratio = best_name_similarity(normalized, full_name)
         if ratio < _FUZZY_FLOOR:
@@ -393,25 +389,6 @@ class OwnerCandidate:
     reason: str  # rut | plate | name
 
 
-def _plate_in_tokens(label: str, tokens: list[str]) -> bool:
-    """La patente aparece como tokens CONTIGUOS completos del nombre, sin
-    importar guion o espacio: 'BBCL-23', 'BBCL 23' y 'bbcl23' son BBCL23. Unir
-    solo tokens enteros evita encontrarla dentro de una secuencia más larga
-    ('XBBCL234')."""
-    plate = normalize_text(label).replace(" ", "")
-    if not plate:
-        return False
-    for i in range(len(tokens)):
-        joined = ""
-        for token in tokens[i:]:
-            joined += token
-            if len(joined) >= len(plate):
-                break
-        if joined == plate:
-            return True
-    return False
-
-
 def match_owner(file_name: str, owners: list[PendingOwner]) -> list[OwnerCandidate]:
     """Candidatos para un archivo, de mayor a menor confianza. Un identificador
     fuerte (RUT con DV válido, patente) vale 0.95; el nombre, la misma escala
@@ -426,11 +403,11 @@ def match_owner(file_name: str, owners: list[PendingOwner]) -> list[OwnerCandida
             found[c.record_id] = c
 
     for o in owners:
-        if o.tax_id and o.tax_id in ruts:
+        if canonical_rut(o.tax_id) in ruts:
             keep(OwnerCandidate(o.record_id, 0.95, "rut"))
             continue
         if o.entity_type == "ASSET":
-            if _plate_in_tokens(o.label, token_list):
+            if plate_in_tokens(o.label, token_list):
                 keep(OwnerCandidate(o.record_id, 0.95, "plate"))
             continue
         ratio = best_name_similarity(normalized, o.label)

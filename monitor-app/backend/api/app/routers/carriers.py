@@ -21,6 +21,7 @@ from ..services.audit import log_change, record_manual_edit
 from ..services.entity_summary import carrier_summary
 from ..services.fleet_driver_gap import compute_fleet_driver_gap
 from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
+from ..utils.identity import plate_matches_sql, rut_matches_sql
 from ..utils.document_storage import build_documents_zip, resolve_signed_url, safe_storage_name
 
 router = APIRouter(prefix="/carriers", tags=["carriers"])
@@ -117,7 +118,7 @@ async def list_carriers(
     params: list = []
     if q:
         params.append(q)
-        clauses.append(f"(c.business_name ILIKE '%' || ${len(params)} || '%' OR c.tax_id ILIKE '%' || ${len(params)} || '%')")
+        clauses.append(f"(c.business_name ILIKE '%' || ${len(params)} || '%' OR {rut_matches_sql('c.tax_id', f'${len(params)}')})")
     if operational_status:
         params.append(_estados(operational_status))
         clauses.append(f"c.operational_status = ANY(${len(params)}::text[])")
@@ -214,7 +215,7 @@ async def list_carriers_insurance_overview(
     q_clauses: list[str] = []
     if q:
         q_params.append(q)
-        q_clauses.append(f"(c.business_name ILIKE '%' || ${len(q_params)} || '%' OR c.tax_id ILIKE '%' || ${len(q_params)} || '%')")
+        q_clauses.append(f"(c.business_name ILIKE '%' || ${len(q_params)} || '%' OR {rut_matches_sql('c.tax_id', f'${len(q_params)}')})")
     if operational_status:
         q_params.append(_estados(operational_status))
         q_clauses.append(f"c.operational_status = ANY(${len(q_params)}::text[])")
@@ -393,18 +394,20 @@ SELECT
 #
 # El RUT y la patente se comparan por su forma canonica —`canonical_rut` y
 # `canonical_plate` viven en Postgres desde el 17/08— para que "18.659.820-2",
-# "186598202" y "dt by52" encuentren lo mismo que el texto exacto.
-_SQL_BUSCAR_EMPRESAS = """
+# "186598202" y "dt by52" encuentren lo mismo que el texto exacto. Siempre se
+# canoniza LA COLUMNA tambien (`canonical_rut(c.tax_id) = canonical_rut($1)`):
+# carriers.tax_id no es canonico por construccion, y comparar la columna cruda
+# con la forma canonica no encontraba un tax_id guardado con puntos (D1 §7.2).
+_SQL_BUSCAR_EMPRESAS = f"""
 SELECT c.id, c.business_name, c.tax_id, c.operational_status
 FROM public.carriers c
 WHERE c.business_name ILIKE '%' || $1 || '%'
-   OR c.tax_id ILIKE '%' || $1 || '%'
-   OR c.tax_id = public.canonical_rut($1)
+   OR {rut_matches_sql('c.tax_id', '$1')}
 ORDER BY (c.operational_status = 'ACTIVE') DESC, c.business_name
 LIMIT $2
 """
 
-_SQL_BUSCAR_CONDUCTORES = """
+_SQL_BUSCAR_CONDUCTORES = f"""
 SELECT d.id, d.full_name, d.tax_id, d.operational_status,
        c.id AS carrier_id, c.business_name AS carrier_name,
        c.operational_status AS carrier_operational_status
@@ -412,13 +415,12 @@ FROM public.drivers d
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = da.carrier_id
 WHERE d.full_name ILIKE '%' || $1 || '%'
-   OR d.tax_id ILIKE '%' || $1 || '%'
-   OR d.tax_id = public.canonical_rut($1)
+   OR {rut_matches_sql('d.tax_id', '$1')}
 ORDER BY (d.operational_status = 'ACTIVE') DESC, d.full_name
 LIMIT $2
 """
 
-_SQL_BUSCAR_VEHICULOS = """
+_SQL_BUSCAR_VEHICULOS = f"""
 SELECT a.id, a.license_plate, a.asset_type, a.operational_status,
        wot.label AS webcarga_operation_type_label,
        c.id AS carrier_id, c.business_name AS carrier_name,
@@ -427,8 +429,7 @@ FROM public.assets a
 LEFT JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = aa.carrier_id
 LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
-WHERE a.license_plate ILIKE '%' || $1 || '%'
-   OR a.license_plate = public.canonical_plate($1)
+WHERE {plate_matches_sql('a.license_plate', '$1')}
 ORDER BY (a.operational_status = 'ACTIVE') DESC, a.license_plate
 LIMIT $2
 """
