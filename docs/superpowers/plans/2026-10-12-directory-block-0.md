@@ -2946,3 +2946,14 @@ Sin huecos. Lo que se nombró y queda fuera está en R16.
 **4. Review Focus.** Los cinco tienen su test en la tarea dueña: (1) T6 `test_un_cuerpo_mixto_del_operador_se_rechaza_entero_y_no_escribe`; (2) T8 `una transferencia invalida el roster de origen y el de destino`; (3) T1 `test_la_tabla_cuenta_lo_mismo_que_la_firma` + frontend `quien salió del roster aparece arriba…`; (4) T2 `test_a_las_2230_de_chile_la_asignacion_toma_el_dia_de_chile`; (5) T6 (permisos del Operador) + T7 (`el Operador ve la baja del conductor…`, `sin directory.edit el pre-cierre no ofrece…`) + T13 (recorrido sin 403).
 
 **5. ¿Qué línea muere si se borra la implementación?** T1: `assert sale["driver"] in filas` (mutación en Step 5). T2: `"hoy_chile()" in default` por tabla (Step 6). T3: la tupla `(id, nombre nuevo, INACTIVE)` (Step 6). T4: `== "Ana"` (Step 6). T6: los 403/200 por rol (Step 8). T7: "Dar de baja" visible para el Operador (Step 8). T8: origen **y** destino; el recorrido de mutaciones (Step 6). T9: el caso nuevo del `parametrize` (`pendiente_desde` en la respuesta) y la segunda llamada a `equipmentClosuresApi.get`. T10: el diálogo antes de `onRemove`; `onTransfer('c2', 'Otra Empresa')`; `'Inactiva'` ausente del código. T11: `carrier_operational_status` y `carrier_id` en la búsqueda (Step 5). T12: el `alert` en lugar de la cifra; el esqueleto en lugar del texto.
+
+## Decisiones del usuario sobre el plan (12/10)
+
+- **R2 → el Cierre no estaba habilitado en julio y agosto.** Esos días abiertos no se van a firmar. El grupo "Ya no están
+  en el roster" (Task de 0.4) se muestra solo en los días desde la puesta en marcha del Cierre, que se deriva de los
+  datos: el primer día firmado (`min(app.closure_signatures.business_date)`, hoy 2026-09-03). Sin fecha fija en el código
+  ni configuración nueva. La firma no cambia. La verificación del despliegue 1 mide los días bloqueados desde esa fecha.
+- **R5 → excepción:** activar una empresa nueva (`ONBOARDING` → `ACTIVE`) sigue con `directory.edit` (Supervisor de
+  Operaciones, desde el pre-cierre). Solo dar de baja y reactivar una empresa (`ACTIVE` ↔ `INACTIVE`) exigen
+  `directory.delete`.
+- **Ejecución:** subagent-driven.

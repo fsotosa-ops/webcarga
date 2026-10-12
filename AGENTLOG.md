@@ -44,7 +44,9 @@ vigencia vía historial por trigger (cubre a Mage sin tocarlo) + override por ca
 - [ ] **Spec del bloque 0 escrita, espera revisión del usuario:** `docs/superpowers/specs/2026-10-12-directory-block-0-design.md`
   (dos despliegues: 1 = Cierre un solo universo, fecha Chile, roster en vivo, pre-cierre no renombra; 2 = permisos,
   refresco entre módulos, frescura del Cierre, red mínima, flota de empresa de baja, Sin clasificar H2/H4).
-  Luego writing-plans y ejecución; después D1.
+  Spec aprobada (admin sin cambios). Plan `docs/superpowers/plans/2026-10-12-directory-block-0.md` (13 tareas, rulings
+  R1-R16 + decisiones del usuario: Cierre habilitado desde el primer día firmado; activar ONBOARDING con directory.edit).
+- [ ] **Ejecutando subagent-driven** (12/10). Después: D1.
 - [ ] Luego: spec del bloque 0 / D1 "Una sola respuesta" (funciones `app.is_operating`, `app.carrier_of`,
   `app.carrier_operation_types`), intercalado con Certificación 2a (Sin clasificar).
 
