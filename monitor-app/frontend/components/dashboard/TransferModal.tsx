@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { X, Loader2, ArrowRightLeft, Building2 } from 'lucide-react'
-import { CarrierSearchPicker } from '@/components/dashboard/CarrierSearchPicker'
+import { CarrierSearchPicker, type CarrierSearchResult } from '@/components/dashboard/CarrierSearchPicker'
 
 interface Props {
   open:             boolean
@@ -12,7 +12,7 @@ interface Props {
    *  y es una variante de este mismo modal, no un modal hermano. */
   currentCarrierId: string | null
   onClose:          () => void
-  onTransfer:       (toCarrierId: string) => Promise<void>
+  onTransfer:       (toCarrierId: string, toCarrierName: string) => Promise<void>
 }
 
 /** Mini-modal de transferencia (conductor/vehículo → otra empresa) — rol
@@ -33,17 +33,17 @@ export function TransferModal({ open, title, currentCarrierId, onClose, onTransf
   // "transferencia" a eso le miente a quien aprieta el botón.
   const esPrimeraAsignacion = !currentCarrierId
   const [q, setQ]             = useState('')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selected, setSelected] = useState<CarrierSearchResult | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr]         = useState<string | null>(null)
 
   if (!open) return null
 
   async function handleConfirm() {
-    if (!selectedId) return
+    if (!selected) return
     setSubmitting(true); setErr(null)
     try {
-      await onTransfer(selectedId)
+      await onTransfer(selected.id, selected.business_name)
       handleClose()
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error al transferir')
@@ -58,7 +58,7 @@ export function TransferModal({ open, title, currentCarrierId, onClose, onTransf
     // `handleConfirm` escribiría `setErr` sobre un componente muerto y el
     // mensaje (por ejemplo el 409 de una asignación protegida) no se vería.
     if (submitting) return
-    setQ(''); setSelectedId(null); setErr(null)
+    setQ(''); setSelected(null); setErr(null)
     onClose()
   }
 
@@ -78,13 +78,13 @@ export function TransferModal({ open, title, currentCarrierId, onClose, onTransf
         <div className="p-4 space-y-3">
           <CarrierSearchPicker
             query={q}
-            onQueryChange={v => { setQ(v); setSelectedId(null) }}
-            onPick={c => setSelectedId(c.id)}
+            onQueryChange={v => { setQ(v); setSelected(null) }}
+            onPick={c => setSelected(c)}
             placeholder={esPrimeraAsignacion
               ? 'Buscar la empresa a la que pertenece (nombre o RUT)…'
               : 'Buscar empresa destino (nombre o tax_id)…'}
             excludeId={currentCarrierId ?? undefined}
-            selectedId={selectedId}
+            selectedId={selected?.id ?? null}
             autoFocus
             size="md"
             maxHeightClass="max-h-56"
@@ -96,7 +96,7 @@ export function TransferModal({ open, title, currentCarrierId, onClose, onTransf
           <div className="flex gap-2 pt-1">
             <button
               onClick={handleConfirm}
-              disabled={!selectedId || submitting}
+              disabled={!selected || submitting}
               className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-50"
             >
               {submitting

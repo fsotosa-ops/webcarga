@@ -13,6 +13,7 @@ import { invalidateDirectory } from '@/lib/queries/directorio'
 import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 import { CompletionRing } from './CompletionRing'
 import { BajaReasonModal } from './BajaReasonModal'
+import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
 import { ContactCard, AddContactForm } from './ContactCard'
 import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceChecklist'
 import { getInitials, getInitialColor } from '@/lib/utils/avatar'
@@ -22,6 +23,8 @@ const DRIVER_CONTACT_ROLE_OPTIONS = ['PERSONAL', 'EMERGENCIA', 'OTRO']
 interface Props {
   driver:          Driver | null
   carrierId:       string
+  /** Para nombrar la empresa en la confirmación de "Quitar del roster". */
+  carrierName?:    string
   canEdit:         boolean
   /** Subir o reemplazar documentos (`documents.upload`) y reasignarlos
    *  (`documents.review`): permisos de Certificación, no de editar la ficha. */
@@ -43,13 +46,13 @@ interface Props {
  *  el roster, que solo expone el agregado) vía GET /drivers/{id}/compliance-records.
  *  Solo lectura desde Ronda 88 — subir/editar documentos se hace en
  *  Certificación, ver TransporterDocumentsPanel. */
-export function DriverDetailPanel({ driver, carrierId, canEdit, canChangeFleetStatus, canDeleteContacts, canUploadDocuments, canReviewDocuments, onClose, onPatch, onRemove, onTransferClick }: Props) {
+export function DriverDetailPanel({ driver, carrierId, carrierName, canEdit, canChangeFleetStatus, canDeleteContacts, canUploadDocuments, canReviewDocuments, onClose, onPatch, onRemove, onTransferClick }: Props) {
   const open = !!driver
   const panelRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState({ full_name: '', home_location_id: '' })
   const [saving, setSaving] = useState(false)
-  const [removing, setRemoving] = useState(false)
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
 
@@ -150,17 +153,6 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canChangeFleetSt
       setErr(e instanceof Error ? e.message : 'Error al guardar')
     } finally {
       setSaving(false)
-    }
-  }
-
-  async function handleRemove() {
-    setRemoving(true); setErr(null)
-    try {
-      await onRemove()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error al quitar')
-    } finally {
-      setRemoving(false)
     }
   }
 
@@ -325,11 +317,10 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canChangeFleetSt
               {canEdit && (
                 <button
                   type="button"
-                  onClick={handleRemove}
-                  disabled={removing}
-                  className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-4 py-2.5 transition-colors disabled:opacity-50"
+                  onClick={() => setConfirmingRemove(true)}
+                  className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-4 py-2.5 transition-colors"
                 >
-                  {removing ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  <Trash2 size={14} />
                   Quitar del roster
                 </button>
               )}
@@ -397,6 +388,14 @@ export function DriverDetailPanel({ driver, carrierId, canEdit, canChangeFleetSt
           onConfirm={handleDeactivate}
         />
       )}
+      <ConfirmarBaja
+        abierto={confirmingRemove}
+        variant="remove"
+        nombreSujeto={driver.full_name}
+        nombreEmpresa={carrierName ?? 'esta empresa'}
+        onCancelar={() => setConfirmingRemove(false)}
+        onConfirmar={async () => { await onRemove(); setConfirmingRemove(false) }}
+      />
     </>
   )
 }

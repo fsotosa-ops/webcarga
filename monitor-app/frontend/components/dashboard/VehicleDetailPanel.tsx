@@ -12,6 +12,7 @@ import { directoryKeys, invalidateDirectory } from '@/lib/queries/directorio'
 import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
 import { CompletionRing } from './CompletionRing'
 import { BajaReasonModal } from './BajaReasonModal'
+import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
 import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceChecklist'
 
 const ASSET_TYPE_OPTIONS: { value: AssetType; label: string }[] = [
@@ -21,6 +22,8 @@ const ASSET_TYPE_OPTIONS: { value: AssetType; label: string }[] = [
 interface Props {
   asset:           Asset | null
   carrierId:       string
+  /** Para nombrar la empresa en la confirmación de "Quitar del roster". */
+  carrierName?:    string
   canEdit:         boolean
   /** Subir o reemplazar documentos (`documents.upload`) y reasignarlos
    *  (`documents.review`): permisos de Certificación, no de editar la ficha. */
@@ -54,11 +57,11 @@ interface Props {
  *  exige motivo—, así que un equipo importado por la ingesta sin clasificar
  *  bloqueaba el cierre sin que hubiera dónde arreglarlo. Pablo, 04/09: *"no
  *  puedo definir qué tractoreo, entonces no me lo muestra aquí"*. */
-export function VehicleDetailPanel({ asset, carrierId, canEdit, canChangeFleetStatus, canUploadDocuments, canReviewDocuments, onClose, onPatch, onRemove, onTransferClick, drivers = [] }: Props) {
+export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, canChangeFleetStatus, canUploadDocuments, canReviewDocuments, onClose, onPatch, onRemove, onTransferClick, drivers = [] }: Props) {
   const open = !!asset
   const panelRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
-  const [removing, setRemoving] = useState(false)
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
   const [draft, setDraft] = useState<{ asset_type: AssetType; manufacture_year: string; webcarga_operation_type_id: string }>(
     { asset_type: 'TRACTOCAMION', manufacture_year: '', webcarga_operation_type_id: '' },
@@ -157,17 +160,6 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canChangeFleetSt
       setErr(e instanceof Error ? e.message : 'Error al guardar')
     } finally {
       setSaving(false)
-    }
-  }
-
-  async function handleRemove() {
-    setRemoving(true); setErr(null)
-    try {
-      await onRemove()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error al quitar')
-    } finally {
-      setRemoving(false)
     }
   }
 
@@ -414,11 +406,10 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canChangeFleetSt
               {canEdit && (
                 <button
                   type="button"
-                  onClick={handleRemove}
-                  disabled={removing}
-                  className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-4 py-2.5 transition-colors disabled:opacity-50"
+                  onClick={() => setConfirmingRemove(true)}
+                  className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-4 py-2.5 transition-colors"
                 >
-                  {removing ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  <Trash2 size={14} />
                   Quitar del roster
                 </button>
               )}
@@ -464,6 +455,14 @@ export function VehicleDetailPanel({ asset, carrierId, canEdit, canChangeFleetSt
           onConfirm={handleDeactivate}
         />
       )}
+      <ConfirmarBaja
+        abierto={confirmingRemove}
+        variant="remove"
+        nombreSujeto={asset.license_plate}
+        nombreEmpresa={carrierName ?? 'esta empresa'}
+        onCancelar={() => setConfirmingRemove(false)}
+        onConfirmar={async () => { await onRemove(); setConfirmingRemove(false) }}
+      />
     </>
   )
 }

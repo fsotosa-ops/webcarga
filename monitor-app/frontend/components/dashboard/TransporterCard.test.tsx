@@ -43,14 +43,14 @@ describe('TransporterCard', () => {
     expect(screen.getByText('Sin nombre')).toBeInTheDocument()
   })
 
-  it('shows Inactiva for legacy_inactive companies (concept exposed to the user is Activo/Inactivo, not Activo/Legacy)', () => {
+  it('shows Dada de baja for legacy_inactive companies (concept exposed to the user is Activo/Inactivo, not Activo/Legacy)', () => {
     render(<TransporterCard item={{ ...ITEM, operational_status: 'LEGACY_INACTIVE' }} onOpen={vi.fn()} />)
-    expect(screen.getByText('Inactiva')).toBeInTheDocument()
+    expect(screen.getByText('Dada de baja')).toBeInTheDocument()
   })
 
   it('shows an amber Onboarding badge for companies created without tax_id', () => {
     render(<TransporterCard item={{ ...ITEM, operational_status: 'ONBOARDING' }} onOpen={vi.fn()} />)
-    const badge = screen.getByText('Onboarding')
+    const badge = screen.getByText('En onboarding')
     expect(badge).toBeInTheDocument()
     expect(badge.className).toContain('bg-amber-50')
     expect(badge.className).toContain('text-amber-700')

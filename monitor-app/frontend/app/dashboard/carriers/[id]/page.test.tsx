@@ -41,6 +41,7 @@ vi.mock('@/lib/api/carriers', () => ({
     listContacts: vi.fn(), createContact: vi.fn(),
     listPolicies: vi.fn(), createPolicy: vi.fn(),
     listShippers: vi.fn(), exportDocuments: vi.fn(),
+    list: vi.fn().mockResolvedValue({ data: [{ id: 'c2', business_name: 'Otra Empresa', tax_id: '2-2' }] }),
   },
 }))
 vi.mock('@/lib/api/drivers', () => ({
@@ -436,6 +437,26 @@ describe('EmpresaDetailPage', () => {
     fireEvent.click(await screen.findByText('Juan Pérez'))
 
     expect(await screen.findByRole('button', { name: /transferir/i })).toBeInTheDocument()
+  })
+
+  it('al transferir avisa a dónde quedó el conductor', async () => {
+    vi.mocked(carriersApi.assignDriver).mockResolvedValue(undefined as never)
+    vi.mocked(driversApi.get).mockResolvedValue({
+      id: 'd1', tax_id: '22222222-2', country_code: 'CL', full_name: 'Juan Pérez',
+      operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
+      total_requirements: 5, last_document_update: null,
+      home_location_id: null, home_location_name: null,
+      home_location_shipper: null, suggested_home_location: null,
+    })
+    renderPage()
+    await clickTab(/Conductores/)
+    fireEvent.click(await screen.findByText('Juan Pérez'))
+    fireEvent.click(await screen.findByRole('button', { name: /transferir/i }))
+    fireEvent.change(screen.getByPlaceholderText(/empresa destino/i), { target: { value: 'Otra' } })
+    fireEvent.click(await screen.findByText('Otra Empresa'))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar transferencia' }))
+    await waitFor(() => expect(carriersApi.assignDriver).toHaveBeenCalledWith('c2', 'd1'))
+    expect(await screen.findByText(/Listo: conductor Juan Pérez quedó en Otra Empresa\./)).toBeInTheDocument()
   })
 
   // Hallazgo 4 de la revision final: d4e6cc03 bajo tres gates de canAdmin a

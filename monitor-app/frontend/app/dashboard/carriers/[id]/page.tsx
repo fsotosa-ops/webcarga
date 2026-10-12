@@ -12,7 +12,7 @@ import { carriersApi } from '@/lib/api/carriers'
 import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
 import { contactsApi } from '@/lib/api/contacts'
-import { OPERATIONAL_STATUS_LABELS } from '@/lib/types'
+import { statusLabel } from '@/lib/types'
 import type { Driver, Asset, OperationalStatus, ComplianceHealth } from '@/lib/types'
 import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { ContactCard, AddContactForm } from '@/components/dashboard/ContactCard'
@@ -275,7 +275,7 @@ function EmpresaDetailPageInner() {
     await afterChange({ entity: 'asset', id: assetId, type: 'assignment', carrierIds: [id] })
   }
 
-  async function handleConfirmTransfer(toCarrierId: string) {
+  async function handleConfirmTransfer(toCarrierId: string, toCarrierName: string) {
     if (!transferTarget) return
     if (transferTarget.kind === 'driver') {
       await carriersApi.assignDriver(toCarrierId, transferTarget.id)
@@ -285,7 +285,10 @@ function EmpresaDetailPageInner() {
       setSelectedAssetId(null)
     }
     // Origen y destino: los dos rosters cambiaron.
-    await afterChange({ entity: transferTarget.kind, id: transferTarget.id, type: 'assignment', carrierIds: [id, toCarrierId] })
+    await afterChange(
+      { entity: transferTarget.kind, id: transferTarget.id, type: 'assignment', carrierIds: [id, toCarrierId] },
+      `Listo: ${transferTarget.label} quedó en ${toCarrierName}.`,
+    )
     setTransferTarget(null)
   }
 
@@ -444,7 +447,7 @@ function EmpresaDetailPageInner() {
                   </p>
                 )}
                 <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                  {OPERATIONAL_STATUS_LABELS[carrier.operational_status] ?? carrier.operational_status}
+                  {statusLabel('carrier', carrier.operational_status)}
                 </span>
                 {carrier.is_manual_override && (
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-500">Editado manualmente</span>
@@ -857,6 +860,7 @@ function EmpresaDetailPageInner() {
       <DriverDetailPanel
         driver={selectedDriver}
         carrierId={id}
+        carrierName={carrier.business_name}
         canEdit={canEdit}
         canChangeFleetStatus={canChangeFleetStatus}
         canDeleteContacts={canAdmin}
@@ -871,6 +875,7 @@ function EmpresaDetailPageInner() {
       <VehicleDetailPanel
         asset={selectedAsset}
         carrierId={id}
+        carrierName={carrier.business_name}
         canEdit={canEdit}
         canChangeFleetStatus={canChangeFleetStatus}
         canUploadDocuments={canUploadDocuments}

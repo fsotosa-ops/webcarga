@@ -12,6 +12,10 @@ interface Props {
   /** Viajes activos que tiene hoy. `undefined` mientras la consulta viaja:
    *  'no sé' no es 'cero', igual que `cuantosDocumentos`. */
   viajesActivos?:    number
+  /** 'deactivate' es el texto de Certificación; 'remove' es "Quitar del roster"
+   *  del Directorio: el mismo gesto (termina la asignación), con su nombre.
+   *  Una variante es una prop, no un componente hermano. */
+  variant?:          'deactivate' | 'remove'
   onCancelar:        () => void
   onConfirmar:       () => Promise<void>
 }
@@ -20,7 +24,7 @@ interface Props {
  *  se abre desde `AccionesDeSujeto`. Sin motivo de baja: la HU lo propone,
  *  pero exige una columna nueva y el vocabulario es decisión del negocio.
  *  La baja ya deja rastro en `audit_log` vía `record_manual_edit`. */
-export function ConfirmarBaja({ abierto, nombreSujeto, nombreEmpresa, cuantosDocumentos, viajesActivos, onCancelar, onConfirmar }: Props) {
+export function ConfirmarBaja({ abierto, nombreSujeto, nombreEmpresa, cuantosDocumentos, viajesActivos, variant, onCancelar, onConfirmar }: Props) {
   const cancelarRef = useRef<HTMLButtonElement>(null)
   const [enviando, setEnviando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,6 +60,11 @@ export function ConfirmarBaja({ abierto, nombreSujeto, nombreEmpresa, cuantosDoc
 
   if (!abierto) return null
 
+  const titulo = variant === 'remove'
+    ? `Quitar a ${nombreSujeto} del roster de ${nombreEmpresa}`
+    : `Dar de baja a ${nombreSujeto} de ${nombreEmpresa}`
+  const accion = variant === 'remove' ? 'Quitar del roster' : 'Dar de baja'
+
   // Mismo motivo: mientras viaja, el clic en el fondo tampoco cancela.
   function handleCancelarFondo() {
     if (!enviando) onCancelar()
@@ -68,7 +77,7 @@ export function ConfirmarBaja({ abierto, nombreSujeto, nombreEmpresa, cuantosDoc
       await onConfirmar()
     } catch (e) {
       // El diálogo NO se cierra: cerrarlo haría creer que la baja ocurrió.
-      setError(e instanceof Error ? e.message : 'No se pudo dar de baja')
+      setError(e instanceof Error ? e.message : variant === 'remove' ? 'No se pudo quitar' : 'No se pudo dar de baja')
       setEnviando(false)
     }
   }
@@ -80,11 +89,11 @@ export function ConfirmarBaja({ abierto, nombreSujeto, nombreEmpresa, cuantosDoc
         <div
           role="dialog"
           aria-modal="true"
-          aria-label={`Dar de baja a ${nombreSujeto} de ${nombreEmpresa}`}
+          aria-label={titulo}
           className="relative bg-white rounded-2xl shadow-2xl w-[92vw] max-w-md p-5 space-y-4 animate-modal-in"
         >
           <h2 className="text-titulo font-bold text-text-primary">
-            Dar de baja a {nombreSujeto} de {nombreEmpresa}
+            {titulo}
           </h2>
 
           <p className="text-lectura text-informativo">
@@ -137,7 +146,7 @@ export function ConfirmarBaja({ abierto, nombreSujeto, nombreEmpresa, cuantosDoc
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-dato font-bold bg-espera text-white hover:bg-espera/90 transition-colors disabled:opacity-50"
             >
               {enviando && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
-              Dar de baja
+              {accion}
             </button>
           </div>
         </div>

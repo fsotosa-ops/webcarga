@@ -1,7 +1,7 @@
 'use client'
 
 import { UserX } from 'lucide-react'
-import type { OperationalStatus } from '@/lib/types'
+import { statusLabel, type OperationalStatus } from '@/lib/types'
 
 /**
  * "Dado de baja", dicho en la lista.
@@ -21,7 +21,7 @@ export function ChipDeBaja({ estado }: { estado: OperationalStatus }) {
   if (estado === 'ACTIVE') return null
   return (
     <span className="inline-flex items-center gap-1 text-etiqueta font-semibold px-1.5 py-0.5 rounded-full border border-border text-informativo mt-0.5">
-      <UserX size={9} /> Dado de baja
+      <UserX size={9} /> {statusLabel('driver', estado)}
     </span>
   )
 }

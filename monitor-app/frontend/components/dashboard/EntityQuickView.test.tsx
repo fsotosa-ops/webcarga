@@ -72,7 +72,7 @@ describe('EntityQuickView', () => {
   it('de baja lo marca y dice cómo volver a operar', async () => {
     vi.mocked(fetchEntitySummary).mockResolvedValue({ ...DRIVER, operational_status: 'INACTIVE' } as never)
     renderView({ kind: 'driver', id: 'd1', label: 'Vidal' })
-    expect(await screen.findByText('De baja')).toBeInTheDocument()
+    expect(await screen.findByText('Dado de baja')).toBeInTheDocument()
     expect(screen.getByText(/reactívalo desde su ficha/)).toBeInTheDocument()
   })
 

@@ -2,17 +2,11 @@
 
 import Link from 'next/link'
 import { ChevronRight, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { statusLabel } from '@/lib/types'
 import type { CarrierListItem, CarrierOperationalStatus } from '@/lib/types'
 
-/** El concepto expuesto al usuario es Activo/Inactivo, no Activo/Legacy
- *  (decisión explícita 2026-07-18) — INACTIVE (baja manual real, sin filas
- *  hoy) y LEGACY_INACTIVE (nunca onboardeada) comparten el mismo label
- *  visible aunque sigan siendo 2 valores distintos en la DB. ONBOARDING
- *  (empresa creada sin tax_id, tarea backend previa) es un tercer estado
- *  propio de Carrier, con su propio label/color ámbar. */
-export const STATUS_LABELS: Record<CarrierOperationalStatus, string> = {
-  ACTIVE: 'Activa', INACTIVE: 'Inactiva', LEGACY_INACTIVE: 'Inactiva', ONBOARDING: 'Onboarding',
-}
+/** Colores por estado. La etiqueta vive en `statusLabel` (lib/types): un solo
+ *  diccionario. ONBOARDING es un tercer estado propio de Carrier, en ámbar. */
 export const STATUS_CLS: Record<CarrierOperationalStatus, string> = {
   ACTIVE: 'bg-green-50 text-green-700 border-green-100',
   INACTIVE: 'bg-gray-100 text-gray-500 border-transparent',
@@ -66,7 +60,7 @@ export function TransporterCard({ item, onOpen, selected = false }: Props) {
 
       <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/60">
         <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_CLS[item.operational_status]}`}>
-          {STATUS_LABELS[item.operational_status]}
+          {statusLabel('carrier', item.operational_status)}
         </span>
         {item.compliance_health === 'PENDING' ? (
           <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600">

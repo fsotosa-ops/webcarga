@@ -966,6 +966,20 @@ export const OPERATIONAL_STATUS_LABELS: Record<CarrierOperationalStatus, string>
   ONBOARDING:      'En onboarding',
 }
 
+/** Conductor y equipo: masculino. Con `OPERATIONAL_STATUS_LABELS` (empresa,
+ *  femenino) son el ÚNICO diccionario de estados (bloque 0, 0.7). "Inactiva" se
+ *  retiró: el mismo estado se llamaba distinto según la pantalla (F-35). */
+const FLEET_STATUS_LABELS: Record<OperationalStatus, string> = {
+  ACTIVE:          'Activo',
+  INACTIVE:        'Dado de baja',
+  LEGACY_INACTIVE: 'Dado de baja',
+}
+
+export function statusLabel(entity: DirectoryEntity, status: string): string {
+  const labels: Record<string, string> = entity === 'carrier' ? OPERATIONAL_STATUS_LABELS : FLEET_STATUS_LABELS
+  return labels[status] ?? status
+}
+
 /** Una cabecera de la ficha de empresa: la empresa misma, o uno de sus
  *  conductores o vehículos, con sus cuatro cifras — sin las filas de
  *  detalle. Esas se piden aparte, sólo al desplegar el sujeto

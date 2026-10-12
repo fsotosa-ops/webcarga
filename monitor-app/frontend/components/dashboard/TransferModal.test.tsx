@@ -13,7 +13,7 @@ vi.mock('@/lib/api/carriers', () => ({
 
 function montar(overrides: Partial<{
   onClose: () => void
-  onTransfer: (toCarrierId: string) => Promise<void>
+  onTransfer: (toCarrierId: string, toCarrierName: string) => Promise<void>
 }> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -35,6 +35,14 @@ async function elegirEmpresaDestino() {
 }
 
 describe('TransferModal', () => {
+  it('entrega el destino con su nombre, para poder avisar a dónde quedó', async () => {
+    const onTransfer = vi.fn().mockResolvedValue(undefined)
+    montar({ onTransfer })
+    await elegirEmpresaDestino()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar transferencia' }))
+    await waitFor(() => expect(onTransfer).toHaveBeenCalledWith('c2', 'Otra Empresa'))
+  })
+
   // Hallazgo 3 de la revision final: la garantia que ConfirmarBaja tiene
   // desde la ronda anterior —que nada cierre mientras el pedido viaja— no
   // habia cruzado a este otro dialogo del mismo menu. Al desmontarse a mitad

@@ -10,7 +10,8 @@ import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
 import { useTransporters } from '@/hooks/useTransporters'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { TransporterCard, STATUS_LABELS, STATUS_CLS } from '@/components/dashboard/TransporterCard'
+import { statusLabel } from '@/lib/types'
+import { TransporterCard, STATUS_CLS } from '@/components/dashboard/TransporterCard'
 import { ResultadosDelDirectorio } from '@/components/dashboard/ResultadosDelDirectorio'
 import { TransporterSlideOver } from '@/components/dashboard/TransporterSlideOver'
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
@@ -303,7 +304,7 @@ function EmpresasTransportePageInner() {
                     <td className="px-3 py-3 font-mono text-xs text-gray-500">{item.tax_id}</td>
                     <td className="px-3 py-3">
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_CLS[item.operational_status]}`}>
-                        {STATUS_LABELS[item.operational_status]}
+                        {statusLabel('carrier', item.operational_status)}
                       </span>
                     </td>
                     <td className="px-3 py-3">

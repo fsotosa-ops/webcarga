@@ -14,6 +14,7 @@ import {
   entitySummaryKey, fetchEntitySummary,
   type AssetSummary, type CarrierSummary, type DriverSummary, type EntityKind,
 } from '@/lib/api/entitySummary'
+import { statusLabel } from '@/lib/types'
 import { assetHref, carrierHref, driverHref } from '@/lib/navegacion/directory'
 import type { QuickViewTarget } from '@/lib/quickView'
 import { getInitials } from '@/lib/utils/avatar'
@@ -135,7 +136,6 @@ function Identity({ target, data }: { target: QuickViewTarget; data?: DriverSumm
       ? [ASSET_TYPE[(data as AssetSummary).asset_type] ?? (data as AssetSummary).asset_type,
          (data as AssetSummary).manufacture_year].filter(Boolean).join(' · ')
       : (data as DriverSummary | CarrierSummary).tax_id ? `RUT ${(data as DriverSummary | CarrierSummary).tax_id}` : null
-  const female = target.kind === 'carrier'
 
   return (
     <div className="flex items-start gap-3 pb-4">
@@ -153,9 +153,9 @@ function Identity({ target, data }: { target: QuickViewTarget; data?: DriverSumm
             {target.kind === 'asset' && (data as AssetSummary).operation_type && (
               <StatusChip tone="action">{(data as AssetSummary).operation_type}</StatusChip>
             )}
-            {isActive(data.operational_status)
-              ? <StatusChip tone="resolved">{female ? 'Activa' : 'Activo'}</StatusChip>
-              : <StatusChip tone="neutral">De baja</StatusChip>}
+            <StatusChip tone={isActive(data.operational_status) ? 'resolved' : 'neutral'}>
+              {statusLabel(target.kind, data.operational_status)}
+            </StatusChip>
           </div>
         )}
       </div>

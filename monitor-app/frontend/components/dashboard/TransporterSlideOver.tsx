@@ -4,12 +4,13 @@ import { useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { X, Phone, Mail, ArrowRight } from 'lucide-react'
+import { statusLabel } from '@/lib/types'
 import type { CarrierListItem } from '@/lib/types'
 import { carriersApi } from '@/lib/api/carriers'
 import { directoryKeys } from '@/lib/queries/directorio'
 import { InsuranceSummaryCard } from './InsuranceSummaryCard'
 import { CompletionRing } from './CompletionRing'
-import { STATUS_LABELS, STATUS_CLS } from './TransporterCard'
+import { STATUS_CLS } from './TransporterCard'
 import { evidenciaDeDocumento, formatExpiry } from '@/lib/compliance'
 import { getInitials, getInitialColor } from '@/lib/utils/avatar'
 
@@ -115,7 +116,7 @@ export function TransporterSlideOver({ item, onClose }: Props) {
               </div>
 
               <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full border mb-5 ${STATUS_CLS[item.operational_status]}`}>
-                {STATUS_LABELS[item.operational_status]}
+                {statusLabel('carrier', item.operational_status)}
               </span>
 
               {!query.isPending && !query.error && records.length > 0 && (

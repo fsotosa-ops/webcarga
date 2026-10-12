@@ -9,6 +9,13 @@ const base = {
 }
 
 describe('ConfirmarBaja', () => {
+  it('la variante "remove" dice que quita del roster, no que da de baja', () => {
+    render(<ConfirmarBaja {...base} nombreEmpresa="Acme" variant="remove" />)
+    expect(screen.getByRole('dialog', { name: 'Quitar a Juan Pérez del roster de Acme' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Quitar del roster' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Dar de baja' })).not.toBeInTheDocument()
+  })
+
   it('dice qué NO se pierde, que es la duda de quien confirma', () => {
     render(<ConfirmarBaja {...base} />)
     expect(screen.getByText(/3 documentos/)).toBeInTheDocument()

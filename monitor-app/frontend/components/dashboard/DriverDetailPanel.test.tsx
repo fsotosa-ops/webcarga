@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DriverDetailPanel } from './DriverDetailPanel'
 import { driversApi } from '@/lib/api/drivers'
@@ -51,11 +51,13 @@ function renderPanel(driver: Driver | null, opts: {
   canUploadDocuments?: boolean; canReviewDocuments?: boolean
   onPatch?: (...args: unknown[]) => Promise<void>
   onRemove?: () => Promise<void>
+  carrierName?: string
 } = {}) {
   return renderWithClient(
     <DriverDetailPanel
       driver={driver}
       carrierId="c1"
+      carrierName={opts.carrierName}
       canEdit={opts.canEdit ?? true}
       canChangeFleetStatus={opts.canChangeFleetStatus ?? true}
       canDeleteContacts={opts.canDeleteContacts ?? true}
@@ -175,13 +177,14 @@ describe('DriverDetailPanel', () => {
     expect(onTransferClick).toHaveBeenCalled()
   })
 
-  it('shows "Quitar del roster" only when canEdit, and calls onRemove when clicked', async () => {
+  it('"Quitar del roster" pide confirmación antes de quitar (0.7)', async () => {
     const onRemove = vi.fn().mockResolvedValue(undefined)
-    renderPanel(DRIVER, { onRemove, canEdit: false })
-    expect(screen.queryByRole('button', { name: /Quitar del roster/ })).not.toBeInTheDocument()
-
-    renderPanel(DRIVER, { onRemove, canEdit: true })
+    renderPanel(DRIVER, { onRemove, canEdit: true, carrierName: 'Acme' })
     fireEvent.click(screen.getByRole('button', { name: /Quitar del roster/ }))
+    expect(onRemove).not.toHaveBeenCalled()
+    // El propio panel es role="dialog": el de confirmación se busca por nombre.
+    const dialogo = screen.getByRole('dialog', { name: 'Quitar a Juan Pérez del roster de Acme' })
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Quitar del roster' }))
     await waitFor(() => expect(onRemove).toHaveBeenCalled())
   })
 

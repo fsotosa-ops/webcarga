@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { User, Truck } from 'lucide-react'
-import type { DirectorioBusqueda } from '@/lib/types'
+import { statusLabel, type DirectorioBusqueda } from '@/lib/types'
 import { carrierPanelHref } from '@/lib/navegacion/directory'
 
 /**
@@ -97,7 +97,7 @@ function Fila({
       </div>
       {deBaja && (
         <span className="text-etiqueta font-semibold px-1.5 py-0.5 rounded-full border border-border text-informativo shrink-0">
-          Dado de baja
+          {statusLabel('driver', 'INACTIVE')}
         </span>
       )}
       <p className="text-etiqueta text-informativo truncate max-w-[45%] text-right">
