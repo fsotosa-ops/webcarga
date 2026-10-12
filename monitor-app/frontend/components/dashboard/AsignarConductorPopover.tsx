@@ -29,7 +29,9 @@ type Props = {
   cargando?: boolean
   /** Puede rechazar: el popover muestra el error y NO se cierra. */
   onAsignar: (driverId: string, aTodosSusViajes: boolean) => void | Promise<void>
-  onDarDeAlta: (
+  /** Sin él no se ofrece el alta: crear al conductor y vincularlo a su empresa
+   *  pide `directory.edit`, además de `trips.edit_sensitive`. */
+  onDarDeAlta?: (
     nombre: string, rut: string, aTodosSusViajes: boolean, carrierId: string | null,
   ) => void | Promise<void>
   onCancelar: () => void
@@ -157,13 +159,15 @@ export function AsignarConductorPopover({
             <p className={`text-etiqueta py-1 ${TEXTO_CUERPO}`}>
               No encontramos a esta persona en el registro.
             </p>
-            <button
-              type="button"
-              onClick={() => setDandoDeAlta(true)}
-              className="w-full flex items-center justify-center gap-1.5 rounded-md border border-accent bg-accent/5 px-2.5 py-2 text-dato text-accent font-medium hover:bg-accent/10"
-            >
-              <UserPlus size={14} /> Ninguno — dar de alta a esta persona
-            </button>
+            {onDarDeAlta && (
+              <button
+                type="button"
+                onClick={() => setDandoDeAlta(true)}
+                className="w-full flex items-center justify-center gap-1.5 rounded-md border border-accent bg-accent/5 px-2.5 py-2 text-dato text-accent font-medium hover:bg-accent/10"
+              >
+                <UserPlus size={14} /> Ninguno — dar de alta a esta persona
+              </button>
+            )}
 
             {parecidos.length > 0 && !verParecidos && (
               <button type="button" onClick={() => setVerParecidos(true)}
@@ -272,7 +276,7 @@ export function AsignarConductorPopover({
             <button
               type="button"
               disabled={guardando || !rutNuevo.trim() || !nombreNuevo.trim()}
-              onClick={() => ejecutar(() => onDarDeAlta(
+              onClick={() => ejecutar(() => onDarDeAlta?.(
                 nombreNuevo.trim(), rutNuevo.trim(), aTodos, empresa?.id ?? null,
               ))}
               className="flex-1 flex items-center justify-center gap-1.5 rounded-md bg-accent px-2.5 py-1.5 text-dato text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed"

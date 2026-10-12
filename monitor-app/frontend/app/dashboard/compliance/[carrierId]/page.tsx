@@ -591,6 +591,10 @@ export default function FichaEmpresaPage() {
    *  como empiezan a decir cosas distintas. Es el mismo criterio que usa
    *  Empresas (`operational_status !== 'ACTIVE'` para ofrecer reactivar). */
   const empresaActiva = carrierQuery.data?.operational_status === 'ACTIVE'
+  /** Pasar una empresa de ONBOARDING a ACTIVE es un alta (`directory.edit`);
+   *  cualquier otro cambio de su estado pide `directory.delete`. */
+  const enOnboarding = carrierQuery.data?.operational_status === 'ONBOARDING'
+  const puedeCambiarEstadoEmpresa = enOnboarding ? puedeGestionarFlotaRol : canAdmin
 
   /** Si esta pantalla puede ESCRIBIR. No es sólo el rol: una empresa dada de
    *  baja no recibe documentación, tenga uno el permiso que tenga. Se deriva
@@ -823,7 +827,7 @@ export default function FichaEmpresaPage() {
             dejó en admin a propósito (Ronda 135). Mismo permiso, mismo
             endpoint y mismo diálogo que en Empresas — lo único que cambia es
             que ya no hay que ir hasta allá. */}
-        {canAdmin && (
+        {puedeCambiarEstadoEmpresa && (
           <div className="flex flex-col items-end gap-1">
             <button
               type="button"
@@ -846,14 +850,14 @@ export default function FichaEmpresaPage() {
                   : 'border-border bg-white text-text-primary hover:bg-bg-main'
               }`}
             >
-              {reactivando ? 'Reactivando…' : empresaActiva ? 'Dar de baja' : 'Reactivar'}
+              {reactivando ? 'Reactivando…' : empresaActiva ? 'Dar de baja' : enOnboarding ? 'Activar' : 'Reactivar'}
             </button>
             {errorReactivar && (
               <p className="text-etiqueta text-status-incidente max-w-xs text-right">{errorReactivar}</p>
             )}
           </div>
         )}
-        {!canAdmin && (
+        {!puedeCambiarEstadoEmpresa && (
           <p className="text-etiqueta text-informativo">La baja de una empresa la hace Certificación.</p>
         )}
       </EncabezadoDePagina>

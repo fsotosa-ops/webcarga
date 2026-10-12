@@ -199,43 +199,43 @@ export function PreCierrePendingSection({ fecha }: Props) {
             // estado de origen es una reactivación (directory.delete).
             const canActivate = esc.operational_status === 'ONBOARDING' ? canEditDirectory : canChangeCarrierStatus
             return (
-            <div key={esc.carrier_id} className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 space-y-2">
-              <p className="text-xs text-amber-800">
-                <span className="font-semibold">{esc.carrier_name}</span> está en onboarding. ¿Activarla para incluirla en el cierre?
-              </p>
-              {!canActivate ? noPermission : (<>
-              {activateError[esc.carrier_id] && (
-                <div className="space-y-1.5">
-                  <p className="text-[11px] text-red-600">{activateError[esc.carrier_id]}</p>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      value={taxIdDraft[esc.carrier_id] ?? ''}
-                      onChange={e => setTaxIdDraft(prev => ({ ...prev, [esc.carrier_id]: e.target.value }))}
-                      placeholder="RUT / Tax ID"
-                      aria-label={`RUT de ${esc.carrier_name}`}
-                      className="text-[11px] border border-border rounded-lg px-2 py-1 bg-white"
-                    />
-                    <button
-                      type="button"
-                      disabled={activating === esc.carrier_id || !taxIdDraft[esc.carrier_id]?.trim()}
-                      onClick={() => handleSaveTaxId(esc.carrier_id)}
-                      className="text-[11px] font-semibold bg-accent text-white rounded-lg px-2 py-1 disabled:opacity-50"
-                    >
-                      Guardar RUT y activar
-                    </button>
-                  </div>
-                </div>
-              )}
-              <button
-                type="button"
-                disabled={activating === esc.carrier_id}
-                onClick={() => handleActivate(esc.carrier_id)}
-                className="text-[11px] font-semibold text-amber-700 hover:underline disabled:opacity-50"
-              >
-                Activar empresa
-              </button>
-              </>)}
-            </div>
+              <div key={esc.carrier_id} className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 space-y-2">
+                <p className="text-xs text-amber-800">
+                  <span className="font-semibold">{esc.carrier_name}</span> está en onboarding. ¿Activarla para incluirla en el cierre?
+                </p>
+                {!canActivate ? noPermission : (<>
+                  {activateError[esc.carrier_id] && (
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] text-red-600">{activateError[esc.carrier_id]}</p>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          value={taxIdDraft[esc.carrier_id] ?? ''}
+                          onChange={e => setTaxIdDraft(prev => ({ ...prev, [esc.carrier_id]: e.target.value }))}
+                          placeholder="RUT / Tax ID"
+                          aria-label={`RUT de ${esc.carrier_name}`}
+                          className="text-[11px] border border-border rounded-lg px-2 py-1 bg-white"
+                        />
+                        <button
+                          type="button"
+                          disabled={activating === esc.carrier_id || !taxIdDraft[esc.carrier_id]?.trim()}
+                          onClick={() => handleSaveTaxId(esc.carrier_id)}
+                          className="text-[11px] font-semibold bg-accent text-white rounded-lg px-2 py-1 disabled:opacity-50"
+                        >
+                          Guardar RUT y activar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    disabled={activating === esc.carrier_id}
+                    onClick={() => handleActivate(esc.carrier_id)}
+                    className="text-[11px] font-semibold text-amber-700 hover:underline disabled:opacity-50"
+                  >
+                    Activar empresa
+                  </button>
+                </>)}
+              </div>
             )
           })}
 

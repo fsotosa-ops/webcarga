@@ -396,6 +396,10 @@ function EmpresaDetailPageInner() {
     </div>
   )
 
+  // ONBOARDING -> ACTIVE es un alta (directory.edit); cualquier otro cambio del
+  // estado de la empresa pide directory.delete.
+  const canChangeCarrierStatus = carrier.operational_status === 'ONBOARDING' ? canEdit : canAdmin
+
   return (
     <div className="p-4 md:p-6 space-y-5 relative">
       {backLink && (
@@ -453,7 +457,7 @@ function EmpresaDetailPageInner() {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {canAdmin && (
+              {canChangeCarrierStatus && (
                 <button
                   onClick={() => carrier.operational_status !== 'ACTIVE' ? handleReactivateCarrier() : setBajaModalOpen(true)}
                   className={`px-4 py-2 rounded-lg text-sm font-bold transition border shadow-sm shrink-0 ${
@@ -462,7 +466,7 @@ function EmpresaDetailPageInner() {
                       : 'bg-white hover:bg-red-50 text-red-500 border-red-200'
                   }`}
                 >
-                  {carrier.operational_status !== 'ACTIVE' ? 'Reactivar' : 'Dar de baja'}
+                  {carrier.operational_status === 'ACTIVE' ? 'Dar de baja' : carrier.operational_status === 'ONBOARDING' ? 'Activar' : 'Reactivar'}
                 </button>
               )}
               {canAdmin && (
@@ -473,7 +477,7 @@ function EmpresaDetailPageInner() {
                   Eliminar
                 </button>
               )}
-              {!canAdmin && (
+              {!canChangeCarrierStatus && (
                 <p className="text-etiqueta text-informativo">La baja de una empresa la hace Certificación.</p>
               )}
             </div>

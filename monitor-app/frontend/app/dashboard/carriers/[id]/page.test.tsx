@@ -117,6 +117,23 @@ describe('EmpresaDetailPage', () => {
     expect(screen.queryByRole('button', { name: /^Dar de baja$/ })).not.toBeInTheDocument()
   })
 
+  it('sin directory.delete pero con directory.edit, una empresa en ONBOARDING se activa', async () => {
+    permisos.darDeBaja = false
+    vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'ONBOARDING' })
+    vi.mocked(carriersApi.patch).mockResolvedValue(CARRIER)
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /^Activar$/ }))
+    await waitFor(() => expect(carriersApi.patch).toHaveBeenCalledWith('t1', { operational_status: 'ACTIVE' }))
+    expect(screen.queryByText('La baja de una empresa la hace Certificación.')).not.toBeInTheDocument()
+  })
+
+  it('sin directory.delete una empresa ACTIVE no ofrece botón de estado', async () => {
+    permisos.darDeBaja = false
+    renderPage()
+    expect(await screen.findByText('La baja de una empresa la hace Certificación.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^(Dar de baja|Reactivar|Activar)$/ })).not.toBeInTheDocument()
+  })
+
   it('el Operador (sin directory.edit) da de baja a un conductor desde su panel', async () => {
     permisos.darDeBaja = false
     permisos.negados = new Set(['directory.edit', 'policies.edit', 'policies.delete'])

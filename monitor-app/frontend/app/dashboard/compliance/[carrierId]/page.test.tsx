@@ -1075,6 +1075,17 @@ describe('FichaEmpresaPage', () => {
     permisos.admin = false
     montar([fila()])
     expect(await screen.findByText('La baja de una empresa la hace Certificación.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^(Dar de baja|Reactivar|Activar)$/ })).not.toBeInTheDocument()
+  })
+
+  it('sin directory.delete pero con directory.edit, una empresa en ONBOARDING se activa', async () => {
+    permisos.editor = true
+    permisos.admin = false
+    vi.mocked(carriersApi.patch).mockResolvedValue(CARRIER)
+    montar([fila()], { ...CARRIER, operational_status: 'ONBOARDING' })
+    fireEvent.click(await screen.findByRole('button', { name: /^Activar$/ }))
+    await waitFor(() => expect(carriersApi.patch).toHaveBeenCalledWith('c1', { operational_status: 'ACTIVE' }))
+    expect(screen.queryByText('La baja de una empresa la hace Certificación.')).not.toBeInTheDocument()
   })
 
   it('una empresa dada de baja ofrece reactivarla, no darla de baja otra vez', async () => {

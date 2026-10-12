@@ -208,6 +208,8 @@ export default function DiarioPage() {
   const { pinned, togglePin } = usePinnedAlertSignals()
   // ── Identificar al conductor desde la tabla (2026-08-18) ───────────────
   const puedeEditar = usePermiso('trips.edit_sensitive')
+  // El alta crea el conductor y lo vincula a su empresa: eso pide directory.edit.
+  const puedeDarDeAlta = usePermiso('directory.edit')
   const [asignando, setAsignando] = useState<Trip | null>(null)
   const [soloSinIdentificar, setSoloSinIdentificar] = useState(false)
 
@@ -740,7 +742,7 @@ export default function DiarioPage() {
               // mostrar el error, apagar el control y ofrecer la salida. Lo que
               // sí importa es que `setAsignando(null)` viene DESPUÉS del await:
               // si la API falla, el popover queda abierto con lo que se escribió.
-              onDarDeAlta={async (nombre, rut, aTodos, carrierId) => {
+              onDarDeAlta={!puedeDarDeAlta ? undefined : async (nombre, rut, aTodos, carrierId) => {
                 const creado = await driversApi.create({ tax_id: rut, full_name: nombre })
                 // La empresa va antes de asignar el viaje: un conductor sin
                 // empresa no aparece en el cierre del día. Si esta llamada

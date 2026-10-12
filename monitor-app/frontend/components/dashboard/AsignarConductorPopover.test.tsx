@@ -60,6 +60,12 @@ describe('AsignarConductorPopover', () => {
   // Medido: de las 28 personas sin identificar, 19 no tienen ningun candidato
   // contenido. Ofrecer al "mas parecido" ahi es ofrecer a otra persona: para
   // el viaje 2032999 el mejor da 0,22 y no es quien.
+  it('sin onDarDeAlta (sin directory.edit) no ofrece el alta', () => {
+    render_(<AsignarConductorPopover {...base} onDarDeAlta={undefined} candidatos={[]} />)
+    expect(screen.getByText(/No encontramos a esta persona/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /dar de alta/i })).not.toBeInTheDocument()
+  })
+
   it('sin ningun candidato contenido, el camino principal es dar de alta', () => {
     render_(<AsignarConductorPopover {...base} candidatos={[PARECIDO]} />)
 
