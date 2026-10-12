@@ -2,13 +2,14 @@
 Reemplaza schemas/transporter_relational.py: internacionalizado (tax_id +
 country_code en vez de rut/dv), sin los sub-recursos jsonb legacy."""
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Optional
 
 from pydantic import BaseModel, field_validator, model_validator
 
 from ..authz.permissions import Permission
 
 from .common import ManagementType, normalize_management_types
+from .states import CarrierLifecycle
 
 # Verificado contra datos reales (2026-07-16): public.carriers.operational_status
 # no tiene CHECK constraint, y los valores en uso hoy son 'ACTIVE' (38) y
@@ -20,7 +21,9 @@ from .common import ManagementType, normalize_management_types
 # RUT todavía, no operativa, no entra en cierres — distinta de 'INACTIVE'
 # (fue ACTIVE y se dio de baja) y de 'LEGACY_INACTIVE' (dato heredado nunca
 # migrado).
-OperationalStatus = Literal["ACTIVE", "INACTIVE", "LEGACY_INACTIVE", "ONBOARDING"]
+# Los valores viven en el glosario (D1, app/schemas/states.py); el comentario de
+# arriba cuenta de dónde sale cada uno.
+OperationalStatus = CarrierLifecycle
 
 # Única fuente de verdad para "empresa activa" en filtros que deben excluir
 # inactivas/legacy/onboarding (ej. Certificación, bug 5.4) — evita duplicar

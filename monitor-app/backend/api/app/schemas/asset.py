@@ -6,8 +6,9 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from ..authz.permissions import Permission
+from .states import FleetLifecycle
 
-OperationalStatus = Literal["ACTIVE", "INACTIVE"]
+OperationalStatus = FleetLifecycle  # glosario (D1)
 # Los dos tipos que existen de verdad. CAMION, FURGON y OTRO eran
 # placeholders del commit 5955c5f (Empresas/Seguros), ANTERIORES a la taxonomía
 # real de vehículos (migraciones 20260802–20260804): nunca describieron el

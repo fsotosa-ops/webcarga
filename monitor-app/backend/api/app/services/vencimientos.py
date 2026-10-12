@@ -141,59 +141,79 @@ def aviso_desde_sql(alias: str = "cr") -> str:
     )
 
 
+# Dónde está la asignación de cada tipo de entidad. Una empresa no tiene
+# asignación: cada predicado dice qué significa para ella. La usan ingreso_sql,
+# _se_fue y ultima_empresa_sql.
+_ASIGNACIONES = {"DRIVER": ("driver_assignments", "driver_id"),
+                 "ASSET": ("asset_assignments", "asset_id")}
+
+
 def _ingreso(tabla: str, col: str, alias: str) -> str:
     """Cuándo ingresó un conductor o un equipo: el `start_date` de su
-    asignación ACTIVE (NULL sin una). Una sola definición: la usan
-    MONTH_AFTER_START (`exigible_sql`, `exigible_desde_sql`) y `ingreso_sql`."""
+    asignación ACTIVE (NULL sin una)."""
     return (f"(SELECT vg_da.start_date FROM public.{tabla} vg_da "
             f"WHERE vg_da.{col} = {alias}.entity_id AND vg_da.status = 'ACTIVE')")
 
 
-def _ingreso_del_conductor(alias: str) -> str:
-    return _ingreso("driver_assignments", "driver_id", alias)
-
-
 def ingreso_sql(alias: str = "cr") -> str:
     """Desde cuándo está quien debe el documento (Pendientes: "Falta · Ingresó
-    hace N días"). Conductor y equipo: el inicio de su asignación vigente, la
-    misma fecha que usa MONTH_AFTER_START. Empresa: su alta (`created_at`),
-    como día de Chile — la base corre en UTC."""
+    hace N días", y el mes de MONTH_AFTER_START). Conductor y equipo: el inicio
+    de su asignación vigente. Empresa: su alta (`created_at`), como día de
+    Chile — la base corre en UTC."""
+    ramas = " ".join(f"WHEN '{tipo}' THEN {_ingreso(tabla, col, alias)}"
+                     for tipo, (tabla, col) in _ASIGNACIONES.items())
     return (
-        f"(CASE {alias}.entity_type "
-        f"WHEN 'DRIVER' THEN {_ingreso_del_conductor(alias)} "
-        f"WHEN 'ASSET' THEN {_ingreso('asset_assignments', 'asset_id', alias)} "
+        f"(CASE {alias}.entity_type {ramas} "
         f"WHEN 'CARRIER' THEN (SELECT (vg_ic.created_at AT TIME ZONE 'America/Santiago')::date "
         f"FROM public.carriers vg_ic WHERE vg_ic.id = {alias}.entity_id) END)"
     )
 
 
+def _se_fue(alias: str) -> str:
+    """ON_ENTITY_END: el conductor o el equipo ya no tiene asignación ACTIVE y
+    tuvo alguna, cada uno en SU tabla (B-8: antes miraba driver_assignments para
+    cualquier tipo, y un equipo nunca llegaba a deber su documento al término).
+    Una empresa no se "va" de nadie: false, como hasta ahora."""
+    def _rama(tabla: str, col: str) -> str:
+        return (f"(NOT EXISTS (SELECT 1 FROM public.{tabla} vg_da "
+                f"WHERE vg_da.{col} = {alias}.entity_id AND vg_da.status = 'ACTIVE') "
+                f"AND EXISTS (SELECT 1 FROM public.{tabla} vg_da WHERE vg_da.{col} = {alias}.entity_id))")
+    ramas = " ".join(f"WHEN '{tipo}' THEN {_rama(tabla, col)}" for tipo, (tabla, col) in _ASIGNACIONES.items())
+    return f"(CASE {alias}.entity_type {ramas} ELSE false END)"
+
+
+def _mes_siguiente_al_ingreso(alias: str) -> str:
+    return f"(date_trunc('month', {ingreso_sql(alias)}) + interval '1 month')::date"
+
+
 def exigible_sql(alias: str = "cr") -> str:
     """Si ya se le exige (exigible_on).
       ON_ENTITY_START / ON_REQUEST  siempre (a ON_REQUEST lo filtra la siembra)
-      MONTH_AFTER_START  desde el dia 1 del mes siguiente al ingreso del
-                         conductor (start_date de su asignacion ACTIVE; sin
-                         asignacion, se exige)
-      ON_ENTITY_END      el conductor ya no tiene asignacion ACTIVE y tuvo alguna"""
+      MONTH_AFTER_START  desde el día 1 del mes siguiente al ingreso (ingreso_sql:
+                         asignación ACTIVE de conductor o equipo, alta de la
+                         empresa; sin fecha, se exige)
+      ON_ENTITY_END      el conductor o el equipo ya no tiene asignación ACTIVE
+                         y tuvo alguna (_se_fue)
+
+    Hoy la CHECK compliance_requirements_exigible_on_entity_check limita
+    MONTH_AFTER_START y ON_ENTITY_END a requisitos de conductor: las ramas de
+    equipo y empresa son la regla para cuando Configuración lo permita."""
     return (
         f"(CASE WHEN {_es(alias, 'exigible_on', 'MONTH_AFTER_START')} THEN COALESCE("
-        f"{hoy_sql()} >= (date_trunc('month', {_ingreso_del_conductor(alias)}) + interval '1 month')::date, true) "
-        f"WHEN {_es(alias, 'exigible_on', 'ON_ENTITY_END')} THEN "
-        f"NOT EXISTS (SELECT 1 FROM public.driver_assignments vg_da "
-        f"WHERE vg_da.driver_id = {alias}.entity_id AND vg_da.status = 'ACTIVE') "
-        f"AND EXISTS (SELECT 1 FROM public.driver_assignments vg_da "
-        f"WHERE vg_da.driver_id = {alias}.entity_id) "
+        f"{hoy_sql()} >= {_mes_siguiente_al_ingreso(alias)}, true) "
+        f"WHEN {_es(alias, 'exigible_on', 'ON_ENTITY_END')} THEN {_se_fue(alias)} "
         f"ELSE true END)"
     )
 
 
 def exigible_desde_sql(alias: str = "cr") -> str:
     """Desde qué fecha se exige, cuando todavía no: el día 1 del mes siguiente
-    al ingreso del conductor (MONTH_AFTER_START). NULL en los demás casos:
-    "al ingreso" y "a pedido" se exigen siempre, y "al término" no tiene una
-    fecha que anunciar (depende de que el conductor se vaya)."""
+    al ingreso (MONTH_AFTER_START). NULL en los demás casos: "al ingreso" y "a
+    pedido" se exigen siempre, y "al término" no tiene una fecha que anunciar
+    (depende de que la persona o el equipo se vaya)."""
     return (
         f"(CASE WHEN {_es(alias, 'exigible_on', 'MONTH_AFTER_START')} THEN "
-        f"(date_trunc('month', {_ingreso_del_conductor(alias)}) + interval '1 month')::date END)"
+        f"{_mes_siguiente_al_ingreso(alias)} END)"
     )
 
 
@@ -391,10 +411,6 @@ def document_state_sql(alias: str = "cr") -> str:
         f"WHEN {por_vencer_predicate(alias)} THEN 'EXPIRING' "
         f"ELSE 'MISSING' END)"
     )
-
-
-_ASIGNACIONES = {"DRIVER": ("driver_assignments", "driver_id"),
-                 "ASSET": ("asset_assignments", "asset_id")}
 
 
 def ultima_empresa_sql(alias: str, entity_type: str) -> str:

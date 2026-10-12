@@ -1,11 +1,12 @@
 """Pydantic schemas para public.drivers (H2.2 — routers/drivers.py)."""
-from typing import Literal, Optional
+from typing import Optional
 
 from pydantic import BaseModel, field_validator
 
 from ..authz.permissions import Permission
+from .states import FleetLifecycle
 
-OperationalStatus = Literal["ACTIVE", "INACTIVE"]
+OperationalStatus = FleetLifecycle  # glosario (D1)
 
 
 class DriverCreateBody(BaseModel):
