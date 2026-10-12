@@ -325,15 +325,40 @@ describe('TripDetailView — Conductor y flota (FleetAssignSection, driver-first
     expect(screen.getByText('Empresa: 11 pendientes')).toBeInTheDocument()
   })
 
-  it('shows a critical banner when the driver is missing Licencia de Conducir or Carnet, with a real link to Empresas', () => {
+  // R-E5: la Task 7 pone driver_has_critical_alert en true cuando falta o venció
+  // la licencia o la cédula (como pidió el usuario el 22/07) o hay un aviso
+  // crítico. Es el caso de hoy: licencia faltante.
+  it('un conductor sin licencia (driver_has_critical_alert) muestra el banner y lleva al Directorio', () => {
     renderDetailView({
       ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
-      driver_pending_docs: 2, driver_pending_docs_critical: true,
+      driver_pending_docs: 2, driver_has_critical_alert: true,
+      // El campo viejo ya no decide nada aunque venga.
+      driver_pending_docs_critical: false,
     })
-    expect(screen.getByText(/Falta Licencia de Conducir o Carnet del conductor/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'revisar en Empresas' })).toHaveAttribute(
+    expect(screen.getByText(/licencia o la cédula del conductor falta, venció o vence dentro del plazo crítico/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'revisar en Directorio' })).toHaveAttribute(
       'href', '/dashboard/carriers/c1?tab=conductores',
     )
+  })
+
+  it('sin aviso crítico no hay banner, aunque el campo viejo diga lo contrario', () => {
+    renderDetailView({
+      ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
+      driver_pending_docs: 2, driver_has_critical_alert: false, driver_pending_docs_critical: true,
+    })
+    expect(screen.queryByText(/licencia o la cédula del conductor/i)).not.toBeInTheDocument()
+  })
+
+  // Spec §7.1: la empresa No habilitada se asigna, pero el Monitor lo avisa.
+  it('una empresa no habilitada se avisa en el panel, con la palabra del glosario', () => {
+    renderDetailView({ ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa', carrier_can_operate: false })
+    expect(screen.getByText('No habilitada')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'revisar en Directorio' })).toHaveAttribute('href', '/dashboard/carriers/c1')
+  })
+
+  it('una empresa habilitada o sin dato no muestra el aviso', () => {
+    renderDetailView({ ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa', carrier_can_operate: null })
+    expect(screen.queryByText('No habilitada')).not.toBeInTheDocument()
   })
 
   it('links "revisar en Seguros" to the carrier\'s Seguros tab when the policy is expired', () => {
@@ -346,23 +371,15 @@ describe('TripDetailView — Conductor y flota (FleetAssignSection, driver-first
     )
   })
 
-  it('links "revisar en Empresas" to the conductores tab on a fleet mismatch', () => {
+  it('links "revisar en Directorio" to the conductores tab on a fleet mismatch', () => {
     renderDetailView({
       ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
       fleet_match_status: 'MISMATCH', fleet_match_driver_home_carrier: 'Otra Transportista Spa',
     })
     expect(screen.getByText(/distinta de la empresa de este viaje/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'revisar en Empresas' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'revisar en Directorio' })).toHaveAttribute(
       'href', '/dashboard/carriers/c1?tab=conductores',
     )
-  })
-
-  it('does not show the critical banner when pending docs are non-critical', () => {
-    renderDetailView({
-      ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
-      driver_pending_docs: 2, driver_pending_docs_critical: false,
-    })
-    expect(screen.queryByText(/Falta Licencia de Conducir o Carnet del conductor/)).not.toBeInTheDocument()
   })
 })
 

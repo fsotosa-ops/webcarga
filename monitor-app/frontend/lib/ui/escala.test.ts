@@ -71,7 +71,8 @@ describe('la escala tipografica', () => {
     // 213 -> 209 el 2026-10-12: los chips de ciclo de vida pasaron a StatusChip (D1, Task 11).
     // 209 -> 205 el 2026-10-12: las filas del checklist y del panel dejaron los 10px (D1, Task 12).
     // 205 -> 201 el 2026-10-12: tarjetas y tabla del Directorio dejaron los 10px (D1, Task 13).
-    const DEUDA = 201
+    // 201 -> 199 el 2026-10-12: los avisos de TripBulkUpload usan text-etiqueta (D1, Task 14).
+    const DEUDA = 199
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

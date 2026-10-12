@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { PendingDocsBadge } from './PendingDocsBadge'
+import { alertSeverityStyle } from '@/lib/states'
 
 // Feedback post-weekly 2026-07-22: el primer intento (prefijo de 1 letra,
 // "T7"/"C12") seguía siendo ambiguo — el usuario preguntó qué significaba.
@@ -35,10 +36,19 @@ describe('PendingDocsBadge', () => {
     expect(screen.getByText('Conductor: 12 pendientes')).toBeInTheDocument()
   })
 
-  it('uses red tone when critical, amber otherwise', () => {
+  // D1: el rojo es el aviso crítico (días que faltan contra el umbral), con
+  // el tono y el ícono del glosario; nada de colores escritos a mano.
+  it('crítico usa el tono urgente del glosario; si no, el de aviso', () => {
     const { container: critical } = render(<PendingDocsBadge count={2} critical compact />)
     const { container: normal } = render(<PendingDocsBadge count={2} compact />)
-    expect(critical.querySelector('span')?.className).toContain('bg-red-100')
-    expect(normal.querySelector('span')?.className).toContain('bg-amber-50')
+    expect(critical.querySelector('span')?.className).toContain('text-status-incidente')
+    expect(normal.querySelector('span')?.className).toContain('text-warning')
+    expect(critical.innerHTML).not.toMatch(/red-|amber-/)
+    expect(normal.innerHTML).not.toMatch(/red-|amber-/)
+  })
+
+  it('el título nombra el aviso crítico cuando lo hay', () => {
+    render(<PendingDocsBadge count={2} critical label="Conductor" compact />)
+    expect(screen.getByTitle(new RegExp(`Conductor: 2 documento\\(s\\) pendiente\\(s\\) · ${alertSeverityStyle('critical').label}`))).toBeInTheDocument()
   })
 })
