@@ -38,7 +38,7 @@ export const rutDigits = (input: string | null | undefined): string => (input ??
  *  en mayúscula, de 4 caracteres o más, y solo si el texto no trae otras letras
  *  (si no, "Kevin" buscaría la K de un DV). Vacío = no es una búsqueda por RUT. */
 export function rutSearchKey(input: string): string {
-  if (/[A-Za-jL-Zl-z]/.test(input)) return ''
+  if (/[A-JL-Za-jl-z]/.test(input)) return ''
   const key = rutDigits(input)
   return key.length >= 4 ? key : ''
 }

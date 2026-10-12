@@ -24,6 +24,9 @@ describe('identidad canónica, espejo de la base (D1 §7.2)', () => {
   it('claves de búsqueda parcial: sin adornos, para comparar un pedazo', () => {
     expect(rutSearchKey('22.222.222')).toBe('22222222')
     expect(rutSearchKey('10.000.013-k')).toBe('10000013K')
+    // La K mayúscula del DV también es parte del RUT, no "otra letra".
+    expect(rutSearchKey('10.000.013-K')).toBe('10000013K')
+    expect(rutSearchKey('013-K')).toBe('013K')
     expect(plateSearchKey('ab-cd')).toBe('ABCD')
   })
 
