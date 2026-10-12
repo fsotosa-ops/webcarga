@@ -54,7 +54,7 @@ Workflows `Deploy Monitor API` y `Deploy Frontend` en verde (12/10 ~00:38 UTC). 
 - Frontend: lista y detalle por documento/empresa, URL `?by&doc&carrier&state`, "Todos" = lo pendiente, seis estados, teléfono,
   carga en fila (re-sube para "Completar") y en lote (de a 3, reintento sin repetir, `beforeunload`). `SegmentedControl` en
   `components/ui`, `periodoQueSeExige` y `hoyEnChile()` compartidos.
-- Rulings: R1-R4 del plan + P1-P24 en el ledger de la ejecución (resumen en el mensaje de cierre de la sesión).
+- Rulings: R1-R4 del plan + P1-P24 en el ledger de la ejecución (`docs/superpowers/plans/2026-10-11-pending-documents-rulings.md`).
 
 **Verificación:** backend del área 286 + 158 verdes; frontend 1452 (área) + 638 tras los últimos arreglos; tsc y build OK.
 Rendimiento (lectura, base real, 5.704 registros / 36 reglas activas): resumen 43 ms plan + ~210 ms ejecución en el servidor
