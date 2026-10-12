@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from app.auth import get_current_user
 from app.db import get_pool
 from app.routers.config import router as config_router
+from app.services.vencimientos import GLOBAL_ALERT_THRESHOLD
 from app.routers.config_reviews import buscador as search_router
 from app.routers.config_reviews import router as reviews_router
 from app.routers.status_taxonomies import router as taxonomies_router
@@ -186,12 +187,12 @@ def test_los_umbrales_de_vencimiento_son_de_certificacion():
     """Son reglas de vencimiento de documentos (spec: certification.configure);
     estaban en operations.configure."""
     pool = AsyncMock()
-    pool.fetchrow.return_value = {"doc_type": "LICENCIA", "label": "Licencia", "warning_days": 30, "error_days": 7}
+    pool.fetchrow.return_value = {"doc_type": GLOBAL_ALERT_THRESHOLD, "label": "Licencia", "warning_days": 30, "error_days": 0}
     cuerpo = {"warning_days": 30}
     assert cliente(pool, usuario("operations_supervisor")).patch(
-        "/api/v1/config/alert-thresholds/LICENCIA", json=cuerpo).status_code == 403
+        f"/api/v1/config/alert-thresholds/{GLOBAL_ALERT_THRESHOLD}", json=cuerpo).status_code == 403
     assert cliente(pool, usuario("certification_supervisor")).patch(
-        "/api/v1/config/alert-thresholds/LICENCIA", json=cuerpo).status_code == 200
+        f"/api/v1/config/alert-thresholds/{GLOBAL_ALERT_THRESHOLD}", json=cuerpo).status_code == 200
 
 
 def test_el_permiso_de_cada_seccion_dice_lo_mismo_en_python_y_en_typescript():

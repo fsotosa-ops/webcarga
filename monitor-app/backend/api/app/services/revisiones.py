@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from fastapi import HTTPException
 
 from ..authz.permissions import Permission
+from .vencimientos import GLOBAL_ALERT_THRESHOLD
 
 
 @dataclass(frozen=True)
@@ -76,8 +77,10 @@ REVISABLES: tuple[Revisable, ...] = (
               "FROM public.compliance_requirements",
               Permission.CERTIFICATION_CONFIGURE),
     Revisable("certification", "expiry-alerts",
+              # Solo el aviso general (D1-R4): las filas por documento no se
+              # muestran, así que no pueden contarse como "sin revisar".
               "SELECT doc_type AS id, label, label || ' ' || doc_type AS buscable, "
-              "doc_type AS abre FROM app.alert_thresholds",
+              f"doc_type AS abre FROM app.alert_thresholds WHERE doc_type = '{GLOBAL_ALERT_THRESHOLD}'",
               Permission.CERTIFICATION_CONFIGURE),
 
     Revisable("operations", "tms-statuses",

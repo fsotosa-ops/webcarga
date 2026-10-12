@@ -29,6 +29,7 @@ from .vencimientos import (
     in_scope_sql,
     ingreso_sql,
     pendiente_predicate,
+    GLOBAL_ALERT_THRESHOLD,
     por_vencer_predicate,
     ultima_empresa_sql,
     vence_el_sql,
@@ -286,7 +287,7 @@ def summary_from_row(row: Mapping[str, Any], *, with_fleet: bool) -> ComplianceS
 
 _ERROR_DAYS = (
     "(SELECT vg_ae.error_days FROM app.alert_thresholds vg_ae "
-    "WHERE vg_ae.doc_type = 'documento_por_vencer')"
+    f"WHERE vg_ae.doc_type = '{GLOBAL_ALERT_THRESHOLD}')"
 )
 
 
@@ -297,16 +298,21 @@ def days_to_expiry_sql(alias: str = "cr") -> str:
 
 
 def alert_severity_sql(alias: str = "cr") -> str:
-    """'critical' si se exige, no está vencido y le faltan como mucho los
-    `error_days` del umbral global; 'warning' si está por vencer
-    (`por_vencer_predicate`, que ya respeta los días de aviso de cada regla);
-    NULL en otro caso. "No vencido" es lo mismo que en document_state_sql: ni
-    marcado EXPIRED ni pasado de su fecha. Un documento vencido no lleva aviso:
-    su estado ya lo dice."""
-    vigente = f"({exigible_sql(alias)} AND NOT ({alias}.status = 'EXPIRED' OR {vencido_predicate(alias)}))"
+    """'critical' si está por vencer (`por_vencer_predicate`, que ya respeta los
+    días de aviso de cada regla) y le faltan como mucho los `error_days` del
+    umbral global; 'warning' si está por vencer y no es crítico; NULL en otro
+    caso. El crítico es un tramo DENTRO del por vencer (ruling T4-C): un
+    documento "Al día" nunca lleva aviso, aunque la ventana de su regla sea más
+    corta que `error_days`. "No vencido" es lo mismo que en document_state_sql:
+    ni marcado EXPIRED ni pasado de su fecha. Un documento vencido no lleva
+    aviso: su estado ya lo dice."""
+    por_vencer = (
+        f"({exigible_sql(alias)} AND NOT ({alias}.status = 'EXPIRED' OR {vencido_predicate(alias)}) "
+        f"AND {por_vencer_predicate(alias)})"
+    )
     return (
-        f"(CASE WHEN {vigente} AND {days_to_expiry_sql(alias)} <= {_ERROR_DAYS} THEN 'critical' "
-        f"WHEN {vigente} AND {por_vencer_predicate(alias)} THEN 'warning' END)"
+        f"(CASE WHEN {por_vencer} AND {days_to_expiry_sql(alias)} <= {_ERROR_DAYS} THEN 'critical' "
+        f"WHEN {por_vencer} THEN 'warning' END)"
     )
 
 

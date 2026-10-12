@@ -39,7 +39,11 @@ credenciales.txt
 # en la raíz, para que valgan en todo el repo y no haya que acordarse de
 # repetirlas en cada servicio nuevo.
 venv/
+# Un symlink no coincide con un patron que termina en barra: se ignora tambien sin ella
+venv
 .venv/
+# Idem para .venv
+.venv
 __pycache__/
 *.pyc
 *.pyo
