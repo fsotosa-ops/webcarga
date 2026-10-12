@@ -20,6 +20,7 @@ import { InsuranceSummaryCard } from '@/components/dashboard/InsuranceSummaryCar
 import { CarrierDocumentsTab } from '@/components/dashboard/carriers/CarrierDocumentsTab'
 import { DriverRosterCard } from '@/components/dashboard/DriverRosterCard'
 import { VehicleRosterCard } from '@/components/dashboard/VehicleRosterCard'
+import { DirectoryNotice } from '@/components/dashboard/DirectoryNotice'
 import { DriverDetailPanel } from '@/components/dashboard/DriverDetailPanel'
 import { VehicleDetailPanel } from '@/components/dashboard/VehicleDetailPanel'
 import { TransferModal } from '@/components/dashboard/TransferModal'
@@ -33,7 +34,7 @@ import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceCheckli
 import { expiryRelative, updatedRelative } from '@/lib/compliance'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { returnLink } from '@/lib/navegacion/directory'
-import { directoryKeys, invalidateDirectory, type DirectoryChange } from '@/lib/queries/directorio'
+import { CLOSURE_NOTICE, directoryKeys, invalidateDirectory, type DirectoryChange } from '@/lib/queries/directorio'
 
 const ROSTER_PAGE_SIZE = 9
 
@@ -223,9 +224,13 @@ function EmpresaDetailPageInner() {
   const policies = policiesQuery.data ?? []
 
   function invalidatePolicies(){ queryClient.invalidateQueries({ queryKey: ['carrier-policies', id] }) }
-  /** Todo cambio pasa por acá: una sola lista de qué queda obsoleto. */
-  async function afterChange(change: DirectoryChange) {
-    await invalidateDirectory(queryClient, change)
+  const [notice, setNotice] = useState<string | null>(null)
+  /** Todo cambio pasa por acá: una sola lista de qué queda obsoleto, y el aviso
+   *  cuando el cambio llega al Cierre (que se recalcula en el servidor). */
+  async function afterChange(change: DirectoryChange, done?: string) {
+    const { affectsClosure } = await invalidateDirectory(queryClient, change)
+    const partes = [done, affectsClosure ? CLOSURE_NOTICE : null].filter(Boolean)
+    setNotice(partes.length ? partes.join(' ') : null)
   }
 
   async function handleSaveBusinessName(value: string) {
@@ -909,6 +914,7 @@ function EmpresaDetailPageInner() {
           onConfirm={handleDeleteCarrier}
         />
       )}
+      <DirectoryNotice message={notice} onClose={() => setNotice(null)} />
     </div>
   )
 }

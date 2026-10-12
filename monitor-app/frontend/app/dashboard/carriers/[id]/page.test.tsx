@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import EmpresaDetailPage from './page'
@@ -132,6 +132,24 @@ describe('EmpresaDetailPage', () => {
     renderPage()
     expect(await screen.findByText('La baja de una empresa la hace Certificación.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^(Dar de baja|Reactivar|Activar)$/ })).not.toBeInTheDocument()
+  })
+
+  it('dar de baja a un conductor avisa que el Cierre se actualizará', async () => {
+    vi.mocked(driversApi.get).mockResolvedValue({
+      id: 'd1', tax_id: '22222222-2', country_code: 'CL', full_name: 'Juan Pérez',
+      operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
+      total_requirements: 5, last_document_update: null,
+      home_location_id: null, home_location_name: null, home_location_shipper: null, suggested_home_location: null,
+    })
+    vi.mocked(driversApi.patch).mockResolvedValue({} as never)
+    renderPage()
+    await clickTab(/Conductores/)
+    fireEvent.click(await screen.findByText('Juan Pérez'))
+    // La empresa también tiene su "Dar de baja": se busca dentro del panel del conductor.
+    const panel = await screen.findByRole('dialog', { name: 'Detalle de Juan Pérez' })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Dar de baja' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirmar baja' }))
+    expect(await screen.findByText('El Cierre se actualizará en alrededor de un minuto.')).toBeInTheDocument()
   })
 
   it('el Operador (sin directory.edit) da de baja a un conductor desde su panel', async () => {

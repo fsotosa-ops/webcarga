@@ -1723,6 +1723,9 @@ export type CierreViajesResponse = {
   grupos:   Record<GrupoDelCierre, ViajeDelCierre[]>
   /** Cuántos impiden firmar el día: `hoy`, `rezago` y la asignación incompleta del día. */
   bloquean: number
+  /** Bloque 0, 0.6: la misma marca de frescura que el resto del Cierre. */
+  calculado_a?:     string | null
+  pendiente_desde?: string | null
 }
 
 // ── Reporte de estatus del día, por tipo de operación (spec 2026-10-11) ─────

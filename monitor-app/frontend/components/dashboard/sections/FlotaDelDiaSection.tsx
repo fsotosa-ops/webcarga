@@ -1,5 +1,6 @@
 'use client'
 
+import { refetchWhilePending } from '@/components/dashboard/AvisoDeActualizacion'
 import { Fragment, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -132,10 +133,12 @@ export function FlotaDelDiaSection({
   const driversQuery = useQuery({
     queryKey: ['daily-closure', fecha],
     queryFn: () => dailyClosuresApi.get(fecha),
+    refetchInterval: refetchWhilePending,
   })
   const equipmentQuery = useQuery({
     queryKey: ['equipment-closures', fecha],
     queryFn: () => equipmentClosuresApi.get(fecha),
+    refetchInterval: refetchWhilePending,
   })
   // El catálogo de CD, para que el filtro pueda ofrecer uno que no tenga a
   // nadie ese día. Si falla, el filtro se arma igual con lo que haya en la

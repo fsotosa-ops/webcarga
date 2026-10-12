@@ -26,7 +26,7 @@ from ..services.audit import log_change
 from ..services.anular_viajes import (
     SQL_COLUMNAS_ANULABLE, SQL_JOIN_ANULABLE, anotar_anulable, anular_viajes, exigir_vigentes, revertir_anulacion,
 )
-from ..services.cierre_lineas import ultima_firma
+from ..services.cierre_lineas import frescura_del_dia, ultima_firma
 from ..services.cierre_viajes import SQL_CON_MOTIVO, SQL_GRUPOS_CIERRE
 from ..services.origen_del_viaje import origen_del_viaje
 
@@ -2416,6 +2416,9 @@ async def cierre_viajes(
     return {
         "grupos": grupos,
         "bloquean": len(grupos["hoy"]) + len(grupos["rezago"]) + incompletas_del_dia,
+        # La misma marca que daily-closure y equipment-closures (bloque 0, 0.6):
+        # mientras el día tiene un recálculo pendiente, la pantalla relee cada 15 s.
+        **await frescura_del_dia(pool, day),
     }
 
 

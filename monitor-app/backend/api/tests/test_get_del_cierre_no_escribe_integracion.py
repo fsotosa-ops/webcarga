@@ -6,6 +6,7 @@ import pytest
 from app.routers.daily_closures import get_daily_closure_status
 from app.routers.equipment_closures import get_equipment_closure_status
 from app.routers.status_report import get_status_report
+from app.routers.trips import cierre_viajes
 from tests.conftest import PoolDeUnaConexion
 
 pytestmark = pytest.mark.integracion
@@ -17,6 +18,7 @@ _CONTADORES = "SELECT coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0) FROM p
     lambda pool, f: get_daily_closure_status(fecha=f, pool=pool, _=None),
     lambda pool, f: get_equipment_closure_status(fecha=f, pool=pool, _=None),
     lambda pool, f: get_status_report(fecha=f, shipper_id=None, pool=pool, _=None),
+    lambda pool, f: cierre_viajes(fecha=f, pool=pool, _=None),
 ])
 async def test_leer_el_cierre_no_escribe_ninguna_fila(conexion_revertida, leer):
     fecha = (await conexion_revertida.fetchval("SELECT public.hoy_chile()")).isoformat()

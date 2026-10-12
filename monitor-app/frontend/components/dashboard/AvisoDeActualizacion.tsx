@@ -4,6 +4,16 @@ import { AlertTriangle, Info, RefreshCw } from 'lucide-react'
  *  (corre cada minuto; spec 2026-10-10, §3.5). */
 const ATRASO_MS = 5 * 60_000
 
+/** Relectura cada 15 s solo mientras el día tiene cambios por entrar: la misma
+ *  regla para las tres consultas del Cierre (bloque 0 del Directorio, 0.6). */
+export const REFETCH_WHILE_PENDING_MS = 15_000
+
+export function refetchWhilePending<T extends { pendiente_desde?: string | null }>(
+  query: { state: { data: T | undefined } },
+): number | false {
+  return query.state.data?.pendiente_desde ? REFETCH_WHILE_PENDING_MS : false
+}
+
 export type Frescura = 'al_dia' | 'actualizando' | 'atrasado' | 'sin_cierre'
 
 export function estadoDeFrescura(pendienteDesde: string | null, calculadoA: string | null, ahora: Date): Frescura {

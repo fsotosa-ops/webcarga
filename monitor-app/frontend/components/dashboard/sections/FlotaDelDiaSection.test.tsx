@@ -1098,4 +1098,32 @@ describe('FlotaDelDiaSection', () => {
     expect(onOpenQuickView).toHaveBeenCalledWith(
       { kind: 'carrier', id: 'cTractor', label: 'Empresa del tracto' }, 'asset:tx')
   })
+  it('los tractos se releen cada 15 s mientras el día tiene un recálculo pendiente (0.6)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+      vi.mocked(equipmentClosuresApi.get).mockResolvedValue({ ...EQUIPMENT_STATUS, pendiente_desde: '2026-08-04T15:00:00Z' })
+      renderSection()
+      await screen.findByText('FCCP42')
+      const antes = vi.mocked(equipmentClosuresApi.get).mock.calls.length
+      await vi.advanceTimersByTimeAsync(15_000)
+      await waitFor(() => expect(vi.mocked(equipmentClosuresApi.get).mock.calls.length).toBeGreaterThan(antes))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('sin recálculo pendiente no relee', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
+      renderSection()
+      await screen.findByText('FCCP42')
+      const antes = vi.mocked(equipmentClosuresApi.get).mock.calls.length
+      await vi.advanceTimersByTimeAsync(31_000)
+      expect(vi.mocked(equipmentClosuresApi.get).mock.calls.length).toBe(antes)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

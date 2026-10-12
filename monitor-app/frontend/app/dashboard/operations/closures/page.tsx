@@ -21,7 +21,7 @@ import { PasoViajesSection } from '@/components/dashboard/sections/PasoViajesSec
 import { AjustesPosterioresAlCierre } from '@/components/dashboard/AjustesPosterioresAlCierre'
 import { HistorialDeFirmas } from '@/components/dashboard/HistorialDeFirmas'
 import { IndicadorDeAjustes } from '@/components/dashboard/IndicadorDeAjustes'
-import { AvisoDeActualizacion } from '@/components/dashboard/AvisoDeActualizacion'
+import { AvisoDeActualizacion, refetchWhilePending } from '@/components/dashboard/AvisoDeActualizacion'
 import { Estado } from '@/components/ui/Estado'
 import { urlDelViaje } from '@/lib/navegacion/viaje'
 import { esUrlVieja, leerUrlDelCierre, urlDelCierre } from '@/lib/navegacion/cierre'
@@ -155,7 +155,7 @@ function ClosuresCenterPageInner() {
     queryFn: () => dailyClosuresApi.get(fecha),
     // El Cierre se calcula en segundo plano (spec 2026-10-10): mientras el día
     // tiene cambios por entrar, se vuelve a pedir hasta que estén.
-    refetchInterval: q => (q.state.data?.pendiente_desde ? 15_000 : false),
+    refetchInterval: refetchWhilePending,
   })
 
   const diaCerrado = cierreQuery.data?.closed ?? false
@@ -201,6 +201,7 @@ function ClosuresCenterPageInner() {
     queryKey: ['cierre-viajes', fecha],
     queryFn: () => tripsApi.cierreViajes(fecha),
     enabled: tab === 'trips',
+    refetchInterval: refetchWhilePending,
   })
   const motivosViajesQuery = useQuery({
     queryKey: ['taxonomies', 'TRIP_UNASSIGNED_REASON'],

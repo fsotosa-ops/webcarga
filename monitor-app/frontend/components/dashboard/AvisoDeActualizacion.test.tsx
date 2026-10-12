@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { AvisoDeActualizacion, estadoDeFrescura } from './AvisoDeActualizacion'
+import { AvisoDeActualizacion, estadoDeFrescura, refetchWhilePending, REFETCH_WHILE_PENDING_MS } from './AvisoDeActualizacion'
 
 const AHORA = new Date('2026-10-10T15:00:00Z')
 
@@ -38,5 +38,13 @@ describe('AvisoDeActualizacion', () => {
   it('dice desde cuándo no se pudo actualizar', () => {
     render(<AvisoDeActualizacion pendienteDesde="2026-10-10T14:40:00Z" calculadoA={null} ahora={AHORA} />)
     expect(screen.getByRole('alert')).toHaveTextContent('No se pudo actualizar desde 11:40')
+  })
+})
+
+describe('refetchWhilePending', () => {
+  it('relee cada 15 s solo mientras hay un recálculo pendiente', () => {
+    expect(refetchWhilePending({ state: { data: { pendiente_desde: '2026-10-12T15:00:00Z' } } })).toBe(REFETCH_WHILE_PENDING_MS)
+    expect(refetchWhilePending({ state: { data: { pendiente_desde: null } } })).toBe(false)
+    expect(refetchWhilePending({ state: { data: undefined } })).toBe(false)
   })
 })
