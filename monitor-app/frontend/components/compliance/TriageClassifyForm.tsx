@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { datoQuePide, datosDelDocumento } from '@/lib/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
+import { Estado } from '@/components/ui/Estado'
 import { PendingSlotPicker, type Slot } from './PendingSlotPicker'
 import type { PendingComplianceRow } from '@/lib/types'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
@@ -29,6 +30,10 @@ interface Props {
   /** Lo que le falta a esa empresa. Es el dato que responde "¿qué tengo
    *  pendiente acá?" sin salir de la pantalla, y el atajo para clasificar. */
   pendingRows?: PendingComplianceRow[]
+  /** El estado de la consulta de pendientes de la empresa (H4): "sin pendientes"
+   *  se dice solo con el dato en mano. */
+  pendingState?: 'loading' | 'error' | 'ready'
+  onRetryPending?: () => void
 }
 
 /** Panel derecho: a quién pertenece y qué es.
@@ -36,7 +41,7 @@ interface Props {
  *  El mismo formulario sirve para uno o para quince — la selección múltiple no
  *  necesita una pantalla propia. */
 export function TriageClassifyForm({
-  targetIds, subjects, onApplied, carrierLabel, pendingRows = [],
+  targetIds, subjects, onApplied, carrierLabel, pendingRows = [], pendingState = 'ready', onRetryPending,
 }: Props) {
   const [subjectKey, setSubjectKey] = useState('')
   const [requirementId, setRequirementId] = useState('')
@@ -200,11 +205,25 @@ export function TriageClassifyForm({
               Las dos causas de la lista vacía siguen siendo distintas y hay
               que seguir distinguiéndolas. */}
           {!subjects.length && (
-            <p className="text-[11px] text-informativo bg-accent/5 border border-border rounded-lg px-2 py-1.5">
-              {carrierLabel
-                ? 'Esta empresa no tiene requisitos pendientes que se puedan asignar. Suele pasar cuando la empresa no está activa.'
-                : 'Este documento todavía no tiene empresa. Elígela arriba y aparecerá qué le falta.'}
-            </p>
+            pendingState === 'loading' ? (
+              <div role="status" aria-label="Cargando lo que le falta a la empresa" className="space-y-2">
+                <div className="h-3 w-4/5 animate-pulse rounded bg-border" aria-hidden="true" />
+                <div className="h-3 w-3/5 animate-pulse rounded bg-border" aria-hidden="true" />
+              </div>
+            ) : pendingState === 'error' ? (
+              <Estado tipo="error" titulo="No se pudo cargar lo que le falta a la empresa">
+                <button type="button" onClick={onRetryPending}
+                        className="rounded-md border border-border bg-white px-3 py-1.5 text-dato font-semibold text-text-primary hover:bg-bg-main">
+                  Reintentar
+                </button>
+              </Estado>
+            ) : (
+              <p className="text-[11px] text-informativo bg-accent/5 border border-border rounded-lg px-2 py-1.5">
+                {carrierLabel
+                  ? 'Esta empresa no tiene requisitos pendientes que se puedan asignar. Suele pasar cuando la empresa no está activa.'
+                  : 'Este documento todavía no tiene empresa. Elígela arriba y aparecerá qué le falta.'}
+              </p>
+            )
           )}
 
           {subject && (

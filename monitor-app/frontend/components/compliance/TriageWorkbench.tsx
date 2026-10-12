@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, X } from 'lucide-react'
+import { X } from 'lucide-react'
+import { Estado } from '@/components/ui/Estado'
 import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import type { IngestUploadResult } from '@/lib/types'
@@ -486,7 +487,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
       {canEdit && sinSeleccion && (
         <TriageDropzone
           carrierName={carrierName}
-          vacia={!queueQuery.isPending && total === 0}
+          vacia={queueQuery.isSuccess && total === 0}
           subiendo={uploadMutation.isPending}
           // React Query conserva las variables de la mutación en vuelo: es de
           // donde sale cuántos archivos tiene la tanda que se está subiendo.
@@ -511,7 +512,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
           clasificar. */}
       <div className="border border-border rounded-xl bg-white overflow-hidden">
         <div className="flex items-baseline gap-2 px-4 py-3 border-b border-border">
-          <Cifra valor={total} etiqueta="sin clasificar" />
+          {queueQuery.isSuccess && <Cifra valor={total} etiqueta="sin clasificar" />}
           {grupos > 0 && (
             <span className="text-xs text-gray-500">
               · {grupos === 1 ? '1 empresa' : `${grupos} empresas`}
@@ -542,9 +543,15 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
 
             <div className="overflow-y-auto max-h-[54vh]">
               {queueQuery.isPending ? (
-                <p className="text-[11px] text-gray-500 p-3 flex items-center gap-1.5">
-                  <Loader2 size={11} className="motion-safe:animate-spin" /> Cargando…
-                </p>
+                <Estado tipo="cargando" />
+              ) : queueQuery.isError ? (
+                // H2: un error de la cola NUNCA se muestra como "0 sin clasificar".
+                <Estado tipo="error" titulo="No se pudo cargar la cola" detalle="Los documentos siguen guardados.">
+                  <button type="button" onClick={() => { void queueQuery.refetch() }}
+                          className="rounded-md border border-border bg-white px-3 py-1.5 text-dato font-semibold text-text-primary hover:bg-bg-main">
+                    Reintentar
+                  </button>
+                </Estado>
               ) : (
                 <TriageFileTable
                   rows={rows}
@@ -600,6 +607,8 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
                 pendingRows={(pendingQuery.data?.rows ?? []).filter(
                   r => !subject || (r.entity_type === subject.entity_type && r.entity_id === subject.entity_id),
                 )}
+                pendingState={!subjectCarrierId ? 'ready' : pendingQuery.isPending ? 'loading' : pendingQuery.isError ? 'error' : 'ready'}
+                onRetryPending={() => { void pendingQuery.refetch() }}
                 onApplied={handleApplied}
               />
               {targetIds.length > 0 && <TriagePreview items={previewItems} />}

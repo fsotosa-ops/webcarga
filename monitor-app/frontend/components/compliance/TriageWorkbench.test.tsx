@@ -542,4 +542,15 @@ describe('TriageWorkbench — descartar en lote', () => {
 
     expect(await screen.findByText(/^2 descartados$/i)).toBeInTheDocument()
   })
+
+  it('H2: si la cola falla lo dice como error, nunca como "0 sin clasificar"', async () => {
+    vi.mocked(documentIngestApi.listQueue).mockReset().mockRejectedValueOnce(new Error('500'))
+      .mockResolvedValue({ total: 2, rows: [row('i1', 'ACME'), row('i2', 'NORTE')] })
+    setup()
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo cargar la cola')
+    expect(screen.queryByText('No hay documentos sin clasificar')).not.toBeInTheDocument()
+    expect(screen.queryByText('sin clasificar')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+    expect(await screen.findByText('i1.png')).toBeInTheDocument()
+  })
 })

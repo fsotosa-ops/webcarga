@@ -277,4 +277,30 @@ describe('TriageClassifyForm — muestra qué le falta a la empresa', () => {
     expect(await screen.findByText(/no tiene requisitos pendientes/)).toBeInTheDocument()
     expect(screen.queryByText('¿De qué empresa es este documento?')).not.toBeInTheDocument()
   })
+
+  it('H4: mientras cargan los pendientes muestra esqueletos, nunca "no tiene pendientes"', () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <TriageClassifyForm targetIds={['i1']} subjects={[]} carrierLabel="ACME" pendingState="loading" onApplied={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByRole('status', { name: 'Cargando lo que le falta a la empresa' })).toBeInTheDocument()
+    expect(screen.queryByText(/no tiene requisitos pendientes/)).not.toBeInTheDocument()
+  })
+
+  it('H4 (R15): si fallan los pendientes lo dice y deja reintentar', () => {
+    const onRetry = vi.fn()
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <TriageClassifyForm targetIds={['i1']} subjects={[]} carrierLabel="ACME" pendingState="error"
+                            onRetryPending={onRetry} onApplied={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent('No se pudo cargar lo que le falta a la empresa')
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }))
+    expect(onRetry).toHaveBeenCalled()
+    expect(screen.queryByText(/no tiene requisitos pendientes/)).not.toBeInTheDocument()
+  })
 })
