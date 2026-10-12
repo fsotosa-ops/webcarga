@@ -52,7 +52,7 @@ def test_toda_ruta_que_escribe_un_vinculo_pasa_por_la_guarda_antes():
         if primera_escritura is not None:
             assert primera_guarda < primera_escritura, f"{name}: la guarda corre después de escribir"
     # Si la expresión deja de encontrarlas, el test no protege nada.
-    assert {"create_trip", "bulk_create_trips", "assign_fleet_link", "assign_driver_bulk"} <= rutas
+    assert {"create_trip", "bulk_create_trips", "assign_fleet_link", "assign_driver_bulk", "patch_trip"} <= rutas
 
 
 def test_el_conductor_habitual_pasa_por_la_guarda():
