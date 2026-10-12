@@ -33,8 +33,6 @@ describe('complianceRecordsToChecklistItems', () => {
       status: 'APPROVED',
       requires_file: true,
       expiration_date: '2027-01-01',
-      is_expired: false,
-      is_expiring_soon: false,
       document_state: 'UP_TO_DATE',
       days_to_expiry: null,
       alert_severity: null,

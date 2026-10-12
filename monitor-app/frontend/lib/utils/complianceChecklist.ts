@@ -16,8 +16,6 @@ export function complianceRecordsToChecklistItems(records: ComplianceRecord[]): 
     status:            r.status,
     requires_file:     r.requires_file,
     expiration_date:   r.expiration_date,
-    is_expired:        r.is_expired,
-    is_expiring_soon:  r.is_expiring_soon,
     document_state:    r.document_state,
     days_to_expiry:    r.days_to_expiry,
     alert_severity:    r.alert_severity,

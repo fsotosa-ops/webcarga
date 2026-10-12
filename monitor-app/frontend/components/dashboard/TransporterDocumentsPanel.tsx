@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, Eye, FileText, Loader2 } from 'lucide-react'
+import { Eye, FileText, Loader2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import type { ComplianceRecord, DocumentVersion } from '@/lib/types'
-import { ComplianceBadge } from './ComplianceBadge'
+import { StatusChip } from '@/components/ui/StatusChip'
+import { documentStateCounts, documentStateStyle } from '@/lib/states'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
-import { complianceAlertStatus, formatExpiry, puedeCorregirVencimiento } from '@/lib/compliance'
+import { fileHistoryLabel, formatExpiry, puedeCorregirVencimiento } from '@/lib/compliance'
 import { ReassignDocument } from '@/components/compliance/ReassignDocument'
 import { ExpirationDateCell } from './ExpirationDateCell'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
@@ -47,20 +48,11 @@ function DocumentRow({ record, carrierId, onChanged }: {
     }
   }
 
-  const alert = complianceAlertStatus(record.is_expired, record.is_expiring_soon)
-  const approved = record.status === 'APPROVED' || record.status === 'APPROVED_MANUAL'
-  const iconCls = approved && !record.is_expired
-    ? 'bg-green-500 border-green-500 text-white'
-    : record.status === 'EXPIRED' || record.status === 'REJECTED' || (approved && record.is_expired)
-      ? 'bg-red-500 border-red-500 text-white'
-      : 'bg-white border-amber-400 text-amber-500'
+  const s = documentStateStyle(record.document_state)
 
   return (
     <div className="rounded-lg bg-gray-50 px-3 py-2">
       <div className="flex items-center gap-2.5">
-        <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${iconCls}`}>
-          <Check size={11} className={approved && !record.is_expired ? '' : 'opacity-0'} />
-        </span>
         <span className="text-xs font-semibold text-text-primary flex-1 truncate">{record.name}</span>
 
         {/* HU-02: el vencimiento se puede declarar SIN adjuntar el archivo — el
@@ -73,8 +65,8 @@ function DocumentRow({ record, carrierId, onChanged }: {
             canEdit={puedeCorregirFecha}
             onSaved={() => onChanged?.()}
           />
-          {record.expiration_date && <ComplianceBadge status={alert} compact />}
         </span>
+        <StatusChip tone={s.tone} icon={s.icon}>{s.label}</StatusChip>
 
         {/* HU-03: el archivo está cargado, pero puede estar en el requisito
             equivocado. */}
@@ -113,7 +105,7 @@ function DocumentRow({ record, carrierId, onChanged }: {
               <a key={v.storage_path ?? v.replaced_at ?? i} href={v.url ?? undefined} target="_blank" rel="noreferrer"
                 className={`flex items-center justify-between text-[10px] gap-2 ${v.url ? 'text-accent hover:underline' : 'text-gray-400 pointer-events-none'}`}>
                 <span className="truncate">
-                  {v.status ?? '—'} · {v.is_current
+                  {v.status ? fileHistoryLabel(v.status) : '—'} · {v.is_current
                     ? 'vigente'
                     : `reemplazado ${v.replaced_at ? formatExpiry(v.replaced_at) : '—'}`}
                 </span>
@@ -152,13 +144,13 @@ interface Props {
  *  único lugar para subir/editar documentación, evita el entry point
  *  duplicado que existía antes). */
 export function TransporterDocumentsPanel({ records, carrierId, onChanged }: Props) {
-  const approvedCount = records.filter(r => r.status === 'APPROVED' || r.status === 'APPROVED_MANUAL').length
+  const upToDate = documentStateCounts(records).UP_TO_DATE
 
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs text-gray-400">
-          {records.length === 0 ? 'Sin datos' : `${approvedCount} de ${records.length} completos`}
+          {records.length === 0 ? 'Sin datos' : `${upToDate} de ${records.length} ${documentStateStyle('UP_TO_DATE').label.toLowerCase()}`}
         </p>
         {/* El link de salida a Certificación se retiró: la carga vive ahora
             en esta misma ficha (CarrierDocumentsTab). */}

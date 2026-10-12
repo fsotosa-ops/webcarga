@@ -28,8 +28,8 @@ import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
 import { StatusChip } from '@/components/ui/StatusChip'
-import { lifecycleStyle } from '@/lib/states'
-import { evidenciaDeDocumento, formatExpiry } from '@/lib/compliance'
+import { documentEvidenceStyle, enablementStyle, lifecycleStyle } from '@/lib/states'
+import { formatExpiry } from '@/lib/compliance'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
 import { directoryKeys, invalidateDirectory } from '@/lib/queries/directorio'
 import { claveDeSujeto, tituloDeSujeto } from '@/lib/utils/agruparPorSujeto'
@@ -66,9 +66,9 @@ const CIFRAS: { estado: EstadoDocumental; etiqueta: string; tono: 'normal' | 'at
 function filasDelEstado(filas: PendingComplianceRow[], estado: EstadoDocumental): PendingComplianceRow[] {
   switch (estado) {
     case 'todos':      return filas
-    case 'al_dia':     return filas.filter(f => f.urgencia === 'AL_DIA')
-    case 'por_vencer': return filas.filter(f => f.urgencia === 'POR_VENCER')
-    case 'falta':      return filas.filter(f => f.urgencia === 'FALTA' || f.urgencia === 'VENCIDO')
+    case 'al_dia':     return filas.filter(f => f.document_state === 'UP_TO_DATE')
+    case 'por_vencer': return filas.filter(f => f.document_state === 'EXPIRING')
+    case 'falta':      return filas.filter(f => f.document_state === 'MISSING' || f.document_state === 'OVERDUE')
   }
 }
 
@@ -267,12 +267,11 @@ function CabeceraDeGrupo({ grupo, abierto, onAlternar }: {
  *  se reescribe; ésta es su variante para lo que ya no pide nada, que el
  *  cajón nunca necesitó mostrar porque sólo pide `estado='falta'`.
  *
- *  El badge sale de `status` y no de `urgencia` **porque acá `urgencia` ya no
- *  aporta**: la partición garantiza que todas estas filas son `AL_DIA`, y
- *  pintar "Al día" borraría la diferencia entre "Aprobado", "En revisión" y
- *  "Rechazado", que son cosas distintas. La contradicción que había —"Aprobado
- *  (manual)" sobre un documento vencido hace un año— no se arregló acá sino
- *  en la partición: esas filas ya no llegan a este componente. */
+ *  El chip dice el `document_state` que mandó la API; el estado guardado
+ *  (`status`) es historial del archivo, no el estado del documento (D1 §3,
+ *  conflicto 10). La contradicción que había —"Aprobado (manual)" sobre un
+ *  documento vencido hace un año— se cerró en la partición y se cierra otra
+ *  vez acá: ninguna de las dos lee `status`. */
 function FilaDocumento({ fila, viendo, avisoVer, onVer, puedeEditar, onFechaCorregida }: {
   fila:     PendingComplianceRow
   viendo:   boolean
@@ -293,7 +292,7 @@ function FilaDocumento({ fila, viendo, avisoVer, onVer, puedeEditar, onFechaCorr
   // "Falta" significaba dos cosas: no saber nada del documento, y saber
   // cuando vence pero no tener el papel. Son estados distintos para quien
   // trabaja la cola — el segundo ya no hay que averiguarlo, hay que pedirlo.
-  const cfg = evidenciaDeDocumento(fila.status, fila.expiration_date, fila.tiene_archivo)
+  const s = documentEvidenceStyle(fila.document_state, fila.expiration_date, fila.tiene_archivo)
   return (
     <div className="border-b border-border last:border-b-0 px-3 py-2 min-h-10">
       <div className="flex items-center gap-3">
@@ -311,9 +310,7 @@ function FilaDocumento({ fila, viendo, avisoVer, onVer, puedeEditar, onFechaCorr
             onSaved={onFechaCorregida}
           />
         </span>
-        <span className={`shrink-0 text-etiqueta font-semibold px-2 py-0.5 rounded-full ${cfg.cls}`}>
-          {cfg.label}
-        </span>
+        <span className="shrink-0"><StatusChip tone={s.tone} icon={s.icon}>{s.label}</StatusChip></span>
         {onVer && (
           <button
             type="button"
@@ -372,7 +369,7 @@ function TarjetaDeSujeto({
   // `estado='todos'` FIJO, sin importar `estadoFiltro` (Task 1, ronda de
   // arreglo 2): el detalle de un sujeto se pide UNA sola vez —son ~13 filas,
   // no las 457 de la empresa entera— y el filtro reparte acá abajo, sobre
-  // `urgencia`, que ya viene en cada fila. Antes `estadoFiltro` estaba en la
+  // `document_state`, que ya viene en cada fila. Antes `estadoFiltro` estaba en la
   // clave, así que cada clic de filtro invalidaba la consulta de TODOS los
   // sujetos desplegados y volvía a la red — con nueve sujetos abiertos, un
   // clic eran nueve peticiones (hallazgo 4 de la revisión final). Con la
@@ -411,8 +408,8 @@ function TarjetaDeSujeto({
           detalle={filasQuery.error instanceof Error ? filasQuery.error.message : undefined}
         />
       )}
-      {/* La partición es la MISMA `urgencia` que reparte el filtro de arriba,
-          no una segunda lectura por `status`. Con `status` la lista se
+      {/* La partición es el MISMO `document_state` que reparte el filtro de
+          arriba, no una segunda lectura por `status`. Con `status` la lista se
           contradecía con el filtro que la contenía: los registros vencidos
           por fecha del módulo están en `APPROVED_MANUAL`, así que aparecían
           bajo "Falta" rotulados "Aprobado (manual)". Y al revés, un
@@ -421,7 +418,7 @@ function TarjetaDeSujeto({
           visible. Que hay archivo o no lo dice `tiene_archivo`, que es el
           hecho; del status no se deduce. */}
       {abierto && !filasQuery.isPending && !filasQuery.error && filas.map(f => (
-        f.urgencia === 'AL_DIA'
+        f.document_state === 'UP_TO_DATE'
           ? (
             <FilaDocumento
               key={f.id}
@@ -764,7 +761,8 @@ export default function FichaEmpresaPage() {
   }
 
   const carrier = carrierQuery.data
-  const lifecycle = lifecycleStyle('carrier', carrier.operational_status)
+  const life = lifecycleStyle('carrier', carrier.operational_status)
+  const enabled = enablementStyle(carrier.compliance_summary, carrier.operational_status === 'ACTIVE')
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -779,7 +777,8 @@ export default function FichaEmpresaPage() {
         bajada={
           <div className="flex items-center gap-2 flex-wrap mt-0.5">
             <span className="font-identificador text-dato text-informativo">{carrier.tax_id}</span>
-            <StatusChip tone={lifecycle.tone} icon={lifecycle.icon}>{lifecycle.label}</StatusChip>
+            <StatusChip tone={life.tone} icon={life.icon}>{life.label}</StatusChip>
+            <StatusChip tone={enabled.tone} icon={enabled.icon}>{enabled.label}</StatusChip>
             {/* Sin el dato no se afirma nada. Guardado tambien por el error y
                 no sólo por `isPending`: si la consulta falló no sabemos que el
                 tipo esté sin determinar — no pudimos preguntarlo. */}

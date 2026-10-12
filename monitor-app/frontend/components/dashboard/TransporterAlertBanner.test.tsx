@@ -22,43 +22,44 @@ describe('TransporterAlertBanner', () => {
 
   it('ignores non-mandatory records even if missing', () => {
     const { container } = render(
-      <TransporterAlertBanner records={[makeRecord({ requirement_level: 'CONDITIONAL_OPTIONAL', status: 'MISSING' })]} />,
+      <TransporterAlertBanner records={[makeRecord({ requirement_level: 'CONDITIONAL_OPTIONAL', status: 'MISSING', ...recordStateFields('MISSING') })]} />,
     )
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('lists mandatory MISSING, EXPIRED and REJECTED records with their status pill', () => {
-    render(
-      <TransporterAlertBanner records={[
-        makeRecord({ id: 'a', name: 'F30 Multas', status: 'MISSING' }),
-        makeRecord({ id: 'b', name: 'Póliza RC', status: 'EXPIRED' }),
-        makeRecord({ id: 'c', name: 'Cert. Antecedentes', status: 'REJECTED' }),
-      ]} />,
-    )
-    expect(screen.getByText('F30 Multas')).toBeInTheDocument()
-    expect(screen.getByText('Póliza RC')).toBeInTheDocument()
-    expect(screen.getByText('Cert. Antecedentes')).toBeInTheDocument()
-    expect(screen.getByText('Falta')).toBeInTheDocument()
+  it('lista lo obligatorio que la API dice vencido o faltante, con la palabra del glosario', () => {
+    render(<TransporterAlertBanner records={[
+      makeRecord({ id: 'a', name: 'F30', status: 'APPROVED_MANUAL', ...recordStateFields('OVERDUE') }),
+      makeRecord({ id: 'b', name: 'Escritura', status: 'MISSING', ...recordStateFields('MISSING') }),
+    ]} />)
+    expect(screen.getByText('F30')).toBeInTheDocument()
     expect(screen.getByText('Vencido')).toBeInTheDocument()
-    expect(screen.getByText('Rechazado')).toBeInTheDocument()
+    expect(screen.getByText('Escritura')).toBeInTheDocument()
+    expect(screen.getByText('Falta')).toBeInTheDocument()
+    // El estado guardado es historial, no estado (conflicto 10).
+    expect(screen.queryByText('Aprobado (manual)')).not.toBeInTheDocument()
   })
 
-  it('includes an approved-but-expired record (status stays Aprobado, expiry shown via relative time)', () => {
-    render(
-      <TransporterAlertBanner records={[
-        makeRecord({ id: 'b', name: 'Póliza RC', status: 'APPROVED', is_expired: true, expiration_date: '2026-06-01' }),
-      ]} />,
-    )
-    expect(screen.getByText('Póliza RC')).toBeInTheDocument()
-    expect(screen.getByText('Aprobado')).toBeInTheDocument()
-    expect(screen.getByText(/vencido hace/)).toBeInTheDocument()
+  it('no lista lo que todavía no se exige ni lo que solo está por vencer', () => {
+    const { container } = render(<TransporterAlertBanner records={[
+      makeRecord({ status: 'MISSING', ...recordStateFields('NOT_REQUIRED') }),
+      makeRecord({ id: 'c', status: 'APPROVED_MANUAL', ...recordStateFields('EXPIRING') }),
+    ]} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('dice cuánto falta con los días de la API', () => {
+    render(<TransporterAlertBanner records={[
+      makeRecord({ status: 'APPROVED_MANUAL', expiration_date: '2026-10-01', ...recordStateFields('OVERDUE'), days_to_expiry: -11 }),
+    ]} />)
+    expect(screen.getByText('vencido hace 11 días')).toBeInTheDocument()
   })
 
   it('shows the count of problem documents in the header', () => {
     render(
       <TransporterAlertBanner records={[
-        makeRecord({ id: 'a', status: 'MISSING' }),
-        makeRecord({ id: 'b', status: 'MISSING', name: 'Otro' }),
+        makeRecord({ id: 'a', status: 'MISSING', ...recordStateFields('MISSING') }),
+        makeRecord({ id: 'b', status: 'MISSING', name: 'Otro', ...recordStateFields('MISSING') }),
       ]} />,
     )
     expect(screen.getByText('2 documentos obligatorios con atención')).toBeInTheDocument()
@@ -67,7 +68,7 @@ describe('TransporterAlertBanner', () => {
   it('shows a relative expiry label when there is an expiration_date', () => {
     render(
       <TransporterAlertBanner records={[
-        makeRecord({ id: 'a', status: 'APPROVED', is_expired: true, expiration_date: '2020-01-01' }),
+        makeRecord({ id: 'a', status: 'APPROVED', expiration_date: '2020-01-01', ...recordStateFields('OVERDUE'), days_to_expiry: -2000 }),
       ]} />,
     )
     expect(screen.getByText(/vencido hace/)).toBeInTheDocument()
@@ -76,7 +77,7 @@ describe('TransporterAlertBanner', () => {
   it('falls back to "sin actualizar hace" when there is no expiration_date but there is updated_at', () => {
     render(
       <TransporterAlertBanner records={[
-        makeRecord({ id: 'a', status: 'MISSING', expiration_date: null, updated_at: '2020-01-01T00:00:00Z' }),
+        makeRecord({ id: 'a', status: 'MISSING', ...recordStateFields('MISSING'), expiration_date: null, updated_at: '2020-01-01T00:00:00Z' }),
       ]} />,
     )
     expect(screen.getByText(/sin actualizar hace/)).toBeInTheDocument()

@@ -156,6 +156,17 @@ beforeEach(() => {
 })
 
 describe('FichaEmpresaPage', () => {
+  it('la ficha de Certificación lee la misma habilitación que el Directorio (D1-R5)', async () => {
+    montar([fila()], { ...CARRIER, compliance_summary: complianceSummary({ can_operate: true }) })
+    expect(await screen.findByText('Habilitada')).toBeInTheDocument()
+  })
+
+  it('un documento al día aprobado a mano dice Al día, no el estado guardado', async () => {
+    montar([fila({ id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA', tiene_archivo: true })])
+    expect(await screen.findByText('Al día')).toBeInTheDocument()
+    expect(screen.queryByText('Aprobado (manual)')).not.toBeInTheDocument()
+  })
+
   // La promesa de la pantalla —empresa, conductores y vehiculos JUNTOS— se
   // cumple ahora con tres filas de primer nivel y no con una por sujeto: con 20
   // conductores serian 21 filas y la lista volveria a ser larga. Los nombres

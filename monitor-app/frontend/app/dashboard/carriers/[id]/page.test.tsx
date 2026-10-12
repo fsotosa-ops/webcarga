@@ -64,7 +64,7 @@ const CARRIER: Carrier = {
   operational_status: 'ACTIVE', legacy_admin_id: null, erp_id: null, is_manual_override: false,
   overridden_by: null, overridden_at: null, created_at: null, updated_at: null,
   management_types: null,
-  compliance_summary: complianceSummary(),
+  compliance_summary: complianceSummary({ worst_state: 'MISSING', own: { overdue: 0, expiring: 0, missing: 1 }, fleet: { overdue: 2, expiring: 0, missing: 0 }, can_operate: false }),
   contacts: [],
   compliance_records: [{
     id: 'cr1', requirement_id: 'req1', requirement_code: 'F30', name: 'F30 Multas',
@@ -113,6 +113,26 @@ beforeEach(() => {
 })
 
 describe('EmpresaDetailPage', () => {
+  it('la cabecera separa el ciclo de vida de la habilitación: dos chips', async () => {
+    renderPage()
+    expect(await screen.findByText('Activa')).toBeInTheDocument()
+    expect(screen.getByText('No habilitada')).toHaveClass('text-status-incidente')
+  })
+
+  it('una empresa dada de baja no se ve en rojo: "No habilitada" en gris', async () => {
+    vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'LEGACY_INACTIVE' as Carrier['operational_status'] })
+    renderPage()
+    expect(await screen.findByText('Dada de baja')).toBeInTheDocument()
+    expect(screen.getByText('No habilitada')).toHaveClass('text-informativo')
+  })
+
+  it('el resumen cuenta lo que manda la API, propio y de la flota activa', async () => {
+    renderPage()
+    expect(await screen.findByText('1 falta')).toBeInTheDocument()
+    expect(screen.getByText('Flota activa: 2 vencidos')).toBeInTheDocument()
+    expect(screen.getByText('0 de 1 al día')).toBeInTheDocument()
+  })
+
   it('sin directory.delete dice quién da de baja la empresa', async () => {
     permisos.darDeBaja = false
     renderPage()
@@ -348,7 +368,7 @@ describe('EmpresaDetailPage', () => {
   it('lands on Resumen by default with a compact score, not the full itemized alert list', async () => {
     renderPage()
     expect(await screen.findByText('0 de 1 al día')).toBeInTheDocument()
-    expect(screen.getByText('1 obligatorio pendiente')).toBeInTheDocument()
+    expect(screen.getByText('1 falta')).toBeInTheDocument()
     expect(screen.queryByText('Documentos obligatorios pendientes o vencidos')).not.toBeInTheDocument()
   })
 

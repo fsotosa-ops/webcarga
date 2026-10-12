@@ -5,13 +5,13 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { X, Phone, Mail, ArrowRight } from 'lucide-react'
 import { StatusChip } from '@/components/ui/StatusChip'
-import { lifecycleStyle } from '@/lib/states'
+import { documentEvidenceStyle, documentStateCounts, enablementStyle, lifecycleStyle } from '@/lib/states'
 import type { CarrierListItem } from '@/lib/types'
 import { carriersApi } from '@/lib/api/carriers'
 import { directoryKeys } from '@/lib/queries/directorio'
 import { InsuranceSummaryCard } from './InsuranceSummaryCard'
 import { CompletionRing } from './CompletionRing'
-import { evidenciaDeDocumento, formatExpiry } from '@/lib/compliance'
+import { formatExpiry } from '@/lib/compliance'
 import { getInitials, getInitialColor } from '@/lib/utils/avatar'
 
 const CONTACT_ROLE_LABELS: Record<string, string> = {
@@ -79,10 +79,11 @@ export function TransporterSlideOver({ item, onClose }: Props) {
 
   const carrier = query.data
   const records = carrier?.compliance_records ?? []
-  const okCount = records.filter(r => r.status === 'APPROVED' || r.status === 'APPROVED_MANUAL').length
-  const issues = records.filter(r => !(r.status === 'APPROVED' || r.status === 'APPROVED_MANUAL') || r.is_expired)
+  const okCount = documentStateCounts(records).UP_TO_DATE
+  const issues = records.filter(r => r.document_state !== 'UP_TO_DATE' && r.document_state !== 'NOT_REQUIRED')
   const contacts = carrier?.contacts ?? []
-  const lifecycle = lifecycleStyle('carrier', item.operational_status)
+  const life = lifecycleStyle('carrier', item.operational_status)
+  const enabled = enablementStyle(item.compliance_summary, item.operational_status === 'ACTIVE')
 
   return (
     <>
@@ -116,8 +117,9 @@ export function TransporterSlideOver({ item, onClose }: Props) {
                 </div>
               </div>
 
-              <div className="mb-5">
-                <StatusChip tone={lifecycle.tone} icon={lifecycle.icon}>{lifecycle.label}</StatusChip>
+              <div className="mb-5 flex flex-wrap gap-1.5">
+                <StatusChip tone={life.tone} icon={life.icon}>{life.label}</StatusChip>
+                <StatusChip tone={enabled.tone} icon={enabled.icon}>{enabled.label}</StatusChip>
               </div>
 
               {!query.isPending && !query.error && records.length > 0 && (
@@ -151,15 +153,13 @@ export function TransporterSlideOver({ item, onClose }: Props) {
                     {issues.length > 0 && (
                       <ul className="space-y-1">
                         {issues.map(r => {
-                          const cfg = evidenciaDeDocumento(r.status, r.expiration_date, r.file_url !== null)
+                          const st = documentEvidenceStyle(r.document_state, r.expiration_date, r.file_url !== null)
                           return (
                             <li key={r.id} className="flex items-center justify-between gap-2 text-[11px] bg-gray-50 rounded-xl px-2.5 py-1.5">
                               <span className="text-gray-600 truncate">{r.name}</span>
                               <span className="flex items-center gap-2 shrink-0">
                                 {r.expiration_date && <span className="font-mono text-gray-400">{formatExpiry(r.expiration_date)}</span>}
-                                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${cfg.cls}`}>
-                                  {cfg.label}
-                                </span>
+                                <StatusChip tone={st.tone} icon={st.icon}>{st.label}</StatusChip>
                               </span>
                             </li>
                           )

@@ -13,7 +13,7 @@ import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
 import { contactsApi } from '@/lib/api/contacts'
 import { StatusChip } from '@/components/ui/StatusChip'
-import { lifecycleStyle } from '@/lib/states'
+import { documentStateCounts, documentStateStyle, enablementStyle, isBlocking, lifecycleStyle, stateCountsLine } from '@/lib/states'
 import type { Driver, Asset, OperationalStatus, ComplianceHealth } from '@/lib/types'
 import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { ContactCard, AddContactForm } from '@/components/dashboard/ContactCard'
@@ -30,9 +30,7 @@ import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
 import { DeleteCarrierModal } from '@/components/dashboard/DeleteCarrierModal'
 import { InsurancePolicyModal, PolicyCreateForm, type PolicyFormState } from '@/components/dashboard/InsurancePolicyModal'
 import { CompletionRing } from '@/components/dashboard/CompletionRing'
-import { checklistCompletion } from '@/components/dashboard/DocumentChecklist'
-import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceChecklist'
-import { expiryRelative, updatedRelative } from '@/lib/compliance'
+import { dueRelative, updatedRelative } from '@/lib/compliance'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { returnLink } from '@/lib/navegacion/directory'
 import { CLOSURE_NOTICE, directoryKeys, invalidateDirectory, type DirectoryChange } from '@/lib/queries/directorio'
@@ -381,16 +379,12 @@ function EmpresaDetailPageInner() {
   const visibleDrivers = driverShowAll ? filteredDrivers : filteredDrivers.slice(0, ROSTER_PAGE_SIZE)
   const visibleAssets  = assetShowAll  ? filteredAssets  : filteredAssets.slice(0, ROSTER_PAGE_SIZE)
 
-  // Resumen: score de documentación + top de problemas obligatorios (el
-  // detalle completo vive en la tab Documentos, no acá — evita el banner
-  // saturado que listaba los 12+ items de una).
+  // La ficha pinta lo que manda la API (D1 §6.2): la cifra de la empresa es
+  // `compliance_summary`, y la lista de abajo son las filas que la bloquean.
   const complianceRecords = carrier?.compliance_records ?? []
-  const checklistItems = useMemo(() => complianceRecordsToChecklistItems(complianceRecords), [complianceRecords])
-  const { ok: docsOk, total: docsTotal } = checklistCompletion(checklistItems)
-  const mandatoryProblems = useMemo(() => complianceRecords.filter(r =>
-    r.requirement_level === 'LEGAL_MANDATORY'
-    && (r.is_expired || r.status === 'MISSING' || r.status === 'EXPIRED' || r.status === 'REJECTED'),
-  ), [complianceRecords])
+  const docCounts = useMemo(() => documentStateCounts(complianceRecords), [complianceRecords])
+  const blocking = useMemo(() => complianceRecords.filter(isBlocking), [complianceRecords])
+  const summary = carrier?.compliance_summary
 
   const selectedDriver: Driver | null = selectedDriverId ? selectedDriverQuery.data ?? null : null
   const selectedAsset:  Asset  | null = selectedAssetId  ? selectedAssetQuery.data  ?? null : null
@@ -409,7 +403,8 @@ function EmpresaDetailPageInner() {
 
   // ONBOARDING -> ACTIVE es un alta (directory.edit); cualquier otro cambio del
   // estado de la empresa pide directory.delete.
-  const lifecycle = lifecycleStyle('carrier', carrier.operational_status)
+  const life = lifecycleStyle('carrier', carrier.operational_status)
+  const enabled = enablementStyle(carrier.compliance_summary, carrier.operational_status === 'ACTIVE')
   const canChangeCarrierStatus = carrier.operational_status === 'ONBOARDING' ? canEdit : canAdmin
 
   return (
@@ -449,7 +444,8 @@ function EmpresaDetailPageInner() {
                     ID legacy admin: <span className="font-mono text-gray-700 bg-gray-50 px-1.5 py-0.5 rounded border border-border/60">{carrier.legacy_admin_id}</span>
                   </p>
                 )}
-                <StatusChip tone={lifecycle.tone} icon={lifecycle.icon}>{lifecycle.label}</StatusChip>
+                <StatusChip tone={life.tone} icon={life.icon}>{life.label}</StatusChip>
+                <StatusChip tone={enabled.tone} icon={enabled.icon}>{enabled.label}</StatusChip>
                 {carrier.is_manual_override && (
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-500">Editado manualmente</span>
                 )}
@@ -502,7 +498,7 @@ function EmpresaDetailPageInner() {
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit max-w-full overflow-x-auto">
         {([
           { id: 'resumen' as const,     label: 'Resumen',     icon: FileText,    count: null },
-          { id: 'documentos' as const,  label: 'Documentos',  icon: FileText,    count: mandatoryProblems.length || null },
+          { id: 'documentos' as const,  label: 'Documentos',  icon: FileText,    count: summary ? (summary.own.overdue + summary.own.missing) || null : null },
           { id: 'conductores' as const, label: 'Conductores', icon: Users,       count: drivers.length },
           { id: 'equipos' as const,     label: 'Equipos',     icon: Truck,       count: assets.length },
           { id: 'seguros' as const,     label: 'Seguros',     icon: ShieldCheck, count: policies.length },
@@ -520,7 +516,7 @@ function EmpresaDetailPageInner() {
             >
               {t.label}
               {t.count != null && (
-                <span className={`ml-1.5 ${t.id === 'documentos' ? 'text-red-500 font-bold' : 'text-gray-400'}`}>{t.count}</span>
+                <span className={`ml-1.5 ${t.id === 'documentos' ? 'text-status-incidente font-bold' : 'text-gray-400'}`}>{t.count}</span>
               )}
             </button>
           )
@@ -533,23 +529,24 @@ function EmpresaDetailPageInner() {
           <div className="bg-white rounded-xl border border-border p-4 md:p-5">
             <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Documentación</h3>
             <div className="flex items-center gap-3">
-              <CompletionRing ok={docsOk} total={docsTotal} />
+              <CompletionRing ok={docCounts.UP_TO_DATE} total={complianceRecords.length} />
               <div>
-                <p className="text-sm font-semibold text-text-primary">{docsOk} de {docsTotal} al día</p>
-                {mandatoryProblems.length > 0 ? (
-                  <p className="text-xs text-red-500 font-semibold">{mandatoryProblems.length} obligatorio{mandatoryProblems.length > 1 ? 's' : ''} pendiente{mandatoryProblems.length > 1 ? 's' : ''}</p>
-                ) : (
-                  <p className="text-xs text-green-600 font-semibold">Sin pendientes obligatorios</p>
+                <p className="text-sm font-semibold text-text-primary">
+                  {docCounts.UP_TO_DATE} de {complianceRecords.length} {documentStateStyle('UP_TO_DATE').label.toLowerCase()}
+                </p>
+                <p className="text-dato text-informativo">{summary ? stateCountsLine(summary.own) ?? 'Sin pendientes' : 'Sin pendientes'}</p>
+                {summary?.fleet && (
+                  <p className="text-dato text-informativo">Flota activa: {stateCountsLine(summary.fleet) ?? 'sin pendientes'}</p>
                 )}
               </div>
             </div>
-            {mandatoryProblems.length > 0 && (
+            {blocking.length > 0 && (
               <ul className="mt-3 space-y-1">
-                {mandatoryProblems.slice(0, 3).map(r => {
-                  const relative = expiryRelative(r.expiration_date, r.is_expired) ?? updatedRelative(r.updated_at)
+                {blocking.slice(0, 3).map(r => {
+                  const relative = dueRelative(r.days_to_expiry) ?? updatedRelative(r.updated_at)
                   return (
-                    <li key={r.id} className="text-xs text-gray-500 truncate">
-                      • {r.name}{relative && <span className="text-gray-400"> · {relative}</span>}
+                    <li key={r.id} className="text-xs text-informativo truncate">
+                      • {r.name}{relative && <span> · {relative}</span>}
                     </li>
                   )
                 })}

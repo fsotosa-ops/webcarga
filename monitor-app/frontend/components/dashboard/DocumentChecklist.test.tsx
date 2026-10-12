@@ -1,20 +1,20 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
+import { DocumentChecklist } from './DocumentChecklist'
 import { recordStateFields } from '@/lib/states.fixtures'
 
 const ITEMS = [
   {
     id: 'cr1', requirement_id: 'req-cr1', requirement_code: 'POLIZA_FIRMADA', label: 'Póliza firmada', status: 'APPROVED' as const,
-    requires_file: true, expiration_date: null, is_expired: false, is_expiring_soon: false, ...recordStateFields(), file_url: 'https://storage.example/poliza.pdf',
+    requires_file: true, expiration_date: null, ...recordStateFields('UP_TO_DATE'), file_url: 'https://storage.example/poliza.pdf',
   },
   {
     id: 'cr2', requirement_id: 'req-cr2', requirement_code: 'CERT_VIGENCIA', label: 'Certificado de vigencia', status: 'APPROVED' as const,
-    requires_file: true, expiration_date: '2026-01-01', is_expired: true, is_expiring_soon: false, ...recordStateFields('OVERDUE'), file_url: null,
+    requires_file: true, expiration_date: '2026-01-01', ...recordStateFields('OVERDUE'), days_to_expiry: -284, file_url: null,
   },
   {
     id: 'cr3', requirement_id: 'req-cr3', requirement_code: 'ENDOSO', label: 'Endoso', status: 'MISSING' as const,
-    requires_file: true, expiration_date: null, is_expired: false, is_expiring_soon: false, ...recordStateFields('MISSING'), file_url: null,
+    requires_file: true, expiration_date: null, ...recordStateFields('MISSING'), file_url: null,
   },
 ]
 
@@ -36,15 +36,26 @@ describe('DocumentChecklist', () => {
     expect(screen.getByText('Endoso')).toBeInTheDocument()
   })
 
-  it('marks approved-and-not-expired documents with a check and MISSING ones as pending', () => {
+  it('cada fila dice el estado que mandó la API', () => {
     render(<DocumentChecklist items={ITEMS} canUpload={false} onUpload={vi.fn()} />)
-    expect(screen.getByTitle('Póliza firmada — al día')).toBeInTheDocument()
-    expect(screen.getByTitle('Endoso — pendiente')).toBeInTheDocument()
+    expect(screen.getByTitle('Póliza firmada — Al día')).toBeInTheDocument()
+    expect(screen.getByTitle('Certificado de vigencia — Vencido')).toBeInTheDocument()
+    expect(screen.getByTitle('Endoso — Falta')).toBeInTheDocument()
   })
 
-  it('marks an approved-but-expired document as vencido', () => {
-    render(<DocumentChecklist items={ITEMS} canUpload={false} onUpload={vi.fn()} />)
-    expect(screen.getByTitle('Certificado de vigencia — vencido')).toBeInTheDocument()
+  it('aprobado pero por vencer dice Por vencer: el estado guardado no manda', () => {
+    const items = [{ ...ITEMS[0], status: 'APPROVED_MANUAL' as const, document_state: 'EXPIRING' as const, days_to_expiry: 5 }]
+    render(<DocumentChecklist items={items} canUpload={false} onUpload={vi.fn()} />)
+    expect(screen.getByTitle('Póliza firmada — Por vencer')).toBeInTheDocument()
+    expect(screen.getByText('(vence en 5 días)')).toBeInTheDocument()
+  })
+
+  it('el select manual ofrece solo lo que se guarda, con palabras de historial (D-R16)', () => {
+    const noFileItems = [{ ...ITEMS[2], requires_file: false }]
+    render(<DocumentChecklist items={noFileItems} canUpload={true} onStatusChange={vi.fn()} />)
+    const select = screen.getByLabelText('Estado de Endoso') as HTMLSelectElement
+    expect(Array.from(select.options).map(o => [o.value, o.text]))
+      .toEqual([['MISSING', 'Sin cargar'], ['APPROVED_MANUAL', 'Aprobado a mano']])
   })
 
   it('con politica NONE sube de una, sin preguntar nada', () => {
@@ -110,7 +121,7 @@ describe('DocumentChecklist', () => {
     const items = ITEMS.map(i => ({ ...i, expiration_policy: 'NONE' as const }))
     render(<DocumentChecklist items={items} canUpload={true} onUpload={onUpload} />)
 
-    fireEvent.drop(screen.getByTitle('Endoso — pendiente'), {
+    fireEvent.drop(screen.getByTitle('Endoso — Falta'), {
       dataTransfer: { files: [new File(['x'], 'f.pdf', { type: 'application/pdf' })] },
     })
 
@@ -124,7 +135,7 @@ describe('DocumentChecklist', () => {
 
     // 'Póliza firmada' ya tiene file_url. Reemplazar es un clic explicito en
     // su propio control; un arrastre accidental no puede pisar evidencia.
-    fireEvent.drop(screen.getByTitle('Póliza firmada — al día'), {
+    fireEvent.drop(screen.getByTitle('Póliza firmada — Al día'), {
       dataTransfer: { files: [new File(['x'], 'f.pdf', { type: 'application/pdf' })] },
     })
 
@@ -154,7 +165,7 @@ describe('DocumentChecklist', () => {
 
   it('shows a completion count', () => {
     render(<DocumentChecklist items={ITEMS} canUpload={false} onUpload={vi.fn()} />)
-    expect(screen.getByText('1 de 3 completos')).toBeInTheDocument()
+    expect(screen.getByText('1 de 3 al día')).toBeInTheDocument()
   })
 
   it('shows a status select instead of an upload control for items that do not require a file', () => {
@@ -168,8 +179,8 @@ describe('DocumentChecklist', () => {
     const onStatusChange = vi.fn()
     const noFileItems = [{ ...ITEMS[2], requires_file: false }]
     render(<DocumentChecklist items={noFileItems} canUpload={true} onStatusChange={onStatusChange} />)
-    fireEvent.change(screen.getByLabelText('Estado de Endoso'), { target: { value: 'APPROVED' } })
-    expect(onStatusChange).toHaveBeenCalledWith('cr3', 'APPROVED')
+    fireEvent.change(screen.getByLabelText('Estado de Endoso'), { target: { value: 'APPROVED_MANUAL' } })
+    expect(onStatusChange).toHaveBeenCalledWith('cr3', 'APPROVED_MANUAL')
   })
 
   it('does not show a status select when canUpload is false, even for items without file', () => {
@@ -180,11 +191,7 @@ describe('DocumentChecklist', () => {
 
   it('hides the completion count when hideCounter is true', () => {
     render(<DocumentChecklist items={ITEMS} canUpload={false} onUpload={vi.fn()} hideCounter />)
-    expect(screen.queryByText('1 de 3 completos')).not.toBeInTheDocument()
-  })
-
-  it('checklistCompletion counts ok documents against the total', () => {
-    expect(checklistCompletion(ITEMS)).toEqual({ ok: 1, total: 3 })
+    expect(screen.queryByText('1 de 3 al día')).not.toBeInTheDocument()
   })
 
   it('shows a relative expiry caption when expiration_date is set', () => {
@@ -222,14 +229,6 @@ describe('DocumentChecklist', () => {
     expect(screen.getByLabelText('Cerrar')).toBeInTheDocument()
     fireEvent.click(screen.getByLabelText('Cerrar'))
     expect(screen.queryByLabelText('Cerrar')).not.toBeInTheDocument()
-  })
-
-  it('does not offer PENDING_REVIEW as a selectable status (no due diligence step today)', () => {
-    const noFileItems = [{ ...ITEMS[2], requires_file: false }]
-    render(<DocumentChecklist items={noFileItems} canUpload={true} onStatusChange={vi.fn()} />)
-    const select = screen.getByLabelText('Estado de Endoso') as HTMLSelectElement
-    const values = Array.from(select.options).map(o => o.value)
-    expect(values).not.toContain('PENDING_REVIEW')
   })
 
   it('labels the expiration date so it is clear what it means', () => {

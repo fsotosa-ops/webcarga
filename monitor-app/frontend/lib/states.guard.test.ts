@@ -118,7 +118,8 @@ describe('el glosario manda (spec D1 §8.5)', () => {
     // otro dominio (OTROS_DOMINIOS). Quedan: ficha (2), Directorio (4), Seguros
     // (2), FiltroDeEstado (3), DocumentStatusBar (2), ComplianceBadge (2),
     // lib/compliance (3, Task 12) y el embudo (1, Task 14).
-    const DEUDA = 19
+    // 19 -> 14 en la Task 12: salen ComplianceBadge (2) y lib/compliance (3).
+    const DEUDA = 14
     const h = etiquetasEscritasAMano()
     expect(h.length, `Etiquetas de estado fuera de lib/states.ts: ${h.length} (tope ${DEUDA}).\n${h.join('\n')}`)
       .toBeLessThanOrEqual(DEUDA)
@@ -127,7 +128,9 @@ describe('el glosario manda (spec D1 §8.5)', () => {
   it('no crecen las lecturas que recalculan un estado', () => {
     // 48 medidas el 12/10. 48 -> 42 en la Task 11: vigenciaDeLaFila y
     // RenglonPendiente leen document_state en vez de urgencia.
-    const DEUDA = 42
+    // 42 -> 21 en la Task 12: la ficha, Certificación, DocumentChecklist, el
+    // banner, el panel, el slide-over y el mapeo leen document_state.
+    const DEUDA = 21
     const h = lecturasDeRecalculo()
     expect(h.length, `Lecturas de recálculo: ${h.length} (tope ${DEUDA}).\n${h.join('\n')}`).toBeLessThanOrEqual(DEUDA)
   })

@@ -10,7 +10,8 @@ import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
 import { locationsApi } from '@/lib/api/locations'
 import { contactsApi } from '@/lib/api/contacts'
 import { invalidateDirectory } from '@/lib/queries/directorio'
-import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
+import { DocumentChecklist } from './DocumentChecklist'
+import { documentStateCounts } from '@/lib/states'
 import { CompletionRing } from './CompletionRing'
 import { BajaReasonModal } from './BajaReasonModal'
 import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
@@ -167,7 +168,8 @@ export function DriverDetailPanel({ driver, carrierId, carrierName, canEdit, can
   if (!open) return null
 
   const items = complianceRecordsToChecklistItems(complianceQuery.data ?? [])
-  const { ok, total } = checklistCompletion(items)
+  const ok = documentStateCounts(items).UP_TO_DATE
+  const total = items.length
 
   return (
     <>

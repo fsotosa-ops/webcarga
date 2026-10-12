@@ -13,7 +13,7 @@ vi.mock('@/lib/api/carriers', () => ({
 const ITEM: CarrierListItem = {
   id: 't1', tax_id: '11111111-1', country_code: 'CL', business_name: 'Transportes Test',
   operational_status: 'ACTIVE', total_requirements: 2, last_document_update: null,
-  pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary(),
+  pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary({ can_operate: false }),
 }
 
 const CARRIER: Carrier = {
@@ -25,7 +25,7 @@ const CARRIER: Carrier = {
   contacts: [{ id: 'ct1', contact_role: 'OPERATIONS', first_name: 'Juan', last_name: 'Pérez', job_title: null, email: 'juan@test.cl', phone: '+56911112222', is_primary: true, is_active: true }],
   compliance_records: [
     { id: 'd1', requirement_id: 'r1', requirement_code: 'D1', name: 'Doc 1', requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'APPROVED', expiration_date: null, file_url: null, metadata: {}, is_manual_override: false, is_expired: false, is_expiring_soon: false, ...recordStateFields(), updated_at: null },
-    { id: 'd2', requirement_id: 'r2', requirement_code: 'D2', name: 'Doc 2', requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'PENDING_REVIEW', expiration_date: '2026-01-01', file_url: null, metadata: {}, is_manual_override: false, is_expired: false, is_expiring_soon: false, ...recordStateFields(), updated_at: null },
+    { id: 'd2', requirement_id: 'r2', requirement_code: 'D2', name: 'Doc 2', requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'PENDING_REVIEW', expiration_date: '2026-01-01', file_url: null, metadata: {}, is_manual_override: false, is_expired: false, is_expiring_soon: false, ...recordStateFields('OVERDUE'), updated_at: null },
   ],
 }
 
@@ -55,13 +55,15 @@ describe('TransporterSlideOver', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByText('Transportes Test')).toBeInTheDocument()
     expect(screen.getByText('Activa')).toBeInTheDocument()
+    expect(screen.getByText('No habilitada')).toBeInTheDocument()
   })
 
   it('shows the documents summary and lists non-approved documents once loaded', async () => {
     renderSlideOver(ITEM)
     await waitFor(() => expect(screen.getByText('Doc 2')).toBeInTheDocument())
     expect(screen.getByText(/documentos al día/)).toBeInTheDocument()
-    expect(screen.getByText('En revisión')).toBeInTheDocument()
+    expect(screen.getByText('Vencido')).toBeInTheDocument()
+    expect(screen.queryByText('En revisión')).not.toBeInTheDocument()
     expect(screen.queryByText('Doc 1')).not.toBeInTheDocument()
   })
 

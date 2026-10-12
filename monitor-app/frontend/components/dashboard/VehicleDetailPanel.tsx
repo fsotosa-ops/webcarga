@@ -9,7 +9,8 @@ import type { Asset } from '@/lib/types'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
 import { taxonomiesApi } from '@/lib/api/config'
 import { directoryKeys, invalidateDirectory } from '@/lib/queries/directorio'
-import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
+import { DocumentChecklist } from './DocumentChecklist'
+import { documentStateCounts } from '@/lib/states'
 import { CompletionRing } from './CompletionRing'
 import { BajaReasonModal } from './BajaReasonModal'
 import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
@@ -201,7 +202,8 @@ export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, can
   if (!open) return null
 
   const items = complianceRecordsToChecklistItems(complianceQuery.data ?? [])
-  const { ok, total } = checklistCompletion(items)
+  const ok = documentStateCounts(items).UP_TO_DATE
+  const total = items.length
 
   return (
     <>
