@@ -351,3 +351,32 @@ Están agrupadas y sin repetir. Las que vienen de la auditoría de Sin clasifica
   vigencia de P6, las líneas de un día anterior a la salida son normales (esa persona estaba en el roster ese día). Las líneas
   de un día posterior a la salida (el TMS dice que manejó) son una excepción: se muestran en un grupo propio con su motivo y su
   acción, y la tabla y la firma cuentan el mismo universo. Nada se elimina en silencio; un día firmado no se reabre.
+- **P13 — empresa + flota (12/10, sesión de la tarde):** una empresa está "al día" cuando lo están sus documentos y los de
+  su flota activa en alcance (`in_scope_sql`). "Por vencer" cuenta como al día. Es la regla de `app.is_operating` (D1).
+- **Sin clasificar = opción B** de su auditoría (cola de excepciones con revisión agrupada, reusa `BulkUploadReview`);
+  va en paralelo con D1.
+- **P8 — depende del tracto del día (12/10), y ya está resuelto así:** el tipo de operación sale del tracto
+  (`assets.webcarga_operation_type_id`). Medido 13/08-12/10 (1.989 viajes): agrupar por empresa, empresa×cliente o
+  empresa×cliente×origen da 0 grupos mezclados; 0 conductores manejaron los dos tipos. Cliente×origen NO decide (los 3 CD
+  principales de Walmart tienen ambos tipos). Bordes: 28 viajes del tracto GPRZ30 sin tipo y sin empresa (fuera de todo el
+  Cierre), 80 viajes sin tracto (72 Sodimac), 1 empresa mixta cuyo tracto de Equipo Completo no tuvo viajes (si empieza a
+  operar, su conductor queda en el roster de Tractoreo por la regla por empresa), y la firma no congela el desglose por tipo.
+- **Modelo de estados en tres capas (12/10, tras `2026-10-12-states-audit.md`):** ciclo de vida (dato), estado del
+  documento (`document_state`, único, gobernado por las reglas de Configuración) y resumen de quien lo debe (el peor estado
+  de sus obligatorios, con las cifras de Pendientes, misma consulta). Tener vencidos NO da de baja: la empresa sigue activa
+  y queda **"No habilitada"** (calculado) hasta regularizar.
+- **P16 y P20 resueltas:** "Habilitada / No habilitada"; la cola se llama **"Sin clasificar"** en todos lados ("Bandeja" se
+  retira); el módulo se llama **"Directorio"**. Ciclo de vida en pantalla: Activa · En onboarding · Dada de baja.
+- **Avisos (12/10):** "crítico" es un aviso calculado (días que faltan + umbral), no un estado del documento; lo calcula el
+  backend y lo leen banners y Pendientes. Se retiran las filas de umbral por documento de Alertas (duplican los días de aviso
+  por regla de Condiciones): global en Alertas, excepción en la condición.
+- **Reactivar = recalificar (12/10):** la empresa vuelve con sus pendientes y queda No habilitada hasta regularizar.
+  **P3 resuelta:** al reactivar se elige qué conductores y equipos vuelven (cada uno se recalifica) → flujo de escritura, D2.
+- **Tipo de operación declarado (12/10):** un solo lugar de edición, la ficha de empresa del Directorio, con permiso para
+  Certificación; Certificación lo ve y enlaza. Lo observado (tractos) manda, lo declarado cubre el hueco; la ficha marca la
+  diferencia. Mover `GestionDeclarada` es parte de D4.
+- **P10 resuelta (12/10):** los clientes de una empresa se declaran (Operaciones/Certificación, en la ficha del Directorio);
+  los viajes proponen, y el recálculo deja de escribir `carrier_shippers` solo (hoy: 48 vínculos, 0 con término, único
+  escritor `pre_cierre.py:327`, que agrega y nunca quita). Mismo patrón que el origen habitual (HU-28).
+- **Hoja de ruta (12/10):** "editar clientes" (F-30) pasa de D3 a **D2**: un solo servicio de relaciones con vigencia
+  (conductor–empresa, equipo–empresa, empresa–cliente): agregar, quitar con fecha, reincorporar, historia.

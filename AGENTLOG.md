@@ -25,7 +25,8 @@ Orden sugerido; el detalle de cada punto está en su entrada de abajo.
    nombre); portada de Certificación igual que antes. Capturas `.playwright-mcp/dev-*.png`. Observado para D1: nombres de
    conductor con un "\N" literal (artefacto de importación), una empresa con el mismo nombre en dos grupos de la portada
    (¿dos RUT?), la portada cuenta 84 conductores (los activos son 78, F-03), y en el teléfono el panel oculto ya se monta.
-2. **Decisión del usuario: opción A/B/C del rediseño de Sin clasificar** (auditoría 11/10, recomienda B) y sus preguntas §6.
+2. ~~Decisión A/B/C de Sin clasificar~~ **12/10: el usuario elige B.** Quedan sus preguntas §6 para el brainstorming.
+   **P13 resuelta:** "al día" = empresa + flota activa en alcance; "por vencer" cuenta como al día (regla de `app.is_operating`).
 3. **D1 "Una sola respuesta"** del Directorio (brainstorming → spec → plan → subagent-driven): `app.is_operating`,
    `app.carrier_of`, `app.carrier_operation_types`, migrar lectores; incluir la guarda en la API contra asignar viajes a
    una empresa no activa. En paralelo, Certificación 2a (Sin clasificar) cuando esté elegida la opción.
@@ -84,8 +85,14 @@ vigencia vía historial por trigger (cubre a Mage sin tocarlo) + override por ca
 - [ ] Deuda anotada para D1: guarda en la API contra asignar viajes a una empresa no activa (hoy solo en el frontend);
   "Conductor habitual" ofrece conductores dados de baja; badge de Sin clasificar sin señal cuando falla el conteo;
   barra inferior móvil con etiquetas superpuestas (layout).
-- [ ] **Siguiente: D1 "Una sola respuesta"** (funciones `app.is_operating`, `app.carrier_of`, `app.carrier_operation_types`
-  y migración de lectores), intercalado con Certificación 2a (rediseño de Sin clasificar, opción B de su auditoría).
+- [x] **12/10 tarde: brainstorming de D1 hecho.** Auditoría de estados (`docs/superpowers/plans/2026-10-12-states-audit.md`):
+  Configuración no define estados de documento, solo reglas; `document_state` es el canon y 7 piezas lo reimplementan.
+  Decisiones del usuario en el informe §7: P8 (ya resuelto por tracto, medido), P10, P13, P16/P20, P3 → D2, "crítico" = aviso
+  calculado, reactivar = recalificar, clientes con vigencia pasan a D2. Spec escrita:
+  `docs/superpowers/specs/2026-10-12-directory-d1-one-answer-design.md` (tres capas de estado + glosario único, `app.active_fleet`,
+  `app.carrier_of`, `fleet_compliance.py` sobre la base de Pendientes, guarda 409, identidad RUT/patente, 3 despliegues).
+- [ ] **Siguiente: el usuario revisa la spec de D1** → writing-plans → subagent-driven. En paralelo: brainstorming de Sin
+  clasificar opción B (Certificación 2a).
 ### 2026-10-11 — Auditoría UX de "Sin clasificar" (insumo del bloque 2; solo lectura)
 
 Informe: `docs/superpowers/plans/2026-10-11-sin-clasificar-ux-audit.md`. Las capturas son `.playwright-mcp/sinclasificar-*.png`.
