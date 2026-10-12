@@ -543,7 +543,9 @@ def test_list_carrier_drivers_includes_pending_mandatory():
     assert body[0]["compliance_health"] == "PENDING"
     assert body[0]["pending_mandatory"] == 2
     fetch_query = pool.fetch.call_args.args[0]
-    assert "FROM app.carrier_driver_roster r" in fetch_query
+    # En vivo (bloque 0, 0.2): nunca desde la vista materializada sin refresco.
+    assert "carrier_driver_roster" not in fetch_query
+    assert "JOIN public.drivers d" in fetch_query
     assert "cr.entity_type = 'DRIVER'" in fetch_query
 
 

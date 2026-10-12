@@ -708,15 +708,26 @@ async def delete_carrier(carrier_id: str, pool=Depends(get_pool), user=Depends(r
 
 @router.get("/{carrier_id}/drivers")
 async def list_carrier_drivers(carrier_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
+    # En vivo desde public.drivers (bloque 0 del Directorio, 0.2), igual que
+    # list_carrier_assets lee el tipo de operación en vivo. La vista
+    # app.carrier_driver_roster no tiene trigger de refresco en drivers, y
+    # agregarle uno sumaría un REFRESH más por escritura (F-18). Los conteos de
+    # documentos siguen saliendo de app.driver_compliance_status, que sí se
+    # refresca cuando cambian los documentos.
     rows = await pool.fetch(
         f"""
         SELECT r.driver_id AS id, r.tax_id, r.full_name, r.operational_status,
-               r.total_requirements, r.last_document_update,
+               dcs.total_requirements, dcs.last_document_update,
                COALESCE(sev.pending_mandatory, 0) AS pending_mandatory,
                CASE WHEN COALESCE(sev.pending_mandatory, 0) > 0 THEN 'PENDING' ELSE 'OK' END AS compliance_health
-        FROM app.carrier_driver_roster r
+        FROM (
+            SELECT d.id AS driver_id, d.tax_id, d.full_name, d.operational_status
+            FROM public.driver_assignments da
+            JOIN public.drivers d ON d.id = da.driver_id
+            WHERE da.carrier_id = $1 AND da.status = 'ACTIVE'
+        ) r
+        LEFT JOIN app.driver_compliance_status dcs ON dcs.driver_id = r.driver_id
         {_pending_mandatory_join('DRIVER', 'driver_id')}
-        WHERE r.carrier_id = $1
         ORDER BY r.full_name
         """,
         carrier_id,
