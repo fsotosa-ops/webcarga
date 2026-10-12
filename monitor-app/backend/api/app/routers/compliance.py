@@ -281,8 +281,8 @@ async def get_certification_status(
     elif group == "requirement":
         # Se apoya en `attributed`, igual que la agrupación por empresa, para
         # mirar EXACTAMENTE el mismo universo: los pendientes de las empresas
-        # activas. Verificado contra la base — 424 CARRIER + 939 DRIVER + 997
-        # ASSET = 2.360, el mismo total que devuelve agrupando por empresa. Sin
+        # activas, sin la flota de baja (revisión final D1, I1): el mismo total
+        # que agrupando por empresa y que Pendientes. Sin
         # el filtro daría 4.895 y cambiar de pestaña cambiaría el total sin
         # ninguna explicación visible, que es justo lo que el spec §4 prohíbe
         # ("el control de agrupación no crea vistas nuevas").
@@ -372,7 +372,8 @@ async def get_certification_status(
         WITH records AS (
             SELECT cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
                    cr.issue_date, cr.period_start,
-                   cr.requirement_id, req.requirement_level
+                   cr.requirement_id, req.requirement_level,
+                   req.exigible_on = 'ON_ENTITY_END' AS al_termino
             FROM public.compliance_records cr
             JOIN public.compliance_requirements req ON req.id = cr.requirement_id
             WHERE cr.is_current = true
@@ -400,6 +401,16 @@ async def get_certification_status(
                 ON r.entity_type = 'DRIVER' AND da.driver_id = r.entity_id AND da.status = 'ACTIVE'
             LEFT JOIN public.asset_assignments aa
                 ON r.entity_type = 'ASSET' AND aa.asset_id = r.entity_id AND aa.status = 'ACTIVE'
+            -- Revisión final D1, I1: el mismo universo que el resumen de la
+            -- empresa (carrier_compliance, D1-R1). Un conductor o equipo cuenta
+            -- solo si es flota activa (app.active_fleet, cualquier estado de la
+            -- empresa) o si el documento es "al término" (el finiquito de quien
+            -- se fue). Sin esto, el total, lo cubierto, pending_mandatory y la
+            -- agrupación por requisito arrastraban la flota de baja que sigue
+            -- con su asignación ACTIVE (2.306 por requisito frente a 2.226).
+            LEFT JOIN app.active_fleet af
+                ON af.entity_type = r.entity_type AND af.entity_id = r.entity_id
+            WHERE r.entity_type = 'CARRIER' OR af.entity_id IS NOT NULL OR r.al_termino
         ){extra_cte}
         SELECT e.id::text AS entity_id, e.{cfg["name_col"]} AS entity_name,
                {carrier_cols},{funnel_cols}

@@ -148,3 +148,28 @@ async def test_el_tipo_de_operacion_de_pendientes_sale_de_la_funcion(conexion_re
         c, None, None, None, None, SUMMARY_LIMIT, 0, None, None, "todos", None, False)
 
     assert {tuple(f["carrier_operation_types"]) for f in filas} == {("Equipo Completo",)}
+
+
+async def test_el_embudo_cuenta_lo_mismo_en_sus_cuatro_vistas(conexion_revertida):
+    """Revisión final, I1: D1-R3 corrigió solo pending_count agrupando por
+    empresa. El total, lo cubierto y la agrupación por requisito seguían saliendo
+    de `attributed`, que arrastraba la flota de baja con asignación ACTIVE: el
+    "N de M" de la empresa no cerraba con su pendiente y "documentos por cubrir"
+    daba 2.226 por empresa y 2.306 por requisito."""
+    conn = conexion_revertida
+    f = await _flota_con_un_pendiente(conn)
+    # Un documento cubierto del equipo de baja: tampoco entra en "N de M".
+    req_equipo = await s.requirement(conn, entity="ASSET")
+    await s.record(conn, req_equipo, "ASSET", f["inactive_asset"], status="APPROVED_MANUAL")
+    pool = PoolDeUnaConexion(conn)
+
+    fila = await _embudo(conn, f["carrier"])
+    por_empresa = await get_certification_status(group="carrier", scope="active", carrier_id=f["carrier"],
+                                                 q="", limit=200, pool=pool, _=None)
+    por_requisito = await get_certification_status(group="requirement", scope="active",
+                                                   carrier_id=f["carrier"], q="", limit=200, pool=pool, _=None)
+
+    assert (fila["total_count"], fila["satisfied_count"], fila["pending_count"]) == (1, 0, 1), \
+        "el N de M contó la flota de baja"
+    assert fila["total_count"] - fila["satisfied_count"] == fila["pending_count"]
+    assert por_requisito["total_pending"] == por_empresa["total_pending"] == 1
