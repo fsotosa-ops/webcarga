@@ -17,9 +17,9 @@ export function PendingLoadError({ onRetry }: { onRetry: () => void }) {
 
 /** Cargando: renglones grises, **sin cifras**. Un "0" mientras carga afirma
  *  algo falso y después salta. */
-export function PendingSkeleton({ rows = 4 }: { rows?: number }) {
+export function PendingSkeleton({ rows = 4, label = 'Cargando lo pendiente' }: { rows?: number; label?: string }) {
   return (
-    <div role="status" aria-label="Cargando lo pendiente" className="space-y-3 p-3">
+    <div role="status" aria-label={label} className="space-y-3 p-3">
       {Array.from({ length: rows }, (_, i) => (
         <div key={i} className="space-y-1.5">
           <div className={`h-2.5 rounded bg-bg-main motion-safe:animate-pulse ${i % 2 ? 'w-3/5' : 'w-4/5'}`} />

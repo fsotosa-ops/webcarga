@@ -7,6 +7,7 @@ import { complianceApi } from '@/lib/api/compliance'
 import { datoQuePide, datosDelDocumento } from '@/lib/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { Estado } from '@/components/ui/Estado'
+import { PendingSkeleton } from './pending/PendingStates'
 import { PendingSlotPicker, type Slot } from './PendingSlotPicker'
 import type { PendingComplianceRow } from '@/lib/types'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
@@ -206,10 +207,7 @@ export function TriageClassifyForm({
               que seguir distinguiéndolas. */}
           {!subjects.length && (
             pendingState === 'loading' ? (
-              <div role="status" aria-label="Cargando lo que le falta a la empresa" className="space-y-2">
-                <div className="h-3 w-4/5 animate-pulse rounded bg-border" aria-hidden="true" />
-                <div className="h-3 w-3/5 animate-pulse rounded bg-border" aria-hidden="true" />
-              </div>
+              <PendingSkeleton rows={2} label="Cargando lo que le falta a la empresa" />
             ) : pendingState === 'error' ? (
               <Estado tipo="error" titulo="No se pudo cargar lo que le falta a la empresa">
                 <button type="button" onClick={onRetryPending}
