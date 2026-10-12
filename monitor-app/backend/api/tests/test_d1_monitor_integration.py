@@ -94,6 +94,30 @@ async def test_una_empresa_con_un_obligatorio_faltante_no_puede_operar(conexion_
     assert tuple(por_id[sin_nada][k] for k in campos) == (None, None, None)
 
 
+async def test_el_viaje_trae_el_ciclo_de_vida_de_su_empresa(conexion_revertida):
+    """Revisión final D1, M2: una empresa dada de baja no puede operar, pero no
+    está "No habilitada" en rojo ni se le puede asignar el viaje (la guarda
+    responde 409). El panel necesita su ciclo de vida para decirlo en gris."""
+    conn = conexion_revertida
+    activa = await s.carrier(conn)
+    de_baja = await s.carrier(conn, status="INACTIVE")
+    await s.without_seeding(conn, activa, de_baja)
+    con_activa = await _viaje(conn, carrier=activa)
+    con_baja = await _viaje(conn, carrier=de_baja)
+    sin_empresa = await _viaje(conn)
+    pool = PoolDeUnaConexion(conn)
+
+    viaje = await get_trip(con_baja, pool=pool, user=USER)
+    assert (viaje["carrier_can_operate"], viaje["carrier_operational_status"]) == (False, "INACTIVE")
+    res = await list_trips(q=s.PREFIX, view="historial", fecha_desde=DIA.isoformat(),
+                           fecha_hasta=DIA.isoformat(), pool=pool, user=USER)
+    por_id = {str(v["id"]): v for v in res["data"]}
+    campos = ("carrier_can_operate", "carrier_operational_status")
+    assert tuple(por_id[con_activa][k] for k in campos) == (True, "ACTIVE")
+    assert tuple(por_id[con_baja][k] for k in campos) == (False, "INACTIVE")
+    assert tuple(por_id[sin_empresa][k] for k in campos) == (None, None)
+
+
 async def test_drivers_no_duplica_conductor_con_dos_tractos(conexion_revertida):
     """Review Focus 2. vehicle_driver_assignments permite un conductor por
     tracto, no un tracto por conductor: el LEFT JOIN plano lo devolvía dos

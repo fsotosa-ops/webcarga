@@ -354,6 +354,29 @@ describe('TripDetailView — Conductor y flota (FleetAssignSection, driver-first
     expect(screen.getByRole('link', { name: 'revisar en Directorio' })).toHaveAttribute('href', '/dashboard/carriers/c1')
   })
 
+  // Revisión final D1, M2: una empresa activa en falta es "No habilitada" en
+  // rojo y se puede asignar igual; una no activa no está en falta (gris) y la
+  // guarda no deja asignarle el viaje, así que no se promete.
+  it('la empresa activa no habilitada se avisa en rojo y se puede asignar igual', () => {
+    renderDetailView({
+      ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
+      carrier_can_operate: false, carrier_operational_status: 'ACTIVE',
+    })
+    expect(screen.getByText('No habilitada').className).toContain('text-status-incidente')
+    expect(screen.getByText(/el viaje se puede asignar igual/)).toBeInTheDocument()
+  })
+
+  it('una empresa dada de baja se dice con su ciclo de vida, en gris y sin prometer la asignación', () => {
+    renderDetailView({
+      ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
+      carrier_can_operate: false, carrier_operational_status: 'INACTIVE',
+    })
+    expect(screen.getByText('Dada de baja')).toBeInTheDocument()
+    expect(screen.getByText('No habilitada').className).not.toContain('text-status-incidente')
+    expect(screen.queryByText(/se puede asignar/)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'revisar en Directorio' })).toHaveAttribute('href', '/dashboard/carriers/c1')
+  })
+
   it('una empresa habilitada o sin dato no muestra el aviso', () => {
     renderDetailView({ ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa', carrier_can_operate: null })
     expect(screen.queryByText('No habilitada')).not.toBeInTheDocument()

@@ -4,7 +4,7 @@ import re
 import unicodedata
 from datetime import date as _date
 from datetime import datetime
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -266,9 +266,11 @@ def _stop_dedup_key(d: dict):
 
 _CAN_OPERATE_SQL = f"""
 WITH {carrier_compliance_cte()}
-SELECT carrier_id::text AS carrier_id, can_operate AS carrier_can_operate
-FROM carrier_compliance
-WHERE carrier_id = ANY($1::uuid[])
+SELECT cc.carrier_id::text AS carrier_id, cc.can_operate AS carrier_can_operate,
+       c.operational_status AS carrier_operational_status
+FROM carrier_compliance cc
+JOIN public.carriers c ON c.id = cc.carrier_id
+WHERE cc.carrier_id = ANY($1::uuid[])
 """
 
 
@@ -276,14 +278,19 @@ async def _attach_carrier_can_operate(pool, trips: list[dict]) -> None:
     """¿Puede operar la empresa del viaje? (D1, R-B5). Una consulta por página
     y no un JOIN en _TRIP_FROM: ese FROM también arma los COUNT(*) y la faceta
     de clientes, que no necesitan la base de Pendientes (~150 ms). Sin empresa
-    resuelta no hay a quién preguntar: None, no "habilitada"."""
+    resuelta no hay a quién preguntar: None, no "habilitada".
+
+    Junto viaja el ciclo de vida de la empresa (revisión final D1, M2): una
+    empresa que no está activa tampoco puede operar, pero eso no es estar en
+    falta (gris, no rojo) y la guarda no deja asignarle el viaje (409)."""
     ids = sorted({str(t["carrier_id"]) for t in trips if t.get("carrier_id")})
-    habilitacion: dict[str, bool] = {}
+    por_empresa: dict[str, Any] = {}
     if ids:
-        habilitacion = {f["carrier_id"]: f["carrier_can_operate"]
-                        for f in await pool.fetch(_CAN_OPERATE_SQL, ids)}
+        por_empresa = {f["carrier_id"]: f for f in await pool.fetch(_CAN_OPERATE_SQL, ids)}
     for t in trips:
-        t["carrier_can_operate"] = habilitacion.get(str(t["carrier_id"])) if t.get("carrier_id") else None
+        fila = por_empresa.get(str(t["carrier_id"])) if t.get("carrier_id") else None
+        t["carrier_can_operate"] = fila["carrier_can_operate"] if fila else None
+        t["carrier_operational_status"] = fila["carrier_operational_status"] if fila else None
 
 
 async def _load_trip_stops(pool, trip_ids: set[str]) -> dict[str, list[dict]]:

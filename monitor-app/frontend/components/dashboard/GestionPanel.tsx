@@ -18,13 +18,14 @@ import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
 import { PendingDocsBadge } from '@/components/ui/PendingDocsBadge'
 import { StatusChip } from '@/components/ui/StatusChip'
-import { alertSeverityStyle, enablementStyleFromFlag } from '@/lib/states'
+import { alertSeverityStyle, enablementStyleFromFlag, lifecycleStyle } from '@/lib/states'
 import { Section } from '@/components/ui/Section'
 import { KeyValueList } from '@/components/ui/KeyValueList'
 
 const NOTICE_TONE = {
   urgent:  'border-status-incidente/20 bg-status-incidente/5 text-status-incidente',
   warning: 'border-warning/25 bg-warning/10 text-warning',
+  neutral: 'border-informativo/20 bg-informativo/5 text-informativo',
 } as const
 
 /** Un aviso dentro del panel: algo que el operador tiene que mirar antes de
@@ -173,6 +174,11 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
   const tractorDiverges = !!(trip.tractor_plate_tms && trip.tractor_plate_tms !== trip.tractor_plate)
   const carrierDiverges = !!(trip.carrier_name_tms && trip.carrier_name_tms !== trip.carrier_name)
   const hasReconciliationDivergence = !!trip.fleet_link_id && (driverDiverges || tractorDiverges || carrierDiverges)
+  // Sin ciclo de vida en la respuesta se lee como activa (lo de antes); con él,
+  // la habilitación va en gris si la empresa no está activa (spec §3).
+  const carrierActive = (trip.carrier_operational_status ?? 'ACTIVE') === 'ACTIVE'
+  const enablement = enablementStyleFromFlag(false, carrierActive)
+  const lifecycle = lifecycleStyle('carrier', trip.carrier_operational_status ?? 'ACTIVE')
 
   const empresasHandoffHref = (() => {
     const params = new URLSearchParams({ create: '1' })
@@ -378,15 +384,26 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
                   </p>
                 </Notice>
               )}
-              {trip.carrier_can_operate === false && (
+              {trip.carrier_can_operate === false && (carrierActive ? (
                 <Notice tone="warning">
                   <p className="flex items-center gap-1.5 flex-wrap">
-                    <StatusChip tone={enablementStyleFromFlag(false, true).tone}>{enablementStyleFromFlag(false, true).label}</StatusChip>
+                    <StatusChip tone={enablement.tone} icon={enablement.icon}>{enablement.label}</StatusChip>
                     La empresa no está habilitada para operar; el viaje se puede asignar igual —{' '}
                     <a href={`/dashboard/carriers/${trip.carrier_id}`} className="font-semibold underline">revisar en Directorio</a>.
                   </p>
                 </Notice>
-              )}
+              ) : (
+                // Una empresa que no está activa no está en falta (gris, spec §3)
+                // y la guarda no deja asignarle el viaje (409): no se promete.
+                <Notice tone="neutral">
+                  <p className="flex items-center gap-1.5 flex-wrap">
+                    <StatusChip tone={lifecycle.tone} icon={lifecycle.icon}>{lifecycle.label}</StatusChip>
+                    <StatusChip tone={enablement.tone} icon={enablement.icon}>{enablement.label}</StatusChip>
+                    La empresa no está activa —{' '}
+                    <a href={`/dashboard/carriers/${trip.carrier_id}`} className="font-semibold underline">revisar en Directorio</a>.
+                  </p>
+                </Notice>
+              ))}
               {trip.fleet_match_status === 'MISMATCH' && (
                 <Notice tone="warning">
                   <p>

@@ -566,6 +566,9 @@ export type Trip = {
   tractor_has_critical_alert?:     boolean | null
   carrier_has_critical_alert?:     boolean | null
   carrier_can_operate?:            boolean | null
+  /** Ciclo de vida de la empresa del viaje: si no está activa, no puede operar
+   *  pero tampoco está en falta (gris) y la guarda no deja asignarle el viaje. */
+  carrier_operational_status?:     string | null
   /** Nota humana más reciente en la bitácora del viaje (excluye notas
    *  note_type='sistema') — usado para saber si una alerta activa ya tuvo
    *  seguimiento. Ver kpis.ts:needsBitacoraFollowup. */
