@@ -16,17 +16,9 @@ from app.routers.drivers import list_drivers
 from app.services.document_matcher import EntityUniverse, PendingOwner, match_document, match_owner, Catalog, RequirementAlias
 from app.utils.identity import canonical_plate, canonical_rut
 from tests.conftest import PoolDeUnaConexion
-from tests.d1_subjects import apply_fleet_facts
 from tests.test_identity import PLATE_CASES, RUT_CASES
 
 pytestmark = pytest.mark.integracion
-
-
-@pytest.fixture(autouse=True)
-async def _hechos_de_la_flota(conexion_revertida):
-    """list_carriers (T5) y /drivers (T7) leen app.active_fleet y fleet_compliance:
-    hasta la Task 10 la migración no está aplicada."""
-    await apply_fleet_facts(conexion_revertida)
 
 
 def _generadas(n: int = 400) -> list[str]:

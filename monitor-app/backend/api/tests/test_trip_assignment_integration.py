@@ -1,14 +1,14 @@
 """Activo y asignado del viaje: una sola definición en la base (spec 2026-10-11,
-trip-assignment-in-the-database). La migración se ejecuta dentro de la
-transacción revertida de cada test, así que esto prueba el archivo antes de
-aplicarlo en la base real."""
+trip-assignment-in-the-database). La migración ya está aplicada: los tests leen
+las funciones y los triggers vivos. No se re-ejecuta (revisión final D1, I2):
+su DROP TRIGGER toma un ACCESS EXCLUSIVE sobre app.trip_fleet_links hasta el
+ROLLBACK y la API viva de dev esperaba detrás."""
 from __future__ import annotations
 
 import asyncio
 import json
 import uuid
 from datetime import date
-from pathlib import Path
 
 import pytest
 
@@ -19,19 +19,11 @@ from app.routers.trips import (
 )
 from app.services.cierre_viajes import SQL_GRUPOS_CIERRE
 from tests.conftest import PoolDeUnaConexion, _usuario_real, cliente_de_prueba, credenciales_integracion
-from tests.d1_subjects import apply_fleet_facts, make_test_fleet
+from tests.d1_subjects import make_test_fleet
 
 pytestmark = pytest.mark.integracion
 
-MIGRATION = (
-    Path(__file__).resolve().parents[2]
-    / "supabase/migrations/20261012090000_trip_assignment_in_the_database.sql"
-)
 TEST_DATE = date(2099, 1, 15)
-
-
-async def apply_migration(conn) -> None:
-    await conn.execute(MIGRATION.read_text())
 
 
 async def open_status(conn) -> str:
@@ -51,14 +43,6 @@ async def insert_tms_trip(conn, status: str, fleet: dict) -> str:
         """,
         trip_id, f"TEST-{trip_id[:8]}", client, TEST_DATE, status, json.dumps(fleet))
     return trip_id
-
-
-@pytest.fixture(autouse=True)
-async def _hechos_de_la_flota(conexion_revertida):
-    """D1: la guarda de asignación (Task 8) y la lectura del viaje (Task 7) leen
-    app.carrier_of, app.active_fleet y fleet_compliance; hasta la Task 10 la
-    migración no está aplicada."""
-    await apply_fleet_facts(conexion_revertida)
 
 
 async def any_driver_id(conn) -> str:
@@ -81,7 +65,6 @@ async def is_assigned(conn, trip_id: str) -> bool:
 
 async def test_is_trip_open(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
     assert await conn.fetchval("SELECT app.is_trip_open('CERRADO FINALIZADO')") is False
     assert await conn.fetchval("SELECT app.is_trip_open('Declinada')") is False
     assert await conn.fetchval("SELECT app.is_trip_open('ORIGEN')") is True
@@ -90,7 +73,6 @@ async def test_is_trip_open(conexion_revertida):
 
 async def test_is_trip_assigned_reads_fleet_and_link(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
     status = await open_status(conn)
     with_plate = await insert_tms_trip(conn, status, {"tractor_plate": "ZZZZ99"})
     with_rut = await insert_tms_trip(conn, status, {"driver_rut_tms": "11111111-1"})
@@ -103,7 +85,6 @@ async def test_is_trip_assigned_reads_fleet_and_link(conexion_revertida):
 
 async def test_published_offer_never_assigned_even_with_link(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
     trip_id = await insert_tms_trip(conn, "Publicada", {"tractor_plate": "ZZZZ99"})
     await link_driver(conn, trip_id)
     assert await is_assigned(conn, trip_id) is False
@@ -111,7 +92,6 @@ async def test_published_offer_never_assigned_even_with_link(conexion_revertida)
 
 async def test_linking_a_driver_assigns_in_the_same_transaction(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
     trip_id = await insert_tms_trip(conn, await open_status(conn), {})
     assert await is_assigned(conn, trip_id) is False
     await link_driver(conn, trip_id)
@@ -120,7 +100,6 @@ async def test_linking_a_driver_assigns_in_the_same_transaction(conexion_reverti
 
 async def test_removing_link_unassigns(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
     trip_id = await insert_tms_trip(conn, await open_status(conn), {})
     await link_driver(conn, trip_id)
     assert await is_assigned(conn, trip_id) is True
@@ -130,7 +109,6 @@ async def test_removing_link_unassigns(conexion_revertida):
 
 async def test_manual_override_is_respected(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
     trip_id = await insert_tms_trip(conn, await open_status(conn), {})
     await conn.execute(
         "UPDATE app.trips SET is_assigned = false, manually_edited_fields = ARRAY['is_assigned'] "
@@ -147,7 +125,6 @@ async def test_link_change_without_effect_does_not_touch_trip(conexion_revertida
     """Un cambio del vínculo que no altera "asignado" no reescribe el viaje: la
     ingesta reescribe miles de vínculos automáticos por corrida (Disk IO)."""
     conn = conexion_revertida
-    await apply_migration(conn)
     trip_id = await insert_tms_trip(conn, await open_status(conn), {"tractor_plate": "ZZZZ99"})
     await link_driver(conn, trip_id)
     before = await conn.fetchval("SELECT ctid::text FROM app.trips WHERE id = $1::uuid", trip_id)
@@ -175,7 +152,6 @@ async def create_manual_trip(conn, status: str | None, tractor_plate: str | None
 
 async def test_closed_manual_trip_with_fleet_is_born_inactive_and_assigned(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
     trip_id = await create_manual_trip(conn, "CERRADO FINALIZADO", "ZZZZ99")
     row = await conn.fetchrow("SELECT is_active, is_assigned FROM app.trips WHERE id = $1::uuid", trip_id)
     assert (row["is_active"], row["is_assigned"]) == (False, True)
@@ -188,7 +164,6 @@ async def test_closed_manual_trip_with_fleet_is_born_inactive_and_assigned(conex
 
 async def test_manual_trip_without_fleet_is_born_active_and_unassigned(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
     trip_id = await create_manual_trip(conn, await open_status(conn), None)
     row = await conn.fetchrow("SELECT is_active, is_assigned FROM app.trips WHERE id = $1::uuid", trip_id)
     assert (row["is_active"], row["is_assigned"]) == (True, False)
@@ -196,7 +171,6 @@ async def test_manual_trip_without_fleet_is_born_active_and_unassigned(conexion_
 
 async def test_linking_driver_via_endpoint_assigns_immediately(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
     trip_id = await create_manual_trip(conn, await open_status(conn), None)
     pool = PoolDeUnaConexion(conn)
     user = await _usuario_real(conn)
@@ -208,7 +182,6 @@ async def test_linking_driver_via_endpoint_assigns_immediately(conexion_revertid
 
 async def test_patch_rolls_back_when_mirror_fails(conexion_revertida, monkeypatch):
     conn = conexion_revertida
-    await apply_migration(conn)
     trip_id = await create_manual_trip(conn, await open_status(conn), None)
 
     async def failing_mirror(_conn, _trip_id):
@@ -232,7 +205,6 @@ async def test_resetting_the_override_recomputes_assignment(conexion_revertida):
     """Quitar el override de "Asignado" vuelve a la regla en el acto, no en la
     corrida siguiente de dbt (revisión final, spec 2026-10-11)."""
     conn = conexion_revertida
-    await apply_migration(conn)
     trip_id = await insert_tms_trip(conn, await open_status(conn), {"tractor_plate": "ZZZZ99"})
     await conn.execute(
         "UPDATE app.trips SET is_assigned = false, manually_edited_fields = ARRAY['is_assigned'] "
@@ -287,7 +259,6 @@ async def test_editing_a_manual_trip_reaches_trips_manual(conexion_revertida):
     """La copia escribe de verdad: sin ella, la siguiente corrida de dbt
     reconstruye el viaje desde trips_manual y pisa la edición."""
     conn = conexion_revertida
-    await apply_migration(conn)
     trip_id = await create_manual_trip(conn, await open_status(conn), None)
     await patch_trip(trip_id, TripPatch(comments="queda en trips_manual"),
                      pool=PoolDeUnaConexion(conn), user=await _usuario_real(conn))

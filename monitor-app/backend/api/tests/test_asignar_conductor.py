@@ -21,17 +21,9 @@ from app.routers.trips import assign_driver_bulk, assign_fleet_link, driver_cand
 from app.schemas.trip import AsignarConductorBody
 from tests.conftest import PoolDeUnaConexion, _usuario_real
 from tests import d1_subjects
-from tests.d1_subjects import apply_fleet_facts, make_test_fleet
+from tests.d1_subjects import make_test_fleet
 
 pytestmark = pytest.mark.integracion
-
-
-@pytest.fixture(autouse=True)
-async def _hechos_de_la_flota(conexion_revertida):
-    """D1 Task 7: el Monitor y /drivers leen app.carrier_of / app.active_fleet;
-    hasta la Task 10 la migración no está aplicada. Desde la Task 8 la guarda
-    de asignación también los lee (app.carrier_of y fleet_compliance)."""
-    await apply_fleet_facts(conexion_revertida)
 
 
 async def _un_viaje(conn) -> str:

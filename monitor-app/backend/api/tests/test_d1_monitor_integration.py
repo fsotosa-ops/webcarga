@@ -46,7 +46,6 @@ async def _viaje(conn, *, carrier: str | None = None, driver: str | None = None)
 
 async def test_el_monitor_dice_si_la_empresa_puede_operar_y_si_hay_aviso_critico(conexion_revertida):
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     await s.thresholds(conn, warning=30, critical=0)
     hoy = await s.today(conn)
     c = await s.carrier(conn)
@@ -72,7 +71,6 @@ async def test_el_monitor_dice_si_la_empresa_puede_operar_y_si_hay_aviso_critico
 
 async def test_una_empresa_con_un_obligatorio_faltante_no_puede_operar(conexion_revertida):
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     await s.thresholds(conn, warning=30, critical=0)
     hoy = await s.today(conn)
     c = await s.carrier(conn)
@@ -101,7 +99,6 @@ async def test_drivers_no_duplica_conductor_con_dos_tractos(conexion_revertida):
     tracto, no un tracto por conductor: el LEFT JOIN plano lo devolvía dos
     veces al asignar un viaje."""
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     hoy = await s.today(conn)
     c = await s.carrier(conn)
     nombre = f"{s.PREFIX} Dostractos {s.suffix()}"
@@ -123,7 +120,6 @@ async def test_drivers_no_duplica_conductor_con_dos_tractos(conexion_revertida):
 
 async def test_los_candidatos_traen_el_estado_de_su_empresa_y_nunca_a_un_dado_de_baja(conexion_revertida):
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     marca = s.suffix()
     de_baja = await s.driver(conn, None, status="INACTIVE", name=f"Zzdeuno{marca} Zzpersona{marca}")
     empresa_de_baja = await s.carrier(conn, status="INACTIVE")
@@ -142,7 +138,6 @@ async def test_los_candidatos_traen_el_estado_de_su_empresa_y_nunca_a_un_dado_de
 
 async def test_el_conductor_habitual_no_admite_a_un_dado_de_baja(conexion_revertida):
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     c = await s.carrier(conn)
     tracto = await s.asset(conn, c)
     de_baja = await s.driver(conn, c, status="INACTIVE")

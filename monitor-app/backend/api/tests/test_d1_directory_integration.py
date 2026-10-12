@@ -42,7 +42,6 @@ async def _lista(conn) -> dict:
 
 async def test_la_tira_del_directorio_cuenta_solo_la_flota_activa(conexion_revertida):
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     pool = PoolDeUnaConexion(conn)
     antes = await get_directorio(pool=pool, _=None)
 
@@ -57,7 +56,6 @@ async def test_la_tira_del_directorio_cuenta_solo_la_flota_activa(conexion_rever
 
 async def test_la_lista_trae_el_resumen_con_la_flota_activa(conexion_revertida):
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     f = await _flota_mixta(conn)
     req = await s.requirement(conn, entity="DRIVER")
     await s.record(conn, req, "DRIVER", f["driver"])
@@ -82,7 +80,6 @@ async def test_por_vencer_y_opcionales_no_quitan_la_habilitacion(conexion_revert
     """E-c: "por vencer" cuenta como al día. Los opcionales cuentan en las
     cifras pero no bloquean."""
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     await s.thresholds(conn, warning=30, critical=0)
     hoy = await s.today(conn)
     c = await s.carrier(conn)
@@ -102,7 +99,6 @@ async def test_por_vencer_y_opcionales_no_quitan_la_habilitacion(conexion_revert
 async def test_una_empresa_dada_de_baja_nunca_esta_habilitada(conexion_revertida):
     """D1-R1: sus cifras se calculan (historial) y can_operate es false."""
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     c = await s.carrier(conn, status="LEGACY_INACTIVE")
     await s.without_seeding(conn, c)
 
@@ -115,7 +111,6 @@ async def test_el_filtro_de_habilitacion_corre_en_el_servidor(conexion_revertida
     """R-B14 (D-R6): Habilitada / No habilitada como filtro y faceta, con la
     misma regla que el resumen. Una empresa dada de baja no es ninguna de las dos."""
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     habilitada = await s.carrier(conn)
     no_habilitada = await s.carrier(conn)
     de_baja = await s.carrier(conn, status="INACTIVE")
@@ -137,7 +132,6 @@ async def test_el_filtro_de_habilitacion_corre_en_el_servidor(conexion_revertida
 
 async def test_la_ficha_trae_estado_dias_y_aviso_por_documento(conexion_revertida):
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     await s.thresholds(conn, warning=30, critical=0)
     hoy = await s.today(conn)
     f = await _flota_mixta(conn)
@@ -161,7 +155,6 @@ async def test_la_ficha_trae_estado_dias_y_aviso_por_documento(conexion_revertid
 
 async def test_el_roster_trae_el_resumen_de_cada_conductor(conexion_revertida):
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     f = await _flota_mixta(conn)
     req = await s.requirement(conn, entity="DRIVER")
     await s.record(conn, req, "DRIVER", f["driver"])
@@ -184,7 +177,6 @@ async def test_el_roster_de_equipos_se_lee_en_vivo_y_trae_su_resumen(conexion_re
     """R-B8: app.carrier_asset_roster no se refresca con public.assets. Dar de
     baja un tracto dejaba ACTIVE en la ficha, y can_operate saldría mal."""
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     c = await s.carrier(conn)
     a = await s.asset(conn, c)
     await s.without_seeding(conn, c, a)
@@ -202,7 +194,6 @@ async def test_los_campos_viejos_ya_no_salen(conexion_revertida):
     """Despliegue 3 (spec §9, Task 16): lo retirado no vuelve. La lista, sus
     facetas y los dos rosters de una empresa con flota y un requisito."""
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     f = await _flota_mixta(conn)
     await s.record(conn, await s.requirement(conn, entity="DRIVER"), "DRIVER", f["driver"])
     await s.record(conn, await s.requirement(conn, entity="ASSET"), "ASSET", f["tractor"])
@@ -231,7 +222,6 @@ async def test_la_lista_pone_primero_las_no_habilitadas(conexion_revertida):
     """Sin compliance_health el orden sale del resumen: activas que no pueden
     operar primero, después por nombre. Una dada de baja no es No habilitada."""
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     habilitada = await s.carrier(conn)
     de_baja = await s.carrier(conn, status="INACTIVE")
     no_habilitada = await s.carrier(conn)

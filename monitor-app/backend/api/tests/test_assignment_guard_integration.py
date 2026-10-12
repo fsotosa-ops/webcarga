@@ -18,18 +18,11 @@ from app.routers.trips import (
 )
 from app.schemas.trip import AsignarConductorBody, TripPatch
 from tests.conftest import PoolDeUnaConexion, _usuario_real, cliente_de_prueba
-from tests.d1_subjects import apply_fleet_facts, make_test_fleet
+from tests.d1_subjects import make_test_fleet
 
 pytestmark = pytest.mark.integracion
 
 DIA = date(2099, 1, 5)
-
-
-@pytest.fixture(autouse=True)
-async def _hechos_de_la_flota(conexion_revertida):
-    """app.carrier_of, app.active_fleet y la base de fleet_compliance, dentro de
-    la transacción revertida: la migración se aplica recién en la Task 10."""
-    await apply_fleet_facts(conexion_revertida)
 
 
 STOPS = [TripStopCreate(local="SAN BERNARDO", stop_type="ORIGIN"), TripStopCreate(local="IANSA")]

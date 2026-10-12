@@ -1,7 +1,7 @@
 """Apoyo de los tests de D1 "Una sola respuesta" (spec
-2026-10-12-directory-d1-one-answer-design.md): los hechos de la flota de la
-migración, y (desde la Task 5) las fábricas de sujetos ZZ-TEST-D1 que comparten
-las tareas. No es un archivo de tests: pytest no lo colecta (no empieza con test_)."""
+2026-10-12-directory-d1-one-answer-design.md): la migración de los hechos de la
+flota (solo para su test de re-ejecución), y (desde la Task 5) las fábricas de
+sujetos ZZ-TEST-D1 que comparten las tareas. No es un archivo de tests: pytest no lo colecta (no empieza con test_)."""
 from __future__ import annotations
 
 from datetime import date
@@ -23,13 +23,15 @@ def fleet_facts_sql() -> str:
     return texto[:corte]
 
 
-async def apply_fleet_facts(conn) -> None:
-    """Crea los hechos de la flota dentro de la transacción revertida del test.
-    Sin los CHECK: un ADD CONSTRAINT toma un lock exclusivo sobre carriers,
-    drivers y assets hasta el ROLLBACK, y la app no podría leerlas mientras dure
-    el test. Una vez aplicada la migración (Task 10), esto recrea lo mismo y no
-    cambia nada."""
-    await conn.execute(fleet_facts_sql())
+async def assert_fleet_facts_exist(conn) -> None:
+    """Los hechos de la flota viven en la base desde la Task 10. Ningún test los
+    recrea: un CREATE OR REPLACE VIEW toma un ACCESS EXCLUSIVE sobre
+    app.active_fleet hasta el ROLLBACK, y mientras dura el test la API viva de
+    dev (Directorio, ficha, embudo, Monitor, guarda) queda esperando detrás
+    (revisión final D1, I2). Esto solo confirma que están."""
+    assert await conn.fetchval("SELECT to_regclass('app.active_fleet')") is not None
+    assert await conn.fetchval("SELECT to_regprocedure('app.carrier_of(text, uuid)')") is not None
+    assert await conn.fetchval("SELECT to_regprocedure('public.carrier_management_types(uuid)')") is not None
 
 
 PREFIX = "ZZ-TEST-D1"

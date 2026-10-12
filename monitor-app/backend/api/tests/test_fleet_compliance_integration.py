@@ -5,8 +5,8 @@ Contra la base real, en una transacción revertida. Los sujetos los crea cada
 test (prefijo ZZ-TEST-D1). Al crearlos, los triggers de siembra les cargan los
 requisitos activos de hoy: `_sin_registros` los borra, para que cada test parta
 de cero y cuente solo lo que inserta. Los requisitos del test nacen apagados
-(is_active = false). app.active_fleet se crea en la transacción con
-`apply_fleet_facts` (la migración se aplica recién en la Task 10)."""
+(is_active = false). app.active_fleet es la de la base (migración aplicada en
+la Task 10): ningún test la recrea."""
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -24,7 +24,6 @@ from app.services.fleet_compliance import (
 )
 from app.services.vencimientos import document_state_sql
 from tests.conftest import PoolDeUnaConexion
-from tests.d1_subjects import apply_fleet_facts
 
 pytestmark = pytest.mark.integracion
 
@@ -90,7 +89,6 @@ async def _hoy(conn) -> date:
 
 
 async def _de_la_empresa(conn, empresa: UUID):
-    await apply_fleet_facts(conn)
     filas = await conn.fetch(
         f"WITH {carrier_compliance_cte()} SELECT * FROM carrier_compliance WHERE carrier_id = $1", empresa)
     assert len(filas) == 1, "una fila por empresa, siempre"

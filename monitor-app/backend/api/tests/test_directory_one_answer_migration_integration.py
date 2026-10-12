@@ -1,9 +1,14 @@
 """D1 "Una sola respuesta", hechos de la flota en la base (spec §4): app.active_fleet,
 app.carrier_of, public.carrier_management_types y los CHECK de operational_status.
 
-La migración se ejecuta dentro de la transacción revertida de cada test (patrón
-de test_trip_assignment_integration.py): se prueba el archivo antes de
-aplicarlo. Los sujetos los crea el test, con prefijo ZZ-TEST-D1."""
+La migración ya está aplicada (Task 10): los tests leen el esquema vivo y no la
+re-ejecutan (revisión final D1, I2). Re-aplicarla en cada test tomaba un ACCESS
+EXCLUSIVE sobre app.active_fleet (CREATE OR REPLACE VIEW) y sobre carriers,
+drivers y assets (SET NOT NULL lo toma aunque la columna ya sea NOT NULL) hasta
+el ROLLBACK, y la API viva de dev esperaba detrás. Queda UNA prueba de
+re-ejecución, y solo de la parte anterior a los CHECK. Los CHECK y el NOT NULL
+se prueban intentando escrituras que los violan. Los sujetos los crea el test,
+con prefijo ZZ-TEST-D1."""
 from __future__ import annotations
 
 import uuid
@@ -12,21 +17,13 @@ from pathlib import Path
 import asyncpg
 import pytest
 
-from tests.d1_subjects import CHECKS_MARKER, apply_fleet_facts, fleet_facts_sql
+from tests.d1_subjects import CHECKS_MARKER, assert_fleet_facts_exist, fleet_facts_sql
 
 pytestmark = pytest.mark.integracion
 
 MIGRATION = (Path(__file__).resolve().parents[2]
              / "supabase/migrations/20261013090000_directory_one_answer.sql")
 PREFIJO = "ZZ-TEST-D1"
-
-
-async def apply_migration(conn) -> None:
-    # Los CHECK toman un lock exclusivo sobre carriers, drivers y assets hasta el
-    # ROLLBACK. Si alguien los tiene tomados, el test falla en 3 s en vez de
-    # quedarse esperando (y de hacer esperar a la app detrás suyo).
-    await conn.execute("SET LOCAL lock_timeout = '3s'")
-    await conn.execute(MIGRATION.read_text())
 
 
 def _suf() -> str:
@@ -76,7 +73,6 @@ async def _flota(conn, empresa) -> set[tuple[str, uuid.UUID]]:
 
 async def test_la_flota_activa_deja_fuera_lo_dado_de_baja(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
     empresa = await _empresa(conn)
     activo = await _conductor(conn, empresa)
     await _conductor(conn, empresa, estado="INACTIVE")          # de baja, con asignación ACTIVE
@@ -89,7 +85,6 @@ async def test_la_flota_activa_deja_fuera_lo_dado_de_baja(conexion_revertida):
 
 async def test_la_flota_activa_no_mira_el_estado_de_la_empresa(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
     de_baja = await _empresa(conn, estado="INACTIVE")
     conductor = await _conductor(conn, de_baja)
 
@@ -100,7 +95,6 @@ async def test_un_conductor_con_dos_tractos_esta_una_vez_en_la_flota(conexion_re
     """Review Focus 2: vehicle_driver_assignments permite un conductor por tracto,
     no un tracto por conductor."""
     conn = conexion_revertida
-    await apply_migration(conn)
     empresa = await _empresa(conn)
     conductor = await _conductor(conn, empresa)
     for _ in range(2):
@@ -114,24 +108,29 @@ async def test_un_conductor_con_dos_tractos_esta_una_vez_en_la_flota(conexion_re
     assert filas == 1
 
 
-async def test_los_hechos_de_la_flota_se_cargan_sin_los_check(conexion_revertida):
-    """El helper de las Tasks 4-9 (A-R9) corta en la marca: crea la vista y las
-    funciones, y deja afuera los ALTER TABLE que toman locks exclusivos."""
+async def test_los_hechos_de_la_flota_se_pueden_volver_a_correr(conexion_revertida):
+    """La única re-ejecución que queda: la parte anterior a la marca (vista,
+    carrier_of, carrier_management_types), dentro de la transacción revertida.
+    Sin los CHECK ni los SET NOT NULL, que toman ACCESS EXCLUSIVE sobre tablas
+    vivas. CREATE OR REPLACE VIEW igual toma uno sobre app.active_fleet: el
+    lock_timeout corto evita que el test haga esperar a la app."""
     conn = conexion_revertida
     assert "ADD CONSTRAINT" not in fleet_facts_sql()
-    assert "ADD CONSTRAINT" in MIGRATION.read_text().split(CHECKS_MARKER, 1)[1]
+    assert "SET NOT NULL" not in fleet_facts_sql()
+    despues = MIGRATION.read_text().split(CHECKS_MARKER, 1)[1]
+    assert "ADD CONSTRAINT" in despues and "SET NOT NULL" in despues
     for linea in MIGRATION.read_text().splitlines():
         assert linea.strip().upper() not in ("BEGIN;", "COMMIT;"), "la migración no maneja su transacción"
-    await apply_fleet_facts(conn)
-    assert await conn.fetchval("SELECT to_regclass('app.active_fleet')") is not None
-    assert await conn.fetchval("SELECT to_regprocedure('app.carrier_of(text, uuid)')") is not None
+    await assert_fleet_facts_exist(conn)
+    await conn.execute("SET LOCAL lock_timeout = '3s'")
+    await conn.execute(fleet_facts_sql())
+    await assert_fleet_facts_exist(conn)
 
 
 # ── app.carrier_of ───────────────────────────────────────────────────────────
 
 async def test_carrier_of(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
     activa = await _empresa(conn)
     de_baja = await _empresa(conn, estado="INACTIVE")
     conductor_de_baja = await _conductor(conn, de_baja, estado="INACTIVE")
@@ -153,7 +152,6 @@ async def test_carrier_of(conexion_revertida):
 
 async def test_el_tipo_de_operacion_ignora_el_tracto_dado_de_baja(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
     empresa = await _empresa(conn)
     await _equipo(conn, empresa, operacion="TRACTOREO")
     await _equipo(conn, empresa, estado="INACTIVE", operacion="EQUIPO_COMPLETO")
@@ -164,7 +162,6 @@ async def test_el_tipo_de_operacion_ignora_el_tracto_dado_de_baja(conexion_rever
 async def test_el_tipo_de_operacion_sale_del_tracto_no_de_la_rampla(conexion_revertida):
     """E-g de la spec y ruling A-R1 (cambia 1 empresa INACTIVE)."""
     conn = conexion_revertida
-    await apply_migration(conn)
     empresa = await _empresa(conn)
     await _equipo(conn, empresa, operacion="TRACTOREO")
     await _equipo(conn, empresa, tipo="RAMPLA", operacion="EQUIPO_COMPLETO")
@@ -174,7 +171,6 @@ async def test_el_tipo_de_operacion_sale_del_tracto_no_de_la_rampla(conexion_rev
 
 async def test_sin_tractos_activos_cae_a_lo_declarado(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
     empresa = await _empresa(conn, declarado=["TRACTOREO"])
     await _equipo(conn, empresa, estado="INACTIVE", operacion="EQUIPO_COMPLETO")
 
@@ -183,7 +179,6 @@ async def test_sin_tractos_activos_cae_a_lo_declarado(conexion_revertida):
 
 async def test_el_comentario_sigue_nombrando_a_quienes_la_llaman(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
     comentario = await conn.fetchval(
         "SELECT obj_description('public.carrier_management_types(uuid)'::regprocedure, 'pg_proc')")
     for llamador in ("reconcile_new_carrier", "reconcile_carrier_shipper_link", "SQL_ENTIDADES_QUE_APLICAN",
@@ -205,7 +200,6 @@ async def _sujeto(conn, tabla: str) -> uuid.UUID:
 ])
 async def test_el_ciclo_de_vida_fuera_del_glosario_se_rechaza(conexion_revertida, tabla, valor):
     conn = conexion_revertida
-    await apply_migration(conn)
     fila = await _sujeto(conn, tabla)
     # Un SAVEPOINT: el error no aborta la transacción del fixture.
     with pytest.raises(asyncpg.CheckViolationError):
@@ -213,10 +207,8 @@ async def test_el_ciclo_de_vida_fuera_del_glosario_se_rechaza(conexion_revertida
             await conn.execute(f"UPDATE public.{tabla} SET operational_status = $1 WHERE id = $2", valor, fila)
 
 
-async def test_la_migracion_se_puede_correr_dos_veces(conexion_revertida):
+async def test_los_check_del_ciclo_de_vida_estan_en_la_base(conexion_revertida):
     conn = conexion_revertida
-    await apply_migration(conn)
-    await apply_migration(conn)
     nombres = {f["conname"] for f in await conn.fetch(
         "SELECT conname FROM pg_constraint WHERE conname = ANY($1::text[])",
         ["carriers_operational_status_check", "drivers_operational_status_check",
@@ -229,7 +221,6 @@ async def test_el_ciclo_de_vida_no_puede_quedar_vacio(conexion_revertida, tabla)
     """El CHECK deja pasar NULL; el NOT NULL de la migración lo cierra (Ruling
     T4-N): un NULL daría can_operate NULL, ni habilitada ni no habilitada."""
     conn = conexion_revertida
-    await apply_migration(conn)
     assert await conn.fetchval(
         "SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' "
         "AND table_name = $1 AND column_name = 'operational_status'", tabla) == "NO"

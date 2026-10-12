@@ -21,17 +21,9 @@ from fastapi import HTTPException
 
 from app.routers.trips import TripCreateBody, TripStopCreate, assign_fleet_link, create_trip
 from tests.conftest import PoolDeUnaConexion, _usuario_real, cliente_de_prueba
-from tests.d1_subjects import apply_fleet_facts, make_test_fleet
+from tests.d1_subjects import make_test_fleet
 
 pytestmark = pytest.mark.integracion
-
-
-@pytest.fixture(autouse=True)
-async def _hechos_de_la_flota(conexion_revertida):
-    """D1: la guarda de asignación (Task 8) y la lectura del viaje (Task 7) leen
-    app.carrier_of, app.active_fleet y fleet_compliance; hasta la Task 10 la
-    migración no está aplicada."""
-    await apply_fleet_facts(conexion_revertida)
 
 
 async def _conductor_con_empresa(conn):

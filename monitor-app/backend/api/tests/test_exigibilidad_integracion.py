@@ -24,7 +24,6 @@ from app.routers.compliance import (
 from app.schemas.compliance import SolicitudBody
 from app.services.requirement_conditions import calcular_diferencias
 from tests.conftest import USER, PoolDeUnaConexion, _usuario_real
-from tests.d1_subjects import apply_fleet_facts
 
 pytestmark = pytest.mark.integracion
 
@@ -226,7 +225,6 @@ async def test_el_mes_siguiente_ya_es_falta(conexion_revertida):
 
 
 async def test_lo_que_aun_no_se_exige_no_cuenta_como_cubierto(conexion_revertida):
-    await apply_fleet_facts(conexion_revertida)  # el embudo lee app.carrier_of (D1, Task 6)
     await _cargar(conexion_revertida)
     await _hoy(conexion_revertida, dt.date(2026, 10, 20))
     empresa = await _empresa(conexion_revertida)

@@ -47,7 +47,6 @@ async def _embudo(conn, carrier_id: str) -> dict:
 
 async def test_la_vista_rapida_cuenta_solo_la_flota_activa(conexion_revertida):
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     f = await _flota_con_un_pendiente(conn)
 
     resumen = await get_carrier_summary(UUID(f["carrier"]), pool=PoolDeUnaConexion(conn), _=None)
@@ -60,7 +59,6 @@ async def test_la_vista_rapida_cuenta_solo_la_flota_activa(conexion_revertida):
 
 async def test_la_vista_rapida_del_conductor_trae_su_resumen_y_su_empresa(conexion_revertida):
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     f = await _flota_con_un_pendiente(conn)
 
     resumen = await get_driver_summary(UUID(f["driver"]), pool=PoolDeUnaConexion(conn), _=None)
@@ -74,7 +72,6 @@ async def test_la_vista_rapida_del_conductor_trae_su_resumen_y_su_empresa(conexi
 
 async def test_el_embudo_no_cuenta_la_flota_de_baja(conexion_revertida):
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     f = await _flota_con_un_pendiente(conn)
 
     fila = await _embudo(conn, f["carrier"])
@@ -88,7 +85,6 @@ async def test_el_embudo_no_cuenta_la_flota_de_baja(conexion_revertida):
 
 async def test_los_baldes_del_embudo_salen_del_resumen(conexion_revertida):
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     await s.thresholds(conn, warning=30, critical=0)
     hoy = await s.today(conn)
     con_por_vencer = await s.carrier(conn)
@@ -110,7 +106,6 @@ async def test_el_total_del_embudo_cuenta_solo_las_activas(conexion_revertida):
     muestra empresas ACTIVE. La empresa en onboarding sigue en la lista (su
     pestaña del ciclo de vida la cuenta) pero no suma al total."""
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     activa = await s.carrier(conn)
     recien_creada = await s.carrier(conn, status="ONBOARDING")
     await s.without_seeding(conn, activa, recien_creada)
@@ -137,7 +132,6 @@ async def test_el_tipo_de_operacion_de_pendientes_sale_de_la_funcion(conexion_re
     """spec §4.3: lo observado en los tractos manda y lo declarado cubre el
     hueco. La CTE propia de Pendientes solo miraba los vehículos."""
     conn = conexion_revertida
-    await s.apply_fleet_facts(conn)
     c = await s.carrier(conn, management_types=["EQUIPO_COMPLETO"])
     await s.without_seeding(conn, c)
     req = await s.requirement(conn, entity="CARRIER")

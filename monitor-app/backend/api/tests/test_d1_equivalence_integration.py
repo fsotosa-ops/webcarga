@@ -21,25 +21,9 @@ from app.routers.compliance import get_certification_status, pending_summary
 from app.services.entity_summary import carrier_summary
 from tests.conftest import PoolDeUnaConexion
 
-try:  # Task 2 crea tests/d1_subjects.py; hasta entonces no hay nada que aplicar.
-    from tests.d1_subjects import apply_fleet_facts
-except ImportError:
-    apply_fleet_facts = None
-
 pytestmark = pytest.mark.integracion
 
 Triple = tuple[int, int, int]  # (overdue, expiring, missing)
-
-
-@pytest.fixture(autouse=True)
-async def _hechos_de_flota(conexion_revertida):
-    """Aplica los hechos de flota (app.active_fleet) a la transacción revertida
-    antes de cada test, para que los lectores arreglados no fallen con
-    UndefinedTable mientras la migración no esté desplegada (ruling F3).
-    Task 2 hace real `apply_fleet_facts`; hoy es un no-op."""
-    if apply_fleet_facts is not None:
-        await apply_fleet_facts(conexion_revertida)
-    yield
 
 
 async def _activas(conn) -> list[str]:
