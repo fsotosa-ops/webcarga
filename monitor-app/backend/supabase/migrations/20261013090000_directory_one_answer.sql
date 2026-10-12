@@ -116,3 +116,10 @@ BEGIN
             CHECK (operational_status IN ('ACTIVE', 'INACTIVE'));
     END IF;
 END $$;
+
+-- Un CHECK deja pasar NULL: sin NOT NULL, una fila sin ciclo de vida daría
+-- can_operate NULL (ni habilitada ni no habilitada). Verificado el 12/10: 0
+-- filas NULL en las tres tablas. SET NOT NULL es idempotente.
+ALTER TABLE public.carriers ALTER COLUMN operational_status SET NOT NULL;
+ALTER TABLE public.drivers  ALTER COLUMN operational_status SET NOT NULL;
+ALTER TABLE public.assets   ALTER COLUMN operational_status SET NOT NULL;

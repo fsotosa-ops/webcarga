@@ -222,3 +222,18 @@ async def test_la_migracion_se_puede_correr_dos_veces(conexion_revertida):
         ["carriers_operational_status_check", "drivers_operational_status_check",
          "assets_operational_status_check"])}
     assert len(nombres) == 3
+
+
+@pytest.mark.parametrize("tabla", ["carriers", "drivers", "assets"])
+async def test_el_ciclo_de_vida_no_puede_quedar_vacio(conexion_revertida, tabla):
+    """El CHECK deja pasar NULL; el NOT NULL de la migración lo cierra (Ruling
+    T4-N): un NULL daría can_operate NULL, ni habilitada ni no habilitada."""
+    conn = conexion_revertida
+    await apply_migration(conn)
+    assert await conn.fetchval(
+        "SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' "
+        "AND table_name = $1 AND column_name = 'operational_status'", tabla) == "NO"
+    fila = await _sujeto(conn, tabla)
+    with pytest.raises(asyncpg.NotNullViolationError):
+        async with conn.transaction():
+            await conn.execute(f"UPDATE public.{tabla} SET operational_status = NULL WHERE id = $1", fila)
