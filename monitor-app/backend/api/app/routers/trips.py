@@ -605,11 +605,8 @@ _TRIP_SELECT = """
     c_home.business_name AS fleet_match_driver_home_carrier,
     ins.insurance_alert,
     dcomp.pending_count AS driver_pending_docs,
-    dcomp.has_critical_pending AS driver_pending_docs_critical,
     tcomp.pending_count AS tractor_pending_docs,
-    tcomp.has_critical_pending AS tractor_pending_docs_critical,
     ccomp.pending_count AS carrier_pending_docs,
-    ccomp.has_critical_pending AS carrier_pending_docs_critical,
     -- D1 (R-B5): el aviso crítico por entidad, NULL si no está resuelta
     -- (igual que *_pending_docs). No hay un campo del viaje: cada badge dice
     -- de quién es el problema.
@@ -655,8 +652,8 @@ def _compliance_alert_lateral(alias: str, entity_type: str, id_expr: str, critic
     empresa (HU-08/09) nunca llegó a mostrarse acá (el summary endpoint viejo
     que la alimentaba se borró en Checkpoint A-E; TripTable.tsx quedó con un
     ComplianceBadge sin productor). Mismo criterio de is_expired/
-    is_expiring_soon que ya usa GET /drivers/{id}/compliance-records y
-    _pending_mandatory_join (carriers.py).
+    is_expiring_soon que ya usa GET /drivers/{id}/compliance-records (el
+    `_pending_mandatory_join` de carriers.py que lo compartía se retiró en D1).
     Diseño confirmado por el usuario 2026-07-22: NO un tri-state ok/vencido —
     hoy el 100% de conductores/tractos/empresas tiene al menos 1 documento
     LEGAL_MANDATORY pendiente (verificado contra datos reales, misma consulta
@@ -1134,13 +1131,6 @@ class MonitorAlertRulesMeta(BaseModel):
     in_progress_idle_days:  int
 
 
-class AlertThresholdMeta(BaseModel):
-    doc_type:     str
-    label:        str
-    warning_days: int
-    error_days:   int
-
-
 class CSVColumnDef(BaseModel):
     field:    str
     csv_key:  str
@@ -1174,7 +1164,6 @@ class TripsMeta(BaseModel):
     statuses:            list[StatusMeta]
     tms_sources:         list[TmsSourceMeta]
     operational_states:  list[OperationalStateMeta]
-    alert_thresholds:    list[AlertThresholdMeta]
     csv_columns:         list[CSVColumnDef]
     temperature_ranges:  list[TemperatureRangeMeta]
     unassigned_reasons:  list[UnassignedReasonMeta]
@@ -1207,10 +1196,6 @@ async def get_trips_meta(pool=Depends(get_pool), _=Depends(require(Permission.OP
         "FROM app.trips WHERE status_reported_at IS NOT NULL GROUP BY source_system"
     )
     last_run_by_source = {r["source_system"]: r["last_run_at"] for r in last_run_rows}
-    thresh_rows = await pool.fetch(
-        "SELECT doc_type, label, warning_days, error_days "
-        "FROM app.alert_thresholds ORDER BY doc_type"
-    )
     temp_range_rows = await pool.fetch(
         "SELECT cargo_type, label, min_c, max_c "
         "FROM app.temperature_ranges ORDER BY cargo_type"
@@ -1244,7 +1229,6 @@ async def get_trips_meta(pool=Depends(get_pool), _=Depends(require(Permission.OP
             TmsSourceMeta(**t, last_run_at=last_run_by_source.get(t["id"])) for t in _TMS_META
         ],
         operational_states=[OperationalStateMeta(**dict(r)) for r in op_rows],
-        alert_thresholds=[AlertThresholdMeta(**dict(r)) for r in thresh_rows],
         csv_columns=[CSVColumnDef(**c) for c in _CSV_COLUMNS],
         temperature_ranges=[TemperatureRangeMeta(**dict(r)) for r in temp_range_rows],
         unassigned_reasons=[UnassignedReasonMeta(**dict(r)) for r in unassigned_reason_rows],

@@ -276,7 +276,6 @@ export type TripsMeta = {
   statuses:            StatusMeta[]
   tms_sources:         TmsSourceMeta[]
   operational_states:  OperationalStateMeta[]
-  alert_thresholds:    AlertThresholdMeta[]
   csv_columns:         CSVColumnDef[]
   temperature_ranges:  TemperatureRangeMeta[]
   unassigned_reasons:  UnassignedReasonMeta[]
@@ -559,13 +558,8 @@ export type Trip = {
    *  binario saturaría cada fila sin aportar señal. null cuando el dominio
    *  no tiene ID resuelto todavía (no confundir con "0 pendientes"). */
   driver_pending_docs?:            number | null
-  /** true cuando el pendiente incluye Licencia de Conducir o Carnet — los
-   *  "más críticos" según el usuario, distintos del resto de LEGAL_MANDATORY. */
-  driver_pending_docs_critical?:   boolean | null
   tractor_pending_docs?:           number | null
-  tractor_pending_docs_critical?:  boolean | null
   carrier_pending_docs?:           number | null
-  carrier_pending_docs_critical?:  boolean | null
   /** Por entidad (D1): alerta crítica del conductor, del tracto y de la empresa,
    *  y si la empresa puede operar. Los pinta la Task 14. */
   driver_has_critical_alert?:      boolean | null
@@ -800,20 +794,6 @@ export type EfectoDelLote = {
 }
 export type LotePublicado = { actualizados: number; creados: number; quitados: number; bloqueados: number }
 
-/** Por qué un requisito cuenta como pendiente, o si no cuenta. Excluyentes y
- *  exhaustivos: 'VENCIDO' ya pasó su fecha, 'POR_VENCER' la pasa dentro de 30
- *  días, 'FALTA' no tiene documento, 'AL_DIA' está cubierto y sin problema de
- *  fecha. Antes de la Ronda 129 'POR_VENCER' no existía y renovar no tenía
- *  superficie en ninguna pantalla. 'AL_DIA' se sumó en la ronda de arreglo 1
- *  de la ficha de empresa (Task 4): con `estado='falta'` (el default de
- *  siempre) el backend nunca devolvía una fila cubierta, así que el valor no
- *  hacía falta; con `estado='todos'` sí, y sin él una fila al día salía
- *  'FALTA' igual que una que de verdad falta — un valor cargando dos
- *  sentidos, la misma clase de bug que este módulo ya tuvo cinco veces. */
-export type Urgencia = 'VENCIDO' | 'POR_VENCER' | 'FALTA' | 'AL_DIA'
-  /** Todavía no se exige (HU-C1, entrega 2b): ni falta ni al día. */
-  | 'NO_EXIGIBLE'
-
 /** Qué mostrar de la documentación de una empresa. `falta` es el default del
  *  backend y reproduce el comportamiento anterior a la ficha. */
 export type EstadoDocumental = 'todos' | 'falta' | 'por_vencer' | 'al_dia'
@@ -885,11 +865,10 @@ export type PendingComplianceRow = {
    *  porque alguien lo subió—, así que la ficha escondía el documento
    *  cargado de todo lo vencido. */
   tiene_archivo:              boolean
-  /** Por qué esta fila está pendiente. Lo resuelve el SQL, no el cliente:
+  /** Por qué esta fila está pendiente, o si no lo está: el estado según la
+   *  definición única del backend. Lo resuelve el SQL, no el cliente:
    *  recalcularlo comparando fechas acá es como dos superficies del mismo
    *  dato terminan discrepando. */
-  urgencia:                   Urgencia
-  /** El estado según la definición única del backend. */
   document_state:             DocumentState
   /** Cuándo vence o venció (misma fecha que `vence_el`, con el nombre nuevo). */
   due_on?:                    string | null
@@ -903,7 +882,7 @@ export type PendingComplianceRow = {
    *  preguntar nunca es un 422 con el archivo ya subido. */
   expiration_policy:          PoliticaVencimiento
   /** HU-C1, entrega 2b. Opcionales: frontend y API se despliegan por separado. */
-  /** Desde cuándo se exige, si todavía no (`urgencia` = NO_EXIGIBLE). */
+  /** Desde cuándo se exige, si todavía no (`document_state` = NOT_REQUIRED). */
   exigible_desde?:            string | null
   /** El vencimiento calculado según el tipo y la regla de cada cliente. */
   vence_el?:                  string | null
@@ -920,8 +899,8 @@ export type PendingComplianceListResponse = {
   rows:  PendingComplianceRow[]
 }
 
-/** Las cuatro cifras, ya particionadas por `urgencia`: `al_dia + por_vencer +
- *  falta === todos` siempre (`falta` agrupa VENCIDO y FALTA, las dos ramas
+/** Las cuatro cifras, ya particionadas por `document_state`: `al_dia + por_vencer +
+ *  falta === todos` siempre (`falta` agrupa OVERDUE y MISSING, las dos ramas
  *  que la ficha ya mostraba juntas — ver `avanceDelSujeto`). Las calcula el
  *  servidor agrupando sobre las filas que trajo la CTE — que SÍ puede venir
  *  truncada (`SUMMARY_LIMIT` entra como su LIMIT, antes del GROUP BY): ver
@@ -1020,8 +999,6 @@ export type Contact = {
   is_active:    boolean
 }
 
-export type ComplianceHealth = 'PENDING' | 'OK'
-
 export type CarrierListItem = {
   id:                    string
   tax_id:                string
@@ -1030,16 +1007,10 @@ export type CarrierListItem = {
   operational_status:    CarrierOperationalStatus
   total_requirements:    number
   last_document_update:  string | null
-  /** Requisitos LEGAL_MANDATORY MISSING/EXPIRED/REJECTED o vencidos por fecha —
-   *  mismo criterio que `mandatoryProblems` en la ficha de empresa. */
-  pending_mandatory:     number
-  compliance_health:     ComplianceHealth
   compliance_summary:    ComplianceSummary
 }
 
 export type CarrierListFacets = {
-  pending: number
-  ok:      number
   total:   number
   enabled:     number
   not_enabled: number
@@ -1093,8 +1064,6 @@ export type CarrierDriverRosterItem = {
   operational_status:    OperationalStatus
   total_requirements:    number | null
   last_document_update:  string | null
-  pending_mandatory:     number
-  compliance_health:     ComplianceHealth
   compliance_summary:    ComplianceSummary
 }
 
@@ -1118,8 +1087,6 @@ export type CarrierAssetRosterItem = {
   webcarga_operation_type_code:  'TRACTOREO' | 'EQUIPO_COMPLETO' | null
   total_requirements:          number | null
   last_document_update:        string | null
-  pending_mandatory:           number
-  compliance_health:           ComplianceHealth
   compliance_summary:          ComplianceSummary
 }
 
@@ -1911,16 +1878,6 @@ export type CertificationGroup = 'carrier' | 'driver' | 'asset' | 'requirement'
  *  el límite, y el catálogo va plegado. */
 export type CertificationScope = 'active' | 'catalog'
 
-/** Las etapas del embudo (spec §4). Las decide el backend en SQL, de una sola
- *  definición: calcularlas acá obligaría a repetir el criterio en el conteo del
- *  encabezado y en el orden. */
-export type FunnelGroup =
-  | 'sin_documentos'
-  | 'en_proceso'
-  | 'renovar'
-  | 'al_dia'
-  | 'catalogo'
-
 /** Códigos del tipo de gestión. La API habla códigos y no las etiquetas del
  *  catálogo, que se renombraron dos veces en dos días. */
 export type ManagementType = 'TRACTOREO' | 'EQUIPO_COMPLETO'
@@ -1932,7 +1889,7 @@ export type ManagementType = 'TRACTOREO' | 'EQUIPO_COMPLETO'
  *  empresas: un conductor o un vehículo sin la empresa a la que pertenece no
  *  dice nada. Agrupando por empresa, la entidad y la empresa son la misma.
  *
- *  Los cuatro campos del embudo llegan **sólo** agrupando por empresa: un
+ *  Los campos del embudo llegan **sólo** agrupando por empresa: un
  *  conductor no tiene etapa de certificación propia. */
 export type CertificationStatusRow = {
   entity_id:          string
@@ -1943,12 +1900,12 @@ export type CertificationStatusRow = {
   total_count:        number
   satisfied_count:    number
   pending_count:      number
+  /** Obligatorios pendientes de la fila (R-E6): la tabla lo compara con 0
+   *  para pintar; no es un estado que se recalcule. */
   pending_mandatory:  number
   unclassified_count: number
-  expired_count?:     number
   management_types?:  ManagementType[] | null
   trips_30d?:         number
-  funnel_group?:      FunnelGroup
   funnel_bucket?:     FunnelBucket | null
   compliance_summary?: ComplianceSummary
 }
@@ -1958,10 +1915,12 @@ export type AssignmentConflictCode = 'CARRIER_NOT_ACTIVE' | 'DRIVER_INACTIVE' | 
 /** Se asignó igual, con aviso: la empresa no está habilitada (P14 abierta).
  *  `row` viaja en las respuestas masivas. */
 export type AssignmentWarning = { code: 'CARRIER_NOT_ENABLED'; message: string; row?: number }
-/** Los baldes del embudo por el resumen (D1-R2): conviven con `funnel_group` hasta la Task 16. */
+/** Los baldes del embudo, del resumen (D1-R2). */
 export type FunnelBucket = 'up_to_date' | 'expiring' | 'not_enabled'   // NULL en la fila si la empresa no está activa
 
 export type CertificationStatus = {
+  /** Lo que deben las empresas ACTIVE: la misma cifra que Pendientes. Una en
+   *  onboarding está en `rows` (su pestaña la cuenta) pero no suma acá (T16-F). */
   total_pending:      number
   total_unclassified: number
   rows:               CertificationStatusRow[]

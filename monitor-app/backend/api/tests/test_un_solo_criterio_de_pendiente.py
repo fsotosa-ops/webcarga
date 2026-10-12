@@ -83,6 +83,11 @@ def test_el_dueno_si_lo_escribe():
 def test_los_cinco_llamadores_usan_la_definicion_compartida():
     """Las cinco copias vivían acá. El test las nombra para que un borrado
     accidental del import se vea como lo que es."""
-    for archivo in ("routers/carriers.py", "routers/trips.py"):
-        texto = (RAIZ / archivo).read_text(encoding="utf-8")
-        assert "pendiente_predicate" in texto, f"{archivo} dejó de usar la definición compartida"
+    texto = (RAIZ / "routers/trips.py").read_text(encoding="utf-8")
+    assert "pendiente_predicate" in texto, "routers/trips.py dejó de usar la definición compartida"
+    # D1 (Task 16): carriers.py ya no cuenta pendientes por su cuenta. Las tres
+    # copias del `pending_mandatory` se retiraron y el Directorio lee el resumen
+    # de services/fleet_compliance.py, que se arma sobre pendiente_predicate.
+    carriers = (RAIZ / "routers/carriers.py").read_text(encoding="utf-8")
+    assert "carrier_compliance_cte()" in carriers and "entity_compliance_cte()" in carriers
+    assert "pendiente_predicate" in (RAIZ / "services/fleet_compliance.py").read_text(encoding="utf-8")

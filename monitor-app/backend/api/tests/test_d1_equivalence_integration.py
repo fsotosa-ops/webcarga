@@ -109,12 +109,13 @@ async def test_el_comparador_dice_igual_cuando_es_igual(conexion_revertida):
 async def test_directorio_cuenta_lo_mismo_que_pendientes(conexion_revertida):
     conn = conexion_revertida
     activas, esperado = await _activas(conn), await _esperado(conn)
-    respuesta = await list_carriers(q="", operational_status="ACTIVE", health="", page=1, limit=100,
+    respuesta = await list_carriers(q="", operational_status="ACTIVE", enablement="", page=1, limit=100,
                                     pool=PoolDeUnaConexion(conn), _=None)
     assert respuesta["count"] == len(activas) <= 100, "la página no trae a todas las activas"
     filas = {str(f["id"]): f for f in respuesta["data"]}
 
-    malas = _diferencias(activas, esperado, filas, lambda f: ("total", f["pending_mandatory"]))
+    # Sin compliance_summary no hay otra cifra que comparar (pending_mandatory se retiró en la T16).
+    malas = _diferencias(activas, esperado, filas, lambda f: ("total", None))
 
     assert malas == [], _informe(malas, activas, "Directorio")
 

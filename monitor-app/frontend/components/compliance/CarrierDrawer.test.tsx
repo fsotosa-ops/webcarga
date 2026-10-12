@@ -28,17 +28,11 @@ function pendiente(over: Partial<PendingComplianceRow> = {}): PendingComplianceR
     entity_type: 'CARRIER', entity_id: 'c1', subject_name: null,
     requirement_id: 'r1', requirement_code: 'F30', document_name: 'F30',
     status: 'MISSING', expiration_date: null, tiene_archivo: false,
-    urgencia: 'FALTA', document_state: 'MISSING', expiration_policy: 'NONE',
+    document_state: 'MISSING', expiration_policy: 'NONE',
     ...over,
-    // El backend manda las dos con el mismo mapa: el fixture que solo declara
-    // `urgencia` recibe el `document_state` que le corresponde.
-    ...(over.urgencia && !over.document_state ? { document_state: ESTADO_DE_URGENCIA[over.urgencia] } : {}),
   } as PendingComplianceRow
 }
 
-const ESTADO_DE_URGENCIA = {
-  FALTA: 'MISSING', VENCIDO: 'OVERDUE', POR_VENCER: 'EXPIRING', AL_DIA: 'UP_TO_DATE', NO_EXIGIBLE: 'NOT_REQUIRED',
-} as const
 
 function setup(rows: PendingComplianceRow[] = [pendiente()], total = rows.length) {
   vi.mocked(complianceApi.listPending).mockResolvedValue({ total, rows })
@@ -189,14 +183,14 @@ describe('CarrierDrawer', () => {
     expect(await screen.findByText(/no le falta ningún documento/i)).toBeInTheDocument()
   })
 
-  // El motivo sale de `urgencia` y no de `status`: los 9 registros vencidos
+  // El motivo sale de `document_state` y no de `status`: los 9 registros vencidos
   // por fecha del módulo están en APPROVED_MANUAL, así que leer el status los
   // dejaba indistinguibles de un faltante. El SQL manda las dos cosas y sólo
   // una es la respuesta a "¿por qué está pendiente?".
   it('un vencido se distingue de un faltante, aunque su status no diga EXPIRED', async () => {
     setup([pendiente({
       status: 'APPROVED_MANUAL', expiration_date: '2026-01-01',
-      urgencia: 'VENCIDO', tiene_archivo: true,
+      document_state: 'OVERDUE', tiene_archivo: true,
     })])
     fireEvent.click(await screen.findByText('De la empresa'))
     expect(screen.getByText(/^vencido hace \d+ días?$/)).toBeInTheDocument()
@@ -206,7 +200,7 @@ describe('CarrierDrawer', () => {
   // de la ficha, que es la pantalla que lo muestra entero. Sin `onVer` el
   // renglón no promete una vista previa que acá nadie abriría.
   it('el cajón no ofrece ver el archivo: para eso está la ficha', async () => {
-    setup([pendiente({ status: 'EXPIRED', urgencia: 'VENCIDO', tiene_archivo: true })])
+    setup([pendiente({ status: 'EXPIRED', document_state: 'OVERDUE', tiene_archivo: true })])
     fireEvent.click(await screen.findByText('De la empresa'))
     expect(screen.queryByRole('button', { name: 'Ver' })).not.toBeInTheDocument()
   })

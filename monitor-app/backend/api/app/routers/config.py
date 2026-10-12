@@ -279,7 +279,7 @@ async def patch_alert_threshold(
     )
     await registrar_revision(
         pool, "certification", "expiry-alerts", doc_type, usuario["sub"])
-    await invalidate_trips_meta_cache()
+    # Sin invalidar /trips/meta: la meta ya no lleva los umbrales (D1, R-E4).
     return dict(row)
 
 

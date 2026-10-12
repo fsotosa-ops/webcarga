@@ -65,21 +65,15 @@ function fila(over: Partial<FilaDePrueba> = {}): FilaDePrueba {
     entity_type: 'CARRIER', entity_id: 'c1', subject_name: null,
     requirement_id: 'r1', requirement_code: 'F30', document_name: 'F30',
     status: 'MISSING', expiration_date: null, tiene_archivo: false,
-    urgencia: 'FALTA', document_state: 'MISSING', expiration_policy: 'NONE',
+    document_state: 'MISSING', expiration_policy: 'NONE',
     ...over,
-    // El backend manda las dos con el mismo mapa (`compliance.py`): el fixture
-    // que solo declara `urgencia` recibe el `document_state` que le corresponde.
-    ...(over.urgencia && !over.document_state ? { document_state: ESTADO_DE_URGENCIA[over.urgencia] } : {}),
   } as FilaDePrueba
 }
 
-const ESTADO_DE_URGENCIA = {
-  FALTA: 'MISSING', VENCIDO: 'OVERDUE', POR_VENCER: 'EXPIRING', AL_DIA: 'UP_TO_DATE', NO_EXIGIBLE: 'NOT_REQUIRED',
-} as const
 
 /** El resumen que el backend calcularía sobre este mismo set de filas —
  *  misma partición que `_SUMMARY_SQL` (Task 2): `al_dia`/`por_vencer` cuentan
- *  su rama exacta de `urgencia`, `falta` junta FALTA y VENCIDO. */
+ *  su rama exacta de `document_state`, `falta` junta MISSING y OVERDUE. */
 function resumenDesdeFilas(rows: FilaDePrueba[]): ComplianceSummaryResponse {
   const porSujeto = new Map<string, ComplianceSummarySubject>()
   for (const r of rows) {
@@ -98,9 +92,9 @@ function resumenDesdeFilas(rows: FilaDePrueba[]): ComplianceSummaryResponse {
     }
     const s = porSujeto.get(clave)!
     s.todos += 1
-    if (r.urgencia === 'AL_DIA') s.al_dia += 1
-    else if (r.urgencia === 'POR_VENCER') s.por_vencer += 1
-    else s.falta += 1 // FALTA o VENCIDO
+    if (r.document_state === 'UP_TO_DATE') s.al_dia += 1
+    else if (r.document_state === 'EXPIRING') s.por_vencer += 1
+    else s.falta += 1 // MISSING u OVERDUE
   }
   const sujetos = [...porSujeto.values()]
   const totales = sujetos.reduce(
@@ -118,9 +112,9 @@ function resumenDesdeFilas(rows: FilaDePrueba[]): ComplianceSummaryResponse {
  *  (incluye lo por vencer), no el casillero exclusivo del resumen. */
 function filasParaEstado(rows: FilaDePrueba[], estado?: string): FilaDePrueba[] {
   switch (estado) {
-    case 'al_dia':     return rows.filter(r => r.urgencia === 'AL_DIA')
-    case 'por_vencer': return rows.filter(r => r.urgencia === 'POR_VENCER')
-    case 'falta':      return rows.filter(r => r.urgencia !== 'AL_DIA')
+    case 'al_dia':     return rows.filter(r => r.document_state === 'UP_TO_DATE')
+    case 'por_vencer': return rows.filter(r => r.document_state === 'EXPIRING')
+    case 'falta':      return rows.filter(r => r.document_state !== 'UP_TO_DATE')
     default:           return rows // 'todos' o sin filtro
   }
 }
@@ -162,7 +156,7 @@ describe('FichaEmpresaPage', () => {
   })
 
   it('un documento al día aprobado a mano dice Al día, no el estado guardado', async () => {
-    montar([fila({ id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA', tiene_archivo: true })])
+    montar([fila({ id: 'p1', status: 'APPROVED_MANUAL', document_state: 'UP_TO_DATE', tiene_archivo: true })])
     expect(await screen.findByText('Al día')).toBeInTheDocument()
     expect(screen.queryByText('Aprobado (manual)')).not.toBeInTheDocument()
   })
@@ -192,7 +186,7 @@ describe('FichaEmpresaPage', () => {
     montar([
       fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' }),
       fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd2', subject_name: 'Ana Soto',
-             urgencia: 'AL_DIA', tiene_archivo: true }),
+             document_state: 'UP_TO_DATE', tiene_archivo: true }),
       fila({ id: 'p3', entity_type: 'ASSET', entity_id: 'a1', subject_name: 'HKXW55' }),
     ])
 
@@ -234,12 +228,12 @@ describe('FichaEmpresaPage', () => {
   // cache, cada clic de filtro invalidaba la consulta de TODOS los sujetos
   // desplegados y volvia a la red — con nueve sujetos abiertos, un clic son
   // nueve peticiones. El detalle de un sujeto se pide UNA sola vez, con
-  // `estado='todos'` fijo; el filtro reparte en el cliente sobre `urgencia`,
+  // `estado='todos'` fijo; el filtro reparte en el cliente sobre `document_state`,
   // la MISMA particion que ya trae cada fila.
   it('cambiar el filtro cambia lo que se ve, sin volver a pedir nada', async () => {
     montar([
-      fila({ id: 'p1', document_name: 'Certificado al día', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA' }),
-      fila({ id: 'p2', document_name: 'Rol SII', status: 'MISSING', urgencia: 'FALTA' }),
+      fila({ id: 'p1', document_name: 'Certificado al día', status: 'APPROVED_MANUAL', document_state: 'UP_TO_DATE' }),
+      fila({ id: 'p2', document_name: 'Rol SII', status: 'MISSING', document_state: 'MISSING' }),
     ])
     await screen.findByText('Certificado al día')
     expect(screen.getByText('Rol SII')).toBeInTheDocument()
@@ -268,9 +262,9 @@ describe('FichaEmpresaPage', () => {
   it('el avance de la cabecera muestra el desglose completo, no sólo lo que deja ver el filtro activo', async () => {
     montar([
       fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
-             urgencia: 'AL_DIA', tiene_archivo: true }),
+             document_state: 'UP_TO_DATE', tiene_archivo: true }),
       fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
-             requirement_id: 'r2', urgencia: 'FALTA' }),
+             requirement_id: 'r2', document_state: 'MISSING' }),
     ])
     // Sujeto único: arranca desplegado, así que la cabecera ya muestra su
     // avance completo antes de tocar ningún filtro.
@@ -294,13 +288,13 @@ describe('FichaEmpresaPage', () => {
   // lista, al hacer clic, venía de `/pending?estado=falta`, que SÍ incluye
   // lo por vencer -mismo rótulo, dos conjuntos. Con 1 al día + 1 por vencer +
   // 1 falta, el chip decía "Falta 1" y la lista mostraba 2. Repartir en el
-  // cliente sobre la MISMA partición exclusiva que ya trae `urgencia` hace
+  // cliente sobre la MISMA partición exclusiva que ya trae `document_state` hace
   // que la contradicción no pueda existir: hay una sola definición de "falta".
   it('el número del chip "Falta" es la cantidad de filas que ese chip deja ver', async () => {
     montar([
-      fila({ id: 'p1', document_name: 'Doc al día', urgencia: 'AL_DIA', tiene_archivo: true }),
-      fila({ id: 'p2', document_name: 'Doc por vencer', urgencia: 'POR_VENCER', tiene_archivo: true }),
-      fila({ id: 'p3', document_name: 'Doc falta', urgencia: 'FALTA' }),
+      fila({ id: 'p1', document_name: 'Doc al día', document_state: 'UP_TO_DATE', tiene_archivo: true }),
+      fila({ id: 'p2', document_name: 'Doc por vencer', document_state: 'EXPIRING', tiene_archivo: true }),
+      fila({ id: 'p3', document_name: 'Doc falta', document_state: 'MISSING' }),
     ])
     await screen.findByText('Doc al día')
 
@@ -328,9 +322,9 @@ describe('FichaEmpresaPage', () => {
   it('con el sujeto ya desplegado, el diálogo de baja no espera una segunda consulta', async () => {
     montar([
       fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
-             urgencia: 'AL_DIA', tiene_archivo: true }),
+             document_state: 'UP_TO_DATE', tiene_archivo: true }),
       fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
-             requirement_id: 'r2', urgencia: 'FALTA', tiene_archivo: false }),
+             requirement_id: 'r2', document_state: 'MISSING', tiene_archivo: false }),
     ])
 
     // Sujeto único: arranca desplegado y su detalle ya está en caché.
@@ -362,7 +356,7 @@ describe('FichaEmpresaPage', () => {
   it('con el detalle todavía en vuelo, el diálogo de baja no afirma nada sobre documentos', async () => {
     let resolver: (v: unknown) => void = () => {}
     montar([
-      fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez', urgencia: 'AL_DIA', tiene_archivo: true }),
+      fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez', document_state: 'UP_TO_DATE', tiene_archivo: true }),
       fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd2', subject_name: 'Ana Soto', requirement_id: 'r2' }),
     ])
     vi.mocked(complianceApi.listPending).mockImplementation((params = {}) => {
@@ -393,7 +387,7 @@ describe('FichaEmpresaPage', () => {
       // documento que se puede ver y no tiene nada que mostrar.
       fila({
         id: 'p1', status: 'APPROVED_MANUAL', document_name: 'Certificado de Vigencia',
-        urgencia: 'AL_DIA', tiene_archivo: true,
+        document_state: 'UP_TO_DATE', tiene_archivo: true,
       }),
       fila({ id: 'p2', status: 'MISSING', document_name: 'Rol SII' }),
     ])
@@ -404,12 +398,12 @@ describe('FichaEmpresaPage', () => {
   // Ronda de arreglo: la ficha anunciaba "Aprobado (manual)" sobre un
   // documento vencido hace un año, mientras el filtro que lo contenía decía
   // "Falta" y el embudo lo contaba en "Hay que renovar". Son 9 registros
-  // reales. La fila y el filtro tienen que leer `urgencia`, que es la única
+  // reales. La fila y el filtro tienen que leer `document_state`, que es la única
   // fuente de esa verdad y ya viene en cada fila.
   it('un vencido se anuncia vencido, aunque su status diga "Aprobado (manual)"', async () => {
     montar([fila({
       id: 'p1', document_name: 'Certificado de Vigencia', status: 'APPROVED_MANUAL',
-      expiration_date: '2025-08-12', urgencia: 'VENCIDO', tiene_archivo: true,
+      expiration_date: '2025-08-12', document_state: 'OVERDUE', tiene_archivo: true,
     })])
 
     expect(await screen.findByText('Certificado de Vigencia')).toBeInTheDocument()
@@ -421,14 +415,14 @@ describe('FichaEmpresaPage', () => {
   // alguien lo subió— y la ficha, que existe para hacer visible lo cargado,
   // lo mandaba al renglón de carga y escondía el archivo.
   it('un vencido con archivo se puede ver, además de reemplazar', async () => {
-    montar([fila({ id: 'p1', status: 'EXPIRED', urgencia: 'VENCIDO', tiene_archivo: true })])
+    montar([fila({ id: 'p1', status: 'EXPIRED', document_state: 'OVERDUE', tiene_archivo: true })])
 
     expect(await screen.findByRole('button', { name: 'Ver' })).toBeInTheDocument()
     expect(screen.getByTestId('archivo-p1')).toBeInTheDocument()
   })
 
   it('lo que falta y no tiene archivo no ofrece verlo', async () => {
-    montar([fila({ id: 'p1', status: 'MISSING', urgencia: 'FALTA', tiene_archivo: false })])
+    montar([fila({ id: 'p1', status: 'MISSING', document_state: 'MISSING', tiene_archivo: false })])
 
     expect(await screen.findByTestId('archivo-p1')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Ver' })).not.toBeInTheDocument()
@@ -441,7 +435,7 @@ describe('FichaEmpresaPage', () => {
     const enDiezDias = new Date(Date.now() + 10 * 86400000).toISOString().slice(0, 10)
     montar([fila({
       id: 'p1', status: 'APPROVED_MANUAL', expiration_date: enDiezDias,
-      urgencia: 'POR_VENCER', tiene_archivo: true,
+      document_state: 'EXPIRING', tiene_archivo: true,
     })])
 
     expect(await screen.findByText(/^vence en \d+ días?$/)).toBeInTheDocument()
@@ -455,7 +449,7 @@ describe('FichaEmpresaPage', () => {
   // así que el botón quedaba muerto hasta recargar la página.
   it('si "Ver" falla, lo dice en el renglón y deja reintentar', async () => {
     vi.mocked(complianceApi.get).mockRejectedValue(new Error('sesión vencida'))
-    montar([fila({ id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA', tiene_archivo: true })])
+    montar([fila({ id: 'p1', status: 'APPROVED_MANUAL', document_state: 'UP_TO_DATE', tiene_archivo: true })])
 
     fireEvent.click(await screen.findByRole('button', { name: 'Ver' }))
 
@@ -468,7 +462,7 @@ describe('FichaEmpresaPage', () => {
   // no tener archivo, y ofrecía "Ver" igual.
   it('un registro sin archivo que abrir lo dice, en vez de no hacer nada', async () => {
     vi.mocked(complianceApi.get).mockResolvedValue({ file_url: null } as never)
-    montar([fila({ id: 'p1', status: 'PENDING_REVIEW', urgencia: 'AL_DIA', tiene_archivo: true })])
+    montar([fila({ id: 'p1', status: 'PENDING_REVIEW', document_state: 'UP_TO_DATE', tiene_archivo: true })])
 
     fireEvent.click(await screen.findByRole('button', { name: 'Ver' }))
 
@@ -482,7 +476,7 @@ describe('FichaEmpresaPage', () => {
   // resolvia bien; esta la ofrecia igual.
   it('una fila al día SIN archivo no ofrece "Ver", porque no hay nada que ver', async () => {
     montar([fila({
-      id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA',
+      id: 'p1', status: 'APPROVED_MANUAL', document_state: 'UP_TO_DATE',
       tiene_archivo: false, document_name: 'Carta de compromiso',
     })])
 
@@ -569,11 +563,11 @@ describe('FichaEmpresaPage', () => {
   // ningún sujeto para verlas.
   it('cada sujeto dice qué es, cuántos requisitos tiene y cómo va', async () => {
     montar([
-      fila({ id: 'p1', entity_type: 'CARRIER', urgencia: 'AL_DIA', tiene_archivo: true }),
-      fila({ id: 'p2', entity_type: 'CARRIER', urgencia: 'FALTA' }),
+      fila({ id: 'p1', entity_type: 'CARRIER', document_state: 'UP_TO_DATE', tiene_archivo: true }),
+      fila({ id: 'p2', entity_type: 'CARRIER', document_state: 'MISSING' }),
       fila({ id: 'p3', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez' }),
       fila({ id: 'p4', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
-             urgencia: 'POR_VENCER', tiene_archivo: true }),
+             document_state: 'EXPIRING', tiene_archivo: true }),
       fila({ id: 'p5', entity_type: 'ASSET', entity_id: 'a1', subject_name: 'HKXW55',
              asset_type: 'TRACTOCAMION' }),
     ])
@@ -780,9 +774,9 @@ describe('FichaEmpresaPage', () => {
   it('con el filtro en "Falta", el diálogo de baja sigue contando los documentos que sí tiene', async () => {
     montar([
       fila({ id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
-             urgencia: 'AL_DIA', tiene_archivo: true }),
+             document_state: 'UP_TO_DATE', tiene_archivo: true }),
       fila({ id: 'p2', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
-             requirement_id: 'r2', urgencia: 'FALTA', tiene_archivo: false }),
+             requirement_id: 'r2', document_state: 'MISSING', tiene_archivo: false }),
     ])
 
     fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
@@ -825,7 +819,7 @@ describe('FichaEmpresaPage', () => {
   it('la fecha de un documento cargado se corrige sin salir del módulo', async () => {
     vi.mocked(complianceApi.patch).mockResolvedValue({} as never)
     montar([fila({
-      id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA', tiene_archivo: true,
+      id: 'p1', status: 'APPROVED_MANUAL', document_state: 'UP_TO_DATE', tiene_archivo: true,
       document_name: 'Licencia de Conducir', expiration_date: '2026-09-04',
       expiration_policy: 'REQUIRED',
     })])
@@ -849,7 +843,7 @@ describe('FichaEmpresaPage', () => {
   it('un requisito sin archivo también deja declarar su vencimiento', async () => {
     montar([fila({
       id: 'p1', entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Juan Pérez',
-      document_name: 'Licencia de Conducir', urgencia: 'FALTA',
+      document_name: 'Licencia de Conducir', document_state: 'MISSING',
       tiene_archivo: false, expiration_date: null, expiration_policy: 'REQUIRED',
     })])
 
@@ -859,7 +853,7 @@ describe('FichaEmpresaPage', () => {
   // Y el que NO vence no lo ofrece: el catalogo manda.
   it('un requisito con política NONE no ofrece vencimiento', async () => {
     montar([fila({
-      id: 'p1', document_name: 'Padrón', urgencia: 'FALTA',
+      id: 'p1', document_name: 'Padrón', document_state: 'MISSING',
       tiene_archivo: false, expiration_date: null, expiration_policy: 'NONE',
     })])
 
@@ -870,7 +864,7 @@ describe('FichaEmpresaPage', () => {
   it('un viewer ve la fecha pero no puede corregirla', async () => {
     permisos.editor = false
     montar([fila({
-      id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA', tiene_archivo: true,
+      id: 'p1', status: 'APPROVED_MANUAL', document_state: 'UP_TO_DATE', tiene_archivo: true,
       document_name: 'Licencia de Conducir',
       expiration_date: '2026-09-04', expiration_policy: 'REQUIRED',
     })])
@@ -888,7 +882,7 @@ describe('FichaEmpresaPage', () => {
   it('quien solo carga no corrige la fecha de un documento aprobado', async () => {
     permisos.revisar = false
     montar([fila({
-      id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA', tiene_archivo: true,
+      id: 'p1', status: 'APPROVED_MANUAL', document_state: 'UP_TO_DATE', tiene_archivo: true,
       document_name: 'Licencia de Conducir',
       expiration_date: '2026-09-04', expiration_policy: 'REQUIRED',
     })])
@@ -898,7 +892,7 @@ describe('FichaEmpresaPage', () => {
 
   it('quien revisa sí la corrige (control del anterior)', async () => {
     montar([fila({
-      id: 'p1', status: 'APPROVED_MANUAL', urgencia: 'AL_DIA', tiene_archivo: true,
+      id: 'p1', status: 'APPROVED_MANUAL', document_state: 'UP_TO_DATE', tiene_archivo: true,
       document_name: 'Licencia de Conducir',
       expiration_date: '2026-09-04', expiration_policy: 'REQUIRED',
     })])

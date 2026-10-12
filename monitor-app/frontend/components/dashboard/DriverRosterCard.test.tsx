@@ -8,7 +8,7 @@ import { complianceSummary } from '@/lib/states.fixtures'
 const DRIVER: CarrierDriverRosterItem = {
   id: 'd1', tax_id: '11111111-1', full_name: 'Juan Pérez',
   operational_status: 'ACTIVE', total_requirements: 12, last_document_update: '2026-06-01',
-  pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary(),
+  compliance_summary: complianceSummary(),
 }
 
 describe('DriverRosterCard', () => {

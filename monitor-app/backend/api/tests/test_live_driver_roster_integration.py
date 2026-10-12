@@ -38,4 +38,5 @@ async def test_renombrar_y_dar_de_baja_se_ve_en_el_roster_sin_refrescar_vistas(c
     filas = await list_carrier_drivers(str(carrier), pool=PoolDeUnaConexion(conn), _=None)
 
     assert [(f["id"], f["full_name"], f["operational_status"]) for f in filas] == [(driver, nuevo, "INACTIVE")]
-    assert set(filas[0]) >= {"total_requirements", "pending_mandatory", "compliance_health"}
+    assert set(filas[0]) >= {"total_requirements", "compliance_summary"}
+    assert not {"pending_mandatory", "compliance_health"} & set(filas[0])   # D1, Task 16

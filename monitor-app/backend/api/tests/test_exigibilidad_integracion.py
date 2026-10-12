@@ -1,7 +1,7 @@
 """Cuándo se exige un documento (HU-C1, entrega 2b, F3).
 
 La siembra (5 funciones reconcile_* + SQL_ENTIDADES_QUE_APLICAN), la lectura
-(urgencia NO_EXIGIBLE, cubierto) y "Solicitar documento", contra la base en
+(document_state NOT_REQUIRED, cubierto) y "Solicitar documento", contra la base en
 una transacción revertida. Las funciones de siembra se cargan desde su
 migración. Los nombres son SINTÉTICOS."""
 from __future__ import annotations
@@ -210,7 +210,7 @@ async def test_el_mes_del_ingreso_no_es_falta_ni_al_dia(conexion_revertida):
     await _conductor(conexion_revertida, empresa, desde=dt.date(2026, 10, 7))
 
     fila = await _fila_de_la_cola(conexion_revertida, empresa, requisito)
-    assert fila["urgencia"] == "NO_EXIGIBLE"
+    assert fila["document_state"] == "NOT_REQUIRED"
     assert fila["exigible_desde"] == dt.date(2026, 11, 1)
     assert await _fila_de_la_cola(conexion_revertida, empresa, requisito, "falta") is None
     assert await _fila_de_la_cola(conexion_revertida, empresa, requisito, "al_dia") is None
@@ -222,7 +222,7 @@ async def test_el_mes_siguiente_ya_es_falta(conexion_revertida):
     empresa = await _empresa(conexion_revertida)
     requisito = await _requisito(conexion_revertida, entidad="DRIVER", exigible_on="MONTH_AFTER_START")
     await _conductor(conexion_revertida, empresa, desde=dt.date(2026, 10, 7))
-    assert (await _fila_de_la_cola(conexion_revertida, empresa, requisito))["urgencia"] == "FALTA"
+    assert (await _fila_de_la_cola(conexion_revertida, empresa, requisito))["document_state"] == "MISSING"
 
 
 async def test_lo_que_aun_no_se_exige_no_cuenta_como_cubierto(conexion_revertida):
@@ -253,7 +253,7 @@ async def test_el_finiquito_aparece_en_la_empresa_que_el_conductor_dejo(conexion
     requisito = await _requisito(conexion_revertida, entidad="DRIVER", exigible_on="ON_ENTITY_END")
     await _conductor(conexion_revertida, empresa, estado="INACTIVE")
     fila = await _fila_de_la_cola(conexion_revertida, empresa, requisito)
-    assert fila is not None and fila["urgencia"] == "FALTA"
+    assert fila is not None and fila["document_state"] == "MISSING"
 
 
 async def test_quitar_una_solicitud_ya_recibida_por_planilla_no_se_puede(conexion_revertida):

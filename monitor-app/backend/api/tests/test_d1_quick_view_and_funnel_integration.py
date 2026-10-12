@@ -11,7 +11,7 @@ from uuid import UUID
 import pytest
 
 from app.routers.carriers import get_carrier_summary
-from app.routers.compliance import _PENDING_ROWS_SQL, SUMMARY_LIMIT, get_certification_status
+from app.routers.compliance import _PENDING_ROWS_SQL, SUMMARY_LIMIT, get_certification_status, pending_summary
 from app.routers.drivers import get_driver_summary
 from tests import d1_subjects as s
 from tests.conftest import PoolDeUnaConexion
@@ -82,7 +82,8 @@ async def test_el_embudo_no_cuenta_la_flota_de_baja(conexion_revertida):
     assert fila["pending_count"] == 1, "contó el documento del conductor dado de baja"
     assert fila["compliance_summary"]["fleet"]["missing"] == 1
     assert fila["funnel_bucket"] == "not_enabled"
-    assert "funnel_group" in fila   # D1-R2: sigue al lado hasta la Task 16
+    # D1, Task 16: funnel_group y expired_count se retiraron; el balde es funnel_bucket.
+    assert "funnel_group" not in fila and "expired_count" not in fila
 
 
 async def test_los_baldes_del_embudo_salen_del_resumen(conexion_revertida):
@@ -102,6 +103,34 @@ async def test_los_baldes_del_embudo_salen_del_resumen(conexion_revertida):
     assert (await _embudo(conn, al_dia))["funnel_bucket"] == "up_to_date"
     # R-B4: una empresa no activa no está "No habilitada" en las colas.
     assert (await _embudo(conn, recien_creada))["funnel_bucket"] is None
+
+
+async def test_el_total_del_embudo_cuenta_solo_las_activas(conexion_revertida):
+    """Ruling T16-F: el total del encabezado es el de Pendientes, que solo
+    muestra empresas ACTIVE. La empresa en onboarding sigue en la lista (su
+    pestaña del ciclo de vida la cuenta) pero no suma al total."""
+    conn = conexion_revertida
+    await s.apply_fleet_facts(conn)
+    activa = await s.carrier(conn)
+    recien_creada = await s.carrier(conn, status="ONBOARDING")
+    await s.without_seeding(conn, activa, recien_creada)
+    req = await s.requirement(conn, entity="CARRIER")
+    await s.record(conn, req, "CARRIER", activa)
+    await s.record(conn, req, "CARRIER", recien_creada)
+    otro = await s.requirement(conn, entity="CARRIER")
+    await s.record(conn, otro, "CARRIER", recien_creada)
+    pool = PoolDeUnaConexion(conn)
+
+    res = await get_certification_status(group="carrier", scope="active", carrier_id=None, q=s.PREFIX,
+                                         limit=200, pool=pool, _=None)
+    por_id = {f["carrier_id"]: f for f in res["rows"]}
+
+    assert set(por_id) == {activa, recien_creada}
+    assert (por_id[activa]["pending_count"], por_id[recien_creada]["pending_count"]) == (1, 2)
+    assert res["total_pending"] == 1, "el total sumó a la empresa en onboarding"
+    pendientes = await pending_summary(group_by="carrier", pool=pool, _=None)
+    assert sum(f["overdue"] + f["expiring"] + f["missing"]
+               for f in pendientes["rows"] if f["key"] in por_id) == res["total_pending"]
 
 
 async def test_el_tipo_de_operacion_de_pendientes_sale_de_la_funcion(conexion_revertida):

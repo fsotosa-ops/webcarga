@@ -54,7 +54,7 @@ export const clavesCertificacion = {
    *  las dos comparten UNA sola entrada de caché y una pisa a la otra según
    *  quién haya montado primero. Ronda de arreglo 1 (Task 4): la ficha dejó
    *  de pedir las cuatro variantes en paralelo —pedía `todos` una vez y las
-   *  otras tres sólo para contarlas, cuando `urgencia` ya trae esa cuenta
+   *  otras tres sólo para contarlas, cuando `document_state` ya trae esa cuenta
    *  en la misma fila— y ahora pide sólo `todos`; el resto se filtra en el
    *  cliente sobre esas filas, sin volver a la red. */
   pendientes: (carrierId?: string, entityId?: string, estado?: string) =>

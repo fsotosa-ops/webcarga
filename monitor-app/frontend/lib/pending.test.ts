@@ -7,7 +7,7 @@ const fila = (over: Partial<PendingComplianceRow> = {}): PendingComplianceRow =>
   carrier_operation_types: [], certification_type: 'BASICA', category: 'CHOFER',
   entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Soto Muñoz, Carla',
   requirement_id: 'r1', requirement_code: 'LIC', document_name: 'Licencia de Conducir',
-  status: 'APPROVED_MANUAL', expiration_date: null, tiene_archivo: true, urgencia: 'VENCIDO',
+  status: 'APPROVED_MANUAL', expiration_date: null, tiene_archivo: true,
   document_state: 'OVERDUE', expiration_policy: 'REQUIRED',
   ...over,
 } as PendingComplianceRow)
@@ -39,17 +39,17 @@ describe('pendingRowStatus — el estado de cada fila en palabras (spec §5.2)',
   })
 
   it('por vencer: "Vence en 10 días · 21/10" y Subir la nueva', () => {
-    expect(pendingRowStatus(fila({ document_state: 'EXPIRING', urgencia: 'POR_VENCER', due_on: '2026-10-21' }), HOY))
+    expect(pendingRowStatus(fila({ document_state: 'EXPIRING', due_on: '2026-10-21' }), HOY))
       .toEqual({ label: 'Vence en 10 días · 21/10', tone: 'warning', action: 'Subir la nueva' })
   })
 
   it('falta, sin saber desde cuándo: "Falta" y Subir', () => {
-    expect(pendingRowStatus(fila({ document_state: 'MISSING', urgencia: 'FALTA', tiene_archivo: false }), HOY))
+    expect(pendingRowStatus(fila({ document_state: 'MISSING', tiene_archivo: false }), HOY))
       .toEqual({ label: 'Falta', tone: 'neutral', action: 'Subir' })
   })
 
   it('falta: "Falta · Ingresó hace 10 días", desde entered_on', () => {
-    const falta = { document_state: 'MISSING' as const, urgencia: 'FALTA' as const, tiene_archivo: false }
+    const falta = { document_state: 'MISSING' as const, tiene_archivo: false }
     expect(pendingRowStatus(fila({ ...falta, entered_on: '2026-10-01' }), HOY))
       .toEqual({ label: 'Falta', tone: 'neutral', action: 'Subir', detail: 'Ingresó hace 10 días' })
     expect(pendingRowStatus(fila({ ...falta, entered_on: '2026-10-10' }), HOY).detail).toBe('Ingresó hace 1 día')
@@ -64,9 +64,9 @@ describe('pendingRowStatus — "hoy" es el día de Chile', () => {
     // 11/10/2026 22:30 en Chile (UTC-3) = 12/10 01:30 UTC.
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-12T01:30:00Z'))
-    const s = pendingRowStatus(fila({ document_state: 'EXPIRING', urgencia: 'POR_VENCER', due_on: '2026-10-21' }))
+    const s = pendingRowStatus(fila({ document_state: 'EXPIRING', due_on: '2026-10-21' }))
     expect(s.label).toBe('Vence en 10 días · 21/10')
-    const f = pendingRowStatus(fila({ document_state: 'MISSING', urgencia: 'FALTA', tiene_archivo: false, entered_on: '2026-10-01' }))
+    const f = pendingRowStatus(fila({ document_state: 'MISSING', tiene_archivo: false, entered_on: '2026-10-01' }))
     expect(f.detail).toBe('Ingresó hace 10 días')
   })
 })

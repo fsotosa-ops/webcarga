@@ -20,7 +20,7 @@ function renderWithQueryClient(ui: React.ReactElement) {
 }
 
 const meta: TripsMeta = {
-  statuses: [], tms_sources: [], operational_states: [], alert_thresholds: [], csv_columns: [],
+  statuses: [], tms_sources: [], operational_states: [], csv_columns: [],
   temperature_ranges: [
     { cargo_type: 'FRIO', label: 'Frío', min_c: 2, max_c: 5 },
     { cargo_type: 'CONGELADO', label: 'Congelado', min_c: -25, max_c: -15 },

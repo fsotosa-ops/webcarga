@@ -522,7 +522,8 @@ async def test_pending_una_empresa_inactiva_no_sale_con_state_pero_su_ficha_si(c
 
 
 async def test_pending_sin_state_responde_como_antes(conexion_revertida):
-    """Compatibilidad: `estado` (default 'falta') y `urgencia` no cambian."""
+    """Compatibilidad: `estado` (default 'falta') no cambia. `urgencia` se
+    retiró en la Task 16 de D1: el estado es `document_state`."""
     conn = conexion_revertida
     hoy = await _hoy(conn)
     req = await _requisito(conn, entidad="CARRIER", politica="REQUIRED")
@@ -532,8 +533,8 @@ async def test_pending_sin_state_responde_como_antes(conexion_revertida):
     res = await _listar(conn, requirement_code=await _codigo(conn, req))
 
     fila = res["rows"][0]
-    assert [r["urgencia"] for r in res["rows"]] == ["VENCIDO"]
-    assert fila["document_state"] == "OVERDUE"
+    assert [r["document_state"] for r in res["rows"]] == ["OVERDUE"]
+    assert "urgencia" not in fila
     assert fila["due_on"] == fila["vence_el"] == hoy - timedelta(days=2)
     assert fila["missing_validity_data"] is fila["falta_dato_de_vigencia"] is False
 

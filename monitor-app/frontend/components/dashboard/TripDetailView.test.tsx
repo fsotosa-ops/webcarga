@@ -332,8 +332,6 @@ describe('TripDetailView — Conductor y flota (FleetAssignSection, driver-first
     renderDetailView({
       ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
       driver_pending_docs: 2, driver_has_critical_alert: true,
-      // El campo viejo ya no decide nada aunque venga.
-      driver_pending_docs_critical: false,
     })
     expect(screen.getByText(/licencia o la cédula del conductor falta, venció o vence dentro del plazo crítico/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'revisar en Directorio' })).toHaveAttribute(
@@ -341,10 +339,10 @@ describe('TripDetailView — Conductor y flota (FleetAssignSection, driver-first
     )
   })
 
-  it('sin aviso crítico no hay banner, aunque el campo viejo diga lo contrario', () => {
+  it('sin aviso crítico no hay banner', () => {
     renderDetailView({
       ...baseTrip, carrier_id: 'c1', carrier_name: 'Transportes Sur Spa',
-      driver_pending_docs: 2, driver_has_critical_alert: false, driver_pending_docs_critical: true,
+      driver_pending_docs: 2, driver_has_critical_alert: false,
     })
     expect(screen.queryByText(/licencia o la cédula del conductor/i)).not.toBeInTheDocument()
   })
@@ -737,7 +735,7 @@ describe('TripDetailView — motivo de no asignación (Fase 1.5d)', () => {
   // en el meta para otras partes de la pantalla. Se deja acá a propósito: el
   // punto del primer test es que este select ya NO lo usa.
   const metaWithReasons = {
-    statuses: [], tms_sources: [], operational_states: [], alert_thresholds: [],
+    statuses: [], tms_sources: [], operational_states: [],
     csv_columns: [], temperature_ranges: [],
     unassigned_reasons: [{ id: 'pana', label: 'Pana' }, { id: 'sin_conductor', label: 'Sin conductor' }],
   } as never

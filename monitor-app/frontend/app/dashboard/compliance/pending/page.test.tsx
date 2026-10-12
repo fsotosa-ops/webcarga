@@ -90,7 +90,7 @@ describe('Pendientes — los estados de la pantalla', () => {
       carrier_operation_types: [], certification_type: 'BASICA', category: 'EMPRESA', entity_type: 'CARRIER',
       entity_id: 'c1', subject_name: null, requirement_id: 'req-f30', requirement_code: 'F30_1',
       document_name: 'F30-1', status: 'APPROVED_MANUAL', expiration_date: null, tiene_archivo: true,
-      urgencia: 'VENCIDO', document_state: 'OVERDUE', expiration_policy: 'NONE', due_on: '2026-09-18',
+      document_state: 'OVERDUE', expiration_policy: 'NONE', due_on: '2026-09-18',
     }] })
     montar()
     expect(await screen.findByText('Transportes Andes Ltda')).toBeInTheDocument()
@@ -244,7 +244,7 @@ const LIC_VENCIDA: PendingComplianceRow = {
   carrier_operation_types: [], certification_type: 'BASICA', category: 'CHOFER', entity_type: 'DRIVER',
   entity_id: 'd1', subject_name: 'Rojas Pérez, Andrés', requirement_id: 'req-lic', requirement_code: 'LIC',
   document_name: 'Licencia de Conducir', status: 'APPROVED_MANUAL', expiration_date: null, tiene_archivo: true,
-  urgencia: 'VENCIDO', document_state: 'OVERDUE', expiration_policy: 'NONE', due_on: '2026-09-18',
+  document_state: 'OVERDUE', expiration_policy: 'NONE', due_on: '2026-09-18',
 }
 
 describe('Pendientes — subir el último que se debía', () => {

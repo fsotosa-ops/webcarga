@@ -12,7 +12,12 @@ from app.routers.trips import _TRIP_FROM, _TRIP_SELECT
 
 def test_trip_select_exposes_pending_docs_columns():
     assert "driver_pending_docs" in _TRIP_SELECT
-    assert "driver_pending_docs_critical" in _TRIP_SELECT
+    # D1 (R-E13): el viaje ya no expone *_pending_docs_critical; el aviso es
+    # *_has_critical_alert. El lateral sigue calculando has_critical_pending
+    # para el Cierre (daily_closures.py), que no pasa por _TRIP_SELECT.
+    for entidad in ("driver", "tractor", "carrier"):
+        assert f"{entidad}_pending_docs_critical" not in _TRIP_SELECT
+        assert f"{entidad}_has_critical_alert" in _TRIP_SELECT
     assert "tractor_pending_docs" in _TRIP_SELECT
     assert "carrier_pending_docs" in _TRIP_SELECT
 

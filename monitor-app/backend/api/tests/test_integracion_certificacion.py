@@ -728,8 +728,8 @@ async def test_pending_todos_marca_al_dia_una_fila_cubierta_sin_problema_de_fech
 
     filas = [f for f in respuesta["rows"] if f["id"] == str(registro["id"])]
     assert len(filas) == 1, "la fila cubierta no aparecio con estado='todos'"
-    assert filas[0]["urgencia"] == "AL_DIA", (
-        f"salio urgencia={filas[0]['urgencia']!r}: una fila al dia no puede "
+    assert filas[0]["document_state"] == "UP_TO_DATE", (
+        f"salio document_state={filas[0]['document_state']!r}: una fila al dia no puede "
         "compartir el mismo valor que una que de verdad falta"
     )
 
@@ -781,8 +781,8 @@ async def test_pending_proyecta_tiene_archivo_desde_file_url(conexion_revertida)
 
     fila = await fila_del_registro()
     assert fila["tiene_archivo"] is True
-    assert fila["urgencia"] == "VENCIDO", (
-        f"salio urgencia={fila['urgencia']!r}: un APPROVED_MANUAL con la fecha "
+    assert fila["document_state"] == "OVERDUE", (
+        f"salio document_state={fila['document_state']!r}: un APPROVED_MANUAL con la fecha "
         "pasada es lo que la ficha anunciaba como 'Aprobado (manual)'"
     )
 

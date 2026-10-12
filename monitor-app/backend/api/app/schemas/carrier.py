@@ -2,7 +2,7 @@
 Reemplaza schemas/transporter_relational.py: internacionalizado (tax_id +
 country_code en vez de rut/dv), sin los sub-recursos jsonb legacy."""
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, field_validator, model_validator
@@ -137,14 +137,11 @@ CARRIER_FIELD_PERMISSIONS: dict[str, Permission] = {
 
 
 class CarrierListFacets(BaseModel):
-    """Conteos por compliance_health sobre el universo filtrado por `q` +
-    `operational_status` (sin aplicar los filtros `health` ni `enablement`
-    activos) — alimenta los tabs de alertas del listado de Empresas sin que
-    cambiar de tab reordene los otros conteos. `enabled`/`not_enabled`:
-    habilitación calculada (D1, R-B14); una empresa no activa no cuenta en
-    ninguna."""
-    pending: int
-    ok: int
+    """Conteos de habilitación sobre el universo filtrado por `q` +
+    `operational_status` (sin aplicar el filtro `enablement` activo) — alimenta
+    las pestañas del Directorio sin que cambiar de pestaña reordene los otros
+    conteos. `enabled`/`not_enabled`: habilitación calculada (D1, R-B14); una
+    empresa no activa no cuenta en ninguna."""
     enabled: int
     not_enabled: int
     total: int
@@ -152,8 +149,7 @@ class CarrierListFacets(BaseModel):
 
 class CarrierListItem(BaseModel):
     """Una fila del Directorio. `compliance_summary` es la respuesta única
-    (D1); `pending_mandatory` y `compliance_health` siguen al lado hasta la
-    Task 16, porque el frontend del despliegue 1 todavía los pinta."""
+    (D1): cuánto debe la empresa, propio y de su flota, y si puede operar."""
     id: UUID | str
     tax_id: Optional[str] = None
     country_code: Optional[str] = None
@@ -161,8 +157,6 @@ class CarrierListItem(BaseModel):
     operational_status: CarrierLifecycle
     total_requirements: int
     last_document_update: Optional[datetime] = None
-    pending_mandatory: int
-    compliance_health: Literal["PENDING", "OK"]
     compliance_summary: ComplianceSummary
 
 

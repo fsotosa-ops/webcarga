@@ -273,9 +273,9 @@ def test_delete_file_tambien_limpia_la_fecha_de_vencimiento():
     MISSING —sin documento— y con vencimiento futuro, o sea un dato que
     sobrevive a la cosa que describia.
 
-    No es cosmetico. La `urgencia` de /pending se calcula con esa fecha: al
-    acercarse, un documento QUE NO EXISTE aparece como 'POR_VENCER' —"hay que
-    renovarlo"— en vez de 'FALTA'. Y el cajon escribe "vencido - <fecha>" para
+    No es cosmetico. El `document_state` de /pending se calcula con esa fecha: al
+    acercarse, un documento QUE NO EXISTE aparece como 'EXPIRING' —"hay que
+    renovarlo"— en vez de 'MISSING'. Y el cajon escribe "vencido - <fecha>" para
     algo que nunca se subio.
 
     La otra ruta que devuelve un registro a MISSING —`reassign` con `to_tray`—
@@ -427,7 +427,7 @@ def _pending_row(**overrides):
         # Los produce el SELECT (Ronda 129): por que esta pendiente, y que
         # exige su requisito. El renglon de carga necesita la politica para
         # saber si pedir la fecha ANTES de subir.
-        "urgencia": "FALTA", "exigible_desde": None, "expiration_policy": "REQUIRED",
+        "exigible_desde": None, "expiration_policy": "REQUIRED",
         "vence_el": None, "falta_dato_de_vigencia": False, "issue_date": None, "period_start": None,
         "a_pedido": False, "document_state": "MISSING",
         "due_on": None, "missing_validity_data": False, "entered_on": None,
@@ -495,7 +495,7 @@ def test_pending_rows_maps_categories_and_certification_type():
     assert rows[2]["category"] == "EQUIPO" and rows[2]["certification_type"] == "ADICIONAL"
 
 
-def test_pending_rows_expone_urgencia_y_politica():
+def test_pending_rows_expone_estado_y_politica():
     """Los dos campos que el renglon de carga necesita.
 
     Sin `expiration_policy` el renglon no sabe si pedir la fecha y termina
@@ -503,36 +503,45 @@ def test_pending_rows_expone_urgencia_y_politica():
     """
     pool = AsyncMock()
     pool.fetch.return_value = [
-        _pending_row(urgencia="POR_VENCER", expiration_policy="OPTIONAL"),
+        _pending_row(document_state="EXPIRING", expiration_policy="OPTIONAL"),
     ]
     client = make_client(pool)
 
     fila = client.get("/api/v1/compliance-records/pending").json()["rows"][0]
 
-    assert fila["urgencia"] == "POR_VENCER"
+    assert fila["document_state"] == "EXPIRING"
     assert fila["expiration_policy"] == "OPTIONAL"
+    # D1, Task 16: `urgencia` (el nombre viejo del mismo estado) se retiró.
+    assert "urgencia" not in fila
+
+
+def test_el_schema_de_pendientes_ya_no_tiene_urgencia():
+    from app.schemas.compliance import PendingComplianceRow
+
+    assert "urgencia" not in PendingComplianceRow.model_fields
+    assert "document_state" in PendingComplianceRow.model_fields
 
 
 def test_pending_rows_expone_al_dia_sin_romper_el_contrato_de_respuesta():
-    """Ronda de arreglo 1 (Task 4): `urgencia` gano un cuarto valor, 'AL_DIA',
-    para la fila cubierta que `estado='todos'` empezo a traer. El SQL puede
-    calcularlo bien y la respuesta romper igual si el `Literal` de
-    `PendingComplianceRow` (app/schemas/compliance.py) se queda en tres
-    valores: `response_model` la rechaza con 500 antes de llegar al cliente.
+    """Ronda de arreglo 1 (Task 4): el estado gano el valor de la fila cubierta
+    (hoy `document_state = 'UP_TO_DATE'`) que `estado='todos'` empezo a traer.
+    El SQL puede calcularlo bien y la respuesta romper igual si el `Literal` de
+    `PendingComplianceRow` (app/schemas/compliance.py) no lo tiene:
+    `response_model` la rechaza con 500 antes de llegar al cliente.
 
     Un `AsyncMock` sin pasar por `TestClient` no ve esto — el mock devuelve
     lo que el test le dicta sin pasar por la validacion de Pydantic. Por eso
     esto pega contra la ruta real, no llama al handler a mano."""
     pool = AsyncMock()
     pool.fetch.return_value = [
-        _pending_row(urgencia="AL_DIA", status="APPROVED_MANUAL", expiration_policy="NONE"),
+        _pending_row(document_state="UP_TO_DATE", status="APPROVED_MANUAL", expiration_policy="NONE"),
     ]
     client = make_client(pool)
 
     res = client.get("/api/v1/compliance-records/pending")
 
     assert res.status_code == 200, res.text
-    assert res.json()["rows"][0]["urgencia"] == "AL_DIA"
+    assert res.json()["rows"][0]["document_state"] == "UP_TO_DATE"
 
 
 def test_pending_dice_si_la_fila_tiene_archivo_en_vez_de_deducirlo_del_status():
@@ -547,7 +556,7 @@ def test_pending_dice_si_la_fila_tiene_archivo_en_vez_de_deducirlo_del_status():
 
     pool = AsyncMock()
     pool.fetch.return_value = [
-        _pending_row(status="EXPIRED", urgencia="VENCIDO", tiene_archivo=True),
+        _pending_row(status="EXPIRED", document_state="OVERDUE", tiene_archivo=True),
     ]
     client = make_client(pool)
 
@@ -563,7 +572,7 @@ def test_pendiente_incluye_lo_que_esta_por_vencer_sin_comerse_lo_vencido():
     aparecia en ninguna pantalla.
 
     Las dos mitades del `>=` importan: sin ella "por vencer" se tragaria a
-    "vencido" y la urgencia de la fila mentiria."""
+    "vencido" y el estado de la fila mentiria."""
     sql = pendiente_predicate("cr")
 
     assert "< public.hoy_chile()" in sql
@@ -571,7 +580,7 @@ def test_pendiente_incluye_lo_que_esta_por_vencer_sin_comerse_lo_vencido():
     assert "<= public.hoy_chile()" in sql
 
 
-def test_la_urgencia_cuenta_lo_marcado_vencido_igual_que_el_embudo():
+def test_el_estado_cuenta_lo_marcado_vencido_igual_que_el_embudo():
     """Dos lecturas del mismo dato que discrepan es el defecto que este modulo
     ya tuvo: el embudo mandaba 8 empresas a "Hay que renovar" mientras el cajon
     de cada una decia "No le falta ningun documento".
@@ -584,7 +593,7 @@ def test_la_urgencia_cuenta_lo_marcado_vencido_igual_que_el_embudo():
 
     # Se busca la rama entera y no un corte por "CASE": desde HU-C1 (entrega 2)
     # el predicado de vencido trae CASE anidados. La definicion unica es
-    # `document_state_sql`; `urgencia`/`state` la traducen, no la repiten.
+    # `document_state_sql`; `state` la lee, no la repite.
     estado = document_state_sql('cr')
     rama = f"WHEN cr.status = 'EXPIRED' OR {vencido_predicate('cr')} THEN 'OVERDUE'"
     assert rama in estado, (
@@ -652,7 +661,7 @@ def test_la_sabana_global_si_pide_solo_empresas_activas():
 
 def test_pending_acepta_limit_500_para_la_ficha_de_empresa():
     """Ronda de arreglo 1 (Task 4): la ficha pide `estado='todos'` UNA sola
-    vez con `limit=500` y deriva sus cuatro cifras contando `urgencia` sobre
+    vez con `limit=500` y deriva sus cuatro cifras contando `document_state` sobre
     las filas que llegaron. El tope viejo (200) le devolveria 422 a esa unica
     consulta antes de llegar al handler."""
     pool = AsyncMock()
@@ -808,9 +817,10 @@ def test_carrier_status_filters_by_active_but_not_only():
     args = pool.fetch.call_args.args
     # El estado dejo de ser un valor suelto y paso a ser un conjunto: ONBOARDING
     # tambien esta "en juego" (una empresa recien creada sin RUT queda ahi).
-    assert "e.operational_status = ANY($1)" in query
+    # D1 (Task 16): los estados van en $3, después de la búsqueda y el tope.
+    assert "e.operational_status = ANY($3)" in query
     assert "COALESCE(d.unclassified, 0) > 0" in query
-    assert args[1] == ["ACTIVE", "ONBOARDING"]
+    assert args[3] == ["ACTIVE", "ONBOARDING"]
 
 
 def test_bulk_upload_422_when_files_and_record_ids_length_mismatch():
@@ -1140,9 +1150,8 @@ def test_status_binds_exactly_the_parameters_it_references():
 # ── Tramo 2, Tarea 3: lo que el embudo de certificacion necesita ───────────
 
 def test_status_returns_the_funnel_fields_per_carrier():
-    """El embudo (§4 del spec) agrupa por etapa, no por "cuanto le falta": las
-    39 activas tienen el mismo denominador y entre 1 y 3 documentos cubiertos,
-    asi que ordenar por completitud no discrimina nada."""
+    """El embudo (§4 del spec) trae lo que pinta la fila; el balde sale de
+    `compliance_summary` (funnel_bucket, D1-R2), no de un CASE propio."""
     pool = AsyncMock()
     pool.fetch.return_value = []
     client = make_client(pool)
@@ -1150,35 +1159,44 @@ def test_status_returns_the_funnel_fields_per_carrier():
     client.get("/api/v1/compliance-records/status")
 
     sql = pool.fetch.call_args.args[0]
-    for campo in ("expired_count", "management_types", "trips_30d", "funnel_group"):
+    for campo in ("management_types", "trips_30d", "can_operate"):
         assert campo in sql, f"falta {campo} en el SQL del embudo"
+    # D1, Task 16 (R-E12): la etapa vieja y su cuenta de vencidos se retiraron.
+    for retirado in ("funnel_group", "expired_count", "'catalogo'"):
+        assert retirado not in sql, f"{retirado} volvió al SQL del embudo"
 
 
-def test_status_funnel_group_is_decided_in_sql():
-    """Los grupos salen de UNA definicion. Calcularlos en el frontend obligaria
-    a repetir el criterio en el conteo del encabezado y en el orden, que es
-    exactamente como divergen dos superficies del mismo dato."""
+def test_status_binds_the_parameters_also_scoped_to_one_carrier():
+    """La ficha de una empresa pide el embudo con `carrier_id`. Desde D1 nada
+    fuera del alcance lee los estados del embudo: si se siguieran pasando, el
+    $n sobrante lo rechaza Postgres (lo cubre también el test de integración
+    del embudo, que lo pide acotado)."""
+    import re
+
+    for query in ("group=carrier&carrier_id=c1", "group=carrier&scope=catalog",
+                  "group=driver&carrier_id=c1", "group=asset&carrier_id=c1",
+                  "group=requirement&carrier_id=c1"):
+        pool = AsyncMock()
+        pool.fetch.return_value = []
+        make_client(pool).get(f"/api/v1/compliance-records/status?{query}")
+        sql, *args = pool.fetch.call_args.args
+        assert {int(n) for n in re.findall(r"\$(\d+)", sql)} == set(range(1, len(args) + 1)), query
+
+
+def test_status_total_counts_only_active_carriers():
+    """Ruling T16-F: el total del encabezado es el de Pendientes (solo ACTIVE).
+    La empresa en onboarding sigue en la lista, con su cifra, pero no suma."""
     pool = AsyncMock()
-    pool.fetch.return_value = []
-    client = make_client(pool)
+    pool.fetch.return_value = [
+        _carrier_status_row(pending_count=7, own_missing=7, can_operate=False),
+        _carrier_status_row(entity_id="c2", carrier_id="c2", operational_status="ONBOARDING",
+                            pending_count=4, own_missing=4, can_operate=False),
+    ]
 
-    client.get("/api/v1/compliance-records/status")
+    body = make_client(pool).get("/api/v1/compliance-records/status").json()
 
-    sql = pool.fetch.call_args.args[0]
-    assert "CASE" in sql and "funnel_group" in sql
-
-
-def test_status_expired_counts_by_date_not_only_by_status():
-    """Un registro vencido puede estar en EXPIRED o tener expiration_date
-    pasada sin que nadie haya corrido el recalculo. Las dos cuentan."""
-    pool = AsyncMock()
-    pool.fetch.return_value = []
-    client = make_client(pool)
-
-    client.get("/api/v1/compliance-records/status")
-
-    sql = pool.fetch.call_args.args[0]
-    assert "expiration_date" in sql and "CURRENT_DATE" in sql
+    assert [r["pending_count"] for r in body["rows"]] == [7, 4]
+    assert body["total_pending"] == 7
 
 
 def test_status_management_types_prefers_the_fleet_over_the_declared():
@@ -1562,7 +1580,8 @@ def test_status_active_scope_includes_newly_created_companies():
     client.get("/api/v1/compliance-records/status")
 
     sql, *args = pool.fetch.call_args.args
-    assert "ONBOARDING" in sql or "ANY($1" in sql, (
+    # Decisión del usuario (R-E2): ONBOARDING sigue en el alcance del embudo.
+    assert "e.operational_status = ANY($3)" in sql and "ONBOARDING" in args[2], (
         "el alcance activo tiene que incluir a las empresas recien creadas"
     )
 
@@ -1575,8 +1594,8 @@ def test_status_active_scope_includes_newly_created_companies():
 # pida un resumen al llegar y el detalle de cada sujeto recien al desplegarlo.
 #
 # NO define una segunda vez que es "pendiente" o "al dia": reusa
-# `_PENDING_ROWS_SQL` como CTE y agrupa sobre `urgencia`, que ya trae sus
-# cuatro ramas resueltas por el SQL (ver `pendiente_predicate` mas arriba).
+# `_PENDING_ROWS_SQL` como CTE y agrupa sobre `document_state`, que ya trae el
+# estado resuelto por la definicion unica (`document_state_sql`).
 
 
 def test_summary_binds_exactly_the_parameters_it_references():
@@ -1598,15 +1617,21 @@ def test_summary_binds_exactly_the_parameters_it_references():
 
 
 def test_summary_no_reescribe_pendiente_predicate():
-    """El agrupado tiene que salir de `urgencia`/`pendiente_predicate`, no de
+    """El agrupado tiene que salir de `document_state`, no de
     una lista de status escrita a mano dentro de `_SUMMARY_SQL` — es la misma
     clase de bug que este modulo ya tuvo con el embudo y el cajon
     contradiciendose."""
     from app.routers.compliance import _PENDING_ROWS_SQL, _SUMMARY_SQL
 
+    import re
+
     assert _PENDING_ROWS_SQL in _SUMMARY_SQL
-    assert "MISSING" not in _SUMMARY_SQL.replace(_PENDING_ROWS_SQL, "")
-    assert "EXPIRED" not in _SUMMARY_SQL.replace(_PENDING_ROWS_SQL, "")
+    resto = _SUMMARY_SQL.replace(_PENDING_ROWS_SQL, "")
+    # Agrupa sobre `document_state` (sus valores, como 'MISSING', son del
+    # glosario), nunca sobre el `status` guardado del archivo.
+    assert re.search(r"\bstatus\b", resto) is None
+    assert "EXPIRED" not in resto and "APPROVED" not in resto
+    assert "document_state" in resto
 
 
 def test_summary_requiere_carrier_id():
@@ -1632,10 +1657,10 @@ def test_summary_route_does_not_collide_with_record_id_path():
     pool.fetchrow.assert_not_called()
 
 
-def test_summary_agrupa_por_sujeto_desde_urgencia():
+def test_summary_agrupa_por_sujeto_desde_document_state():
     """La particion que la ficha necesita: `al_dia`, `por_vencer` y `falta`
-    salen de la MISMA `urgencia` de cada fila — no una cuenta nueva por
-    `status`. `falta` agrupa VENCIDO y FALTA (las dos ramas que la ficha ya
+    salen del MISMO `document_state` de cada fila — no una cuenta nueva por
+    `status`. `falta` agrupa OVERDUE y MISSING (las dos ramas que la ficha ya
     muestra como "lo que falta"), para que la particion cierre exacto contra
     `todos`."""
     pool = AsyncMock()
@@ -1773,7 +1798,7 @@ async def test_el_resumen_cuadra_con_las_filas_que_devuelve_pending(conexion_rev
     # Cada balde contra Postgres real, no solo la suma.
     filas_al_dia = await _pedir_pending(conexion_revertida, carrier_id, estado="al_dia", limit=1000)
     filas_por_vencer = await _pedir_pending(conexion_revertida, carrier_id, estado="por_vencer", limit=1000)
-    filas_falta = [f for f in filas if f["urgencia"] in ("FALTA", "VENCIDO")]
+    filas_falta = [f for f in filas if f["document_state"] in ("MISSING", "OVERDUE")]
     assert t["al_dia"] == len(filas_al_dia), (
         f"el resumen dice {t['al_dia']} al_dia y /pending?estado=al_dia devuelve {len(filas_al_dia)}"
     )
@@ -1782,7 +1807,7 @@ async def test_el_resumen_cuadra_con_las_filas_que_devuelve_pending(conexion_rev
         f"devuelve {len(filas_por_vencer)}"
     )
     assert t["falta"] == len(filas_falta), (
-        f"el resumen dice {t['falta']} falta y la particion de 'todos' por urgencia da {len(filas_falta)}"
+        f"el resumen dice {t['falta']} falta y la particion de 'todos' por document_state da {len(filas_falta)}"
     )
 
     # Y lo mismo por sujeto: que cada cabecera cuadre con SUS filas, no sólo

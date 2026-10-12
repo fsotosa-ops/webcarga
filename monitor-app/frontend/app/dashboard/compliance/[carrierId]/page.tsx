@@ -473,7 +473,7 @@ function TarjetaDeSujeto({
  *  despliega un sujeto; la consulta ahora también.
  *
  *  Las cifras de arriba, las cabeceras de sujeto y de grupo salen todas de
- *  `complianceApi.summary()`, que particiona sobre `urgencia` en el
+ *  `complianceApi.summary()`, que particiona sobre `document_state` en el
  *  servidor. El detalle de UN sujeto se pide recién al desplegarlo, y sólo
  *  del estado activo (`TarjetaDeSujeto`). */
 export default function FichaEmpresaPage() {

@@ -36,7 +36,7 @@ async def _flota_mixta(conn) -> dict:
 
 
 async def _lista(conn) -> dict:
-    return await list_carriers(q=s.PREFIX, operational_status="", health="", enablement="",
+    return await list_carriers(q=s.PREFIX, operational_status="", enablement="",
                                page=1, limit=100, pool=PoolDeUnaConexion(conn), _=None)
 
 
@@ -72,8 +72,8 @@ async def test_la_lista_trae_el_resumen_con_la_flota_activa(conexion_revertida):
         "fleet": {"overdue": 0, "expiring": 0, "missing": 1},
         "can_operate": False,
     }
-    # Lo viejo sigue al lado hasta la Task 16.
-    assert {"compliance_health", "pending_mandatory"} <= set(fila)
+    # Lo viejo se retiró en la Task 16 (contraer, §9).
+    assert not {"compliance_health", "pending_mandatory"} & set(fila)
     # Las columnas sueltas no viajan: la respuesta trae el resumen, no ocho campos planos.
     assert "own_missing" not in fila and "can_operate" not in fila
 
@@ -124,7 +124,7 @@ async def test_el_filtro_de_habilitacion_corre_en_el_servidor(conexion_revertida
     pool = PoolDeUnaConexion(conn)
 
     async def pedir(enablement: str) -> dict:
-        return await list_carriers(q=s.PREFIX, operational_status="", health="", enablement=enablement,
+        return await list_carriers(q=s.PREFIX, operational_status="", enablement=enablement,
                                    page=1, limit=100, pool=pool, _=None)
 
     assert [str(r["id"]) for r in (await pedir("enabled"))["data"]] == [habilitada]
@@ -194,4 +194,54 @@ async def test_el_roster_de_equipos_se_lee_en_vivo_y_trae_su_resumen(conexion_re
 
     assert [(str(r["id"]), r["operational_status"]) for r in filas] == [(a, "INACTIVE")]
     assert filas[0]["compliance_summary"]["can_operate"] is False
-    assert {"compliance_health", "pending_mandatory", "webcarga_operation_type_code"} <= set(filas[0])
+    assert "webcarga_operation_type_code" in filas[0]
+    assert not {"compliance_health", "pending_mandatory"} & set(filas[0])
+
+
+async def test_los_campos_viejos_ya_no_salen(conexion_revertida):
+    """Despliegue 3 (spec §9, Task 16): lo retirado no vuelve. La lista, sus
+    facetas y los dos rosters de una empresa con flota y un requisito."""
+    conn = conexion_revertida
+    await s.apply_fleet_facts(conn)
+    f = await _flota_mixta(conn)
+    await s.record(conn, await s.requirement(conn, entity="DRIVER"), "DRIVER", f["driver"])
+    await s.record(conn, await s.requirement(conn, entity="ASSET"), "ASSET", f["tractor"])
+    pool = PoolDeUnaConexion(conn)
+
+    lista = await _lista(conn)
+    fila = next(r for r in lista["data"] if str(r["id"]) == f["carrier"])
+    assert "compliance_health" not in fila and "pending_mandatory" not in fila
+    assert "compliance_summary" in fila
+    assert set(lista["facets"]) == {"enabled", "not_enabled", "total"}
+
+    conductores = await list_carrier_drivers(f["carrier"], pool=pool, _=None)
+    equipos = await list_carrier_assets(f["carrier"], pool=pool, _=None)
+    assert {str(r["id"]) for r in conductores} == {f["driver"], f["inactive_driver"]}
+    assert {str(r["id"]) for r in equipos} == {f["tractor"], f["inactive_tractor"]}
+    for r in [*conductores, *equipos]:
+        assert "compliance_health" not in r and "pending_mandatory" not in r
+        assert "compliance_summary" in r
+    # El requisito sembrado sí llega, por el resumen y no por un campo plano.
+    por_id = {str(r["id"]): r for r in [*conductores, *equipos]}
+    assert por_id[f["driver"]]["compliance_summary"]["own"]["missing"] == 1
+    assert por_id[f["tractor"]]["compliance_summary"]["own"]["missing"] == 1
+
+
+async def test_la_lista_pone_primero_las_no_habilitadas(conexion_revertida):
+    """Sin compliance_health el orden sale del resumen: activas que no pueden
+    operar primero, después por nombre. Una dada de baja no es No habilitada."""
+    conn = conexion_revertida
+    await s.apply_fleet_facts(conn)
+    habilitada = await s.carrier(conn)
+    de_baja = await s.carrier(conn, status="INACTIVE")
+    no_habilitada = await s.carrier(conn)
+    await s.without_seeding(conn, habilitada, de_baja, no_habilitada)
+    # Nombres en el orden contrario al esperado: el nombre solo desempata.
+    for nombre, cid in (("A", habilitada), ("B", de_baja), ("C", no_habilitada)):
+        await conn.execute("UPDATE public.carriers SET business_name = $1 WHERE id = $2",
+                           f"{s.PREFIX} {nombre} orden", cid)
+    await s.record(conn, await s.requirement(conn, entity="CARRIER"), "CARRIER", no_habilitada)
+
+    ids = [str(r["id"]) for r in (await _lista(conn))["data"]]
+
+    assert ids == [no_habilitada, habilitada, de_baja]

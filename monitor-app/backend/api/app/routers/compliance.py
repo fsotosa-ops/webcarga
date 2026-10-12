@@ -91,7 +91,6 @@ from ..services.vencimientos import (
     pendiente_predicate,
     vence_el_sql,
     por_vencer_predicate,
-    vencido_predicate,
     ultima_empresa_sql,
 )
 from ..utils.document_storage import (
@@ -204,28 +203,27 @@ async def get_certification_status(
             LEFT JOIN viajes v     ON v.carrier_id = e.id
             LEFT JOIN carrier_compliance cc ON cc.carrier_id = e.id
         """
-        # `$1` (el estado ACTIVE) se pasa SIEMPRE en esta agrupación, incluso
-        # acotada a una empresa: el embudo lo referencia para decidir si la fila
-        # cae en "Resto del catálogo". Antes se omitía en ese caso y había que
-        # renumerar todo lo demás — de ahí salió el bug de placeholders que
-        # cubre test_status_binds_exactly_the_parameters_it_references.
-        params: list = [list(FUNNEL_ACTIVE_STATUSES), q, limit]
-        p_q, p_limit = "$2", "$3"
-        # El complemento se escribe negando la MISMA expresión, no repitiendo
-        # el criterio invertido a mano: así no pueden divergir.
-        # ONBOARDING entra en el alcance activo. Una empresa creada sin RUT
-        # queda en ese estado —lo fija el validador de CarrierCreateBody— y
-        # dejarla fuera la mandaba a "Resto del catálogo": plegado, al fondo,
-        # detrás de 209 empresas. Es el flujo exacto que el embudo vino a
-        # servir: crear una empresa y verla arriba, en "Recién creadas".
-        es_activa = "(e.operational_status = ANY($1) OR COALESCE(d.unclassified, 0) > 0)"
+        # `$1` y `$2` (búsqueda y tope) siempre; `$3` es lo que acota: la
+        # empresa, o los estados del alcance. Cada rama pasa exactamente lo
+        # que referencia (test_status_binds_exactly_the_parameters_it_references):
+        # desde D1 nada fuera del alcance lee los estados, así que acotada a
+        # una empresa no se pasan.
+        params: list = [q, limit]
+        p_q, p_limit = "$1", "$2"
         if carrier_id:
             params.append(carrier_id)
-            entity_where = "e.id = $4::uuid"
-        elif scope == "catalog":
-            entity_where = f"NOT {es_activa}"
+            entity_where = "e.id = $3::uuid"
         else:
-            entity_where = es_activa
+            params.append(list(FUNNEL_ACTIVE_STATUSES))
+            # El complemento se escribe negando la MISMA expresión, no
+            # repitiendo el criterio invertido a mano: así no pueden divergir.
+            # ONBOARDING entra en el alcance activo. Una empresa creada sin RUT
+            # queda en ese estado —lo fija el validador de CarrierCreateBody— y
+            # dejarla fuera la mandaba al catálogo: plegado, al fondo, detrás de
+            # 209 empresas. Es el flujo exacto que el embudo vino a servir:
+            # crear una empresa y verla arriba, en su pestaña En onboarding.
+            es_activa = "(e.operational_status = ANY($3) OR COALESCE(d.unclassified, 0) > 0)"
+            entity_where = f"NOT {es_activa}" if scope == "catalog" else es_activa
         carrier_cols = "e.id::text AS carrier_id, e.business_name AS carrier_name, e.operational_status"
         group_by = (
             "e.id, e.business_name, e.operational_status, "
@@ -338,35 +336,20 @@ async def get_certification_status(
     # filas de la propia entidad.
     fuente = "a" if group in ("carrier", "requirement") else "r"
 
-    # Un registro cuenta como vencido por CUALQUIERA de las dos vías: que
-    # alguien lo haya marcado EXPIRED, o que su fecha ya pasó aunque el estado
-    # todavía no se haya recalculado. Mirar sólo el estado subreporta.
-    # Vencido y pendiente salen de UNA definición compartida con /pending. Si
-    # el embudo cuenta la fecha y /pending no, el embudo manda a renovar
-    # documentos que el cajón se niega a nombrar.
+    # Pendiente sale de UNA definición compartida con /pending: si el embudo
+    # contara otra cosa, mandaría a renovar documentos que el cajón se niega a
+    # nombrar.
     pendiente = pendiente_predicate(fuente)
     # D1-R3: agrupando por empresa, "cuánto debe" es la suma del resumen (mismo
     # alcance que Pendientes): sin la flota de baja que `attributed` arrastra.
     pending_count_sql = (carrier_pending_total_sql("cc") if group == "carrier"
                          else f"count(*) FILTER (WHERE {pendiente})")
-    # La cuarta copia de la regla de vencimiento, ahora tambien del modulo
-    # compartido. Suma `status = 'EXPIRED'` a proposito: el embudo cuenta como
-    # vencido lo que alguien marco a mano aunque no tenga fecha.
-    #
-    # OJO, y queda anotado: la etapa `renovar` la decide ESTE predicado, no
-    # `pendiente`. Un documento POR VENCER entra a /pending y al cajon, pero no
-    # mueve la etapa — medido al aplicarlo, ninguna de las 2 empresas con algo
-    # por vencer cambio de etapa. Ampliar `renovar` a lo proximo a vencer
-    # cambiaria el significado de una etiqueta que operaciones ya usa, asi que
-    # es decision de negocio y no se toma desde aca.
     # Lo que todavía no se exige (exigible_on, HU-C1 entrega 2b) queda FUERA
     # del embudo: no es vencido, ni cubierto, ni cuenta en el total. Si contara
     # en el total, una empresa con un "finiquito" sembrado a cada conductor
     # activo —que no se exige mientras siga en la empresa— no podría volver a
     # quedar "al día" nunca (revisión final, I1).
     exigido = f"({fuente}.status IS NOT NULL AND {exigible_sql(fuente)})"
-    vencido = (f"({exigible_sql(fuente)} AND "
-               f"({fuente}.status = 'EXPIRED' OR {vencido_predicate(fuente)}))")
     # Al día = se exige y no le falta nada (I5).
     cubierto = f"({fuente}.status IS NOT NULL AND {cubierto_predicate(fuente)})"
 
@@ -376,19 +359,8 @@ async def get_certification_status(
         # en el orden — que es exactamente como divergen dos superficies del
         # mismo dato.
         funnel_cols = f"""
-               count(*) FILTER (WHERE {vencido})                                   AS expired_count,
                g.management_types                                                   AS management_types,
                COALESCE(v.trips_30d, 0)::int                                       AS trips_30d,
-               CASE
-                   WHEN NOT (e.operational_status = ANY($1)
-                             OR COALESCE(d.unclassified, 0) > 0)      THEN 'catalogo'
-                   WHEN count(*) FILTER (WHERE {vencido}) > 0          THEN 'renovar'
-                   WHEN count(*) FILTER (WHERE {exigido}) > 0
-                        AND count(*) FILTER (WHERE {cubierto})
-                            = count(*) FILTER (WHERE {exigido})        THEN 'al_dia'
-                   WHEN count(*) FILTER (WHERE {cubierto}) = 0         THEN 'sin_documentos'
-                   ELSE                                                     'en_proceso'
-               END                                                                 AS funnel_group,
                {carrier_summary_columns_sql('cc')},"""
     else:
         # El embudo es de empresas. Un conductor no tiene etapa de certificación
@@ -456,8 +428,14 @@ async def get_certification_status(
             fila["compliance_summary"] = summary
             fila["funnel_bucket"] = funnel_bucket_for(summary, fila["operational_status"])
         result.append(fila)
+    # El total del encabezado es el de Pendientes (Ruling T16-F): solo las
+    # empresas ACTIVE. Una en onboarding o dada de baja con archivos esperando
+    # entra a la lista (su pestaña del ciclo de vida la cuenta) pero no suma al
+    # total: Pendientes no la muestra, y las dos cifras tienen que coincidir.
+    en_el_total = (lambda r: r["operational_status"] == ACTIVE_OPERATIONAL_STATUS) if group == "carrier" \
+        else (lambda r: True)
     return {
-        "total_pending": sum(r["pending_count"] for r in result),
+        "total_pending": sum(r["pending_count"] for r in result if en_el_total(r)),
         "total_unclassified": sum(r["unclassified_count"] for r in result),
         "rows": result,
     }
@@ -526,15 +504,6 @@ SELECT
     r.asset_type,
     r.fleet_service_type_label, r.fleet_service_type_bg_color, r.fleet_service_type_text_color,
     r.document_state,
-    -- `urgencia` sigue para los llamadores de hoy (contract en los bloques 2-3):
-    -- ya no es otra definición, es el nombre viejo del mismo estado.
-    CASE r.document_state
-        WHEN 'NOT_REQUIRED' THEN 'NO_EXIGIBLE'
-        WHEN 'UP_TO_DATE'   THEN 'AL_DIA'
-        WHEN 'OVERDUE'      THEN 'VENCIDO'
-        WHEN 'EXPIRING'     THEN 'POR_VENCER'
-        ELSE 'FALTA'
-    END AS urgencia,
     {exigible_desde_sql('r')} AS exigible_desde,
     -- -infinity = presente pero sin el dato que su tipo necesita: no es una
     -- fecha que mostrar, es un dato que falta.
@@ -788,11 +757,10 @@ async def list_pending_compliance_records(
             "expiration_date": r["expiration_date"],
             "tiene_archivo": r["tiene_archivo"],
             # Por que esta pendiente y que exige su requisito. Los dos los
-            # necesita el renglon de carga: la urgencia para ordenar la
+            # necesita el renglon de carga: el estado para ordenar la
             # atencion, la politica para saber si pedir la fecha ANTES de
             # subir (sin ella el renglon preguntaria siempre, y /file
             # rechazaria con 422 despues de haber subido).
-            "urgencia": r["urgencia"],
             "document_state": r["document_state"],
             "exigible_desde": r["exigible_desde"],
             "vence_el": r["vence_el"],
@@ -823,12 +791,13 @@ async def list_pending_compliance_records(
 SUMMARY_LIMIT = 5000
 
 
-# Reusa _PENDING_ROWS_SQL como CTE y agrupa sobre `urgencia`, que ya trae sus
-# cuatro ramas resueltas (ver `pendiente_predicate`). El agrupado NO vuelve a
-# decidir que es "pendiente" o "al dia" -esa es la misma clase de bug que
-# este modulo ya tuvo con el embudo y el cajon contradiciendose.
+# Reusa _PENDING_ROWS_SQL como CTE y agrupa sobre `document_state`, que ya
+# trae el estado resuelto por la definición única
+# (services/vencimientos.document_state_sql). El agrupado NO vuelve a decidir
+# que es "pendiente" o "al dia" -esa es la misma clase de bug que este modulo
+# ya tuvo con el embudo y el cajon contradiciendose.
 #
-# `falta` agrupa VENCIDO y FALTA: son las dos ramas que la ficha ya muestra
+# `falta` agrupa OVERDUE y MISSING: son las dos ramas que la ficha ya muestra
 # juntas como "lo que falta" (`avanceDelSujeto`, frontend). Con esta
 # particion, al_dia + por_vencer + falta == todos siempre -es lo que el test
 # de integracion verifica contra Postgres real.
@@ -841,10 +810,10 @@ SELECT
     asset_type, fleet_service_type_label,
     fleet_service_type_bg_color, fleet_service_type_text_color,
     count(*) AS todos,
-    count(*) FILTER (WHERE urgencia = 'AL_DIA') AS al_dia,
-    count(*) FILTER (WHERE urgencia = 'POR_VENCER') AS por_vencer,
-    count(*) FILTER (WHERE urgencia IN ('FALTA', 'VENCIDO')) AS falta,
-    count(*) FILTER (WHERE urgencia = 'NO_EXIGIBLE') AS no_exigible
+    count(*) FILTER (WHERE document_state = 'UP_TO_DATE')            AS al_dia,
+    count(*) FILTER (WHERE document_state = 'EXPIRING')              AS por_vencer,
+    count(*) FILTER (WHERE document_state IN ('MISSING', 'OVERDUE')) AS falta,
+    count(*) FILTER (WHERE document_state = 'NOT_REQUIRED')          AS no_exigible
 FROM pending_rows
 -- `carrier_operation_types` es constante en toda la respuesta -esta consulta
 -- va acotada a UNA empresa (c.id = $1)-, asi que sumarla al agrupado no
@@ -1977,9 +1946,9 @@ async def delete_compliance_file(
                     -- La fecha se va CON el documento. Sin esto el registro
                     -- quedaba MISSING —sin archivo— y con vencimiento futuro:
                     -- un dato que sobrevive a la cosa que describia. La
-                    -- `urgencia` de /pending sale de esa fecha, asi que al
+                    -- `document_state` de /pending sale de esa fecha, asi que al
                     -- acercarse un documento QUE NO EXISTE aparecia como
-                    -- 'POR_VENCER' ("hay que renovarlo") en vez de 'FALTA'.
+                    -- 'EXPIRING' ("hay que renovarlo") en vez de 'MISSING'.
                     -- La otra ruta al mismo estado (`reassign` con `to_tray`)
                     -- si la limpiaba: eran dos caminos haciendo cosas
                     -- distintas para llegar al mismo lugar.

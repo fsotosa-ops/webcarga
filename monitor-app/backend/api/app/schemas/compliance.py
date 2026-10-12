@@ -82,17 +82,10 @@ class PendingComplianceRow(BaseModel):
     # lectura de `status`: la ficha de empresa decide con esto si ofrece
     # "Ver", y deducirlo del estado escondia el archivo de todo lo vencido.
     tiene_archivo: bool
-    # Por que esta pendiente, o si no lo esta. Cuatro valores excluyentes que
-    # el SQL ya resuelve: el frontend no vuelve a decidirlo comparando
-    # fechas, que es como dos superficies del mismo dato terminan
-    # discrepando. 'AL_DIA' se sumo en la ronda de arreglo 1 de la ficha de
-    # empresa (Task 4): con estado='falta' (el default de siempre) esta rama
-    # nunca se alcanzaba, asi que el valor no hacia falta; con
-    # estado='todos' si, y sin el una fila cubierta salia 'FALTA' igual que
-    # una que de verdad falta.
-    urgencia: Literal["VENCIDO", "POR_VENCER", "FALTA", "AL_DIA", "NO_EXIGIBLE"]
-    # La definición única (services/vencimientos.document_state_sql). `urgencia`
-    # es su nombre viejo y se retira cuando migren los llamadores (bloques 2-3).
+    # Por que esta pendiente, o si no lo esta: la definición única
+    # (services/vencimientos.document_state_sql). Valores excluyentes que el
+    # SQL ya resuelve; el frontend no vuelve a decidirlo comparando fechas,
+    # que es como dos superficies del mismo dato terminan discrepando.
     document_state: Literal["NOT_REQUIRED", "UP_TO_DATE", "OVERDUE", "EXPIRING", "MISSING"]
     # Desde cuándo se exige, si todavía no (MONTH_AFTER_START).
     exigible_desde: Optional[date] = None
@@ -123,9 +116,9 @@ class PendingComplianceListResponse(BaseModel):
 
 
 class ComplianceSummaryCounts(BaseModel):
-    """La misma particion que `urgencia` ya resuelve por fila, sumada.
+    """La misma particion que `document_state` ya resuelve por fila, sumada.
 
-    `falta` agrupa las dos ramas VENCIDO y FALTA del CASE de `urgencia`: son
+    `falta` agrupa OVERDUE y MISSING de `document_state`: son
     "lo que falta" para la ficha (`avanceDelSujeto` en el frontend ya conto
     asi, sin nombrarlo aparte). `por_vencer` queda solo porque la ficha lo
     muestra en su propio casillero. Con esta particion, al_dia + por_vencer +

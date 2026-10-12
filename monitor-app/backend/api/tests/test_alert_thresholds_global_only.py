@@ -73,3 +73,17 @@ async def test_integracion_la_revision_cuenta_solo_el_aviso_general(conexion_rev
         "ZZ-TEST-D1-doc", "ZZ-TEST-D1 documento")
     filas = await conn.fetch(POR_SECCION[("certification", "expiry-alerts")].sql)
     assert [f["id"] for f in filas] == [GLOBAL_ALERT_THRESHOLD]
+
+
+def test_la_meta_del_monitor_ya_no_lleva_los_umbrales():
+    """R-E4 (D1, Task 16): /trips/meta devolvía todas las filas de
+    app.alert_thresholds y nadie las leía. Se retiraron de la meta, y el PATCH
+    de alertas ya no invalida su caché."""
+    import inspect
+
+    from app.routers import config as config_router_module
+    from app.routers.trips import TripsMeta
+
+    assert "alert_thresholds" not in TripsMeta.model_fields
+    patch_src = inspect.getsource(config_router_module.patch_alert_threshold)
+    assert "invalidate_trips_meta_cache" not in patch_src

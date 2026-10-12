@@ -3,8 +3,9 @@
  * Spec D1 §8.5: ninguna etiqueta de estado escrita a mano fuera de
  * `lib/states.ts`, y ningún componente recalculando un estado documental.
  *
- * Los dos topes SOLO bajan. La Task 12 los baja al migrar la ficha, la Task 13
- * el Directorio, la Task 14 el embudo; la Task 16 los cambia por `toEqual([])`.
+ * Estado final (Task 16, contraer): ninguna etiqueta fuera del glosario
+ * (`toEqual([])`), y ninguna lectura de recálculo salvo el residuo con motivo
+ * de RESIDUO_DE_RECALCULO (R-E6). Las Tasks 11-14 bajaron los topes hasta acá.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -80,6 +81,15 @@ export function etiquetasEscritasAMano(): string[] {
 /** Campos con los que un componente recalcula un estado que ya manda la API. */
 const RECALCULO = /\.(is_expired|is_expiring_soon|compliance_health|pending_mandatory|urgencia)\b/g
 
+/** Lo único que queda leyendo un campo de la lista de arriba, con su motivo. */
+const RESIDUO_DE_RECALCULO: Record<string, { campos: string[]; motivo: string }> = {
+  'components/compliance/CertificationStatusTable.tsx': {
+    campos: ['.pending_mandatory'],
+    motivo: 'R-E6: /compliance-records/status manda pending_mandatory tal cual; la tabla solo lo compara con 0 ' +
+      'para pintar, no recalcula un estado del documento',
+  },
+}
+
 export function lecturasDeRecalculo(): string[] {
   const hallazgos: string[] = []
   for (const ruta of archivos()) {
@@ -112,32 +122,30 @@ describe('el glosario manda (spec D1 §8.5)', () => {
     }
   })
 
-  it('no crecen las etiquetas de estado escritas a mano', () => {
-    // 45 medidas el 12/10 (comentarios fuera). 45 -> 19 en la Task 11: lib/types,
-    // lib/pending, vigenciaDeLaFila y Pendientes leen el glosario, y 13 son de
-    // otro dominio (OTROS_DOMINIOS). Quedan: ficha (2), Directorio (4), Seguros
-    // (2), FiltroDeEstado (3), DocumentStatusBar (2), ComplianceBadge (2),
-    // lib/compliance (3, Task 12) y el embudo (1, Task 14).
-    // 19 -> 14 en la Task 12: salen ComplianceBadge (2) y lib/compliance (3).
-    // 14 -> 1 en la Task 13: Directorio, roster, tarjetas, vista rápida, FiltroDeEstado y DocumentStatusBar leen el glosario. Queda el embudo (Task 14).
-    // 1 -> 0 en la Task 14: el embudo lee el glosario.
-    const DEUDA = 0
-    const h = etiquetasEscritasAMano()
-    expect(h.length, `Etiquetas de estado fuera de lib/states.ts: ${h.length} (tope ${DEUDA}).\n${h.join('\n')}`)
-      .toBeLessThanOrEqual(DEUDA)
+  it('ninguna etiqueta de estado escrita a mano fuera del glosario', () => {
+    // 45 medidas el 12/10; las Tasks 11-14 las llevaron a 0 (lib/types, Pendientes,
+    // la ficha, el Directorio, el roster, la vista rápida y el embudo leen el glosario).
+    // Si aparece una, se corrige el archivo, no esta lista.
+    expect(etiquetasEscritasAMano()).toEqual([])
   })
 
-  it('no crecen las lecturas que recalculan un estado', () => {
-    // 48 medidas el 12/10. 48 -> 42 en la Task 11: vigenciaDeLaFila y
-    // RenglonPendiente leen document_state en vez de urgencia.
-    // 42 -> 21 en la Task 12: la ficha, Certificación, DocumentChecklist, el
-    // banner, el panel, el slide-over y el mapeo leen document_state.
-    // 21 -> 3 en la Task 13. Quedan 3 en CertificationStatusTable.tsx (pending_mandatory):
-    // Task 14 lo deja a propósito (R-E6). No es un estado del documento sino un
-    // conteo de la fila que la API manda tal cual; la tabla no lo recalcula, solo
-    // lo compara con 0 para pintar. Es el residuo final de este trinquete en D1.
-    const DEUDA = 3
-    const h = lecturasDeRecalculo()
-    expect(h.length, `Lecturas de recálculo: ${h.length} (tope ${DEUDA}).\n${h.join('\n')}`).toBeLessThanOrEqual(DEUDA)
+  it('ninguna lectura que recalcule un estado, salvo el residuo con motivo', () => {
+    // 48 medidas el 12/10; las Tasks 11-14 las llevaron a 3, todas de
+    // CertificationStatusTable.tsx (pending_mandatory, R-E6). La Task 16 retiró
+    // compliance_health, urgencia y pending_mandatory del Directorio: el residuo
+    // es el final de D1 y vive en RESIDUO_DE_RECALCULO con su motivo.
+    const fuera = lecturasDeRecalculo().filter(h => {
+      const [rel, campo] = [h.split(':')[0], h.split(' → ')[1]]
+      return !RESIDUO_DE_RECALCULO[rel]?.campos.includes(campo)
+    })
+    expect(fuera).toEqual([])
+  })
+
+  it('el residuo de recálculo no se pudre', () => {
+    for (const [rel, { campos }] of Object.entries(RESIDUO_DE_RECALCULO)) {
+      expect(existsSync(join(RAIZ, rel)), `${rel} ya no existe: sácalo de RESIDUO_DE_RECALCULO`).toBe(true)
+      const leidos = lecturasDeRecalculo().filter(h => h.startsWith(`${rel}:`)).map(h => h.split(' → ')[1])
+      for (const c of campos) expect(leidos, `${rel} ya no lee ${c}: sácalo`).toContain(c)
+    }
   })
 })

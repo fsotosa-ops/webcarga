@@ -9,7 +9,7 @@ function fila(over: Partial<PendingComplianceRow> = {}): PendingComplianceRow {
     entity_type: 'CARRIER', entity_id: 'c1', subject_name: null,
     requirement_id: 'r1', requirement_code: 'F30', document_name: 'F30',
     status: 'MISSING', expiration_date: null,
-    urgencia: 'FALTA', expiration_policy: 'NONE',
+    document_state: 'MISSING', expiration_policy: 'NONE',
     ...over,
   } as PendingComplianceRow
 }

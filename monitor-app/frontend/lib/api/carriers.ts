@@ -8,7 +8,6 @@ import type {
   CarrierOperationalStatus,
   CarrierPolicyListItem,
   CarrierShipper,
-  ComplianceHealth,
   Contact,
   FleetDriverGapRow,
   PolicyStatus,
@@ -25,8 +24,7 @@ export type CarrierListParams = {
    *  lista de abajo (206) no podían coincidir, y las empresas dadas de baja
    *  desde la app quedaban fuera de las tres pestañas. */
   operational_status?: CarrierOperationalStatus | CarrierOperationalStatus[] | ''
-  health?:             ComplianceHealth | ''
-  /** D-R6: habilitación calculada por la API; `health` queda hasta la Task 16. */
+  /** D-R6: habilitación calculada por la API (Habilitada / No habilitada). */
   enablement?:         'enabled' | 'not_enabled' | ''
   page?:               number
   limit?:              number
@@ -125,7 +123,6 @@ export const carriersApi = {
       const estados = params.operational_status
       qs.set('operational_status', Array.isArray(estados) ? estados.join(',') : estados)
     }
-    if (params?.health)                  qs.set('health', params.health)
     if (params?.enablement)              qs.set('enablement', params.enablement)
     if (params?.page)                    qs.set('page', String(params.page))
     if (params?.limit)                   qs.set('limit', String(params.limit))

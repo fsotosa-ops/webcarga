@@ -56,7 +56,7 @@ async def _empresa(conn, tax_id: str) -> str:
 
 async def _ids_de_carriers(pool, q: str) -> set[str]:
     # Si la T5 cambió la firma de list_carriers, se adapta la llamada, no la aserción.
-    res = await list_carriers(q=q, operational_status="", health="", page=1, limit=100, pool=pool, _=None)
+    res = await list_carriers(q=q, operational_status="", page=1, limit=100, pool=pool, _=None)
     return {str(r["id"]) for r in res["data"]}
 
 

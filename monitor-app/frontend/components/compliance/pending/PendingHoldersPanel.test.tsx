@@ -17,7 +17,7 @@ function fila(over: Partial<PendingComplianceRow> = {}): PendingComplianceRow {
     id: 'p1', carrier_id: 'c1', carrier_name: 'Transportes Cordillera SpA', carrier_tax_id: '76222222-1',
     carrier_operation_types: [], certification_type: 'BASICA', category: 'EMPRESA', entity_type: 'CARRIER',
     entity_id: 'c1', subject_name: null, requirement_id: 'req-f30', requirement_code: 'F30_1', document_name: 'F30-1',
-    status: 'APPROVED_MANUAL', expiration_date: null, tiene_archivo: true, urgencia: 'VENCIDO',
+    status: 'APPROVED_MANUAL', expiration_date: null, tiene_archivo: true,
     document_state: 'OVERDUE', expiration_policy: 'CALENDAR_PERIOD', vence_el: '2026-09-18', ...over,
   } as PendingComplianceRow
 }
@@ -58,9 +58,9 @@ describe('PendingHoldersPanel', () => {
     vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 4, rows: [
       fila({ id: 'a', subject_name: 'Rojas Pérez, Andrés', due_on: '2026-09-29' }),
       fila({ id: 'b', subject_name: 'Díaz Lagos, Pedro', missing_validity_data: true }),
-      fila({ id: 'c', subject_name: 'Soto Muñoz, Carla', document_state: 'EXPIRING', urgencia: 'POR_VENCER',
+      fila({ id: 'c', subject_name: 'Soto Muñoz, Carla', document_state: 'EXPIRING',
              due_on: diasDesdeHoyEnChile(10) }),
-      fila({ id: 'd', subject_name: 'Vera Castro, Miguel', document_state: 'MISSING', urgencia: 'FALTA', tiene_archivo: false,
+      fila({ id: 'd', subject_name: 'Vera Castro, Miguel', document_state: 'MISSING', tiene_archivo: false,
              entered_on: diasDesdeHoyEnChile(-10) }),
     ] })
     montar({ state: 'all' })

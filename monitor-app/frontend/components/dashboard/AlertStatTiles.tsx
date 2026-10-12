@@ -19,7 +19,7 @@ const TONE_VALUE_CLS: Record<AlertStatTile['tone'], string> = {
   success: 'text-green-600',
 }
 
-/** Fila de tiles clickeables que resumen + filtran por compliance_health —
+/** Fila de tiles clickeables que resumen + filtran por habilitación —
  *  reemplaza tabs de pill apiladas cuando ya hay otro eje de tabs (ej.
  *  Activas/Inactivo) compitiendo por el mismo espacio. Mismo patrón en
  *  Empresas y en los rosters de Conductores/Equipos dentro de la ficha,

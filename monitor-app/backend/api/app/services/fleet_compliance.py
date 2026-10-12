@@ -59,7 +59,7 @@ def pending_base_ctes(estado_param: str) -> str:
     return f"""
 pending AS (
     SELECT cr.id, cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
-           -- Las lee la urgencia de abajo (`pendiente_predicate('r')`): el
+           -- Las lee el estado de abajo (`pendiente_predicate('r')`): el
            -- predicado calcula el vencimiento con ellas (contrato del alias en
            -- services/vencimientos.py). `resolved` las hereda por `p.*`.
            cr.issue_date, cr.period_start,

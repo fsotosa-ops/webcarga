@@ -119,7 +119,7 @@ describe('TripTable', () => {
       temperature: null, milestone_status: null, operation_type: 'RM',
     }]
     const meta = {
-      statuses: [], tms_sources: [], operational_states: [], alert_thresholds: [], csv_columns: [],
+      statuses: [], tms_sources: [], operational_states: [], csv_columns: [],
       temperature_ranges: [], unassigned_reasons: [],
       operation_types: [{ id: 'RM', label: 'RM', bg_color: '#e8eeff', text_color: '#053bfa' }],
       origins: [],
@@ -155,8 +155,8 @@ describe('TripTable — documentación pendiente (conductor/tracto/empresa)', ()
   })
 
   // R-E5: el caso real de hoy es la licencia faltante; la API lo manda como driver_has_critical_alert.
-  it('el badge del conductor se pone urgente con driver_has_critical_alert, no con el campo viejo', () => {
-    render(<TripTable trips={[makeTrip('t1', { driver_pending_docs: 2, driver_has_critical_alert: true, driver_pending_docs_critical: false })]}
+  it('el badge del conductor se pone urgente con driver_has_critical_alert', () => {
+    render(<TripTable trips={[makeTrip('t1', { driver_pending_docs: 2, driver_has_critical_alert: true })]}
                       selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     expect(screen.getAllByTitle(/Conductor: 2/)[0].className).toContain('text-status-incidente')
   })
@@ -209,7 +209,7 @@ describe('TripTable — estado manual resuelto contra estados operacionales', ()
     const meta = {
       statuses: [{ id: 'ORIGEN', label: 'ORIGEN', bg_color: '#fff', text_color: '#000', group: 'en_ruta' }],
       operational_states: [{ id: 'op-uuid-1', label: 'Confirmado en panne', bg_color: '#fee', text_color: '#b00', group: 'problema' }],
-      tms_sources: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [], operation_types: [],
+      tms_sources: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [], operation_types: [],
       origins: [],
     }
     const trip = makeTrip('t1', { manual_status: 'op-uuid-1' })

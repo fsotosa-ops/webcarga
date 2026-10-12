@@ -90,7 +90,7 @@ export function RenglonPendiente({
   const fechaId = `vence-${fila.id}`
   const politica = politicaDe(fila)
   // Por qué está pendiente, o qué cubre, dicho con la fecha en la mano. Sale de
-  // lo que calculó el backend (`urgencia`, `vence_el`), no de comparar fechas
+  // lo que calculó el backend (`document_state`, `vence_el`), no de comparar fechas
   // acá: los vencidos por fecha están en APPROVED_MANUAL, así que leer el
   // status los anunciaba como aprobados.
   const motivo = vigenciaDeLaFila(fila)

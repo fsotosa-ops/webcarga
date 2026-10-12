@@ -142,6 +142,6 @@ async def test_la_cola_y_la_ficha_cuentan_el_mensual_vencido(conexion_revertida)
     # Al crear la empresa, la siembra le agrega los requisitos activos del
     # catalogo: se mira solo la fila del requisito del caso.
     del_caso = [f for f in cola["rows"] if f["requirement_id"] == str(req)]
-    assert [f["urgencia"] for f in del_caso] == ["VENCIDO"]
+    assert [f["document_state"] for f in del_caso] == ["OVERDUE"]
 
     await get_compliance_summary(carrier_id=str(empresa), pool=pool, _=USER)

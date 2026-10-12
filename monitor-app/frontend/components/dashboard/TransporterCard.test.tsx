@@ -7,7 +7,7 @@ import { complianceSummary } from '@/lib/states.fixtures'
 const ITEM: CarrierListItem = {
   id: 't1', tax_id: '11111111-1', country_code: 'CL', business_name: 'Transportes Test',
   operational_status: 'ACTIVE', total_requirements: 12, last_document_update: '2026-06-01',
-  pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary(),
+  compliance_summary: complianceSummary(),
 }
 
 describe('TransporterCard', () => {

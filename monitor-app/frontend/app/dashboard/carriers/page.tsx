@@ -60,7 +60,7 @@ const ENABLEMENT_TABS: { id: EnablementTab; label: string; facetKey: keyof Carri
   { id: 'enabled',     label: ENABLEMENT_GROUP_LABELS.enabled,     facetKey: 'enabled' },
 ]
 
-const EMPTY_FACETS: CarrierListFacets = { pending: 0, ok: 0, total: 0, enabled: 0, not_enabled: 0 }
+const EMPTY_FACETS: CarrierListFacets = { total: 0, enabled: 0, not_enabled: 0 }
 
 export default function EmpresasTransportePage() {
   return (

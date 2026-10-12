@@ -21,7 +21,7 @@ def make_client(pool, supabase=None):
 
 
 def _carrier_facets_row(**overrides):
-    base = {"count": 0, "pending": 0, "ok": 0, "enabled": 0, "not_enabled": 0, "total": 0}
+    base = {"count": 0, "enabled": 0, "not_enabled": 0, "total": 0}
     base.update(overrides)
     return base
 
@@ -44,7 +44,7 @@ def test_list_carriers_enablement_binds_every_placeholder():
     un filtro nuevo no puede dejar un $n sin su argumento (los AsyncMock no lo ven)."""
     import re
 
-    for query in ("enablement=enabled", "enablement=not_enabled&health=PENDING&q=Acme"):
+    for query in ("enablement=enabled", "enablement=not_enabled&q=Acme", "operational_status=ACTIVE&q=Acme"):
         pool = AsyncMock()
         pool.fetch.return_value = []
         pool.fetchrow.return_value = _carrier_facets_row()
@@ -54,14 +54,13 @@ def test_list_carriers_enablement_binds_every_placeholder():
             assert {int(n) for n in re.findall(r"\$(\d+)", sql)} == set(range(1, len(args) + 1)), query
 
 
-def test_list_carriers_aggregates_pending_mandatory_docs():
+def test_list_carriers_returns_the_summary_without_the_old_fields():
     pool = AsyncMock()
     pool.fetch.return_value = [{"id": "c1", "tax_id": "1-9", "country_code": "CL",
                                  "business_name": "Acme", "operational_status": "ACTIVE",
                                  "total_requirements": 12, "last_document_update": None,
-                                 "pending_mandatory": 2, "compliance_health": "PENDING",
                                  **RESUMEN_VACIO}]
-    pool.fetchrow.return_value = _carrier_facets_row(count=1, pending=1, total=1)
+    pool.fetchrow.return_value = _carrier_facets_row(count=1, enabled=1, total=1)
     client = make_client(pool)
 
     res = client.get("/api/v1/carriers")
@@ -69,37 +68,30 @@ def test_list_carriers_aggregates_pending_mandatory_docs():
     assert res.status_code == 200
     body = res.json()
     assert body["count"] == 1
-    assert body["data"][0]["business_name"] == "Acme"
-    assert body["data"][0]["compliance_health"] == "PENDING"
-    assert body["facets"] == {"pending": 1, "ok": 0, "enabled": 0, "not_enabled": 0, "total": 1}
-    assert body["data"][0]["compliance_summary"]["can_operate"] is True
+    fila = body["data"][0]
+    assert fila["business_name"] == "Acme" and fila["total_requirements"] == 12
+    # D1, Task 16: compliance_health y pending_mandatory se retiraron (R-E6, R-E7).
+    assert "compliance_health" not in fila and "pending_mandatory" not in fila
+    assert body["facets"] == {"enabled": 1, "not_enabled": 0, "total": 1}
+    assert fila["compliance_summary"]["can_operate"] is True
     fetch_query = pool.fetch.call_args.args[0]
     assert "FROM public.carriers c" in fetch_query
     assert "LEFT JOIN public.compliance_records cr" in fetch_query
+    assert "compliance_health" not in fetch_query and "pending_mandatory" not in fetch_query
 
 
-def test_list_carriers_filters_by_health():
+def test_list_carriers_ignores_the_retired_health_filter():
+    """R-E7: el parámetro `health` ya no existe; FastAPI ignora el query string
+    que no declara, así que la pestaña vieja no filtra nada ni da 500."""
     pool = AsyncMock()
     pool.fetch.return_value = []
-    pool.fetchval.return_value = 0
     pool.fetchrow.return_value = _carrier_facets_row()
-    client = make_client(pool)
 
-    res = client.get("/api/v1/carriers?health=PENDING")
+    res = make_client(pool).get("/api/v1/carriers?health=PENDING")
 
     assert res.status_code == 200
-    fetch_query = pool.fetch.call_args.args[0]
-    assert "WHERE compliance_health = $1" in fetch_query
-    assert pool.fetch.call_args.args[1] == "PENDING"
-
-
-def test_list_carriers_rejects_invalid_health():
-    pool = AsyncMock()
-    client = make_client(pool)
-
-    res = client.get("/api/v1/carriers?health=BOGUS")
-
-    assert res.status_code == 422
+    sql, *args = pool.fetch.call_args.args
+    assert "PENDING" not in args and "compliance_health" not in sql
 
 
 def _facets_row(**overrides):
@@ -556,12 +548,11 @@ def test_patch_carrier_rejects_duplicate_tax_id():
     assert res.status_code == 409
 
 
-def test_list_carrier_drivers_includes_pending_mandatory():
+def test_list_carrier_drivers_returns_the_summary_without_the_old_fields():
     pool = AsyncMock()
     pool.fetch.return_value = [{
-        "id": "d1", "tax_id": "1-9", "full_name": "Juan Pérez", "operational_status": "ACTIVE",
-        "total_requirements": 5, "last_document_update": None,
-        "pending_mandatory": 2, "compliance_health": "PENDING", **RESUMEN_VACIO_ENTIDAD,
+        "id": "d1", "tax_id": "1-9", "full_name": "Conductor ZZ", "operational_status": "ACTIVE",
+        "total_requirements": 5, "last_document_update": None, **RESUMEN_VACIO_ENTIDAD,
     }]
     client = make_client(pool)
 
@@ -569,21 +560,21 @@ def test_list_carrier_drivers_includes_pending_mandatory():
 
     assert res.status_code == 200
     body = res.json()
-    assert body[0]["compliance_health"] == "PENDING"
-    assert body[0]["pending_mandatory"] == 2
+    assert "compliance_health" not in body[0] and "pending_mandatory" not in body[0]
+    assert body[0]["compliance_summary"]["can_operate"] is True
     fetch_query = pool.fetch.call_args.args[0]
     # En vivo (bloque 0, 0.2): nunca desde la vista materializada sin refresco.
     assert "carrier_driver_roster" not in fetch_query
     assert "JOIN public.drivers d" in fetch_query
-    assert "cr.entity_type = 'DRIVER'" in fetch_query
+    assert "LEFT JOIN entity_compliance ec ON ec.entity_type = 'DRIVER'" in fetch_query
+    assert "pending_mandatory" not in fetch_query
 
 
-def test_list_carrier_assets_includes_pending_mandatory():
+def test_list_carrier_assets_returns_the_summary_without_the_old_fields():
     pool = AsyncMock()
     pool.fetch.return_value = [{
         "id": "a1", "license_plate": "ABCD12", "asset_type": "TRACTOCAMION", "operational_status": "ACTIVE",
-        "total_requirements": 3, "last_document_update": None,
-        "pending_mandatory": 0, "compliance_health": "OK", **RESUMEN_VACIO_ENTIDAD,
+        "total_requirements": 3, "last_document_update": None, **RESUMEN_VACIO_ENTIDAD,
     }]
     client = make_client(pool)
 
@@ -591,12 +582,13 @@ def test_list_carrier_assets_includes_pending_mandatory():
 
     assert res.status_code == 200
     body = res.json()
-    assert body[0]["compliance_health"] == "OK"
+    assert "compliance_health" not in body[0] and "pending_mandatory" not in body[0]
     fetch_query = pool.fetch.call_args.args[0]
     # En vivo (D1, R-B8): nunca desde la vista materializada sin refresco.
     assert "carrier_asset_roster" not in fetch_query
     assert "JOIN public.assets a" in fetch_query
-    assert "cr.entity_type = 'ASSET'" in fetch_query
+    assert "LEFT JOIN entity_compliance ec ON ec.entity_type = 'ASSET'" in fetch_query
+    assert "pending_mandatory" not in fetch_query
 
 
 def test_assign_driver_deactivates_previous_and_activates_new():

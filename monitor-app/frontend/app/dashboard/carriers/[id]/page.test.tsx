@@ -75,13 +75,13 @@ const CARRIER: Carrier = {
 }
 
 const DRIVERS: CarrierDriverRosterItem[] = [
-  { id: 'd1', tax_id: '22222222-2', full_name: 'Juan Pérez', operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary() },
-  { id: 'd2', tax_id: '12345678-5', full_name: 'Ana Rojas', operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null, pending_mandatory: 1, compliance_health: 'PENDING',
+  { id: 'd1', tax_id: '22222222-2', full_name: 'Juan Pérez', operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null, compliance_summary: complianceSummary() },
+  { id: 'd2', tax_id: '12345678-5', full_name: 'Ana Rojas', operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null,
     compliance_summary: complianceSummary({ worst_state: 'OVERDUE', own: { overdue: 1, expiring: 0, missing: 0 }, can_operate: false }) },
 ]
 
 const ASSETS: CarrierAssetRosterItem[] = [
-  { id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', fleet_service_type_id: null, fleet_service_type_label: null, fleet_service_type_bg_color: null, fleet_service_type_text_color: null, webcarga_operation_type_id: null, webcarga_operation_type_label: null, webcarga_operation_type_code: null, total_requirements: 3, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary() },
+  { id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', fleet_service_type_id: null, fleet_service_type_label: null, fleet_service_type_bg_color: null, fleet_service_type_text_color: null, webcarga_operation_type_id: null, webcarga_operation_type_label: null, webcarga_operation_type_code: null, total_requirements: 3, last_document_update: null, compliance_summary: complianceSummary() },
 ]
 
 const pushMock = vi.fn()
@@ -327,7 +327,7 @@ describe('EmpresaDetailPage', () => {
       operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null,
   home_location_id: null, home_location_name: null,
   home_location_shipper: null, suggested_home_location: null,
-      pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary(),
+      compliance_summary: complianceSummary(),
     }))
     vi.mocked(carriersApi.listDrivers).mockResolvedValue(manyDrivers)
     renderPage()

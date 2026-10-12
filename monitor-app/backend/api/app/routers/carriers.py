@@ -11,7 +11,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from ..auth import get_current_user, get_supabase
 from ..authz import Permission, exigir, require, require_fields
 from ..db import get_pool
-from ..services.vencimientos import pendiente_predicate
 from ..schemas.assignment import AssetAssignmentCreateBody, DriverAssignmentCreateBody
 from ..schemas.carrier import CARRIER_FIELD_PERMISSIONS, CarrierCreateBody, CarrierListResponse, CarrierPatchBody
 from ..schemas.common import PaginatedResponse
@@ -37,57 +36,18 @@ from ..utils.document_storage import build_documents_zip, resolve_signed_url, sa
 router = APIRouter(prefix="/carriers", tags=["carriers"])
 
 
-_CARRIER_HEALTH_VALUES = {"PENDING", "OK"}
-
-
-# El vocabulario de estados y fechas, UNA sola vez. El ámbito
-# (LEGAL_MANDATORY) lo pone cada llamador: son dos preguntas distintas.
-pendiente = pendiente_predicate('cr')
-
-
-def _pending_mandatory_join(entity_type: str, id_column: str) -> str:
-    """Subquery de documentación LEGAL_MANDATORY pendiente/vencida para un
-    entity_type dado — mismo criterio en los 3 niveles (CARRIER/DRIVER/ASSET,
-    ver _CARRIER_LIST_AGG y mandatoryProblems en la ficha de empresa).
-    `entity_type` siempre viene hardcodeado por el caller, nunca de request."""
-    return f"""
-        LEFT JOIN (
-            SELECT cr.entity_id AS {id_column},
-                   COUNT(*) FILTER (
-                       WHERE req.requirement_level = 'LEGAL_MANDATORY'
-                         AND {pendiente}
-                   ) AS pending_mandatory
-            FROM public.compliance_records cr
-            JOIN public.compliance_requirements req ON req.id = cr.requirement_id
-            WHERE cr.entity_type = '{entity_type}' AND cr.is_current = true
-            GROUP BY cr.entity_id
-        ) sev ON sev.{id_column} = r.{id_column}
-    """
-
-# Mismo criterio de "problema obligatorio" que la ficha de empresa. El
-# vocabulario de estados y fechas sale de `pendiente_predicate` —una sola
-# definición para las seis lecturas—; lo único propio de acá es el ámbito:
-# se cuentan sólo los LEGAL_MANDATORY, porque la pregunta es "cuántos
-# obligatorios están en problemas" y no "qué entra a la cola de trabajo".
-_CARRIER_LIST_AGG = """
+# La empresa y sus datos de lista. El cumplimiento (cuánto debe, si puede
+# operar) NO se cuenta acá: sale de `carrier_compliance` (D1, una sola
+# respuesta), igual que en Pendientes. `total_requirements` y
+# `last_document_update` son datos de la lista (cuántos registros vigentes
+# tiene y cuándo se tocó el último), no un estado.
+_CARRIER_LIST_SQL = """
     SELECT c.id AS carrier_id, c.tax_id, c.country_code, c.business_name, c.operational_status,
            COUNT(cr.id) AS total_requirements,
-           MAX(cr.updated_at) AS last_document_update,
-           COUNT(cr.id) FILTER (
-               WHERE req.requirement_level = 'LEGAL_MANDATORY'
-                 AND {pendiente}
-           ) AS pending_mandatory,
-           CASE
-               WHEN COUNT(cr.id) FILTER (
-                   WHERE req.requirement_level = 'LEGAL_MANDATORY'
-                     AND {pendiente}
-               ) > 0 THEN 'PENDING'
-               ELSE 'OK'
-           END AS compliance_health
+           MAX(cr.updated_at) AS last_document_update
     FROM public.carriers c
     LEFT JOIN public.compliance_records cr
         ON cr.entity_id = c.id AND cr.entity_type = 'CARRIER' AND cr.is_current = true
-    LEFT JOIN public.compliance_requirements req ON req.id = cr.requirement_id
     {where}
     GROUP BY c.id, c.tax_id, c.country_code, c.business_name, c.operational_status
 """
@@ -115,7 +75,6 @@ async def list_carriers(
             "acababa de hacer y no encontraba."
         ),
     ),
-    health: str = Query("", description="PENDING|OK — filtra por documentación obligatoria pendiente"),
     enablement: Annotated[Literal["enabled", "not_enabled", ""], Query(
         description=(
             "enabled|not_enabled. Habilitada = puede operar (D1); No habilitada = activa "
@@ -128,9 +87,6 @@ async def list_carriers(
     pool=Depends(get_pool),
     _=Depends(require(Permission.DIRECTORY_READ)),
 ):
-    if health and health not in _CARRIER_HEALTH_VALUES:
-        raise HTTPException(422, "health inválido")
-
     clauses: list[str] = []
     params: list = []
     if q:
@@ -140,9 +96,8 @@ async def list_carriers(
         params.append(_estados(operational_status))
         clauses.append(f"c.operational_status = ANY(${len(params)}::text[])")
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    agg_cte = f"WITH agg AS ({_CARRIER_LIST_AGG.format(where=where, pendiente=pendiente)})"
+    agg_cte = f"WITH agg AS ({_CARRIER_LIST_SQL.format(where=where)})"
     # D1: la misma respuesta que Pendientes (spec §5), una vez por consulta.
-    # compliance_health y pending_mandatory siguen al lado hasta la Task 16.
     base = (
         f"{agg_cte},\n{carrier_compliance_cte()},\n"
         f"listed AS (SELECT agg.*, {carrier_summary_columns_sql('cc')} FROM agg "
@@ -151,9 +106,6 @@ async def list_carriers(
 
     filter_params = list(params)
     filters: list[str] = []
-    if health:
-        filter_params.append(health)
-        filters.append(f"compliance_health = ${len(filter_params)}")
     if enablement:
         filters.append(f"({ENABLEMENT_FILTERS[enablement]})")
     filter_where = ("WHERE " + " AND ".join(filters)) if filters else ""
@@ -166,28 +118,27 @@ async def list_carriers(
         f"""
         {base}
         SELECT carrier_id AS id, tax_id, country_code, business_name, operational_status,
-               total_requirements, last_document_update, pending_mandatory, compliance_health,
+               total_requirements, last_document_update,
                {summary_cols}
         FROM listed
         {filter_where}
+        -- Primero las No habilitadas (activas que no pueden operar), después
+        -- por nombre. Una empresa no activa no es No habilitada.
         ORDER BY
-            CASE compliance_health WHEN 'PENDING' THEN 1 ELSE 2 END,
-            pending_mandatory DESC,
+            ({ENABLEMENT_FILTERS["not_enabled"]}) DESC,
             business_name ASC
         LIMIT ${lp} OFFSET ${op}
         """,
         *filter_params, limit, offset,
     )
     # El conteo de la página y las facetas en una sola pasada. Las facetas son
-    # del universo `q` + `operational_status`, sin `health` ni `enablement`:
+    # del universo `q` + `operational_status`, sin `enablement`:
     # cambiar de pestaña no reordena los otros conteos (CarrierListFacets).
     counts = await pool.fetchrow(
         f"""
         {base}
         SELECT
             COUNT(*) FILTER (WHERE {" AND ".join(filters) or "true"})          AS count,
-            COUNT(*) FILTER (WHERE compliance_health = 'PENDING')               AS pending,
-            COUNT(*) FILTER (WHERE compliance_health = 'OK')                    AS ok,
             COUNT(*) FILTER (WHERE {ENABLEMENT_FILTERS["enabled"]})             AS enabled,
             COUNT(*) FILTER (WHERE {ENABLEMENT_FILTERS["not_enabled"]})         AS not_enabled,
             COUNT(*)                                                            AS total
@@ -792,8 +743,6 @@ async def list_carrier_drivers(carrier_id: str, pool=Depends(get_pool), _=Depend
         WITH {entity_compliance_cte()}
         SELECT r.driver_id AS id, r.tax_id, r.full_name, r.operational_status,
                dcs.total_requirements, dcs.last_document_update,
-               COALESCE(sev.pending_mandatory, 0) AS pending_mandatory,
-               CASE WHEN COALESCE(sev.pending_mandatory, 0) > 0 THEN 'PENDING' ELSE 'OK' END AS compliance_health,
                {entity_summary_columns_sql('ec')}
         FROM (
             SELECT d.id AS driver_id, d.tax_id, d.full_name, d.operational_status
@@ -802,7 +751,6 @@ async def list_carrier_drivers(carrier_id: str, pool=Depends(get_pool), _=Depend
             WHERE da.carrier_id = $1 AND da.status = 'ACTIVE'
         ) r
         LEFT JOIN app.driver_compliance_status dcs ON dcs.driver_id = r.driver_id
-        {_pending_mandatory_join('DRIVER', 'driver_id')}
         LEFT JOIN entity_compliance ec ON ec.entity_type = 'DRIVER' AND ec.entity_id = r.driver_id
         ORDER BY r.full_name
         """,
@@ -944,8 +892,6 @@ async def list_carrier_assets(carrier_id: str, pool=Depends(get_pool), _=Depends
                wot.label AS webcarga_operation_type_label,
                wot.code  AS webcarga_operation_type_code,
                acs.total_requirements, acs.last_document_update,
-               COALESCE(sev.pending_mandatory, 0) AS pending_mandatory,
-               CASE WHEN COALESCE(sev.pending_mandatory, 0) > 0 THEN 'PENDING' ELSE 'OK' END AS compliance_health,
                {entity_summary_columns_sql('ec')}
         FROM (
             SELECT a.id AS asset_id, a.license_plate, a.asset_type, a.operational_status,
@@ -957,7 +903,6 @@ async def list_carrier_assets(carrier_id: str, pool=Depends(get_pool), _=Depends
         LEFT JOIN app.status_taxonomies st ON st.id = r.fleet_service_type_id
         LEFT JOIN app.status_taxonomies wot ON wot.id = r.webcarga_operation_type_id
         LEFT JOIN app.asset_compliance_status acs ON acs.asset_id = r.asset_id
-        {_pending_mandatory_join('ASSET', 'asset_id')}
         LEFT JOIN entity_compliance ec ON ec.entity_type = 'ASSET' AND ec.entity_id = r.asset_id
         ORDER BY r.license_plate
         """,

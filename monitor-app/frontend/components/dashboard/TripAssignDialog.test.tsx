@@ -25,7 +25,7 @@ const meta: TripsMeta = {
     { id: 'qanalytics', label: 'QA', bg_color: '#fff', text_color: '#000' },
     { id: 'manual', label: 'Manual', bg_color: '#fff', text_color: '#000' },
   ],
-  operational_states: [], alert_thresholds: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [], operation_types: [],
+  operational_states: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [], operation_types: [],
   origins: [],
 }
 
