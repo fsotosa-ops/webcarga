@@ -51,7 +51,21 @@ vigencia vía historial por trigger (cubre a Mage sin tocarlo) + override por ca
   roster de conductores en vivo, el pre-cierre ya no renombra. Suites: backend 240, frontend 459, tsc y build OK; workflows
   verdes. Medido en dev: solo el 04/09 tiene líneas fuera del roster (2, ambas bloquean; son de una empresa de prueba) y
   se ven en el grupo "Ya no están en el roster" (`.playwright-mcp/directorio-b0-cierre-dev.png`).
-- [ ] **Despliegue 2 (Tasks 6-13), ejecutando subagent-driven.** Después: D1.
+- [x] **Despliegue 2 en dev (12/10 ~05:35 UTC), commits `c22fbfe2..1990490f`:** permiso `directory.fleet_status`
+  (Operador/Supervisor de Operaciones y Supervisor de Certificación; verificado en `app.role_permissions`), baja de empresa
+  solo con `directory.delete` salvo ONBOARDING→ACTIVE (lectura con FOR UPDATE), botones alineados con su permiso,
+  `invalidateDirectory` único (lib/queries/directorio.ts) con test de cobertura, frescura del Cierre en `cierre-viajes`,
+  confirmación de "Quitar del roster", un diccionario de estados, "Empresa dada de baja" en tarjetas/vista rápida/búsqueda
+  del Monitor, Sin clasificar H2/H4. Suites: backend 259, frontend 1588/1589 (un timeout por carga, pasa solo), tsc y
+  build OK. Revisión final de la rama: 1 importante (Monitor autocompletaba empresas ONBOARDING) arreglado. Recorrido en
+  copia local: sin ningún 403 con Certificación, Supervisor de Operaciones y Operador (`.playwright-mcp/directorio-b0-*.png`).
+  Rulings y menores diferidos: `docs/superpowers/plans/2026-10-12-directory-block-0-rulings.md`.
+- [ ] Mirar dev con sesión iniciada (empresa dada de baja con flota, Cierre de hoy, Sin clasificar) sin guardar nada.
+- [ ] Deuda anotada para D1: guarda en la API contra asignar viajes a una empresa no activa (hoy solo en el frontend);
+  "Conductor habitual" ofrece conductores dados de baja; badge de Sin clasificar sin señal cuando falla el conteo;
+  barra inferior móvil con etiquetas superpuestas (layout).
+- [ ] **Siguiente: D1 "Una sola respuesta"** (funciones `app.is_operating`, `app.carrier_of`, `app.carrier_operation_types`
+  y migración de lectores), intercalado con Certificación 2a (rediseño de Sin clasificar, opción B de su auditoría).
 - [ ] Luego: spec del bloque 0 / D1 "Una sola respuesta" (funciones `app.is_operating`, `app.carrier_of`,
   `app.carrier_operation_types`), intercalado con Certificación 2a (Sin clasificar).
 
