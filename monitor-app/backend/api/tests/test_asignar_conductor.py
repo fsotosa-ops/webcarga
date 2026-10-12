@@ -20,8 +20,16 @@ from fastapi import HTTPException
 from app.routers.trips import assign_driver_bulk, assign_fleet_link, driver_candidates
 from app.schemas.trip import AsignarConductorBody
 from tests.conftest import PoolDeUnaConexion, _usuario_real
+from tests.d1_subjects import apply_fleet_facts
 
 pytestmark = pytest.mark.integracion
+
+
+@pytest.fixture(autouse=True)
+async def _hechos_de_la_flota(conexion_revertida):
+    """D1 Task 7: el Monitor y /drivers leen app.carrier_of / app.active_fleet;
+    hasta la Task 10 la migración no está aplicada."""
+    await apply_fleet_facts(conexion_revertida)
 
 
 async def _un_viaje(conn) -> str:

@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta
 import pytest
 
 from tests.conftest import PoolDeUnaConexion, _usuario_real, usuario
+from tests.d1_subjects import apply_fleet_facts
 
 pytestmark = pytest.mark.integracion
 
@@ -597,6 +598,8 @@ async def test_un_viaje_que_llega_despues_de_la_firma_es_un_ajuste(conexion_reve
 # se puede leer, que es la mitad del punto. ──────────────────────────────
 
 async def test_se_puede_filtrar_lo_no_asignado_por_webcarga(conexion_revertida):
+    # D1 Task 7: list_trips lee app.active_fleet (la migración se aplica en la Task 10).
+    await apply_fleet_facts(conexion_revertida)
     # Pablo: "voy a poder ver todos los viajes que alguna vez nos ofrecieron y
     # no asignamos". Sin este filtro la declaracion se escribe y no se lee.
     from app.routers.trips import list_trips
@@ -618,6 +621,8 @@ async def test_se_puede_filtrar_lo_no_asignado_por_webcarga(conexion_revertida):
 
 
 async def test_el_filtro_no_mira_is_active(conexion_revertida):
+    # D1 Task 7: list_trips lee app.active_fleet (la migración se aplica en la Task 10).
+    await apply_fleet_facts(conexion_revertida)
     """El punto es el HISTORIAL: viajes que nos ofrecieron y no asignamos,
     incluidos los que ya se apagaron hace meses. Filtrar por activos
     vaciaria la respuesta justo de lo que se quiere ver."""

@@ -16,6 +16,8 @@ from ..services.cliente_del_viaje import (
     SIN_VINCULAR, join_cliente, leer_filtro_de_cliente, nombre_del_cliente, resolver_cliente, texto_del_cliente_en_el_tms,
 )
 from ..services.vencimientos import pendiente_predicate
+from ..services.entity_summary import usual_tractor_lateral
+from ..services.fleet_compliance import alert_severity_sql, carrier_compliance_cte
 from ..services.reglas_del_monitor import SQL_REGLAS_DEL_MONITOR
 from ..services.ventana_en_curso import dentro_de_la_ventana
 from ..schemas.trip import (
@@ -259,6 +261,28 @@ def _stop_dedup_key(d: dict):
         d.get("local") is not None,
         d.get("arrival_date") is not None,
     )
+
+
+_CAN_OPERATE_SQL = f"""
+WITH {carrier_compliance_cte()}
+SELECT carrier_id::text AS carrier_id, can_operate AS carrier_can_operate
+FROM carrier_compliance
+WHERE carrier_id = ANY($1::uuid[])
+"""
+
+
+async def _attach_carrier_can_operate(pool, trips: list[dict]) -> None:
+    """¿Puede operar la empresa del viaje? (D1, R-B5). Una consulta por página
+    y no un JOIN en _TRIP_FROM: ese FROM también arma los COUNT(*) y la faceta
+    de clientes, que no necesitan la base de Pendientes (~150 ms). Sin empresa
+    resuelta no hay a quién preguntar: None, no "habilitada"."""
+    ids = sorted({str(t["carrier_id"]) for t in trips if t.get("carrier_id")})
+    habilitacion: dict[str, bool] = {}
+    if ids:
+        habilitacion = {f["carrier_id"]: f["carrier_can_operate"]
+                        for f in await pool.fetch(_CAN_OPERATE_SQL, ids)}
+    for t in trips:
+        t["carrier_can_operate"] = habilitacion.get(str(t["carrier_id"])) if t.get("carrier_id") else None
 
 
 async def _load_trip_stops(pool, trip_ids: set[str]) -> dict[str, list[dict]]:
@@ -585,6 +609,12 @@ _TRIP_SELECT = """
     tcomp.has_critical_pending AS tractor_pending_docs_critical,
     ccomp.pending_count AS carrier_pending_docs,
     ccomp.has_critical_pending AS carrier_pending_docs_critical,
+    -- D1 (R-B5): el aviso crítico por entidad, NULL si no está resuelta
+    -- (igual que *_pending_docs). No hay un campo del viaje: cada badge dice
+    -- de quién es el problema.
+    dcomp.has_critical_alert AS driver_has_critical_alert,
+    tcomp.has_critical_alert AS tractor_has_critical_alert,
+    ccomp.has_critical_alert AS carrier_has_critical_alert,
     notes.last_human_note_at,
     -- D4 (minuta 02/10): desde cuándo el TMS ya no trae el viaje, según la
     -- reconciliación diaria (dbt). NULL = presente o nunca juzgado.
@@ -658,7 +688,17 @@ def _compliance_alert_lateral(alias: str, entity_type: str, id_expr: str, critic
                 req.requirement_level = 'LEGAL_MANDATORY'
                 AND req.requirement_code = ANY({codes_sql})
                 AND ({pendiente})
-            ) END AS has_critical_pending
+            ) END AS has_critical_pending,
+            -- D1 (R-B5): aviso crítico = un obligatorio dentro de los días
+            -- críticos de Configuración › Alertas (severidad calculada en
+            -- fleet_compliance), o uno de los documentos críticos pendiente:
+            -- el significado de has_critical_pending, que se conserva.
+            CASE WHEN {id_expr} IS NULL THEN NULL ELSE COALESCE(bool_or(
+                req.requirement_level = 'LEGAL_MANDATORY' AND (
+                    {alert_severity_sql('cr')} = 'critical'
+                    OR (req.requirement_code = ANY({codes_sql}) AND ({pendiente}))
+                )
+            ), false) END AS has_critical_alert
         FROM public.compliance_records cr
         JOIN public.compliance_requirements req ON req.id = cr.requirement_id
         WHERE cr.entity_type = '{entity_type}' AND cr.entity_id = {id_expr} AND cr.is_current = true
@@ -952,6 +992,7 @@ async def list_trips(
         trip_ids.add(str(d["id"]))
         data.append(d)
 
+    await _attach_carrier_can_operate(pool, data)
     stops_by_trip = await _load_trip_stops(pool, trip_ids)
     op_type_buckets = await _load_operation_type_buckets(pool, shipper_ids)
     temp_ranges = await _load_temperature_ranges(pool)
@@ -1234,22 +1275,13 @@ async def available_drivers(
         raise HTTPException(422, "fecha requerida (YYYY-MM-DD)")
 
     rows = await pool.fetch(
-        """
+        f"""
         WITH active_roster AS (
             SELECT d.id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name AS carrier_name
             FROM public.drivers d
             JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
             JOIN public.carriers c ON c.id = da.carrier_id AND c.operational_status = 'ACTIVE'
             WHERE d.operational_status = 'ACTIVE'
-        ),
-        -- Vehículo que el conductor maneja habitualmente (migración
-        -- 20260718070000) — independiente de si tuvo viaje hoy, para no
-        -- perder la patente de alguien con 0 viajes hoy pero con equipo fijo.
-        standing_vehicle AS (
-            SELECT vda.driver_id, a.id AS tractor_asset_id, a.license_plate AS tractor_plate
-            FROM public.vehicle_driver_assignments vda
-            JOIN public.assets a ON a.id = vda.asset_id
-            WHERE vda.status = 'ACTIVE'
         ),
         -- Fase B (ítem 5, feedback post-weekly 2026-07-22): antes solo
         -- miraba trip_fleet_links.driver_id (sin la cadena de resolución en
@@ -1295,13 +1327,17 @@ async def available_drivers(
             )                AS driver_phone,
             ar.carrier_id,
             ar.carrier_name,
-            sv.tractor_asset_id,
-            COALESCE(tt.tractor_plate, sv.tractor_plate) AS tractor_plate,
+            sv.id            AS tractor_asset_id,
+            COALESCE(tt.tractor_plate, sv.license_plate) AS tractor_plate,
             COALESCE(tt.trips_total, 0) AS trips_total,
             tt.last_report_at
         FROM active_roster ar
         LEFT JOIN today_trips tt ON tt.driver_id = ar.id
-        LEFT JOIN standing_vehicle sv ON sv.driver_id = ar.id
+        -- Vehículo que el conductor maneja habitualmente (migración
+        -- 20260718070000) — independiente de si tuvo viaje hoy, para no
+        -- perder la patente de alguien con 0 viajes hoy pero con equipo fijo.
+        -- Uno solo por conductor (F-07).
+        {usual_tractor_lateral('ar.id', 'sv')}
         WHERE tt.driver_id IS NULL OR tt.trips_total = tt.closed_count
         ORDER BY tt.last_report_at DESC NULLS LAST, ar.full_name
         """,
@@ -2238,6 +2274,7 @@ async def driver_candidates(
         """
         SELECT d.id, d.full_name, d.tax_id,
                c.business_name AS carrier_name,
+               c.operational_status AS carrier_operational_status,
                -- Bidireccional, IGUAL que `by_partial` dentro de
                -- app.resolve_trip_fleet(): al TMS le puede FALTAR un nombre
                -- (roster 4 tokens, TMS 2) o le puede SOBRAR (roster 3, TMS 4).
@@ -2250,9 +2287,7 @@ async def driver_candidates(
                    array_to_string(public.name_tokens($1), ' ')
                ) AS similitud
         FROM public.drivers d
-        LEFT JOIN public.driver_assignments da
-               ON da.driver_id = d.id AND da.status = 'ACTIVE'
-        LEFT JOIN public.carriers c ON c.id = da.carrier_id
+        LEFT JOIN public.carriers c ON c.id = app.carrier_of('DRIVER', d.id)
         WHERE d.full_name IS NOT NULL AND d.operational_status = 'ACTIVE'
         ORDER BY contiene DESC, similitud DESC, d.full_name
         LIMIT $2
@@ -2288,6 +2323,7 @@ async def driver_candidates(
                 "full_name": r["full_name"],
                 "tax_id": r["tax_id"],
                 "carrier_name": r["carrier_name"],
+                "carrier_operational_status": r["carrier_operational_status"],
                 "contiene": r["contiene"],
                 "similitud": float(r["similitud"] or 0),
             }
@@ -2438,6 +2474,7 @@ async def get_trip(
     if not row:
         raise HTTPException(404, "Viaje no encontrado")
     d = dict(row)
+    await _attach_carrier_can_operate(pool, [d])
     stops_by_trip = await _load_trip_stops(pool, {trip_id})
     d["stops"] = stops_by_trip.get(trip_id, [])
     d["cargo_delivered"] = _cargo_delivered(d["stops"])

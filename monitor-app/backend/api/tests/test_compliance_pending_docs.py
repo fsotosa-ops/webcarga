@@ -32,11 +32,20 @@ def test_driver_critical_docs_flag_covers_license_and_id_card():
 def test_tractor_and_carrier_lateral_have_no_critical_codes():
     """Solo conductor tiene lista de códigos críticos — tracto/empresa usan
     ARRAY[]::varchar[] (ninguno pedido explícitamente por el usuario)."""
-    assert _TRIP_FROM.count("ARRAY[]::varchar[]") == 2
+    assert _TRIP_FROM.count("ARRAY[]::varchar[]") == 4  # 2 usos (pendiente crítico + aviso) x tracto y empresa
 
 
 def test_pending_docs_null_when_entity_not_resolved():
     """COUNT(*) FILTER sobre cero filas ya da 0 por sí solo — sin el CASE
     explícito, un viaje sin conductor resuelto mostraría '0 pendientes'
     (todo en orden) en vez de 'no hay conductor para evaluar'."""
-    assert _TRIP_FROM.count("IS NULL THEN NULL ELSE") == 6  # 2 columnas x 3 dominios
+    assert _TRIP_FROM.count("IS NULL THEN NULL ELSE") == 9  # 3 columnas x 3 dominios
+
+
+def test_trip_select_exposes_the_d1_alert_per_entity():
+    """D1 (R-B5): el aviso crítico va por entidad, nunca como un campo del
+    viaje. La habilitación de la empresa se agrega por página
+    (_attach_carrier_can_operate)."""
+    for campo in ("driver_has_critical_alert", "tractor_has_critical_alert", "carrier_has_critical_alert"):
+        assert campo in _TRIP_SELECT
+    assert "AS has_critical_alert," not in _TRIP_SELECT

@@ -166,6 +166,20 @@ async def get_asset_driver_assignment(
     return dict(row) if row else None
 
 
+async def _require_active_driver(conn, driver_id: str) -> None:
+    """spec §7.1: "Conductor habitual" deja de admitir dados de baja. La Task 8
+    reemplaza este helper por la guarda compartida (assignment_guard)."""
+    estado = await conn.fetchval("SELECT operational_status FROM public.drivers WHERE id = $1", driver_id)
+    if estado is None:
+        raise HTTPException(404, "Conductor no encontrado")
+    if estado != "ACTIVE":
+        raise HTTPException(409, {
+            "code": "DRIVER_INACTIVE",
+            "message": "Ese conductor está dado de baja: no puede ser el conductor habitual "
+                       "de un equipo. Reactívalo en el Directorio antes de asignarlo.",
+        })
+
+
 @router.post("/{asset_id}/driver-assignment", status_code=201)
 async def assign_driver_to_asset(
     asset_id: str, body: dict, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
@@ -183,8 +197,7 @@ async def assign_driver_to_asset(
         async with conn.transaction():
             if not await conn.fetchval("SELECT 1 FROM public.assets WHERE id = $1", asset_id):
                 raise HTTPException(404, "Activo no encontrado")
-            if not await conn.fetchval("SELECT 1 FROM public.drivers WHERE id = $1", driver_id):
-                raise HTTPException(404, "Conductor no encontrado")
+            await _require_active_driver(conn, driver_id)
 
             # Desactivar la asignación ACTIVE previa de este vehículo (a
             # cualquier conductor) antes de insertar la nueva — el índice

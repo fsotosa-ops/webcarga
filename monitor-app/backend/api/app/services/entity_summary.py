@@ -84,6 +84,26 @@ _PRIMARY_PHONE = """
 """
 
 
+def usual_tractor_lateral(driver_expr: str, alias: str = "a") -> str:
+    """El tracto habitual de un conductor: el de su asignación ACTIVE más
+    reciente. Un conductor puede tener varios tractos activos (el índice único
+    de vehicle_driver_assignments es por tracto, no por conductor): un LEFT
+    JOIN plano lo devuelve una vez por tracto (F-07). Una sola regla para la
+    vista rápida, la búsqueda del Monitor y los disponibles del día. Un tracto
+    dado de baja nunca se ofrece como habitual (F13). Columnas: `id`,
+    `license_plate`."""
+    return f"""
+        LEFT JOIN LATERAL (
+            SELECT vg_ut.id, vg_ut.license_plate
+            FROM public.vehicle_driver_assignments vg_vda
+            JOIN public.assets vg_ut ON vg_ut.id = vg_vda.asset_id
+            WHERE vg_vda.driver_id = {driver_expr} AND vg_vda.status = 'ACTIVE'
+              AND vg_ut.operational_status = 'ACTIVE'
+            ORDER BY vg_vda.start_date DESC NULLS LAST, vg_vda.created_at DESC, vg_ut.id
+            LIMIT 1
+        ) {alias} ON true"""
+
+
 async def driver_summary(conn, driver_id: UUID) -> dict | None:
     row = await conn.fetchrow(
         f"""
@@ -101,16 +121,7 @@ async def driver_summary(conn, driver_id: UUID) -> dict | None:
         LEFT JOIN entity_compliance ec ON ec.entity_type = 'DRIVER' AND ec.entity_id = d.id
         LEFT JOIN public.locations hl ON hl.id = d.home_location_id
         LEFT JOIN public.shippers hs ON hs.id = hl.entity_id AND hl.entity_type = 'SHIPPER'
-        -- Un conductor puede tener varios tractos activos (el índice único es por
-        -- tracto): el habitual es el de la asignación más reciente, siempre el mismo.
-        LEFT JOIN LATERAL (
-            SELECT a.id, a.license_plate
-            FROM public.vehicle_driver_assignments vda
-            JOIN public.assets a ON a.id = vda.asset_id
-            WHERE vda.driver_id = d.id AND vda.status = 'ACTIVE'
-            ORDER BY vda.start_date DESC NULLS LAST, vda.created_at DESC, a.id
-            LIMIT 1
-        ) a ON true
+        {usual_tractor_lateral('d.id', 'a')}
         WHERE d.id = $1
         LIMIT 1
         """,
