@@ -46,7 +46,12 @@ vigencia vía historial por trigger (cubre a Mage sin tocarlo) + override por ca
   refresco entre módulos, frescura del Cierre, red mínima, flota de empresa de baja, Sin clasificar H2/H4).
   Spec aprobada (admin sin cambios). Plan `docs/superpowers/plans/2026-10-12-directory-block-0.md` (13 tareas, rulings
   R1-R16 + decisiones del usuario: Cierre habilitado desde el primer día firmado; activar ONBOARDING con directory.edit).
-- [ ] **Ejecutando subagent-driven** (12/10). Después: D1.
+- [x] **Despliegue 1 en dev (12/10 ~03:25 UTC), commits `975f52d0..b2c80d98`:** Cierre con un solo universo desde el
+  primer día firmado (03/09), migración `assignment_start_date_in_chile` APLICADA (4 tablas con default `hoy_chile()`),
+  roster de conductores en vivo, el pre-cierre ya no renombra. Suites: backend 240, frontend 459, tsc y build OK; workflows
+  verdes. Medido en dev: solo el 04/09 tiene líneas fuera del roster (2, ambas bloquean; son de una empresa de prueba) y
+  se ven en el grupo "Ya no están en el roster" (`.playwright-mcp/directorio-b0-cierre-dev.png`).
+- [ ] **Despliegue 2 (Tasks 6-13), ejecutando subagent-driven.** Después: D1.
 - [ ] Luego: spec del bloque 0 / D1 "Una sola respuesta" (funciones `app.is_operating`, `app.carrier_of`,
   `app.carrier_operation_types`), intercalado con Certificación 2a (Sin clasificar).
 
