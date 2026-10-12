@@ -16,6 +16,23 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### PARA LA PRÓXIMA SESIÓN (guardado el 12/10 a pedido del usuario)
+
+Orden sugerido; el detalle de cada punto está en su entrada de abajo.
+1. **Mirar dev con sesión iniciada** (el usuario inicia sesión en el navegador de Playwright), sin guardar nada:
+   Pendientes (escritorio y 390 px; "Guardar" del lote no tapado) y bloque 0 del Directorio (empresa dada de baja con
+   flota `9f048f12…`, Cierre de hoy y del 04/09, Sin clasificar). Portada de Certificación, ficha y cajón iguales que antes.
+2. **Decisión del usuario: opción A/B/C del rediseño de Sin clasificar** (auditoría 11/10, recomienda B) y sus preguntas §6.
+3. **D1 "Una sola respuesta"** del Directorio (brainstorming → spec → plan → subagent-driven): `app.is_operating`,
+   `app.carrier_of`, `app.carrier_operation_types`, migrar lectores; incluir la guarda en la API contra asignar viajes a
+   una empresa no activa. En paralelo, Certificación 2a (Sin clasificar) cuando esté elegida la opción.
+4. **Preguntas abiertas de la auditoría del Directorio** (P3, P4, P7, P8, P10-P21; varias con Pablo). Resueltas: P1, P2, P5, P6, P9.
+5. **Deuda chica anotada:** `periodoSugerido` ignora `period_offset_months` (migrar a `periodoQueSeExige`); barra inferior
+   móvil (layout); "Conductor habitual" ofrece conductores dados de baja; badge de Sin clasificar sin señal si falla el conteo;
+   Escape en los paneles cierra ficha y confirmación juntas.
+6. **Validar con Pablo:** D7 "Pedir a Certificación" (incluye "solicitar baja de empresa" desde Operaciones, bloque 3) y la
+   respuesta sobre el seguro de Certificación ≠ Seguros.
+
 ### 2026-10-12 — Auditoría del Directorio y su sincronía con Certificación, Cierre y Monitor (solo lectura)
 
 Pedido del usuario: "hay muchas inconsistencias; mismo ejercicio que Certificación; tiene que estar sincronizado con el
@@ -41,7 +58,7 @@ vigencia vía historial por trigger (cubre a Mage sin tocarlo) + override por ca
   (§7 del informe). Quedan P2-P4, P7-P8, P10-P21 (varias con Pablo).
 - [x] 12/10: P2 = C (Operaciones, operador incluido, da de baja conductores/equipos con permiso nuevo
   `directory.fleet_status`; la empresa, solo Certificación); solicitud de baja de empresa → bloque 3.
-- [ ] **Spec del bloque 0 escrita, espera revisión del usuario:** `docs/superpowers/specs/2026-10-12-directory-block-0-design.md`
+- [x] **Spec del bloque 0 aprobada:** `docs/superpowers/specs/2026-10-12-directory-block-0-design.md`
   (dos despliegues: 1 = Cierre un solo universo, fecha Chile, roster en vivo, pre-cierre no renombra; 2 = permisos,
   refresco entre módulos, frescura del Cierre, red mínima, flota de empresa de baja, Sin clasificar H2/H4).
   Spec aprobada (admin sin cambios). Plan `docs/superpowers/plans/2026-10-12-directory-block-0.md` (13 tareas, rulings
@@ -66,9 +83,6 @@ vigencia vía historial por trigger (cubre a Mage sin tocarlo) + override por ca
   barra inferior móvil con etiquetas superpuestas (layout).
 - [ ] **Siguiente: D1 "Una sola respuesta"** (funciones `app.is_operating`, `app.carrier_of`, `app.carrier_operation_types`
   y migración de lectores), intercalado con Certificación 2a (rediseño de Sin clasificar, opción B de su auditoría).
-- [ ] Luego: spec del bloque 0 / D1 "Una sola respuesta" (funciones `app.is_operating`, `app.carrier_of`,
-  `app.carrier_operation_types`), intercalado con Certificación 2a (Sin clasificar).
-
 ### 2026-10-11 — Auditoría UX de "Sin clasificar" (insumo del bloque 2; solo lectura)
 
 Informe: `docs/superpowers/plans/2026-10-11-sin-clasificar-ux-audit.md`. Las capturas son `.playwright-mcp/sinclasificar-*.png`.
@@ -90,7 +104,7 @@ código de la app.
 
 **Siguiente paso exacto:**
 - [ ] El usuario decide entre A, B y C, y responde las preguntas de la §6, algunas con Pablo.
-- [ ] Antes del rediseño, corregir H2 y H4 (estados de carga y error contados como vacío).
+- [x] H2 y H4 corregidos y desplegados en dev (bloque 0 del Directorio, 12/10).
 
 ### 2026-10-11/12 — Certificación bloque 1 "Pendientes": EJECUTADO (subagent-driven) y DESPLEGADO en dev (`2f036cf2..094ee266`)
 
