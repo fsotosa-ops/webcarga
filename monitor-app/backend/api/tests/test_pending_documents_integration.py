@@ -618,6 +618,34 @@ async def test_el_resumen_por_empresa_coincide_con_la_lista_de_esa_empresa(conex
     assert all(r["key"] != inactiva for r in resumen["rows"])
 
 
+async def test_al_termino_alcance_y_empresa_salen_de_la_misma_ultima_asignacion(conexion_revertida):
+    """Una asignación abierta (end_date NULL) más antigua y una cerrada más
+    nueva: con dos ORDER BY distintos el alcance miraba a una empresa y la fila
+    se le atribuía a otra, y el resumen dejaba de ser la lista. La última es la
+    abierta, para las dos preguntas."""
+    conn = conexion_revertida
+    abierta = await _empresa(conn, nombre="Abierta")
+    cerrada = await _empresa(conn, estado="INACTIVE", nombre="Cerrada")
+    d = str(await conn.fetchval(
+        "INSERT INTO public.drivers (full_name, operational_status) VALUES ($1, 'INACTIVE') RETURNING id",
+        f"{PREFIJO} Conductor {_suf()}"))
+    await conn.execute(
+        "INSERT INTO public.driver_assignments (driver_id, carrier_id, status, start_date, end_date) "
+        "VALUES ($1, $2, 'INACTIVE', public.hoy_chile() - 300, NULL), "
+        "($1, $3, 'INACTIVE', public.hoy_chile() - 100, public.hoy_chile() - 10)", d, abierta, cerrada)
+    req = await _requisito(conn, entidad="DRIVER", exigible_on="ON_ENTITY_END")
+    reg = await _registro(conn, req, "DRIVER", d)
+    codigo = await _codigo(conn, req)
+
+    assert await _en_alcance(conn, reg) is True  # la empresa de la abierta está activa
+    lista = await _listar(conn, requirement_code=codigo, state="missing")
+    assert [(r["entity_id"], r["carrier_id"]) for r in lista["rows"]] == [(d, abierta)]
+
+    resumen = await pending_summary(group_by="requirement", pool=PoolDeUnaConexion(conn), _=None)
+    fila = next(r for r in resumen["rows"] if r["requirement_code"] == codigo)
+    assert fila["missing"] == lista["total"] == 1
+
+
 async def test_el_resumen_trae_la_regla_del_documento(conexion_revertida):
     conn = conexion_revertida
     req = await _requisito(conn, entidad="CARRIER", politica="CALENDAR_PERIOD")

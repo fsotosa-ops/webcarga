@@ -393,6 +393,26 @@ def document_state_sql(alias: str = "cr") -> str:
     )
 
 
+_ASIGNACIONES = {"DRIVER": ("driver_assignments", "driver_id"),
+                 "ASSET": ("asset_assignments", "asset_id")}
+
+
+def ultima_empresa_sql(alias: str, entity_type: str) -> str:
+    """La empresa de la ÚLTIMA asignación del conductor o equipo `{alias}.entity_id`,
+    sea cual sea su estado. Una sola definición de "la última" para el alcance
+    de un documento al término y para la empresa a la que se le atribuye: una
+    asignación abierta (end_date NULL) va primero, después la que empezó más
+    tarde. Con dos órdenes distintos el alcance miraba una empresa y la fila se
+    contaba en otra."""
+    tabla, col = _ASIGNACIONES[entity_type]
+    return (
+        f"(SELECT vg_ea.carrier_id FROM public.{tabla} vg_ea "
+        f"WHERE vg_ea.{col} = {alias}.entity_id "
+        f"ORDER BY COALESCE(vg_ea.end_date, 'infinity'::date) DESC, vg_ea.start_date DESC, "
+        f"vg_ea.created_at DESC LIMIT 1)"
+    )
+
+
 def in_scope_sql(alias: str = "cr") -> str:
     """Si el registro entra en la cola de Pendientes: una empresa activa, o un
     conductor o equipo activo con asignación vigente a una empresa activa.
@@ -420,18 +440,15 @@ def in_scope_sql(alias: str = "cr") -> str:
     # FUE, así que exigir una asignación vigente lo dejaría fuera siempre. Entra
     # si la empresa de su ÚLTIMA asignación sigue activa; el estado de la
     # entidad y de esa asignación no cuentan (la empresa aún debe el documento).
-    def _ultima(tabla: str, col: str) -> str:
+    def _ultima(entity_type: str) -> str:
         return (
             f"EXISTS (SELECT 1 FROM public.carriers vg_ec WHERE vg_ec.operational_status = 'ACTIVE' "
-            f"AND vg_ec.id = (SELECT vg_ea.carrier_id FROM public.{tabla} vg_ea "
-            f"WHERE vg_ea.{col} = {alias}.entity_id "
-            f"ORDER BY COALESCE(vg_ea.end_date, 'infinity'::date) DESC, vg_ea.start_date DESC, "
-            f"vg_ea.created_at DESC LIMIT 1))"
+            f"AND vg_ec.id = {ultima_empresa_sql(alias, entity_type)})"
         )
     return (
         f"(CASE WHEN {_es(alias, 'exigible_on', 'ON_ENTITY_END')} AND {alias}.entity_type = 'DRIVER' "
-        f"THEN {_ultima('driver_assignments', 'driver_id')} "
+        f"THEN {_ultima('DRIVER')} "
         f"WHEN {_es(alias, 'exigible_on', 'ON_ENTITY_END')} AND {alias}.entity_type = 'ASSET' "
-        f"THEN {_ultima('asset_assignments', 'asset_id')} "
+        f"THEN {_ultima('ASSET')} "
         f"ELSE {corriente} END)"
     )

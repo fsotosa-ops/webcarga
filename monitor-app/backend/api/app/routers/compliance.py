@@ -80,6 +80,7 @@ from ..services.vencimientos import (
     vence_el_sql,
     por_vencer_predicate,
     vencido_predicate,
+    ultima_empresa_sql,
 )
 from ..utils.document_storage import (
     content_sha256_of_stored_file, delete_document_version, get_document_history,
@@ -92,14 +93,13 @@ router = APIRouter(prefix="/compliance-records", tags=["compliance"])
 def _empresa_que_dejo_sql(alias: str) -> str:
     """La empresa de un documento "al término" (exigible_on = ON_ENTITY_END):
     el conductor ya no tiene asignación ACTIVE, así que se le atribuye a la
-    última que tuvo. Solo para ese tipo: el resto de los documentos de un
+    última que tuvo, con la MISMA definición de "última" que su alcance
+    (ultima_empresa_sql). Solo para ese tipo: el resto de los documentos de un
     conductor sin empresa siguen sin empresa, como antes."""
     return (
         f"(CASE WHEN {alias}.requirement_id IN (SELECT vg_t.id FROM public.compliance_requirements vg_t "
         f"WHERE vg_t.exigible_on = 'ON_ENTITY_END') "
-        f"THEN (SELECT vg_u.carrier_id FROM public.driver_assignments vg_u "
-        f"WHERE vg_u.driver_id = {alias}.entity_id "
-        f"ORDER BY vg_u.start_date DESC, vg_u.created_at DESC LIMIT 1) END)"
+        f"THEN {ultima_empresa_sql(alias, 'DRIVER')} END)"
     )
 
 _CATEGORY_BY_ENTITY_TYPE = {"CARRIER": "EMPRESA", "DRIVER": "CHOFER", "ASSET": "EQUIPO"}
