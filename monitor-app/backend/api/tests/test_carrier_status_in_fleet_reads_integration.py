@@ -11,10 +11,19 @@ from app.routers.assets import get_asset_summary
 from app.routers.carriers import buscar_en_el_directorio
 from app.routers.drivers import get_driver_summary, list_drivers
 from tests.conftest import PoolDeUnaConexion
+from tests.d1_subjects import apply_fleet_facts
 
 pytestmark = pytest.mark.integracion
 
 PREFIJO = "ZZ-TEST-DIRECTORIO"
+
+
+@pytest.fixture(autouse=True)
+async def _hechos_de_la_flota(conexion_revertida):
+    """La vista rápida (D1, Task 6) lee app.carrier_of y app.active_fleet: hasta
+    la Task 10 la migración no está aplicada."""
+    await apply_fleet_facts(conexion_revertida)
+
 
 
 async def _flota_de_empresa_de_baja(conn) -> dict:

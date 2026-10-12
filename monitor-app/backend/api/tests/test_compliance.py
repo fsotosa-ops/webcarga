@@ -350,6 +350,9 @@ def _carrier_status_row(**over):
         "carrier_id": "c1", "carrier_name": "Transportes Sur Spa",
         "operational_status": "ACTIVE", "total_count": 12, "satisfied_count": 9,
         "pending_count": 3, "pending_mandatory": 1, "unclassified_count": 0,
+        # Las columnas que lee take_summary (D1, Task 6): una empresa sin pendientes.
+        "worst_state": None, "own_overdue": 0, "own_expiring": 0, "own_missing": 0,
+        "fleet_overdue": 0, "fleet_expiring": 0, "fleet_missing": 0, "can_operate": True,
     }
     row.update(over)
     return row

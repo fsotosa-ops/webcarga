@@ -33,6 +33,10 @@ from ..schemas.carrier import ACTIVE_OPERATIONAL_STATUS
 # recién creada sin RUT todavía: pertenece a "Recién creadas · sin documentos",
 # no al catálogo del fondo.
 FUNNEL_ACTIVE_STATUSES = (ACTIVE_OPERATIONAL_STATUS, "ONBOARDING")
+# D1 (R-B4, decisión del usuario 12/10): ONBOARDING se queda en esta mitad
+# visible, a propósito y para siempre. Sale del CONTEO: carrier_compliance la
+# trata como no activa y su funnel_bucket es NULL. Sacarla de aquí mandaría las
+# empresas recién creadas al fondo del catálogo.
 from ..schemas.compliance import (
     SolicitudBody,
     ReassignBody,
@@ -50,7 +54,11 @@ from ..services.document_matcher import (
 )
 from ..services.audit import log_change, record_manual_edit
 from ..services.vigencia import regla_base_json_sql
-from ..services.fleet_compliance import _empresa_que_dejo_sql, pending_base_ctes
+from ..services.fleet_compliance import (
+    CARRIER_SUMMARY_COLUMNS, _empresa_que_dejo_sql, carrier_compliance_cte,
+    carrier_pending_total_sql, carrier_summary_columns_sql, funnel_bucket_for,
+    pending_base_ctes, take_summary,
+)
 from ..services.solicitudes import encender_registros
 from ..services.plantilla_certificacion import (
     COLUMNAS,
@@ -194,6 +202,7 @@ async def get_certification_status(
             LEFT JOIN docs d       ON d.carrier_id = e.id
             LEFT JOIN gestion g    ON g.carrier_id = e.id
             LEFT JOIN viajes v     ON v.carrier_id = e.id
+            LEFT JOIN carrier_compliance cc ON cc.carrier_id = e.id
         """
         # `$1` (el estado ACTIVE) se pasa SIEMPRE en esta agrupación, incluso
         # acotada a una empresa: el embudo lo referencia para decidir si la fila
@@ -220,7 +229,8 @@ async def get_certification_status(
         carrier_cols = "e.id::text AS carrier_id, e.business_name AS carrier_name, e.operational_status"
         group_by = (
             "e.id, e.business_name, e.operational_status, "
-            "d.unclassified, g.management_types, v.trips_30d"
+            "d.unclassified, g.management_types, v.trips_30d, "
+            + ", ".join(f"cc.{c}" for c in CARRIER_SUMMARY_COLUMNS)
         )
         unclassified = "COALESCE(d.unclassified, 0)::int"
         # Sólo agrupando por empresa hay algo que ordenar por acá.
@@ -266,7 +276,10 @@ async def get_certification_status(
             WHERE l.carrier_id IS NOT NULL
               AND t.planning_date >= CURRENT_DATE - 30
             GROUP BY 1
-        )"""
+        ),
+        -- El resumen de cada empresa: una sola definición, la de Pendientes
+        -- (services/fleet_compliance.py, D1).
+        {carrier_compliance_cte()}"""
     elif group == "requirement":
         # Se apoya en `attributed`, igual que la agrupación por empresa, para
         # mirar EXACTAMENTE el mismo universo: los pendientes de las empresas
@@ -332,6 +345,10 @@ async def get_certification_status(
     # el embudo cuenta la fecha y /pending no, el embudo manda a renovar
     # documentos que el cajón se niega a nombrar.
     pendiente = pendiente_predicate(fuente)
+    # D1-R3: agrupando por empresa, "cuánto debe" es la suma del resumen (mismo
+    # alcance que Pendientes): sin la flota de baja que `attributed` arrastra.
+    pending_count_sql = (carrier_pending_total_sql("cc") if group == "carrier"
+                         else f"count(*) FILTER (WHERE {pendiente})")
     # La cuarta copia de la regla de vencimiento, ahora tambien del modulo
     # compartido. Suma `status = 'EXPIRED'` a proposito: el embudo cuenta como
     # vencido lo que alguien marco a mano aunque no tenga fecha.
@@ -371,7 +388,8 @@ async def get_certification_status(
                             = count(*) FILTER (WHERE {exigido})        THEN 'al_dia'
                    WHEN count(*) FILTER (WHERE {cubierto}) = 0         THEN 'sin_documentos'
                    ELSE                                                     'en_proceso'
-               END                                                                 AS funnel_group,"""
+               END                                                                 AS funnel_group,
+               {carrier_summary_columns_sql('cc')},"""
     else:
         # El embudo es de empresas. Un conductor no tiene etapa de certificación
         # propia, y devolver el campo en null invitaría a dibujarlo igual.
@@ -392,22 +410,19 @@ async def get_certification_status(
             -- predicado de vencimiento sobre `a` (contrato del alias).
             SELECT r.status, r.requirement_level, r.expiration_date, r.requirement_id,
                    r.entity_type, r.entity_id, r.issue_date, r.period_start,
-                CASE r.entity_type
-                    WHEN 'CARRIER' THEN r.entity_id
-                    WHEN 'DRIVER'  THEN COALESCE(da.carrier_id, {_empresa_que_dejo_sql('r')})
-                    WHEN 'ASSET'   THEN aa.carrier_id
-                END AS carrier_id
+                   -- "¿De qué empresa es?": app.carrier_of (D1, spec §4.2). El
+                   -- finiquito de quien ya se fue sigue en la última empresa.
+                   CASE WHEN r.entity_type = 'DRIVER'
+                        THEN COALESCE(app.carrier_of('DRIVER', r.entity_id), {_empresa_que_dejo_sql('r')})
+                        ELSE app.carrier_of(r.entity_type, r.entity_id)
+                   END AS carrier_id
             FROM records r
-            LEFT JOIN public.driver_assignments da
-                ON r.entity_type = 'DRIVER' AND da.driver_id = r.entity_id AND da.status = 'ACTIVE'
-            LEFT JOIN public.asset_assignments aa
-                ON r.entity_type = 'ASSET' AND aa.asset_id = r.entity_id AND aa.status = 'ACTIVE'
         ){extra_cte}
         SELECT e.id::text AS entity_id, e.{cfg["name_col"]} AS entity_name,
                {carrier_cols},{funnel_cols}
                count(*) FILTER (WHERE {exigido})                                   AS total_count,
                count(*) FILTER (WHERE {cubierto})                                   AS satisfied_count,
-               count(*) FILTER (WHERE {pendiente})                                   AS pending_count,
+               {pending_count_sql}                                   AS pending_count,
                count(*) FILTER (WHERE {pendiente}
                                   AND {fuente}.requirement_level = 'LEGAL_MANDATORY') AS pending_mandatory,
                {unclassified}                                                      AS unclassified_count
@@ -422,7 +437,14 @@ async def get_certification_status(
         """,
         *params,
     )
-    result = [dict(r) for r in rows]
+    result = []
+    for r in rows:
+        fila = dict(r)
+        if group == "carrier":
+            summary = take_summary(fila, with_fleet=True)
+            fila["compliance_summary"] = summary
+            fila["funnel_bucket"] = funnel_bucket_for(summary, fila["operational_status"])
+        result.append(fila)
     return {
         "total_pending": sum(r["pending_count"] for r in result),
         "total_unclassified": sum(r["unclassified_count"] for r in result),
@@ -469,20 +491,18 @@ _urgent_list = ", ".join(f"'{x}'" for x in PENDING_STATES if x != MISSING_STATE)
 
 _PENDING_ROWS_SQL = f"""
 WITH {pending_base_ctes('$10')},
--- Tipo de Operación (Tractoreo/Equipo Completo) a nivel EMPRESA: no existe
--- como columna propia de carriers — se agrega desde los vehículos activos
--- de la empresa (public.assets.webcarga_operation_type_id). Una empresa
--- con flota mixta aparece con ambos valores, no se fuerza uno solo
--- (confirmado con datos reales, Ronda 85 de AGENTLOG: 36 de 80
--- tractocamiones son "Equipo Completo" mientras el resto de la empresa
--- puede ser "Tractoreo").
+-- Tipo de Operación de la EMPRESA: una sola definición,
+-- public.carrier_management_types() (spec §4.3). Lo observado en sus tractos
+-- activos manda y lo declarado cubre el hueco. Devuelve códigos; la etiqueta
+-- sale del catálogo, ordenada como el array_agg(DISTINCT label) de antes.
 carrier_operation_types AS (
-    SELECT aa.carrier_id, array_agg(DISTINCT wot.label) AS operation_types
-    FROM public.asset_assignments aa
-    JOIN public.assets a ON a.id = aa.asset_id
-    JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
-    WHERE aa.status = 'ACTIVE'
-    GROUP BY aa.carrier_id
+    SELECT c.id AS carrier_id,
+           ARRAY(SELECT wot.label
+                 FROM unnest(public.carrier_management_types(c.id)) AS mt(code)
+                 JOIN app.status_taxonomies wot
+                   ON wot.domain = 'WEBCARGA_OPERATION_TYPE' AND wot.code = mt.code
+                 ORDER BY wot.label) AS operation_types
+    FROM public.carriers c
 )
 SELECT
     r.id::text, r.entity_type, r.entity_id::text, r.subject_name,
@@ -1883,16 +1903,9 @@ async def bulk_upload_compliance_files(
     owner_rows = await pool.fetch(
         """
         SELECT cr.id::text AS record_id,
-            CASE cr.entity_type
-                WHEN 'CARRIER' THEN cr.entity_id
-                WHEN 'DRIVER'  THEN da.carrier_id
-                WHEN 'ASSET'   THEN aa.carrier_id
-            END AS resolved_carrier_id
+               -- "¿De qué empresa es?" (D1, spec §4.2): la misma respuesta que el resto.
+               app.carrier_of(cr.entity_type, cr.entity_id) AS resolved_carrier_id
         FROM public.compliance_records cr
-        LEFT JOIN public.driver_assignments da
-            ON cr.entity_type = 'DRIVER' AND da.driver_id = cr.entity_id AND da.status = 'ACTIVE'
-        LEFT JOIN public.asset_assignments aa
-            ON cr.entity_type = 'ASSET' AND aa.asset_id = cr.entity_id AND aa.status = 'ACTIVE'
         WHERE cr.id = ANY($1::uuid[])
         """,
         record_ids,

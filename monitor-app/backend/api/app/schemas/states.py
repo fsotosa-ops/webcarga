@@ -18,6 +18,9 @@ CarrierLifecycle = Literal["ACTIVE", "ONBOARDING", "INACTIVE", "LEGACY_INACTIVE"
 FleetLifecycle = Literal["ACTIVE", "INACTIVE"]
 DocumentState = Literal["UP_TO_DATE", "EXPIRING", "OVERDUE", "MISSING", "NOT_REQUIRED"]
 AlertSeverity = Literal["warning", "critical"]
+# Los baldes del embudo de Certificación (D1-R2). Salen de la escala del
+# resumen, no del ciclo de vida: una empresa no activa no tiene balde (R-B4).
+FunnelBucket = Literal["up_to_date", "expiring", "not_enabled"]
 
 # Peor primero. NOT_REQUIRED no participa del resumen (§3).
 SEVERITY_ORDER: tuple[str, ...] = ("OVERDUE", "MISSING", "EXPIRING", "UP_TO_DATE")

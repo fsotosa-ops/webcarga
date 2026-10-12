@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from ..schemas.states import BLOCKING_STATES, SEVERITY_ORDER, ComplianceSummary, StateCounts
+from ..schemas.states import BLOCKING_STATES, SEVERITY_ORDER, ComplianceSummary, FunnelBucket, StateCounts
 from .vencimientos import (
     PENDING_STATES,
     cubierto_predicate,
@@ -376,3 +376,28 @@ def take_summary(row: dict, *, with_fleet: bool) -> dict:
     for col in CARRIER_SUMMARY_COLUMNS if with_fleet else ENTITY_SUMMARY_COLUMNS:
         row.pop(col, None)
     return summary
+
+
+def carrier_pending_total_sql(alias: str = "cc") -> str:
+    """Cuánto debe una empresa, propio y de su flota: lo mismo que su fila en
+    /pending/summary?group_by=carrier si está activa (spec §5)."""
+    return "(" + " + ".join(
+        f"COALESCE({alias}.{col}, 0)"
+        for col in CARRIER_SUMMARY_COLUMNS if col.startswith(("own_", "fleet_"))
+    ) + ")::int"
+
+
+def funnel_bucket_for(summary: ComplianceSummary | dict, lifecycle: str) -> FunnelBucket | None:
+    """El balde del embudo, de la escala del resumen (spec §6.1, conflicto 8):
+    no habilitada, con vencimientos (incluye por vencer) o al día. Una empresa
+    no activa (ONBOARDING incluida) no tiene balde (R-B4). Un opcional que falta
+    no saca del "al día": no bloquea, y sus cifras ya están en el resumen."""
+    s = summary if isinstance(summary, ComplianceSummary) else ComplianceSummary.model_validate(summary)
+    if lifecycle != "ACTIVE":
+        return None
+    if not s.can_operate:
+        return "not_enabled"
+    fleet = s.fleet or StateCounts()
+    if s.own.overdue + s.own.expiring + fleet.overdue + fleet.expiring > 0:
+        return "expiring"
+    return "up_to_date"

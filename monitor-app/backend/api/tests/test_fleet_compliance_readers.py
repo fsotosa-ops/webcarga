@@ -34,3 +34,30 @@ def test_take_summary_sin_flota_no_inventa_una():
     assert resumen["worst_state"] == "UP_TO_DATE"   # NULL = nada pendiente (contrato Task 4)
     assert resumen["own"]["overdue"] == 0
     assert resumen["can_operate"] is False          # de baja: nunca habilitado (R-B2)
+
+
+from app.services.fleet_compliance import funnel_bucket_for
+
+
+def _resumen(*, can_operate=True, own=(0, 0, 0), fleet=(0, 0, 0)):
+    a = dict(zip(("overdue", "expiring", "missing"), own))
+    b = dict(zip(("overdue", "expiring", "missing"), fleet))
+    return {"worst_state": "UP_TO_DATE", "own": a, "fleet": b, "can_operate": can_operate}
+
+
+def test_el_balde_de_una_empresa_no_activa_es_ninguno():
+    assert funnel_bucket_for(_resumen(can_operate=False), "ONBOARDING") is None
+    assert funnel_bucket_for(_resumen(can_operate=False), "LEGACY_INACTIVE") is None
+
+
+def test_no_habilitada_gana_a_todo():
+    assert funnel_bucket_for(_resumen(can_operate=False, fleet=(0, 2, 0)), "ACTIVE") == "not_enabled"
+
+
+def test_con_vencimientos_incluye_por_vencer_y_vencidos_opcionales():
+    assert funnel_bucket_for(_resumen(fleet=(0, 1, 0)), "ACTIVE") == "expiring"
+    assert funnel_bucket_for(_resumen(own=(1, 0, 0)), "ACTIVE") == "expiring"
+
+
+def test_un_opcional_que_falta_no_saca_del_al_dia():
+    assert funnel_bucket_for(_resumen(own=(0, 0, 3)), "ACTIVE") == "up_to_date"

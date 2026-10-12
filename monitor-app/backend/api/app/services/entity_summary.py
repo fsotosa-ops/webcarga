@@ -11,6 +11,10 @@ from __future__ import annotations
 from typing import Literal
 from uuid import UUID
 
+from .fleet_compliance import (
+    carrier_compliance_cte, carrier_summary_columns_sql, entity_compliance_cte,
+    entity_summary_columns_sql, take_summary,
+)
 from .vencimientos import cubierto_predicate, exigible_sql, por_vencer_predicate, vence_el_sql, vencido_predicate
 
 EntityType = Literal["CARRIER", "DRIVER", "ASSET"]
@@ -83,15 +87,18 @@ _PRIMARY_PHONE = """
 async def driver_summary(conn, driver_id: UUID) -> dict | None:
     row = await conn.fetchrow(
         f"""
+        WITH {entity_compliance_cte()}
         SELECT d.id, d.full_name, d.tax_id, d.operational_status,
+               {entity_summary_columns_sql('ec')},
                c.id AS carrier_id, c.business_name AS carrier_name,
                c.operational_status AS carrier_status,
                hl.name AS home_location_name, hs.name AS home_location_shipper,
                a.id AS tractor_id, a.license_plate AS tractor_plate,
                {_PRIMARY_PHONE.format(kind="'DRIVER'", entity="d.id")} AS phone
         FROM public.drivers d
-        LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
-        LEFT JOIN public.carriers c ON c.id = da.carrier_id
+        -- "¿De qué empresa es?" tiene una sola respuesta (D1, spec §4.2).
+        LEFT JOIN public.carriers c ON c.id = app.carrier_of('DRIVER', d.id)
+        LEFT JOIN entity_compliance ec ON ec.entity_type = 'DRIVER' AND ec.entity_id = d.id
         LEFT JOIN public.locations hl ON hl.id = d.home_location_id
         LEFT JOIN public.shippers hs ON hs.id = hl.entity_id AND hl.entity_type = 'SHIPPER'
         -- Un conductor puede tener varios tractos activos (el índice único es por
@@ -111,6 +118,7 @@ async def driver_summary(conn, driver_id: UUID) -> dict | None:
     )
     if row is None:
         return None
+    compliance_summary = take_summary(dict(row), with_fleet=False)
     return {
         "id": str(row["id"]),
         "full_name": row["full_name"],
@@ -125,22 +133,25 @@ async def driver_summary(conn, driver_id: UUID) -> dict | None:
             {"id": str(row["tractor_id"]), "plate": row["tractor_plate"]} if row["tractor_id"] else None
         ),
         "phone": row["phone"],
+        "compliance_summary": compliance_summary,
         "documents": await document_summary(conn, row["id"], "DRIVER"),
     }
 
 
 async def asset_summary(conn, asset_id: UUID) -> dict | None:
     row = await conn.fetchrow(
-        """
+        f"""
+        WITH {entity_compliance_cte()}
         SELECT a.id, a.license_plate, a.asset_type, a.manufacture_year, a.operational_status,
+               {entity_summary_columns_sql('ec')},
                wot.label AS operation_type,
                c.id AS carrier_id, c.business_name AS carrier_name,
                c.operational_status AS carrier_status,
                d.id AS driver_id, d.full_name AS driver_name
         FROM public.assets a
         LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
-        LEFT JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
-        LEFT JOIN public.carriers c ON c.id = aa.carrier_id
+        LEFT JOIN public.carriers c ON c.id = app.carrier_of('ASSET', a.id)
+        LEFT JOIN entity_compliance ec ON ec.entity_type = 'ASSET' AND ec.entity_id = a.id
         LEFT JOIN public.vehicle_driver_assignments vda ON vda.asset_id = a.id AND vda.status = 'ACTIVE'
         LEFT JOIN public.drivers d ON d.id = vda.driver_id
         WHERE a.id = $1
@@ -150,6 +161,7 @@ async def asset_summary(conn, asset_id: UUID) -> dict | None:
     )
     if row is None:
         return None
+    compliance_summary = take_summary(dict(row), with_fleet=False)
     return {
         "id": str(row["id"]),
         "license_plate": row["license_plate"],
@@ -159,6 +171,7 @@ async def asset_summary(conn, asset_id: UUID) -> dict | None:
         "operational_status": row["operational_status"],
         "carrier": _carrier_ref(row),
         "usual_driver": _ref(row, "driver_id", "driver_name"),
+        "compliance_summary": compliance_summary,
         "documents": await document_summary(conn, row["id"], "ASSET"),
     }
 
@@ -166,13 +179,18 @@ async def asset_summary(conn, asset_id: UUID) -> dict | None:
 async def carrier_summary(conn, carrier_id: UUID) -> dict | None:
     row = await conn.fetchrow(
         f"""
+        WITH {carrier_compliance_cte()}
         SELECT c.id, c.business_name, c.tax_id, c.operational_status,
-               (SELECT count(*) FROM public.driver_assignments da
-                WHERE da.carrier_id = c.id AND da.status = 'ACTIVE') AS active_drivers,
-               (SELECT count(*) FROM public.asset_assignments aa
-                WHERE aa.carrier_id = c.id AND aa.status = 'ACTIVE') AS active_assets,
-               pc.name AS contact_name, pc.phone AS contact_phone
+               -- La flota activa: una sola definición (app.active_fleet, D1).
+               -- Contar por asignación sola incluía a los dados de baja (F-03).
+               (SELECT count(*) FROM app.active_fleet f
+                WHERE f.carrier_id = c.id AND f.entity_type = 'DRIVER') AS active_drivers,
+               (SELECT count(*) FROM app.active_fleet f
+                WHERE f.carrier_id = c.id AND f.entity_type = 'ASSET') AS active_assets,
+               pc.name AS contact_name, pc.phone AS contact_phone,
+               {carrier_summary_columns_sql('cc')}
         FROM public.carriers c
+        LEFT JOIN carrier_compliance cc ON cc.carrier_id = c.id
         LEFT JOIN LATERAL (
             SELECT NULLIF(btrim(concat_ws(' ', ct.first_name, ct.last_name)), '') AS name, ct.phone
             FROM public.contacts ct
@@ -186,6 +204,7 @@ async def carrier_summary(conn, carrier_id: UUID) -> dict | None:
     )
     if row is None:
         return None
+    compliance_summary = take_summary(dict(row), with_fleet=True)
     shippers = await conn.fetch(
         """
         SELECT s.id, s.name FROM public.carrier_shippers cs
@@ -204,6 +223,7 @@ async def carrier_summary(conn, carrier_id: UUID) -> dict | None:
         "shippers": [{"id": str(s["id"]), "name": s["name"]} for s in shippers],
         "active_drivers": row["active_drivers"],
         "active_assets": row["active_assets"],
+        "compliance_summary": compliance_summary,
         "primary_contact": (
             {"name": row["contact_name"], "phone": row["contact_phone"]} if has_contact else None
         ),
