@@ -44,6 +44,7 @@ from ..schemas.compliance import (
     PendingMatchBody, PendingMatchResponse, PENDING_MATCH_MAX_FILES,
 )
 from ..schemas.document_ingest import unclassified_predicate
+from ..utils.identity import plate_matches_sql, rut_matches_sql
 from ..services.document_matcher import (
     PendingOwner, classify_owner_match, match_owner, resolve_owner_collisions,
 )
@@ -526,7 +527,9 @@ WHERE ($8::text IS NULL OR c.operational_status = $8)
   AND ($1::uuid IS NULL OR c.id = $1)
   AND ($2::text IS NULL OR r.entity_type = $2)
   AND ($3::text IS NULL OR r.requirement_code = $3)
-  AND ($4::text IS NULL OR c.business_name ILIKE '%' || $4 || '%' OR r.subject_name ILIKE '%' || $4 || '%')
+  AND ($4::text IS NULL OR c.business_name ILIKE '%' || $4 || '%' OR r.subject_name ILIKE '%' || $4 || '%'
+       OR {rut_matches_sql('c.tax_id', '$4')}
+       OR (r.entity_type = 'ASSET' AND {plate_matches_sql('r.subject_name', '$4')}))
   AND ($5::text IS NULL OR $5 = ANY(COALESCE(cot.operation_types, ARRAY[]::text[])))
   -- Un sujeto concreto: lo que le falta a ESTE conductor o a ESTE vehículo.
   -- Sin esto, quien quiera el detalle de una persona tiene que pedir el de la

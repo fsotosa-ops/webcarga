@@ -29,6 +29,7 @@ from ..services.anular_viajes import (
 from ..services.cierre_lineas import frescura_del_dia, ultima_firma
 from ..services.cierre_viajes import SQL_CON_MOTIVO, SQL_GRUPOS_CIERRE
 from ..services.origen_del_viaje import origen_del_viaje
+from ..utils.identity import canonical_plate
 
 
 def _parse_date(s: str) -> _date | None:
@@ -1794,9 +1795,11 @@ async def _activo_de_la_patente(conn, patente: str | None, asset_id: str | None)
     patente = (patente or "").strip().upper() or None
     if patente:
         encontrado = await conn.fetchval(
-            "SELECT id::text FROM public.assets WHERE upper(trim(license_plate)) = $1 LIMIT 1", patente,
+            "SELECT id::text FROM public.assets WHERE license_plate = public.canonical_plate($1) LIMIT 1", patente,
         )
-        return encontrado, patente
+        # 'AB-CD12' encuentra ABCD12 y se guarda canónica; una patente fuera del
+        # directorio se guarda como se escribió.
+        return encontrado, canonical_plate(patente) or patente
     if asset_id:
         return asset_id, await conn.fetchval(
             "SELECT license_plate FROM public.assets WHERE id = $1", asset_id,

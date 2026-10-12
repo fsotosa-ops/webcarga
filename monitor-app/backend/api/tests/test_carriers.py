@@ -1290,9 +1290,10 @@ def test_buscar_compara_rut_y_patente_por_su_forma_canonica():
     from app.routers.carriers import (
         _SQL_BUSCAR_CONDUCTORES, _SQL_BUSCAR_EMPRESAS, _SQL_BUSCAR_VEHICULOS,
     )
-    assert "public.canonical_rut($1)" in _SQL_BUSCAR_EMPRESAS
-    assert "public.canonical_rut($1)" in _SQL_BUSCAR_CONDUCTORES
-    assert "public.canonical_plate($1)" in _SQL_BUSCAR_VEHICULOS
+    # D1 §7.2: se canoniza tambien la COLUMNA (carriers.tax_id no es canonico).
+    assert "public.canonical_rut(c.tax_id) = public.canonical_rut($1::text)" in _SQL_BUSCAR_EMPRESAS
+    assert "public.canonical_rut(d.tax_id) = public.canonical_rut($1::text)" in _SQL_BUSCAR_CONDUCTORES
+    assert "public.canonical_plate(a.license_plate) = public.canonical_plate($1::text)" in _SQL_BUSCAR_VEHICULOS
 
 
 def test_buscar_lee_las_tablas_base_no_las_vistas_materializadas():
