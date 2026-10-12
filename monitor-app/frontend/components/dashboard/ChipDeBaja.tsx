@@ -1,7 +1,8 @@
 'use client'
 
 import { Building2, UserX } from 'lucide-react'
-import { CARRIER_DEACTIVATED_LABEL, isCarrierDeactivated, statusLabel, type OperationalStatus } from '@/lib/types'
+import { CARRIER_DEACTIVATED_LABEL, isCarrierDeactivated, lifecycleStyle } from '@/lib/states'
+import type { OperationalStatus } from '@/lib/types'
 
 /**
  * "Dado de baja", dicho en la lista.
@@ -23,7 +24,7 @@ export function ChipDeBaja({ estado, carrierStatus, className = 'mt-0.5' }: { es
   return (
     <span className={`inline-flex items-center gap-1 text-etiqueta font-semibold px-1.5 py-0.5 rounded-full border border-border text-informativo ${className}`}>
       {propia ? <UserX size={9} /> : <Building2 size={9} />}
-      {propia ? statusLabel('driver', estado) : CARRIER_DEACTIVATED_LABEL}
+      {propia ? lifecycleStyle('driver', estado).label : CARRIER_DEACTIVATED_LABEL}
     </span>
   )
 }

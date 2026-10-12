@@ -9,6 +9,7 @@ import { PedirDatoDelDocumento } from '@/components/compliance/PedirDatoDelDocum
 import { ReassignDocument } from '@/components/compliance/ReassignDocument'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
 import type { ComplianceStatus, PoliticaVencimiento } from '@/lib/types'
+import type { AlertSeverity, DocumentState } from '@/lib/states'
 
 /** Fila del checklist — mapea 1:1 contra un public.compliance_records real
  *  (ver lib/utils/complianceChecklist.ts), no un catálogo hardcodeado. */
@@ -23,6 +24,9 @@ export type ChecklistItem = {
   expiration_date:   string | null
   is_expired:        boolean
   is_expiring_soon:  boolean
+  document_state:    DocumentState
+  days_to_expiry:    number | null
+  alert_severity:    AlertSeverity | null
   file_url:          string | null
   /** Qué hace su requisito con la fecha de vencimiento. Sin esto la ficha
    *  subía el archivo y dejaba que el servidor lo rechazara con 422 —el mismo

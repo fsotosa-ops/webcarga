@@ -2,7 +2,8 @@
 'use client'
 
 import { Truck, ShieldAlert, ShieldCheck } from 'lucide-react'
-import { ASSET_TYPE_LABELS, isCarrierDeactivated, type AssetType, type CarrierAssetRosterItem, type CarrierOperationalStatus } from '@/lib/types'
+import { isCarrierDeactivated } from '@/lib/states'
+import { ASSET_TYPE_LABELS, type AssetType, type CarrierAssetRosterItem, type CarrierOperationalStatus } from '@/lib/types'
 import { ChipDeBaja } from './ChipDeBaja'
 
 interface Props {

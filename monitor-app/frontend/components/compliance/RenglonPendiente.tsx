@@ -131,7 +131,7 @@ export function RenglonPendiente({
 
           {!status && motivo && estado.tipo === 'reposo' && (
             <span className={`shrink-0 text-etiqueta ${
-              fila.urgencia === 'AL_DIA' || fila.urgencia === 'NO_EXIGIBLE' ? 'text-informativo' : 'text-espera'}`}>
+              fila.document_state === 'UP_TO_DATE' || fila.document_state === 'NOT_REQUIRED' ? 'text-informativo' : 'text-espera'}`}>
               {motivo}
             </span>
           )}

@@ -5,6 +5,7 @@ import { InsurancePolicyModal } from './InsurancePolicyModal'
 import { carriersApi } from '@/lib/api/carriers'
 import { policiesApi, coverageTypesApi } from '@/lib/api/policies'
 import type { CarrierPolicyListItem, InsurancePolicy, CarrierAssetRosterItem, CoverageType } from '@/lib/types'
+import { complianceSummary } from '@/lib/states.fixtures'
 
 vi.mock('@/lib/api/carriers', () => ({
   carriersApi: { listPolicies: vi.fn(), listAssets: vi.fn(), createPolicy: vi.fn() },
@@ -59,7 +60,7 @@ const COVERAGE_TYPES: CoverageType[] = [
   { id: 'cov2', code: 'CARGA', name: 'Seguro de carga', description: null },
 ]
 const ASSETS: CarrierAssetRosterItem[] = [
-  { id: 'a1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', fleet_service_type_id: null, fleet_service_type_label: null, fleet_service_type_bg_color: null, fleet_service_type_text_color: null, webcarga_operation_type_id: null, webcarga_operation_type_label: null, webcarga_operation_type_code: null, total_requirements: 6, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK' },
+  { id: 'a1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', fleet_service_type_id: null, fleet_service_type_label: null, fleet_service_type_bg_color: null, fleet_service_type_text_color: null, webcarga_operation_type_id: null, webcarga_operation_type_label: null, webcarga_operation_type_code: null, total_requirements: 6, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary() },
 ]
 
 function renderModal(carrierId: string | null, opts: { canAdmin?: boolean; canEdit?: boolean } = {}) {

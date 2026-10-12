@@ -2,11 +2,12 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { TransporterCard } from './TransporterCard'
 import type { CarrierListItem } from '@/lib/types'
+import { complianceSummary } from '@/lib/states.fixtures'
 
 const ITEM: CarrierListItem = {
   id: 't1', tax_id: '11111111-1', country_code: 'CL', business_name: 'Transportes Test',
   operational_status: 'ACTIVE', total_requirements: 12, last_document_update: '2026-06-01',
-  pending_mandatory: 0, compliance_health: 'OK',
+  pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary(),
 }
 
 describe('TransporterCard', () => {
@@ -52,7 +53,6 @@ describe('TransporterCard', () => {
     render(<TransporterCard item={{ ...ITEM, operational_status: 'ONBOARDING' }} onOpen={vi.fn()} />)
     const badge = screen.getByText('En onboarding')
     expect(badge).toBeInTheDocument()
-    expect(badge.className).toContain('bg-amber-50')
-    expect(badge.className).toContain('text-amber-700')
+    expect(badge).toHaveClass('text-warning')
   })
 })

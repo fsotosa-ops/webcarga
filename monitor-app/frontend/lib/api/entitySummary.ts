@@ -1,5 +1,6 @@
 import type { DocumentSummary } from '@/components/ui/DocumentStatusBar'
 import type { DirectoryEntity } from '@/lib/types'
+import type { ComplianceSummary } from '@/lib/states'
 import { apiFetch } from './client'
 
 /** El resumen de solo lectura de una entidad para la vista rápida del Cierre
@@ -8,7 +9,7 @@ export type EntityKind = DirectoryEntity
 
 export type EntityRef = { id: string; name: string; operational_status?: string }
 
-type Base = { id: string; operational_status: string; documents: DocumentSummary }
+type Base = { id: string; operational_status: string; documents: DocumentSummary; compliance_summary: ComplianceSummary }
 
 export type DriverSummary = Base & {
   full_name: string

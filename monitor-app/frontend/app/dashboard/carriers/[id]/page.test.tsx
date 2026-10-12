@@ -9,6 +9,7 @@ import { assetsApi } from '@/lib/api/assets'
 import { contactsApi } from '@/lib/api/contacts'
 import { createClient } from '@/lib/supabase/client'
 import type { Carrier, CarrierDriverRosterItem, CarrierAssetRosterItem } from '@/lib/types'
+import { complianceSummary, recordStateFields } from '@/lib/states.fixtures'
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -63,21 +64,22 @@ const CARRIER: Carrier = {
   operational_status: 'ACTIVE', legacy_admin_id: null, erp_id: null, is_manual_override: false,
   overridden_by: null, overridden_at: null, created_at: null, updated_at: null,
   management_types: null,
+  compliance_summary: complianceSummary(),
   contacts: [],
   compliance_records: [{
     id: 'cr1', requirement_id: 'req1', requirement_code: 'F30', name: 'F30 Multas',
     requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'MISSING',
     expiration_date: null, file_url: null, metadata: {}, is_manual_override: false,
-    is_expired: false, is_expiring_soon: false, updated_at: null,
+    is_expired: false, is_expiring_soon: false, ...recordStateFields('MISSING'), updated_at: null,
   }],
 }
 
 const DRIVERS: CarrierDriverRosterItem[] = [
-  { id: 'd1', tax_id: '22222222-2', full_name: 'Juan Pérez', operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK' },
+  { id: 'd1', tax_id: '22222222-2', full_name: 'Juan Pérez', operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary() },
 ]
 
 const ASSETS: CarrierAssetRosterItem[] = [
-  { id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', fleet_service_type_id: null, fleet_service_type_label: null, fleet_service_type_bg_color: null, fleet_service_type_text_color: null, webcarga_operation_type_id: null, webcarga_operation_type_label: null, webcarga_operation_type_code: null, total_requirements: 3, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK' },
+  { id: 'v1', license_plate: 'ABCD12', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', fleet_service_type_id: null, fleet_service_type_label: null, fleet_service_type_bg_color: null, fleet_service_type_text_color: null, webcarga_operation_type_id: null, webcarga_operation_type_label: null, webcarga_operation_type_code: null, total_requirements: 3, last_document_update: null, pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary() },
 ]
 
 const pushMock = vi.fn()
@@ -276,7 +278,7 @@ describe('EmpresaDetailPage', () => {
       operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null,
   home_location_id: null, home_location_name: null,
   home_location_shipper: null, suggested_home_location: null,
-      pending_mandatory: 0, compliance_health: 'OK',
+      pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary(),
     }))
     vi.mocked(carriersApi.listDrivers).mockResolvedValue(manyDrivers)
     renderPage()

@@ -2,13 +2,14 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { TransporterAlertBanner } from './TransporterAlertBanner'
 import type { ComplianceRecord } from '@/lib/types'
+import { recordStateFields } from '@/lib/states.fixtures'
 
 function makeRecord(overrides: Partial<ComplianceRecord> = {}): ComplianceRecord {
   return {
     id: 'cr1', requirement_id: 'req1', requirement_code: 'F30', name: 'F30 Multas',
     requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'APPROVED',
     expiration_date: null, file_url: null, metadata: {}, is_manual_override: false,
-    is_expired: false, is_expiring_soon: false, updated_at: null,
+    is_expired: false, is_expiring_soon: false, ...recordStateFields(), updated_at: null,
     ...overrides,
   }
 }

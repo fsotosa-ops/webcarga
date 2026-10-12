@@ -27,12 +27,13 @@ import { Cifra } from '@/components/ui/Cifra'
 import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
-import { STATUS_CLS } from '@/components/dashboard/TransporterCard'
+import { StatusChip } from '@/components/ui/StatusChip'
+import { lifecycleStyle } from '@/lib/states'
 import { evidenciaDeDocumento, formatExpiry } from '@/lib/compliance'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
 import { directoryKeys, invalidateDirectory } from '@/lib/queries/directorio'
 import { claveDeSujeto, tituloDeSujeto } from '@/lib/utils/agruparPorSujeto'
-import { ASSET_TYPE_LABELS, statusLabel } from '@/lib/types'
+import { ASSET_TYPE_LABELS } from '@/lib/types'
 import type { ComplianceSummarySubject, EstadoDocumental, PendingComplianceRow } from '@/lib/types'
 
 /** Las cuatro cifras, con el matiz de `<Cifra>` que le corresponde a cada
@@ -763,6 +764,7 @@ export default function FichaEmpresaPage() {
   }
 
   const carrier = carrierQuery.data
+  const lifecycle = lifecycleStyle('carrier', carrier.operational_status)
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -777,9 +779,7 @@ export default function FichaEmpresaPage() {
         bajada={
           <div className="flex items-center gap-2 flex-wrap mt-0.5">
             <span className="font-identificador text-dato text-informativo">{carrier.tax_id}</span>
-            <span className={`text-etiqueta font-semibold px-2 py-0.5 rounded-full ${STATUS_CLS[carrier.operational_status]}`}>
-              {statusLabel('carrier', carrier.operational_status)}
-            </span>
+            <StatusChip tone={lifecycle.tone} icon={lifecycle.icon}>{lifecycle.label}</StatusChip>
             {/* Sin el dato no se afirma nada. Guardado tambien por el error y
                 no sólo por `isPending`: si la consulta falló no sabemos que el
                 tipo esté sin determinar — no pudimos preguntarlo. */}

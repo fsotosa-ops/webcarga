@@ -103,7 +103,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // vista rápida nacieron o pasaron a tokens; el tope no se había bajado
     // desde la entrega 2c.
     // 1.406 -> 1.405 el 2026-10-12: la línea de empresa de DriverSearchPicker pasó a tokens (bloque 0, 0.9).
-    const DEUDA = 1405
+    // 1.405 -> 1.392 el 2026-10-12: STATUS_CLS y los chips de ciclo de vida pasaron a StatusChip (D1, Task 11).
+    const DEUDA = 1392
 
     const total = usosDeColorCrudo()
     expect(

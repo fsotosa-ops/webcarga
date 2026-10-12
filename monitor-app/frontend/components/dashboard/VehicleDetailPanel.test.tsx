@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { VehicleDetailPanel } from './VehicleDetailPanel'
 import { assetsApi } from '@/lib/api/assets'
 import type { Asset, ComplianceRecord } from '@/lib/types'
+import { recordStateFields } from '@/lib/states.fixtures'
 
 vi.mock('@/lib/api/assets', () => ({
   assetsApi: {
@@ -40,7 +41,7 @@ const RECORDS: ComplianceRecord[] = [{
   id: 'cr1', requirement_id: 'req1', requirement_code: 'PADRON', name: 'Padrón',
   requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'MISSING',
   expiration_date: null, file_url: null, metadata: {}, is_manual_override: false,
-  is_expired: false, is_expiring_soon: false, updated_at: null,
+  is_expired: false, is_expiring_soon: false, ...recordStateFields('MISSING'), updated_at: null,
 }]
 
 const DRIVERS = [

@@ -12,7 +12,8 @@ import { carriersApi } from '@/lib/api/carriers'
 import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
 import { contactsApi } from '@/lib/api/contacts'
-import { statusLabel } from '@/lib/types'
+import { StatusChip } from '@/components/ui/StatusChip'
+import { lifecycleStyle } from '@/lib/states'
 import type { Driver, Asset, OperationalStatus, ComplianceHealth } from '@/lib/types'
 import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { ContactCard, AddContactForm } from '@/components/dashboard/ContactCard'
@@ -40,7 +41,6 @@ const ROSTER_PAGE_SIZE = 9
 
 type Tab = 'resumen' | 'documentos' | 'conductores' | 'equipos' | 'seguros' | 'contactos'
 
-const OPERATIONAL_STATUS_OPTIONS: OperationalStatus[] = ['ACTIVE', 'INACTIVE', 'LEGACY_INACTIVE']
 const ASSET_TYPE_OPTIONS: { value: AssetType; label: string }[] = [
   { value: 'TRACTOCAMION', label: 'Tracto' }, { value: 'RAMPLA', label: 'Rampla' },
 ]
@@ -409,6 +409,7 @@ function EmpresaDetailPageInner() {
 
   // ONBOARDING -> ACTIVE es un alta (directory.edit); cualquier otro cambio del
   // estado de la empresa pide directory.delete.
+  const lifecycle = lifecycleStyle('carrier', carrier.operational_status)
   const canChangeCarrierStatus = carrier.operational_status === 'ONBOARDING' ? canEdit : canAdmin
 
   return (
@@ -448,9 +449,7 @@ function EmpresaDetailPageInner() {
                     ID legacy admin: <span className="font-mono text-gray-700 bg-gray-50 px-1.5 py-0.5 rounded border border-border/60">{carrier.legacy_admin_id}</span>
                   </p>
                 )}
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                  {statusLabel('carrier', carrier.operational_status)}
-                </span>
+                <StatusChip tone={lifecycle.tone} icon={lifecycle.icon}>{lifecycle.label}</StatusChip>
                 {carrier.is_manual_override && (
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-500">Editado manualmente</span>
                 )}

@@ -1,19 +1,20 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { DocumentChecklist, checklistCompletion } from './DocumentChecklist'
+import { recordStateFields } from '@/lib/states.fixtures'
 
 const ITEMS = [
   {
     id: 'cr1', requirement_id: 'req-cr1', requirement_code: 'POLIZA_FIRMADA', label: 'Póliza firmada', status: 'APPROVED' as const,
-    requires_file: true, expiration_date: null, is_expired: false, is_expiring_soon: false, file_url: 'https://storage.example/poliza.pdf',
+    requires_file: true, expiration_date: null, is_expired: false, is_expiring_soon: false, ...recordStateFields(), file_url: 'https://storage.example/poliza.pdf',
   },
   {
     id: 'cr2', requirement_id: 'req-cr2', requirement_code: 'CERT_VIGENCIA', label: 'Certificado de vigencia', status: 'APPROVED' as const,
-    requires_file: true, expiration_date: '2026-01-01', is_expired: true, is_expiring_soon: false, file_url: null,
+    requires_file: true, expiration_date: '2026-01-01', is_expired: true, is_expiring_soon: false, ...recordStateFields('OVERDUE'), file_url: null,
   },
   {
     id: 'cr3', requirement_id: 'req-cr3', requirement_code: 'ENDOSO', label: 'Endoso', status: 'MISSING' as const,
-    requires_file: true, expiration_date: null, is_expired: false, is_expiring_soon: false, file_url: null,
+    requires_file: true, expiration_date: null, is_expired: false, is_expiring_soon: false, ...recordStateFields('MISSING'), file_url: null,
   },
 ]
 

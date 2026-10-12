@@ -3,11 +3,12 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { DriverRosterCard } from './DriverRosterCard'
 import type { CarrierDriverRosterItem } from '@/lib/types'
+import { complianceSummary } from '@/lib/states.fixtures'
 
 const DRIVER: CarrierDriverRosterItem = {
   id: 'd1', tax_id: '11111111-1', full_name: 'Juan Pérez',
   operational_status: 'ACTIVE', total_requirements: 12, last_document_update: '2026-06-01',
-  pending_mandatory: 0, compliance_health: 'OK',
+  pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary(),
 }
 
 describe('DriverRosterCard', () => {

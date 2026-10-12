@@ -16,7 +16,7 @@ vi.mock('@/lib/api/carriers', () => ({
 }))
 
 function emptyResponse(): CarrierListResponse {
-  return { data: [], count: 0, page: 1, limit: 100, facets: { pending: 0, ok: 0, total: 0 } }
+  return { data: [], count: 0, page: 1, limit: 100, facets: { pending: 0, ok: 0, total: 0, enabled: 0, not_enabled: 0 } }
 }
 
 function renderPage() {

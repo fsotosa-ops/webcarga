@@ -10,8 +10,9 @@ import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
 import { useTransporters } from '@/hooks/useTransporters'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { statusLabel } from '@/lib/types'
-import { TransporterCard, STATUS_CLS } from '@/components/dashboard/TransporterCard'
+import { StatusChip } from '@/components/ui/StatusChip'
+import { lifecycleStyle } from '@/lib/states'
+import { TransporterCard } from '@/components/dashboard/TransporterCard'
 import { ResultadosDelDirectorio } from '@/components/dashboard/ResultadosDelDirectorio'
 import { TransporterSlideOver } from '@/components/dashboard/TransporterSlideOver'
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
@@ -59,7 +60,7 @@ const HEALTH_TABS: { id: HealthTab; label: string; facetKey: keyof CarrierListFa
   { id: 'OK',      label: 'Al día',      facetKey: 'ok' },
 ]
 
-const EMPTY_FACETS: CarrierListFacets = { pending: 0, ok: 0, total: 0 }
+const EMPTY_FACETS: CarrierListFacets = { pending: 0, ok: 0, total: 0, enabled: 0, not_enabled: 0 }
 
 export default function EmpresasTransportePage() {
   return (
@@ -283,7 +284,9 @@ function EmpresasTransportePageInner() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((item, i) => (
+                {items.map((item, i) => {
+                  const lifecycle = lifecycleStyle('carrier', item.operational_status)
+                  return (
                   <tr
                     key={item.id}
                     onClick={() => setSelected(item)}
@@ -303,9 +306,7 @@ function EmpresasTransportePageInner() {
                     </td>
                     <td className="px-3 py-3 font-mono text-xs text-gray-500">{item.tax_id}</td>
                     <td className="px-3 py-3">
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_CLS[item.operational_status]}`}>
-                        {statusLabel('carrier', item.operational_status)}
-                      </span>
+                      <StatusChip tone={lifecycle.tone} icon={lifecycle.icon}>{lifecycle.label}</StatusChip>
                     </td>
                     <td className="px-3 py-3">
                       {item.compliance_health === 'PENDING' ? (
@@ -333,7 +334,8 @@ function EmpresasTransportePageInner() {
                       </Link>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

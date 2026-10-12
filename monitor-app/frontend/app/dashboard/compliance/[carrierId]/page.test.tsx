@@ -38,13 +38,14 @@ vi.mock('@/lib/authz/PermisosProvider', () => ({
 import { useParams } from 'next/navigation'
 import { complianceApi } from '@/lib/api/compliance'
 import { carriersApi } from '@/lib/api/carriers'
+import { complianceSummary } from '@/lib/states.fixtures'
 
 const CARRIER: Carrier = {
   id: 'c1', tax_id: '1-9', country_code: 'CL', business_name: 'Transportes Demo Spa',
   operational_status: 'ACTIVE', management_types: null,
   legacy_admin_id: null, erp_id: null, is_manual_override: false,
   overridden_by: null, overridden_at: null, created_at: null, updated_at: null,
-  contacts: [], compliance_records: [],
+  contacts: [], compliance_records: [], compliance_summary: complianceSummary(),
 }
 
 /** Una fila de detalle que además puede declarar qué ES el vehículo. En el
@@ -64,10 +65,17 @@ function fila(over: Partial<FilaDePrueba> = {}): FilaDePrueba {
     entity_type: 'CARRIER', entity_id: 'c1', subject_name: null,
     requirement_id: 'r1', requirement_code: 'F30', document_name: 'F30',
     status: 'MISSING', expiration_date: null, tiene_archivo: false,
-    urgencia: 'FALTA', expiration_policy: 'NONE',
+    urgencia: 'FALTA', document_state: 'MISSING', expiration_policy: 'NONE',
     ...over,
+    // El backend manda las dos con el mismo mapa (`compliance.py`): el fixture
+    // que solo declara `urgencia` recibe el `document_state` que le corresponde.
+    ...(over.urgencia && !over.document_state ? { document_state: ESTADO_DE_URGENCIA[over.urgencia] } : {}),
   } as FilaDePrueba
 }
+
+const ESTADO_DE_URGENCIA = {
+  FALTA: 'MISSING', VENCIDO: 'OVERDUE', POR_VENCER: 'EXPIRING', AL_DIA: 'UP_TO_DATE', NO_EXIGIBLE: 'NOT_REQUIRED',
+} as const
 
 /** El resumen que el backend calcularía sobre este mismo set de filas —
  *  misma partición que `_SUMMARY_SQL` (Task 2): `al_dia`/`por_vencer` cuentan

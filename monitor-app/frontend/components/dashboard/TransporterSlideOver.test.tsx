@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TransporterSlideOver } from './TransporterSlideOver'
 import { carriersApi } from '@/lib/api/carriers'
 import type { CarrierListItem, Carrier } from '@/lib/types'
+import { complianceSummary, recordStateFields } from '@/lib/states.fixtures'
 
 vi.mock('@/lib/api/carriers', () => ({
   carriersApi: { get: vi.fn(), listPolicies: vi.fn() },
@@ -12,7 +13,7 @@ vi.mock('@/lib/api/carriers', () => ({
 const ITEM: CarrierListItem = {
   id: 't1', tax_id: '11111111-1', country_code: 'CL', business_name: 'Transportes Test',
   operational_status: 'ACTIVE', total_requirements: 2, last_document_update: null,
-  pending_mandatory: 0, compliance_health: 'OK',
+  pending_mandatory: 0, compliance_health: 'OK', compliance_summary: complianceSummary(),
 }
 
 const CARRIER: Carrier = {
@@ -20,10 +21,11 @@ const CARRIER: Carrier = {
   operational_status: 'ACTIVE', legacy_admin_id: null, erp_id: null, is_manual_override: false,
   overridden_by: null, overridden_at: null, created_at: null, updated_at: null,
   management_types: null,
+  compliance_summary: complianceSummary(),
   contacts: [{ id: 'ct1', contact_role: 'OPERATIONS', first_name: 'Juan', last_name: 'Pérez', job_title: null, email: 'juan@test.cl', phone: '+56911112222', is_primary: true, is_active: true }],
   compliance_records: [
-    { id: 'd1', requirement_id: 'r1', requirement_code: 'D1', name: 'Doc 1', requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'APPROVED', expiration_date: null, file_url: null, metadata: {}, is_manual_override: false, is_expired: false, is_expiring_soon: false, updated_at: null },
-    { id: 'd2', requirement_id: 'r2', requirement_code: 'D2', name: 'Doc 2', requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'PENDING_REVIEW', expiration_date: '2026-01-01', file_url: null, metadata: {}, is_manual_override: false, is_expired: false, is_expiring_soon: false, updated_at: null },
+    { id: 'd1', requirement_id: 'r1', requirement_code: 'D1', name: 'Doc 1', requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'APPROVED', expiration_date: null, file_url: null, metadata: {}, is_manual_override: false, is_expired: false, is_expiring_soon: false, ...recordStateFields(), updated_at: null },
+    { id: 'd2', requirement_id: 'r2', requirement_code: 'D2', name: 'Doc 2', requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'PENDING_REVIEW', expiration_date: '2026-01-01', file_url: null, metadata: {}, is_manual_override: false, is_expired: false, is_expiring_soon: false, ...recordStateFields(), updated_at: null },
   ],
 }
 

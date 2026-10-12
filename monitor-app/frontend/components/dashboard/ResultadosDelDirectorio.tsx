@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { User, Truck } from 'lucide-react'
-import { isCarrierDeactivated, type DirectorioBusqueda } from '@/lib/types'
+import { isCarrierDeactivated } from '@/lib/states'
+import type { DirectorioBusqueda } from '@/lib/types'
 import { ChipDeBaja } from './ChipDeBaja'
 import { carrierPanelHref } from '@/lib/navegacion/directory'
 

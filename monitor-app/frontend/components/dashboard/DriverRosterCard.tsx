@@ -2,7 +2,8 @@
 'use client'
 
 import { ShieldAlert, ShieldCheck } from 'lucide-react'
-import { isCarrierDeactivated, type CarrierDriverRosterItem, type CarrierOperationalStatus } from '@/lib/types'
+import { isCarrierDeactivated } from '@/lib/states'
+import type { CarrierDriverRosterItem, CarrierOperationalStatus } from '@/lib/types'
 import { getInitials, getInitialColor } from '@/lib/utils/avatar'
 import { ChipDeBaja } from './ChipDeBaja'
 

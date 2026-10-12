@@ -9,6 +9,7 @@ vi.mock('@/lib/authz/PermisosProvider', () => ({
   usePermiso: (p: string) => p !== 'documents.review' || permisos.revisar,
 }))
 import type { ComplianceRecord } from '@/lib/types'
+import { recordStateFields } from '@/lib/states.fixtures'
 
 vi.mock('@/lib/api/compliance', () => ({
   complianceApi: {
@@ -21,13 +22,13 @@ const RECORDS: ComplianceRecord[] = [
     id: 'cr1', requirement_id: 'req1', requirement_code: 'ROL_SII', name: 'Rol SII',
     requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'APPROVED',
     expiration_date: null, file_url: null, metadata: {}, is_manual_override: false,
-    is_expired: false, is_expiring_soon: false, updated_at: null,
+    is_expired: false, is_expiring_soon: false, ...recordStateFields(), updated_at: null,
   },
   {
     id: 'cr2', requirement_id: 'req2', requirement_code: 'F30', name: 'F30',
     requirement_level: 'LEGAL_MANDATORY', requires_file: true, status: 'REJECTED',
     expiration_date: '2026-01-01', file_url: null, metadata: {}, is_manual_override: true,
-    is_expired: true, is_expiring_soon: false, updated_at: null,
+    is_expired: true, is_expiring_soon: false, ...recordStateFields('OVERDUE'), updated_at: null,
   },
 ]
 
