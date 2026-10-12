@@ -16,6 +16,30 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### 2026-10-12 — Auditoría del Directorio y su sincronía con Certificación, Cierre y Monitor (solo lectura)
+
+Pedido del usuario: "hay muchas inconsistencias; mismo ejercicio que Certificación; tiene que estar sincronizado con el
+cierre y el monitor". Plan `docs/superpowers/plans/2026-10-12-directory-audit.md`; lentes A (UX medido en copia local,
+`.playwright-mcp/directorio-*.png`), B (datos, base real, solo SELECT, 11/10 21:47-21:52), C (código); síntesis
+`2026-10-12-directory-audit-findings.md`: **36 hallazgos (8 bloquean, 17 confunden, 11 costo interno), 8 causas raíz.**
+
+- Cuatro superficies responden distinto a activo / empresa de / puede operar / está en el Cierre (p. ej. 215 empresas no
+  activas en rojo; 84 vs 78 conductores; "Al día" con 7 faltantes).
+- Asignaciones sin vigencia: 0 de 326 con fecha de término, fecha del traslado en UTC → transferir reescribe días pasados.
+- 28 líneas del Cierre invisibles en la tabla bloquean la firma de 4 días.
+- Sin invalidación entre módulos; `app.carrier_driver_roster` (vista materializada) sin trigger en `drivers`.
+- Faltan trabajos: reincorporar flota quitada, corregir RUT/patente, editar clientes (pedido 02/10 y 09/10).
+- El recálculo del Cierre renombra conductores / reasigna tractos sin override por campo; Operaciones ve botones que la API rechaza.
+
+**Recomendación: alternativa B (dominio "directorio")**: funciones canónicas en la base + ficha única + asignaciones con
+vigencia vía historial por trigger (cubre a Mage sin tocarlo) + override por campo + invalidación por dominio.
+
+**Siguiente paso exacto:**
+- [ ] El usuario decide: alternativa (A/B/C), si se hace ya el "bloque 0" (8 arreglos baratos e independientes, §5 del
+  informe) y si autoriza revisar `load_assets_04` de Mage (solo lectura). Responder las 21 preguntas P1-P21 (varias con Pablo).
+- [ ] Luego: spec del bloque 0 / D1 "Una sola respuesta" (funciones `app.is_operating`, `app.carrier_of`,
+  `app.carrier_operation_types`), intercalado con Certificación 2a (Sin clasificar).
+
 ### 2026-10-11 — Auditoría UX de "Sin clasificar" (insumo del bloque 2; solo lectura)
 
 Informe: `docs/superpowers/plans/2026-10-11-sin-clasificar-ux-audit.md`. Las capturas son `.playwright-mcp/sinclasificar-*.png`.
