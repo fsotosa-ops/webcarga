@@ -59,13 +59,20 @@ describe('PreCierrePendingSection', () => {
         EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [{ driver_rut: '8245112-9', driver_name_tms: 'JAIME VIDAL' }],
         EMPRESA_ONBOARDING: [{ carrier_id: 'c9', carrier_name: 'Transportes Nueva', operational_status: 'ONBOARDING' }],
         SIN_TIPO_OPERACION: [],
+        CONDUCTOR_SIN_EMPRESA: [{
+          driver_id: 'd1', driver_name: 'Gerson Ferrada Zapata',
+          carrier_id: 'c1', carrier_name: 'Transportes Juan Ramirez Spa', viajes: 25,
+        }],
       },
     }))
     renderSection()
     expect(await screen.findByText(/Transportes Nueva/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Activar empresa' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Crear empresa nueva' })).not.toBeInTheDocument()
-    expect(screen.getAllByText('Lo resuelve un supervisor desde el Directorio.').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: 'Dar de alta a este conductor' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Asignar a Transportes Juan Ramirez Spa/i })).not.toBeInTheDocument()
+    // Una por fila: patente, conductor no registrado, empresa en alta y conductor sin empresa.
+    expect(screen.getAllByText('Lo resuelve un supervisor desde el Directorio.')).toHaveLength(4)
   })
 
   it('una empresa en ONBOARDING se activa con directory.edit; una dada de baja pide directory.delete', async () => {
