@@ -42,7 +42,9 @@ venv/
 # Un symlink no coincide con un patron que termina en barra: se ignora tambien sin ella
 venv
 .venv/
-.venv__pycache__/
+# Idem para .venv
+.venv
+__pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
