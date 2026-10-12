@@ -49,6 +49,7 @@ from ..services.document_matcher import (
 )
 from ..services.audit import log_change, record_manual_edit
 from ..services.vigencia import regla_base_json_sql
+from ..services.fleet_compliance import _empresa_que_dejo_sql, pending_base_ctes
 from ..services.solicitudes import encender_registros
 from ..services.plantilla_certificacion import (
     COLUMNAS,
@@ -91,18 +92,6 @@ from ..utils.document_storage import (
 
 router = APIRouter(prefix="/compliance-records", tags=["compliance"])
 
-
-def _empresa_que_dejo_sql(alias: str) -> str:
-    """La empresa de un documento "al término" (exigible_on = ON_ENTITY_END):
-    el conductor ya no tiene asignación ACTIVE, así que se le atribuye a la
-    última que tuvo, con la MISMA definición de "última" que su alcance
-    (ultima_empresa_sql). Solo para ese tipo: el resto de los documentos de un
-    conductor sin empresa siguen sin empresa, como antes."""
-    return (
-        f"(CASE WHEN {alias}.requirement_id IN (SELECT vg_t.id FROM public.compliance_requirements vg_t "
-        f"WHERE vg_t.exigible_on = 'ON_ENTITY_END') "
-        f"THEN {ultima_empresa_sql(alias, 'DRIVER')} END)"
-    )
 
 _CATEGORY_BY_ENTITY_TYPE = {"CARRIER": "EMPRESA", "DRIVER": "CHOFER", "ASSET": "EQUIPO"}
 
@@ -463,97 +452,6 @@ def _estado_de_empresa_a_mostrar(carrier_id: Optional[str]) -> Optional[str]:
     return None if carrier_id else ACTIVE_OPERATIONAL_STATUS
 
 
-def _pending_ctes(estado_param: str) -> str:
-    """Las CTE `pending` y `resolved` de Pendientes, una sola vez. Las usan
-    la lista (/pending) y el resumen (/pending/summary): si cada uno las
-    escribiera, las cifras de la izquierda y la lista de la derecha podrían
-    dejar de coincidir. `estado_param` es el placeholder del filtro viejo
-    (`estado`), que cada consulta numera a su manera."""
-    return f"""
-pending AS (
-    SELECT cr.id, cr.entity_type, cr.entity_id, cr.status, cr.expiration_date,
-           -- Las lee la urgencia de abajo (`pendiente_predicate('r')`): el
-           -- predicado calcula el vencimiento con ellas (contrato del alias en
-           -- services/vencimientos.py). `resolved` las hereda por `p.*`.
-           cr.issue_date, cr.period_start,
-           -- El vencimiento calculado (HU-C1, entrega 2b): lo que la pantalla
-           -- muestra en vez de la fecha suelta.
-           {vence_el_sql('cr')} AS vence_calculado,
-           -- Un documento "a pedido" existe porque alguien lo solicitó: la
-           -- ficha ofrece quitar la solicitud mientras no tenga archivo.
-           req.exigible_on = 'ON_REQUEST' AS a_pedido,
-           -- El HECHO de si hay un archivo, para que la pantalla deje de
-           -- deducirlo del estado. `status IN ('MISSING','EXPIRED')` se venia
-           -- usando como si significara "no tiene archivo", y significa dos
-           -- cosas distintas: un 'EXPIRED' SI tiene archivo —vencio porque
-           -- alguien lo subio— y un 'REJECTED' puede no tenerlo. Con la
-           -- deduccion, la ficha escondia el documento cargado de todo lo
-           -- vencido, que es justo lo que esa pantalla vino a hacer visible.
-           cr.file_url IS NOT NULL AS tiene_archivo,
-           req.id AS requirement_id, req.target_entity,
-           req.requirement_code, req.name AS document_name, req.requirement_level,
-           req.expiration_policy,
-           -- La definición única (services/vencimientos.py, spec 2026-10-11).
-           {document_state_sql('cr')} AS document_state,
-           {in_scope_sql('cr')} AS in_scope,
-           -- Desde cuándo está quien lo debe ("Falta · Ingresó hace N días").
-           {ingreso_sql('cr')} AS entered_on
-    FROM public.compliance_records cr
-    JOIN public.compliance_requirements req ON req.id = cr.requirement_id
-    WHERE cr.is_current = true
-      -- El estado deja de estar incrustado. `falta` es el default y reproduce
-      -- exactamente el predicado anterior, para que ningun llamador actual
-      -- cambie de comportamiento. `todos` es lo que hace posible la ficha:
-      -- ver lo que la empresa TIENE y no solo lo que le falta.
-      AND CASE {estado_param}::text
-            WHEN 'todos'      THEN true
-            WHEN 'por_vencer' THEN {exigible_sql('cr')} AND {por_vencer_predicate('cr')}
-            WHEN 'al_dia'     THEN {cubierto_predicate('cr')}
-            ELSE {pendiente_predicate('cr')}
-          END
-),
-resolved AS (
-    SELECT p.*,
-        CASE p.entity_type
-            WHEN 'CARRIER' THEN p.entity_id
-            -- Un documento "al término" (finiquito) es de la empresa que el
-            -- conductor dejó: sin asignación ACTIVE, la última que tuvo.
-            WHEN 'DRIVER'  THEN COALESCE(da.carrier_id, {_empresa_que_dejo_sql('p')})
-            WHEN 'ASSET'   THEN aa.carrier_id
-        END AS resolved_carrier_id,
-        CASE p.entity_type
-            WHEN 'DRIVER' THEN d.full_name
-            WHEN 'ASSET'  THEN a.license_plate
-            ELSE NULL
-        END AS subject_name,
-        -- Que ES el vehiculo, no solo su patente. Son dos datos distintos y
-        -- ninguno reemplaza al otro: `asset_type` esta SIEMPRE (124 de 124
-        -- vehiculos: 87 TRACTOCAMION, 37 RAMPLA) y dice el chasis;
-        -- `fleet_service_type_id` es el subtipo de carroceria y solo lo tienen
-        -- las ramplas (36 de 37; los 87 tractocamiones lo tienen en NULL).
-        -- Por eso viajan los dos y la pantalla dibuja uno o dos badges segun
-        -- lo que haya, en vez de elegir un campo y mentir cuando falta.
-        --
-        -- Nulos para CARRIER y DRIVER por construccion: el LEFT JOIN a
-        -- `public.assets` ya solo matchea cuando entity_type = 'ASSET'.
-        a.asset_type,
-        fst.label      AS fleet_service_type_label,
-        fst.bg_color   AS fleet_service_type_bg_color,
-        fst.text_color AS fleet_service_type_text_color
-    FROM pending p
-    LEFT JOIN public.driver_assignments da
-        ON p.entity_type = 'DRIVER' AND da.driver_id = p.entity_id AND da.status = 'ACTIVE'
-    LEFT JOIN public.asset_assignments aa
-        ON p.entity_type = 'ASSET' AND aa.asset_id = p.entity_id AND aa.status = 'ACTIVE'
-    LEFT JOIN public.drivers d ON p.entity_type = 'DRIVER' AND d.id = p.entity_id
-    LEFT JOIN public.assets a ON p.entity_type = 'ASSET' AND a.id = p.entity_id
-    -- Los colores salen del catalogo, no del frontend: `app.status_taxonomies`
-    -- ya trae bg_color/text_color por fila y es lo que ya leen las otras
-    -- pantallas de flota (assets.py, equipment_closures.py, status_report.py).
-    LEFT JOIN app.status_taxonomies fst ON fst.id = a.fleet_service_type_id
-)"""
-
-
 # Pendientes (spec 2026-10-11): qué estados trae cada valor de `state`.
 STATE_FILTERS: dict[str, tuple[str, ...] | None] = {
     **{estado.lower(): (estado,) for estado in PENDING_STATES},
@@ -569,7 +467,7 @@ _order_list = ", ".join(
 _urgent_list = ", ".join(f"'{x}'" for x in PENDING_STATES if x != MISSING_STATE)
 
 _PENDING_ROWS_SQL = f"""
-WITH {_pending_ctes('$10')},
+WITH {pending_base_ctes('$10')},
 -- Tipo de Operación (Tractoreo/Equipo Completo) a nivel EMPRESA: no existe
 -- como columna propia de carriers — se agrega desde los vehículos activos
 -- de la empresa (public.assets.webcarga_operation_type_id). Una empresa
@@ -661,7 +559,7 @@ _PENDING_COUNTS = ",\n    ".join(
 # El resumen pide 'falta' (= pendiente_predicate) al filtro viejo: trae solo lo
 # pendiente, y document_state lo reparte. Mismo alcance que la cola.
 _PENDING_SUMMARY_BY_REQUIREMENT_SQL = f"""
-WITH {_pending_ctes('$1')},
+WITH {pending_base_ctes('$1')},
 agg AS (
     SELECT r.requirement_id,
     {_PENDING_COUNTS}
@@ -679,7 +577,7 @@ ORDER BY agg.overdue DESC, label
 
 # Misma forma de fila que la de arriba: los campos del documento van en NULL.
 _PENDING_SUMMARY_BY_CARRIER_SQL = f"""
-WITH {_pending_ctes('$1')}
+WITH {pending_base_ctes('$1')}
 SELECT c.id::text AS key, c.business_name AS label,
        NULL AS requirement_code, NULL AS target_entity,
        NULL AS expiration_policy, NULL AS vigencia,
@@ -715,11 +613,11 @@ async def pending_summary(
 
 
 # Quienes DEBEN un documento, con lo necesario para reconocerlos en un nombre de
-# archivo. Mismo alcance y misma definición que la cola (`_pending_ctes`,
+# archivo. Mismo alcance y misma definición que la cola (`pending_base_ctes`,
 # `in_scope`, PENDING_STATES). El RUT sale en forma canónica NNNNNNNN-D, que es
 # la que devuelve `extract_ruts`; uno inválido queda NULL y no se ofrece.
 _PENDING_OWNERS_SQL = f"""
-WITH {_pending_ctes('$2')}
+WITH {pending_base_ctes('$2')}
 SELECT r.id::text AS record_id, r.entity_type,
        COALESCE(r.subject_name, c.business_name) AS label,
        CASE r.entity_type WHEN 'CARRIER' THEN public.canonical_rut(c.tax_id)
