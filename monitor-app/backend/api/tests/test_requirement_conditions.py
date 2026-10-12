@@ -156,12 +156,17 @@ def test_las_vias_de_siembra_leen_la_misma_gestion_que_la_vista_previa(funcion):
 # cambiarlo: con la definición vieja, renombrar la etiqueta cambiaba la gestión
 # derivada de 13 de las 39 empresas activas; con ésta, de ninguna.
 # Ver 20260816090000_status_taxonomies_code.sql.
+# Desde D1 (20261013090000_directory_one_answer.sql) la flota es la de
+# app.active_fleet y solo cuentan sus tractos: un equipo dado de baja o una
+# rampla ya no deciden el tipo de gestión (spec D1 §4.3, E-g). La regla
+# —la flota manda, lo declarado cubre el hueco— no cambió.
+FLOTA = "app.active_fleet"
 DEFINICION_ESPERADA = (
     "SELECT COALESCE( ( SELECT array_agg(DISTINCT t.code) FILTER (WHERE t.code IS NOT NULL) "
-    "FROM public.asset_assignments aa "
-    "JOIN public.assets a ON a.id = aa.asset_id "
+    "FROM app.active_fleet af "
+    "JOIN public.assets a ON a.id = af.entity_id AND a.asset_type = 'TRACTOCAMION' "
     "JOIN app.status_taxonomies t ON t.id = a.webcarga_operation_type_id "
-    "WHERE aa.carrier_id = p_carrier_id AND aa.status = 'ACTIVE' ), "
+    "WHERE af.carrier_id = p_carrier_id AND af.entity_type = 'ASSET' ), "
     "(SELECT c.management_types FROM public.carriers c WHERE c.id = p_carrier_id) );"
 )
 
@@ -203,13 +208,13 @@ def test_la_definicion_del_tipo_de_gestion_deriva_de_la_flota():
 
     # 1. La flota se consulta ANTES que la columna declarada. Ese orden ES la
     #    regla: en un COALESCE, primero es quien manda.
-    assert "public.asset_assignments" in cuerpo, (
+    assert FLOTA in cuerpo, (
         "la definicion dejo de derivar de la flota: esto es el defecto C1"
     )
     assert "c.management_types" in cuerpo, (
         "la definicion dejo de cubrir el hueco con lo declarado en el alta"
     )
-    assert cuerpo.index("public.asset_assignments") < cuerpo.index("c.management_types"), (
+    assert cuerpo.index(FLOTA) < cuerpo.index("c.management_types"), (
         "el COALESCE quedo invertido: manda lo declarado y no la flota"
     )
 
