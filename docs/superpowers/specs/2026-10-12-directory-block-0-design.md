@@ -46,7 +46,7 @@ defectos que hoy engañan o bloquean.
 ### 0.1 · Fecha de Chile en las asignaciones
 - Migración que cambia `DEFAULT CURRENT_DATE` por `DEFAULT public.hoy_chile()` en `start_date` de
   `public.driver_assignments`, `public.asset_assignments`, `public.vehicle_driver_assignments`,
-  `public.carrier_shippers` y `public.carrier_fleet_service_types`.
+  y `public.carrier_shippers` (`carrier_fleet_service_types` ya no existe: se eliminó en `20260803030000`).
 - Solo cambia el default (metadato, sin reescribir la tabla). No toca filas existentes; corregir las viejas va en D2.
 
 ### 0.2 · Roster de conductores en vivo
