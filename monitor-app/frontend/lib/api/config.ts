@@ -9,6 +9,10 @@ export type TripStatusRow = StatusMeta & { sort_order: number }
  *  con el mismo número cuando la segunda llamada no llegaba. */
 export type Direccion = 'up' | 'down'
 
+/** La fila global de Configuración › Alertas de vencimiento (D1-R4). La
+ *  misma clave que `GLOBAL_ALERT_THRESHOLD` de la API. */
+export const GLOBAL_ALERT_THRESHOLD = 'documento_por_vencer'
+
 export const configApi = {
   // ── TMS Statuses (edit only — IDs are fixed by TMS) ──────────────────────
   getStatuses: () =>

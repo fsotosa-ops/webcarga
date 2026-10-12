@@ -108,7 +108,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 1364 -> 1348 el 2026-10-12: Directorio, roster y tarjetas usan StatusChip (D1, Task 13).
     // 1348 -> 1339 el 2026-10-12: el embudo de Certificación pinta con tokens y StatusChip (D1, Task 14, Parte A).
     // 1339 -> 1333 el 2026-10-12: PendingDocsBadge toma tono e ícono de alertSeverityStyle (D1, Task 14, Parte B).
-    const DEUDA = 1333
+    // 1333 -> 1329 el 2026-10-12: Alertas de vencimiento con tokens (D1, Task 14, Parte C).
+    const DEUDA = 1329
 
     const total = usosDeColorCrudo()
     expect(
