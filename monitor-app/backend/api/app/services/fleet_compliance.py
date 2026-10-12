@@ -138,3 +138,173 @@ resolved AS (
     -- pantallas de flota (assets.py, equipment_closures.py, status_report.py).
     LEFT JOIN app.status_taxonomies fst ON fst.id = a.fleet_service_type_id
 )"""
+
+
+# ── El resumen de quien debe documentos ──────────────────────────────────────
+
+def _lista(estados: tuple[str, ...]) -> str:
+    return ", ".join(f"'{e}'" for e in estados)
+
+
+_PENDIENTES = _lista(PENDING_STATES)
+_BLOQUEAN = _lista(BLOCKING_STATES)
+
+
+def _peor_estado(alias: str) -> str:
+    """El peor estado de los OBLIGATORIOS del grupo (spec §3; ruling A-R5), en
+    el orden de SEVERITY_ORDER. Un opcional pendiente cuenta en las cifras pero
+    no empeora el resumen. Sin filas (una empresa sin pendientes, unida con LEFT
+    JOIN) o solo con opcionales, cae a UP_TO_DATE."""
+    ramas = " ".join(
+        f"WHEN bool_or({alias}.document_state = '{e}' AND {alias}.requirement_level = 'LEGAL_MANDATORY') "
+        f"THEN '{e}'"
+        for e in SEVERITY_ORDER if e != "UP_TO_DATE")
+    return f"(CASE {ramas} ELSE 'UP_TO_DATE' END)"
+
+
+def _cifra(estado: str, condicion: str = "true") -> str:
+    return f"(count(*) FILTER (WHERE o.document_state = '{estado}' AND {condicion}))::int"
+
+
+def entity_compliance_cte() -> str:
+    """CTE `entity_compliance`: por entidad (empresa, conductor o equipo), lo
+    suyo que está pendiente. Una fila solo por entidad con algo pendiente: quien
+    la lee hace LEFT JOIN y `summary_from_row` vuelve los NULL a 0.
+
+    Sin alcance a propósito: es lo que la entidad debe, esté activa o no (la
+    ficha de una entidad de baja muestra su historial). Para la flota activa de
+    una empresa activa coincide con el alcance de Pendientes."""
+    return f"""entity_compliance AS (
+    WITH {pending_base_ctes("'falta'")}
+    SELECT o.entity_type::text AS entity_type, o.entity_id,
+           {_peor_estado('o')} AS worst_state,
+           {_cifra('OVERDUE')} AS overdue,
+           {_cifra('EXPIRING')} AS expiring,
+           {_cifra('MISSING')} AS missing,
+           (count(*) FILTER (WHERE o.requirement_level = 'LEGAL_MANDATORY'
+                               AND o.document_state IN ({_BLOQUEAN})))::int AS blocking_mandatory
+    FROM pending o
+    WHERE o.document_state IN ({_PENDIENTES})
+    GROUP BY o.entity_type, o.entity_id
+)"""
+
+
+def carrier_compliance_cte() -> str:
+    """CTE `carrier_compliance`: una fila por CADA empresa (también las que no
+    deben nada), con lo propio, lo de su flota y la habilitación.
+
+    Alcance de las cifras:
+      - empresa ACTIVE: el de Pendientes (in_scope, empresa atribuida =
+        resolved_carrier_id). Por eso sus cifras son las de su fila en
+        /pending/summary?group_by=carrier;
+      - empresa no activa (ruling D1-R1): sus registros más los de su
+        app.active_fleet, sin exigir empresa activa (in_scope la exige y daría 0).
+
+    worst_state: el peor de los obligatorios (A-R5); las cifras cuentan todo.
+
+    Habilitación: ACTIVE y sin ningún LEGAL_MANDATORY vencido o faltante, propio
+    o de app.active_fleet. Por vencer no bloquea; los opcionales no bloquean pero
+    cuentan en las cifras. Un documento al término de quien ya se fue cuenta en
+    la flota (Pendientes lo muestra) pero no bloquea: no es flota activa."""
+    return f"""carrier_compliance AS (
+    WITH {pending_base_ctes("'falta'")},
+    owed AS (
+        SELECT r.resolved_carrier_id AS carrier_id, r.entity_type, r.document_state, r.requirement_level,
+               (r.requirement_level = 'LEGAL_MANDATORY' AND r.document_state IN ({_BLOQUEAN})
+                AND (r.entity_type = 'CARRIER' OR af.entity_id IS NOT NULL)) AS blocks
+        FROM resolved r
+        JOIN public.carriers c ON c.id = r.resolved_carrier_id AND c.operational_status = 'ACTIVE'
+        LEFT JOIN app.active_fleet af
+               ON af.carrier_id = r.resolved_carrier_id AND af.entity_type = r.entity_type
+              AND af.entity_id = r.entity_id
+        WHERE r.in_scope AND r.document_state IN ({_PENDIENTES})
+        UNION ALL
+        SELECT c.id, r.entity_type, r.document_state, r.requirement_level, false
+        FROM resolved r
+        JOIN public.carriers c
+          ON r.entity_type = 'CARRIER' AND c.id = r.entity_id AND c.operational_status <> 'ACTIVE'
+        WHERE r.document_state IN ({_PENDIENTES})
+        UNION ALL
+        SELECT af.carrier_id, r.entity_type, r.document_state, r.requirement_level, false
+        FROM resolved r
+        JOIN app.active_fleet af ON af.entity_type = r.entity_type AND af.entity_id = r.entity_id
+        JOIN public.carriers c ON c.id = af.carrier_id AND c.operational_status <> 'ACTIVE'
+        WHERE r.document_state IN ({_PENDIENTES})
+    )
+    SELECT c.id AS carrier_id,
+           {_peor_estado('o')} AS worst_state,
+           {_cifra('OVERDUE', "o.entity_type = 'CARRIER'")} AS own_overdue,
+           {_cifra('EXPIRING', "o.entity_type = 'CARRIER'")} AS own_expiring,
+           {_cifra('MISSING', "o.entity_type = 'CARRIER'")} AS own_missing,
+           {_cifra('OVERDUE', "o.entity_type <> 'CARRIER'")} AS fleet_overdue,
+           {_cifra('EXPIRING', "o.entity_type <> 'CARRIER'")} AS fleet_expiring,
+           {_cifra('MISSING', "o.entity_type <> 'CARRIER'")} AS fleet_missing,
+           (c.operational_status = 'ACTIVE' AND NOT COALESCE(bool_or(o.blocks), false)) AS can_operate
+    FROM public.carriers c
+    LEFT JOIN owed o ON o.carrier_id = c.id
+    GROUP BY c.id, c.operational_status
+)"""
+
+
+def _n(row: Mapping[str, Any], clave: str) -> int:
+    valor = row[clave]
+    return 0 if valor is None else int(valor)
+
+
+def summary_from_row(row: Mapping[str, Any], *, with_fleet: bool) -> ComplianceSummary:
+    """El modelo del contrato desde una fila de `carrier_compliance`
+    (with_fleet=True) o de `entity_compliance` (with_fleet=False). Un NULL en las
+    cifras vale 0 y un worst_state NULL vale UP_TO_DATE: es la fila de quien no
+    debe nada, unida con LEFT JOIN.
+
+    Una fila de entidad no trae la habilitación hecha: la arma con
+    `blocking_mandatory` y el `operational_status` de la entidad, que el lector
+    tiene que seleccionar (si falta, KeyError: mejor que inventar "activa")."""
+    worst = row["worst_state"] or "UP_TO_DATE"
+    if with_fleet:
+        return ComplianceSummary(
+            worst_state=worst,
+            own=StateCounts(overdue=_n(row, "own_overdue"), expiring=_n(row, "own_expiring"),
+                            missing=_n(row, "own_missing")),
+            fleet=StateCounts(overdue=_n(row, "fleet_overdue"), expiring=_n(row, "fleet_expiring"),
+                              missing=_n(row, "fleet_missing")),
+            can_operate=bool(row["can_operate"]),
+        )
+    return ComplianceSummary(
+        worst_state=worst,
+        own=StateCounts(overdue=_n(row, "overdue"), expiring=_n(row, "expiring"), missing=_n(row, "missing")),
+        fleet=None,
+        can_operate=row["operational_status"] == "ACTIVE" and _n(row, "blocking_mandatory") == 0,
+    )
+
+
+# ── El aviso de un documento ─────────────────────────────────────────────────
+#
+# "Crítico" no es un estado (E-e): es un aviso calculado con los días que faltan
+# y el umbral global de Configuración › Alertas. Las filas por documento de
+# app.alert_thresholds no se leen (D1-R4).
+
+_ERROR_DAYS = (
+    "(SELECT vg_ae.error_days FROM app.alert_thresholds vg_ae "
+    "WHERE vg_ae.doc_type = 'documento_por_vencer')"
+)
+
+
+def days_to_expiry_sql(alias: str = "cr") -> str:
+    """Días de Chile hasta el vencimiento calculado (negativo si ya venció), o
+    NULL si no vence, falta, o le falta el dato de vigencia (-infinity)."""
+    return f"(NULLIF({vence_el_sql(alias)}, '-infinity'::date) - {hoy_sql()})"
+
+
+def alert_severity_sql(alias: str = "cr") -> str:
+    """'critical' si se exige, no está vencido y le faltan como mucho los
+    `error_days` del umbral global; 'warning' si está por vencer
+    (`por_vencer_predicate`, que ya respeta los días de aviso de cada regla);
+    NULL en otro caso. "No vencido" es lo mismo que en document_state_sql: ni
+    marcado EXPIRED ni pasado de su fecha. Un documento vencido no lleva aviso:
+    su estado ya lo dice."""
+    vigente = f"({exigible_sql(alias)} AND NOT ({alias}.status = 'EXPIRED' OR {vencido_predicate(alias)}))"
+    return (
+        f"(CASE WHEN {vigente} AND {days_to_expiry_sql(alias)} <= {_ERROR_DAYS} THEN 'critical' "
+        f"WHEN {vigente} AND {por_vencer_predicate(alias)} THEN 'warning' END)"
+    )
