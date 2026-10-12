@@ -25,6 +25,8 @@ Todas las pantallas la leen; ninguna la recalcula.
 Medible en dev al cerrar:
 - Las 215 empresas no activas dejan de verse en rojo.
 - Las 36 activas dicen **Habilitada** o **No habilitada** según sus obligatorios (hoy las 251 figuran "pendientes").
+  Medido el 12/10: hoy las 36 quedan **No habilitada** (todas tienen algún obligatorio faltante o vencido; la carga
+  documental sigue pendiente). El usuario decidió mostrarlo tal cual: Pendientes es la salida y la guarda solo avisa.
 - La flota de una empresa cuenta solo lo activo: 78 conductores, no 84.
 - El embudo de Certificación cuenta 2.226 y no 2.306.
 - Para toda empresa, las cifras Vencidos / Por vencer / Faltan valen lo mismo en Directorio, vista rápida, Certificación y
@@ -86,8 +88,8 @@ Siguen el patrón de `app.is_trip_open` / `app.is_trip_assigned` (`2026101209000
 ### 4.2 `app.carrier_of(p_entity_type text, p_entity_id uuid) → uuid`
 - CARRIER devuelve la misma empresa. DRIVER y ASSET devuelven la empresa de su asignación `ACTIVE`, sin importar estados.
 - `STABLE`, con `search_path` fijo.
-- Reemplaza los LEFT JOIN sueltos de `entity_summary.py` (:93, :142), del embudo (`compliance.py:517-523`, :1989) y de
-  `daily_closures.py` (:79, :177).
+- Reemplaza los LEFT JOIN sueltos de `entity_summary.py` (:93, :142) y del embudo (`compliance.py`, :1989).
+  `daily_closures.py` (:79, :177) se queda hasta D2, cuando `carrier_of` reciba la fecha: el Cierre no se toca en D1 (§6.3).
 - En D2 recibe una fecha y lee el historial; sus llamadores no cambian.
 - `ultima_empresa_sql` (para documentos al término) sigue aparte hasta D2.
 
@@ -123,7 +125,9 @@ Siguen el patrón de `app.is_trip_open` / `app.is_trip_assigned` (`2026101209000
 ### 5.2 Arreglos de regla
 - **`exigible_sql` y `exigible_desde_sql` por tipo de entidad (B-8):** se ramifican con `_ASIGNACIONES`, igual que
   `ingreso_sql`. Hoy no cambia ningún registro, porque todos los requisitos con registros son `ON_ENTITY_START`.
-- **ONBOARDING sale del alcance del embudo** (`FUNNEL_ACTIVE_STATUSES`, `compliance.py:35`), igual que en Pendientes.
+- **ONBOARDING (decisión del usuario, 12/10):** a una empresa en onboarding se le piden documentos, pero no recibe viajes.
+  Sigue en el embudo ("Recién creadas") y en el universo de Sin clasificar (`FUNNEL_ACTIVE_STATUSES` no cambia). No entra en
+  Pendientes, que es la cola de las activas. Su `funnel_bucket` es NULL, y la guarda le responde 409 `CARRIER_NOT_ACTIVE`.
 
 ### 5.3 Rendimiento
 La lista completa del Directorio tiene que quedar bajo 300 ms de ejecución en el servidor, medido con `EXPLAIN ANALYZE` sobre
@@ -140,7 +144,7 @@ la base real. Es la misma meta que el resumen de Pendientes (~210 ms).
 | Ficha `GET /carriers/{id}`: `compliance_records` | Cada registro con `document_state`, días que faltan y severidad del aviso; `status` queda como historial |
 | Vista rápida (`entity_summary.py`) | `entity_compliance_sql` / `carrier_compliance_sql` y `carrier_of` |
 | Embudo de Certificación (`compliance.py:360-424`) | `carrier_compliance_sql`. El ciclo de vida pasa a filtro, y los baldes salen de la escala del resumen ("Con vencimientos" incluye por vencer, conflicto 8) |
-| Alertas del Monitor (`trips.py:620-668`) | `entity_compliance_sql` por conductor, tracto y empresa del viaje, más `can_operate`; los documentos críticos (licencia, cédula) se leen de la severidad del aviso |
+| Alertas del Monitor (`trips.py:620-668`) | Por entidad del viaje: `driver_has_critical_alert`, `tractor_has_critical_alert`, `carrier_has_critical_alert` (aviso crítico, o licencia o cédula pendientes, que conserva el rojo de hoy) y `carrier_can_operate` |
 | `urgencia` (`compliance.py:603-608`, `schemas/compliance.py:93`) | Se retira; se usa `document_state` |
 | `/drivers`, `/fuzzy-match` (`drivers.py`) | Una fila por conductor aunque tenga dos tractos (F-07), y búsqueda canónica (§7.2) |
 
