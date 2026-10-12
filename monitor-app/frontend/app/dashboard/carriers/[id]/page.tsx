@@ -251,8 +251,10 @@ function EmpresaDetailPageInner() {
   }
   async function handleDeleteCarrier() {
     await carriersApi.delete(id)
-    await afterChange({ entity: 'carrier', id, type: 'delete' })
+    // Primero se sale de la ficha y después se quitan sus consultas: quitarlas
+    // con la ficha montada la hace releer una empresa que ya no existe (404).
     router.push('/dashboard/carriers')
+    await afterChange({ entity: 'carrier', id, type: 'delete' })
   }
 
   async function handlePatchDriver(driverId: string, body: DriverPatchBody) {
@@ -487,7 +489,11 @@ function EmpresaDetailPageInner() {
                 </button>
               )}
               {!canChangeCarrierStatus && (
-                <p className="text-etiqueta text-informativo">La baja de una empresa la hace Certificación.</p>
+                <p className="text-etiqueta text-informativo">
+                  {carrier.operational_status === 'ONBOARDING'
+                    ? 'La activación de una empresa la hace un supervisor.'
+                    : 'La baja de una empresa la hace Certificación.'}
+                </p>
               )}
             </div>
         </div>

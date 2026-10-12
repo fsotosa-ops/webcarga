@@ -1088,6 +1088,14 @@ describe('FichaEmpresaPage', () => {
     expect(screen.queryByText('La baja de una empresa la hace Certificación.')).not.toBeInTheDocument()
   })
 
+  it('una empresa en ONBOARDING sin directory.edit dice que la activación la hace un supervisor', async () => {
+    permisos.editor = false
+    permisos.admin = false
+    montar([fila()], { ...CARRIER, operational_status: 'ONBOARDING' })
+    expect(await screen.findByText('La activación de una empresa la hace un supervisor.')).toBeInTheDocument()
+    expect(screen.queryByText('La baja de una empresa la hace Certificación.')).not.toBeInTheDocument()
+  })
+
   it('una empresa dada de baja ofrece reactivarla, no darla de baja otra vez', async () => {
     permisos.admin = true
     vi.mocked(carriersApi.patch).mockResolvedValue(CARRIER)

@@ -128,6 +128,14 @@ describe('EmpresaDetailPage', () => {
     expect(screen.queryByText('La baja de una empresa la hace Certificación.')).not.toBeInTheDocument()
   })
 
+  it('una empresa en ONBOARDING sin directory.edit dice que la activación la hace un supervisor', async () => {
+    permisos.negados = new Set(['directory.edit'])
+    vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'ONBOARDING' })
+    renderPage()
+    expect(await screen.findByText('La activación de una empresa la hace un supervisor.')).toBeInTheDocument()
+    expect(screen.queryByText('La baja de una empresa la hace Certificación.')).not.toBeInTheDocument()
+  })
+
   it('sin directory.delete una empresa ACTIVE no ofrece botón de estado', async () => {
     permisos.darDeBaja = false
     renderPage()
@@ -397,6 +405,25 @@ describe('EmpresaDetailPage', () => {
 
     await waitFor(() => expect(carriersApi.delete).toHaveBeenCalledWith('t1'))
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/dashboard/carriers'))
+  })
+
+  it('al eliminar la empresa navega primero y recién después quita sus consultas (sin parpadeo de 404)', async () => {
+    const orden: string[] = []
+    pushMock.mockImplementation(() => { orden.push('push') })
+    const original = QueryClient.prototype.removeQueries
+    const espia = vi.spyOn(QueryClient.prototype, 'removeQueries').mockImplementation(function (this: QueryClient, ...args) {
+      orden.push('remove')
+      return original.apply(this, args)
+    })
+    vi.mocked(carriersApi.delete).mockResolvedValue({ ok: true })
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar eliminación' }))
+
+    await waitFor(() => expect(orden).toContain('remove'))
+    espia.mockRestore()
+    expect(orden[0]).toBe('push')
   })
 
   it('shows the backend blocker message and does not redirect when delete is rejected', async () => {

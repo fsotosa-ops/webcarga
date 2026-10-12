@@ -858,7 +858,11 @@ export default function FichaEmpresaPage() {
           </div>
         )}
         {!puedeCambiarEstadoEmpresa && (
-          <p className="text-etiqueta text-informativo">La baja de una empresa la hace Certificación.</p>
+          <p className="text-etiqueta text-informativo">
+            {enOnboarding
+              ? 'La activación de una empresa la hace un supervisor.'
+              : 'La baja de una empresa la hace Certificación.'}
+          </p>
         )}
       </EncabezadoDePagina>
 
