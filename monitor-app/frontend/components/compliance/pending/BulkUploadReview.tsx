@@ -92,7 +92,11 @@ function OwerPicker({ fileName, owers, loading, failed, onPick, onCancel }: {
 /** La carga en lote sobre un documento (spec 2026-10-11 §6): soltar → revisar
  *  a quién va cada archivo → completar lo que pide la regla → guardar los
  *  listos. Nada se sube hasta "Guardar". */
-export function BulkUploadReview({ requirement }: { requirement: PendingSummaryRow }) {
+export function BulkUploadReview({ requirement, done = false }: {
+  requirement: PendingSummaryRow
+  /** Nadie debe ya el documento: sin lote abierto no se ofrece soltar más. */
+  done?: boolean
+}) {
   const lote = usePendingBulkUpload(requirement)
   const input = useRef<HTMLInputElement>(null)
   const [picking, setPicking] = useState<number | null>(null)
@@ -108,6 +112,7 @@ export function BulkUploadReview({ requirement }: { requirement: PendingSummaryR
   const locked = lote.saving
 
   if (!lote.items.length) {
+    if (done) return null
     return (
       <div className="mb-3">
         <div

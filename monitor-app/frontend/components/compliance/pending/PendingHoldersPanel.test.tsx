@@ -6,7 +6,7 @@ import { clavesCertificacion } from '@/lib/queries/certificacion'
 import type { PendingComplianceRow, PendingSummaryRow } from '@/lib/types'
 import { hoyEnChile } from '@/lib/utils/datetime'
 
-vi.mock('@/lib/api/compliance', () => ({ complianceApi: { listPending: vi.fn(), uploadFile: vi.fn() } }))
+vi.mock('@/lib/api/compliance', () => ({ complianceApi: { listPending: vi.fn(), uploadFile: vi.fn(), matchPendingFiles: vi.fn() } }))
 import { complianceApi } from '@/lib/api/compliance'
 
 const F30: PendingSummaryRow = { key: 'req-f30', label: 'F30-1', requirement_code: 'F30_1', target_entity: 'CARRIER',
@@ -131,6 +131,63 @@ describe('PendingHoldersPanel', () => {
     expect(screen.getByRole('button', { name: '4 por vencer' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '21 que faltan' }))
     expect(onStateChange).toHaveBeenCalledWith('missing')
+  })
+
+  it('por empresa, el filtro vacío habla de la empresa y no la usa como sustantivo', async () => {
+    vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 0, rows: [] })
+    const onStateChange = vi.fn()
+    const andes: PendingSummaryRow = { ...F30, key: 'c2', label: 'Transportes Andes Ltda', requirement_code: null,
+      target_entity: null, expiration_policy: null, overdue: 0 }
+    montar({ groupBy: 'carrier', selected: andes, onStateChange })
+    expect(await screen.findByText('Transportes Andes Ltda no tiene documentos vencidos')).toBeInTheDocument()
+    expect(screen.queryByText(/No hay Transportes Andes Ltda/)).not.toBeInTheDocument()
+    const detalle = screen.getByRole('button', { name: '4 por vencer' }).closest('p')!
+    expect(detalle).toHaveTextContent('Tiene 4 por vencer y 21 que faltan.')
+    fireEvent.click(screen.getByRole('button', { name: '21 que faltan' }))
+    expect(onStateChange).toHaveBeenCalledWith('missing')
+  })
+
+  it('cuando nadie lo debe, el panel dice que está al día en vez de mostrar filtros en cero', async () => {
+    vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 0, rows: [] })
+    montar({ selected: { ...F30, overdue: 0, expiring: 0, missing: 0 } })
+    expect(await screen.findByText('F30-1 al día: nadie lo debe')).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Estado' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/No hay F30-1/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Arrastra varios/)).not.toBeInTheDocument()
+  })
+
+  it('por empresa, cuando ya no debe nada dice que la empresa está al día', async () => {
+    vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 0, rows: [] })
+    const andes: PendingSummaryRow = { ...F30, key: 'c2', label: 'Transportes Andes Ltda', requirement_code: null,
+      target_entity: null, expiration_policy: null, overdue: 0, expiring: 0, missing: 0 }
+    montar({ groupBy: 'carrier', selected: andes })
+    expect(await screen.findByText('Transportes Andes Ltda al día')).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Estado' })).not.toBeInTheDocument()
+  })
+
+  it('al guardar el último del lote, queda el resultado del lote junto al estado al día', async () => {
+    vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 0, rows: [] })
+    vi.mocked(complianceApi.matchPendingFiles).mockResolvedValue({ files: [{
+      file_name: 'a.pdf', status: 'matched', record_id: 'p1', subject_label: 'Transportes Cordillera SpA',
+      carrier_name: 'Transportes Cordillera SpA', reason: 'rut', confidence: 0.95, candidates: [] }] })
+    vi.mocked(complianceApi.uploadFile).mockResolvedValue({ status: 'APPROVED_MANUAL' } as never)
+    const qc = nuevoQc()
+    const uno = { ...F30, ...SIN_DATO, overdue: 1, expiring: 0, missing: 0 }
+    const { rerender } = render(
+      <QueryClientProvider client={qc}>
+        <PendingHoldersPanel groupBy="requirement" selected={uno} state="overdue" onStateChange={vi.fn()} canUpload />
+      </QueryClientProvider>)
+    fireEvent.change(screen.getByLabelText('Elegir varios F30-1'),
+      { target: { files: [new File(['x'], 'a.pdf', { type: 'application/pdf' })] } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Guardar 1 listo' }))
+    expect(await screen.findByText('1 guardado')).toBeInTheDocument()
+    rerender(
+      <QueryClientProvider client={qc}>
+        <PendingHoldersPanel groupBy="requirement" selected={{ ...uno, overdue: 0 }} state="overdue" onStateChange={vi.fn()} canUpload />
+      </QueryClientProvider>)
+    expect(await screen.findByText('F30-1 al día: nadie lo debe')).toBeInTheDocument()
+    expect(screen.getByText('1 guardado')).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Estado' })).not.toBeInTheDocument()
   })
 
   it('si no se pudo cargar lo dice y ofrece reintentar', async () => {

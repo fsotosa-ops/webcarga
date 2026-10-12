@@ -24,6 +24,10 @@ type Cifra = Exclude<PendingFilter, 'all'>
 const NOMBRE: Record<PendingFilter, string> = {
   overdue: 'vencidos', expiring: 'por vencer', missing: 'que faltan', all: 'pendientes',
 }
+/** Por empresa el vacío habla de la empresa: "X no tiene documentos vencidos". */
+const NOMBRE_EMPRESA: Record<PendingFilter, string> = {
+  overdue: 'vencidos', expiring: 'por vencer', missing: 'faltantes', all: 'pendientes',
+}
 /** Por empresa, lo que debe cada quien, en el orden de la ficha. */
 const SECCIONES: { entity: EntityType; titulo: string }[] = [
   { entity: 'CARRIER', titulo: 'La empresa' },
@@ -112,6 +116,12 @@ export function PendingHoldersPanel({ groupBy, selected, state, onStateChange, c
   }
 
   const otros = (['overdue', 'expiring', 'missing'] as const).filter(s => s !== state && cifras[s] > 0)
+  // Nadie lo debe (p. ej. se acaba de guardar el último): un estado al día en
+  // vez de filtros en cero. El aviso y el resultado del lote siguen a la vista.
+  const done = cifras.overdue + cifras.expiring + cifras.missing === 0
+  const vacio = groupBy === 'carrier'
+    ? { titulo: `${selected.label} no tiene documentos ${NOMBRE_EMPRESA[state]}`, verbo: 'Tiene' }
+    : { titulo: `No hay ${selected.label} ${NOMBRE[state]}`, verbo: 'Hay' }
 
   return (
     <section aria-label={selected.label} className="min-w-0 p-3">
@@ -128,7 +138,7 @@ export function PendingHoldersPanel({ groupBy, selected, state, onStateChange, c
         {(regla || periodo) && (
           <span className="text-etiqueta text-informativo">{[regla, periodo].filter(Boolean).join(' · ')}</span>
         )}
-        <span className="md:ml-auto">
+        {!done && <span className="md:ml-auto">
           <SegmentedControl<PendingFilter>
             label="Estado"
             value={state}
@@ -140,22 +150,27 @@ export function PendingHoldersPanel({ groupBy, selected, state, onStateChange, c
               { id: 'all', label: 'Todos', badge: String(cifras.overdue + cifras.expiring + cifras.missing) },
             ]}
           />
-        </span>
+        </span>}
       </div>
 
-      {canUpload && groupBy === 'requirement' && <BulkUploadReview requirement={selected} />}
+      {canUpload && groupBy === 'requirement' && <BulkUploadReview requirement={selected} done={done} />}
 
       {aviso && <div className="mb-2"><TriageUndoNotice mensaje={aviso} onCerrar={() => setAviso(null)} /></div>}
 
-      {lista.isPending && <PendingSkeleton />}
+      {done && (
+        <Estado tipo="vacio"
+                titulo={groupBy === 'carrier' ? `${selected.label} al día` : `${selected.label} al día: nadie lo debe`} />
+      )}
 
-      {lista.isError && <PendingLoadError onRetry={() => void lista.refetch()} />}
+      {!done && lista.isPending && <PendingSkeleton />}
 
-      {lista.isSuccess && filas.length === 0 && (
-        <Estado tipo="vacio" titulo={`No hay ${selected.label} ${NOMBRE[state]}`}>
+      {!done && lista.isError && <PendingLoadError onRetry={() => void lista.refetch()} />}
+
+      {!done && lista.isSuccess && filas.length === 0 && (
+        <Estado tipo="vacio" titulo={vacio.titulo}>
           {otros.length > 0 && (
             <p className="text-dato text-informativo">
-              Hay{' '}
+              {vacio.verbo}{' '}
               {otros.map((s, i) => (
                 <span key={s}>
                   {i > 0 && ' y '}
@@ -171,7 +186,7 @@ export function PendingHoldersPanel({ groupBy, selected, state, onStateChange, c
         </Estado>
       )}
 
-      {lista.isSuccess && filas.length > 0 && groupBy === 'requirement' && (
+      {!done && lista.isSuccess && filas.length > 0 && groupBy === 'requirement' && (
         <div className="overflow-hidden rounded-md border border-border">
           <div aria-hidden="true"
                className="hidden items-center gap-3 border-b border-border bg-bg-main px-3 py-1.5 text-etiqueta font-semibold text-informativo md:flex">
@@ -185,7 +200,7 @@ export function PendingHoldersPanel({ groupBy, selected, state, onStateChange, c
         </div>
       )}
 
-      {lista.isSuccess && filas.length > 0 && groupBy === 'carrier' && (
+      {!done && lista.isSuccess && filas.length > 0 && groupBy === 'carrier' && (
         <div className="overflow-hidden rounded-md border border-border">
           {SECCIONES.map(({ entity, titulo }) => {
             const deEsta = filas.filter(f => f.entity_type === entity)

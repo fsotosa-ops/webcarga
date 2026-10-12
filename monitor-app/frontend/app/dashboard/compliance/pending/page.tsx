@@ -12,6 +12,7 @@ import { Estado } from '@/components/ui/Estado'
 import { PendingSummaryList } from '@/components/compliance/pending/PendingSummaryList'
 import { PendingHoldersPanel } from '@/components/compliance/pending/PendingHoldersPanel'
 import { PendingLoadError, PendingSkeleton } from '@/components/compliance/pending/PendingStates'
+import { defaultPendingFilter } from '@/lib/pending'
 import type { PendingFilter, PendingGroupBy, PendingSummaryRow } from '@/lib/types'
 
 const FILTROS: readonly PendingFilter[] = ['overdue', 'expiring', 'missing', 'all']
@@ -29,8 +30,6 @@ function Pending() {
   const canUpload = usePermiso('documents.upload')
 
   const groupBy: PendingGroupBy = params.get('by') === 'carrier' ? 'carrier' : 'requirement'
-  const pedido = params.get('state') as PendingFilter
-  const state: PendingFilter = FILTROS.includes(pedido) ? pedido : 'overdue'
 
   const resumen = useQuery({
     queryKey: clavesCertificacion.resumenPendientes(groupBy),
@@ -62,6 +61,9 @@ function Pending() {
     ? rows.find(r => r.key === previo.row.key) ?? enCero(previo.row)
     : undefined
   const elegido = seleccion ?? implicito ?? rows[0] ?? null
+  // `state` de la URL manda; sin él (o uno desconocido), el primer filtro con algo.
+  const pedido = params.get('state') as PendingFilter
+  const state: PendingFilter = FILTROS.includes(pedido) ? pedido : defaultPendingFilter(elegido)
   useEffect(() => {
     if (elegido) ultimo.current = { groupBy, row: elegido, desdeUrl: seleccion != null }
   })
@@ -85,7 +87,9 @@ function Pending() {
   }
 
   return (
-    <div className="space-y-3 p-4 md:p-6">
+    // pb-24 solo en el teléfono: el layout reserva pb-16 para la barra inferior,
+    // pero con etiquetas en dos líneas la barra mide más y tapaba "Guardar" del lote.
+    <div className="space-y-3 p-4 pb-24 md:p-6">
       <EncabezadoDePagina titulo="Pendientes" bajada="Solo empresas, conductores y equipos activos.">
         <SegmentedControl<PendingGroupBy>
           label="Ver por"

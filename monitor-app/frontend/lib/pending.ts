@@ -2,7 +2,7 @@ import type { StatusTone } from '@/components/ui/StatusChip'
 import { camposQuePide, expiryRelative, nombreDelPeriodo } from './compliance'
 import { corta, periodoQueSeExige, vigenciaDe } from './vigencia'
 import { hoyEnChile } from './utils/datetime'
-import type { PendingComplianceRow, PendingSummaryRow } from './types'
+import type { PendingComplianceRow, PendingFilter, PendingSummaryRow } from './types'
 
 /** Cómo se lee una fila de Pendientes: el estado en palabras, su señal, una
  *  línea de contexto opcional y la acción (spec 2026-10-11 §5.2). */
@@ -66,4 +66,16 @@ export function pendingPeriodLine(row: PendingSummaryRow, hoy: string = hoyEnChi
   if (!p) return null
   const inicio = `${p.periodo.getFullYear()}-${String(p.periodo.getMonth() + 1).padStart(2, '0')}-01`
   return `período ${nombreDelPeriodo(inicio).split(' ')[0]} · vence el ${corta(p.sePide)}`
+}
+
+/** El filtro con que se abre un documento o empresa cuando la URL no dice
+ *  `state`: Vencidos, salvo que esté vacío; entonces el primero con algo
+ *  (Por vencer, luego Faltan). Con `state` en la URL manda la URL. */
+export function defaultPendingFilter(
+  row: Pick<PendingSummaryRow, 'overdue' | 'expiring' | 'missing'> | null,
+): PendingFilter {
+  if (!row || row.overdue > 0) return 'overdue'
+  if (row.expiring > 0) return 'expiring'
+  if (row.missing > 0) return 'missing'
+  return 'overdue'
 }

@@ -100,6 +100,21 @@ describe('Pendientes — los estados de la pantalla', () => {
   })
 })
 
+describe('Pendientes — el teléfono', () => {
+  it('deja lugar bajo el contenido para la barra de navegación inferior (lo que reserva el layout no alcanza)', async () => {
+    vi.mocked(complianceApi.pendingSummary).mockResolvedValue({ rows: [F30] })
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <PendingDocumentsPage />
+      </QueryClientProvider>)
+    await screen.findByRole('option', { name: /F30-1/ })
+    const pagina = container.firstElementChild as HTMLElement
+    expect(pagina).toHaveClass('pb-24')
+    // En escritorio no hay barra inferior: el relleno vuelve al de siempre.
+    expect(pagina).toHaveClass('md:p-6')
+  })
+})
+
 describe('Pendientes — la URL', () => {
   it('sin parámetros: por documento, vencidos y el primero de la lista', async () => {
     vi.mocked(complianceApi.pendingSummary).mockResolvedValue({ rows: [F30, LIC] })
@@ -108,6 +123,31 @@ describe('Pendientes — la URL', () => {
     expect(within(screen.getByRole('group', { name: 'Ver por' })).getByRole('button', { name: 'Documento' }))
       .toHaveAttribute('aria-pressed', 'true')
     expect(complianceApi.listPending).toHaveBeenCalledWith(expect.objectContaining({ state: 'overdue', requirementCode: 'F30_1' }))
+  })
+
+  it('sin state: si no hay vencidos, abre el primer filtro con algo (por vencer, luego faltan)', async () => {
+    vi.mocked(complianceApi.pendingSummary).mockResolvedValue({ rows: [{ ...F30, overdue: 0, expiring: 0, missing: 3 }] })
+    montar()
+    await screen.findByRole('option', { name: /F30-1/ })
+    expect(within(screen.getByRole('group', { name: 'Estado' })).getByRole('button', { name: /Faltan/ }))
+      .toHaveAttribute('aria-pressed', 'true')
+    expect(complianceApi.listPending).toHaveBeenCalledWith(expect.objectContaining({ state: 'missing', requirementCode: 'F30_1' }))
+    expect(complianceApi.listPending).not.toHaveBeenCalledWith(expect.objectContaining({ state: 'overdue' }))
+  })
+
+  it('sin state y sin vencidos pero con por vencer, abre Por vencer', async () => {
+    vi.mocked(complianceApi.pendingSummary).mockResolvedValue({ rows: [{ ...F30, overdue: 0 }] })
+    montar()
+    await screen.findByRole('option', { name: /F30-1/ })
+    expect(complianceApi.listPending).toHaveBeenCalledWith(expect.objectContaining({ state: 'expiring' }))
+  })
+
+  it('con state en la dirección lo respeta aunque esté vacío', async () => {
+    nav.qs = 'state=overdue'
+    vi.mocked(complianceApi.pendingSummary).mockResolvedValue({ rows: [{ ...F30, overdue: 0 }] })
+    montar()
+    expect(await screen.findByText('No hay F30-1 vencidos')).toBeInTheDocument()
+    expect(complianceApi.listPending).toHaveBeenCalledWith(expect.objectContaining({ state: 'overdue' }))
   })
 
   it('lee doc y state de la dirección', async () => {
@@ -228,8 +268,10 @@ describe('Pendientes — subir el último que se debía', () => {
     await waitFor(() => expect(complianceApi.pendingSummary).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryAllByRole('status').map(e => e.textContent).join(' | '))
       .toContain('Licencia de Conducir de Rojas Pérez, Andrés guardado · no quedan vencidos'))
-    // El mismo panel, con sus cifras en cero, y no el primero de la lista.
+    // El mismo panel, ahora al día, y no el primero de la lista.
     expect(screen.getByRole('region', { name: 'Licencia de Conducir' })).toBeInTheDocument()
+    expect(screen.getByText('Licencia de Conducir al día: nadie lo debe')).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Estado' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: 'F30-1' })).not.toBeInTheDocument()
     expect(complianceApi.listPending).not.toHaveBeenCalledWith(expect.objectContaining({ requirementCode: 'F30_1' }))
     // En el teléfono el panel sigue a la vista (la lista no reaparece encima).
