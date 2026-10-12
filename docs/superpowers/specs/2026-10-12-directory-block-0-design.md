@@ -1,6 +1,6 @@
 # Directorio · Bloque 0: arreglos inmediatos de coherencia
 
-**Estado:** diseño aprobado por secciones en el chat el 12/10. La spec escrita espera la revisión del usuario.
+**Estado:** spec aprobada por el usuario el 12/10.
 
 **Origen:** auditoría del Directorio, `docs/superpowers/plans/2026-10-12-directory-audit-findings.md` (§5 bloque 0 y §7
 decisiones). Alternativa B aprobada; este bloque va antes de D1 ("Una sola respuesta") y no rediseña nada: corta los
@@ -152,3 +152,10 @@ defectos que hoy engañan o bloquean.
 ## 8. Nota sobre roles
 El rol "Administración" (`admin`) no tiene hoy permisos de edición del Directorio: gestiona personas, roles y
 configuración. Solo el Propietario (`owner`, `grants_all`) los tiene todos. Este bloque no cambia eso.
+
+Configuración medida el 12/10 (solo conteos): las 2 personas con `admin` tienen además los cuatro roles de supervisor,
+así que ya editan, dan de baja y borran en el Directorio; las 6 personas con algún supervisor tienen los cuatro. Con este
+bloque solo ganan permisos los 4 Operadores de Operaciones (`directory.fleet_status`). **Decisión del usuario:** el rol
+`admin` queda sin cambios. Revisar el reparto de roles de supervisor es una decisión de negocio fuera de este bloque.
+
+**Spec aprobada por el usuario el 12/10.**
