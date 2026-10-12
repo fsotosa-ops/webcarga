@@ -91,8 +91,13 @@ vigencia vía historial por trigger (cubre a Mage sin tocarlo) + override por ca
   calculado, reactivar = recalificar, clientes con vigencia pasan a D2. Spec escrita:
   `docs/superpowers/specs/2026-10-12-directory-d1-one-answer-design.md` (tres capas de estado + glosario único, `app.active_fleet`,
   `app.carrier_of`, `fleet_compliance.py` sobre la base de Pendientes, guarda 409, identidad RUT/patente, 3 despliegues).
-- [ ] **Siguiente: el usuario revisa la spec de D1** → writing-plans → subagent-driven. En paralelo: brainstorming de Sin
-  clasificar opción B (Certificación 2a).
+- [x] Spec de D1 aprobada; **plan escrito** `docs/superpowers/plans/2026-10-12-directory-d1-one-answer.md` (`98b377f9`):
+  16 tareas, 3 despliegues (T1-T10 base+API, T11-T15 frontend, T16 contraer). Decisiones del ensamblado: ONBOARDING se le
+  piden documentos pero no recibe viajes (409); Monitor con `*_has_critical_alert` por entidad (conserva el rojo de licencia y
+  cédula); `worst_state` solo de obligatorios; `daily_closures.py` a D2; las 36 activas saldrán "No habilitada" (se muestra
+  tal cual). Código de T1-T4 ya corrió en copia contra la base real (32 verdes).
+- [ ] **Siguiente: el usuario revisa el plan y elige el modo de ejecución** → ejecutar desde la Task 1. En paralelo:
+  brainstorming de Sin clasificar opción B (Certificación 2a).
 ### 2026-10-11 — Auditoría UX de "Sin clasificar" (insumo del bloque 2; solo lectura)
 
 Informe: `docs/superpowers/plans/2026-10-11-sin-clasificar-ux-audit.md`. Las capturas son `.playwright-mcp/sinclasificar-*.png`.
