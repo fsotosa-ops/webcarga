@@ -44,7 +44,9 @@ from ..schemas.compliance import (
     PendingMatchBody, PendingMatchResponse, PENDING_MATCH_MAX_FILES,
 )
 from ..schemas.document_ingest import unclassified_predicate
-from ..services.document_matcher import PendingOwner, match_owner, classify_owner_match
+from ..services.document_matcher import (
+    PendingOwner, classify_owner_match, match_owner, resolve_owner_collisions,
+)
 from ..services.audit import log_change, record_manual_edit
 from ..services.vigencia import regla_base_json_sql
 from ..services.solicitudes import encender_registros
@@ -739,7 +741,9 @@ async def match_pending_files(
 ):
     """Pendientes, carga en lote: propone a quién va cada archivo, SOLO entre
     quienes deben el documento. No escribe nada (spec 2026-10-11, sección 6).
-    Dos archivos para el mismo dueño quedan "por elegir": ninguno se guarda solo."""
+    Dos archivos para el mismo dueño: si uno es estrictamente más fuerte (RUT o
+    patente contra nombre, o más confianza que el margen) queda y los demás
+    pasan a "por elegir"; si empatan, ninguno se guarda solo (regla P23)."""
     if len(body.file_names) > PENDING_MATCH_MAX_FILES:
         raise HTTPException(
             422, f"Máximo {PENDING_MATCH_MAX_FILES} archivos por carga; llegaron {len(body.file_names)}.")
@@ -753,11 +757,12 @@ async def match_pending_files(
         return {"record_id": c.record_id, "subject_label": o.label, "carrier_name": o.carrier_name,
                 "confidence": c.confidence}
 
-    files = []
+    files, tops = [], []
     for name in body.file_names:
         cands = match_owner(name, owners)
         status = classify_owner_match(cands)
         top = cands[0] if status == "matched" else None
+        tops.append(top)
         files.append({
             "file_name": name, "status": status,
             "record_id": top.record_id if top else None,
@@ -766,14 +771,14 @@ async def match_pending_files(
             "reason": top.reason if top else None,
             "confidence": top.confidence if top else None,
             "candidates": [_cand(c) for c in cands[:5]],
+            "collision": None, "collision_subject_label": None,
         })
 
-    # Dos archivos para el mismo registro: los dos vuelven a "por elegir".
-    usados = Counter(f["record_id"] for f in files if f["status"] == "matched")
-    for f in files:
-        if f["status"] == "matched" and usados[f["record_id"]] > 1:
-            f.update(status="ambiguous", record_id=None, subject_label=None,
-                     carrier_name=None, reason=None, confidence=None)
+    # Varios archivos al mismo registro: queda solo el estrictamente más fuerte.
+    for i, kind in resolve_owner_collisions(tops).items():
+        files[i].update(status="ambiguous", record_id=None, subject_label=None,
+                        carrier_name=None, reason=None, confidence=None,
+                        collision=kind, collision_subject_label=por_id[tops[i].record_id].label)
     return {"files": files}
 
 

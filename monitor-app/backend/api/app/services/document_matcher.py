@@ -446,6 +446,44 @@ def match_owner(file_name: str, owners: list[PendingOwner]) -> list[OwnerCandida
     return sorted(found.values(), key=lambda c: c.confidence, reverse=True)
 
 
+def _owner_strength(c: OwnerCandidate) -> tuple[bool, float]:
+    """Un identificador (RUT, patente) pesa más que cualquier nombre."""
+    return (c.reason != "name", c.confidence)
+
+
+def _outranks(a: OwnerCandidate, b: OwnerCandidate) -> bool:
+    """`a` es estrictamente más fuerte que `b`: identificador contra nombre, o
+    la misma clase de razón con más de _AMBIGUITY_MARGIN de confianza."""
+    if (a.reason != "name") != (b.reason != "name"):
+        return a.reason != "name"
+    return a.confidence - b.confidence > _AMBIGUITY_MARGIN
+
+
+def resolve_owner_collisions(tops: list[OwnerCandidate | None]) -> dict[int, str]:
+    """Regla de choque del lote (P23, refina spec §6). Cuando varios archivos
+    van al mismo registro, si UNO es estrictamente más fuerte que todos los
+    demás (`_outranks`), ese queda asignado y los otros bajan ("outranked");
+    si no hay uno así (dos RUT exactos, dos nombres parecidos) bajan todos
+    ("tie"). Devuelve índice -> motivo, solo de los que bajan.
+
+    `tops` es la propuesta de cada archivo (None si no quedó asignado). La
+    pantalla repite esta misma regla en `usePendingBulkUpload` (`rowsOf`)."""
+    groups: dict[str, list[int]] = {}
+    for i, c in enumerate(tops):
+        if c is not None:
+            groups.setdefault(c.record_id, []).append(i)
+    demoted: dict[int, str] = {}
+    for idx in groups.values():
+        if len(idx) < 2:
+            continue
+        best = max(idx, key=lambda i: _owner_strength(tops[i]))
+        if all(_outranks(tops[best], tops[i]) for i in idx if i != best):
+            demoted.update({i: "outranked" for i in idx if i != best})
+        else:
+            demoted.update({i: "tie" for i in idx})
+    return demoted
+
+
 def classify_owner_match(candidates: list[OwnerCandidate]) -> str:
     """matched: un candidato sin rival cercano (la pantalla igual muestra la
     razón y deja cambiarlo). ambiguous: dos a menos de _AMBIGUITY_MARGIN.

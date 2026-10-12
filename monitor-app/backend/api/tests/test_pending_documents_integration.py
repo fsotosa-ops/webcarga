@@ -724,6 +724,29 @@ async def test_dos_archivos_para_el_mismo_dueno_quedan_por_elegir(conexion_rever
 
     assert [f["status"] for f in res["files"]] == ["ambiguous", "ambiguous"]
     assert all(f["record_id"] is None for f in res["files"])
+    assert [f["collision"] for f in res["files"]] == ["tie", "tie"]
+
+
+async def test_en_un_choque_el_archivo_con_rut_queda_y_el_de_nombre_baja(conexion_revertida):
+    """P23: un archivo con el RUT exacto y otro solo con el nombre van a la misma
+    empresa. El de RUT es estrictamente más fuerte: queda asignado; el de nombre
+    pasa a "por elegir" y dice a quién ya va el otro."""
+    conn = conexion_revertida
+    req = await _requisito(conn, entidad="CARRIER")
+    empresa = await _empresa(conn, nombre="Transportes Quillagua")
+    rut = await _con_rut(conn, empresa)
+    registro = await _registro(conn, req, "CARRIER", empresa)
+    razon = await conn.fetchval("SELECT business_name FROM public.carriers WHERE id = $1", empresa)
+
+    res = await match_pending_files(
+        PendingMatchBody(requirement_id=req, file_names=[f"f30-1_{rut}.pdf", f"f30-1 {razon}.pdf"]),
+        pool=PoolDeUnaConexion(conn), _=None)
+
+    por_rut, por_nombre = res["files"]
+    assert (por_rut["status"], por_rut["record_id"], por_rut["reason"]) == ("matched", registro, "rut")
+    assert por_rut["collision"] is None
+    assert (por_nombre["status"], por_nombre["record_id"]) == ("ambiguous", None)
+    assert (por_nombre["collision"], por_nombre["collision_subject_label"]) == ("outranked", razon)
 
 
 async def test_el_match_reconoce_un_rut_guardado_con_puntos(conexion_revertida):

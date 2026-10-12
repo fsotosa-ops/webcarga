@@ -291,6 +291,10 @@ class PendingMatchFile(BaseModel):
     reason: Optional[Literal["rut", "plate", "name"]] = None
     confidence: Optional[float] = None
     candidates: list[PendingMatchCandidate] = []
+    # Otro archivo del lote va al mismo registro (regla P23): "outranked" si
+    # el otro es estrictamente más fuerte y queda; "tie" si bajan todos.
+    collision: Optional[Literal["outranked", "tie"]] = None
+    collision_subject_label: Optional[str] = None
 
 
 class PendingMatchResponse(BaseModel):

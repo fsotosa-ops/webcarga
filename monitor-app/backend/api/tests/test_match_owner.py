@@ -1,6 +1,8 @@
 """match_owner: de quién es un archivo cuando el documento ya se sabe
 (Pendientes, carga en lote). Pura: sin base, con dueños armados a mano."""
-from app.services.document_matcher import PendingOwner, classify_owner_match, match_owner
+from app.services.document_matcher import (
+    OwnerCandidate, PendingOwner, classify_owner_match, match_owner, resolve_owner_collisions,
+)
 
 CORDILLERA = PendingOwner("r1", "CARRIER", "Transportes Cordillera SpA", "76222222-1", "Transportes Cordillera SpA")
 ANDES = PendingOwner("r2", "CARRIER", "Transportes Andes Ltda", "76333333-7", "Transportes Andes Ltda")
@@ -66,3 +68,32 @@ def test_la_patente_con_guion_o_espacio_asigna_al_equipo():
 def test_la_patente_dentro_de_una_secuencia_mas_larga_no_asigna():
     assert match_owner("revision XBBCL234.pdf", [BBCL23]) == []
     assert match_owner("revision X-BBCL-234.pdf", [BBCL23]) == []
+
+
+# ── Choque en el lote: dos archivos que van al mismo registro (P23, spec §6) ──
+
+def test_en_un_choque_el_rut_gana_al_nombre_y_solo_baja_el_de_nombre():
+    rut = OwnerCandidate("r1", 0.95, "rut")
+    nombre = OwnerCandidate("r1", 0.72, "name")
+    assert resolve_owner_collisions([rut, nombre, None]) == {1: "outranked"}
+
+
+def test_en_un_choque_de_dos_rut_bajan_los_dos():
+    a, b = OwnerCandidate("r1", 0.95, "rut"), OwnerCandidate("r1", 0.95, "rut")
+    assert resolve_owner_collisions([a, b]) == {0: "tie", 1: "tie"}
+
+
+def test_en_un_choque_por_nombre_gana_solo_si_supera_el_margen():
+    alto, bajo = OwnerCandidate("r1", 0.90, "name"), OwnerCandidate("r1", 0.84, "name")
+    assert resolve_owner_collisions([bajo, alto]) == {0: "outranked"}
+    cerca = OwnerCandidate("r1", 0.87, "name")
+    assert resolve_owner_collisions([cerca, alto]) == {0: "tie", 1: "tie"}
+
+
+def test_rut_y_patente_valen_lo_mismo_en_un_choque():
+    assert resolve_owner_collisions(
+        [OwnerCandidate("r5", 0.95, "plate"), OwnerCandidate("r5", 0.95, "rut")]) == {0: "tie", 1: "tie"}
+
+
+def test_archivos_a_registros_distintos_no_chocan():
+    assert resolve_owner_collisions([OwnerCandidate("r1", 0.95, "rut"), OwnerCandidate("r2", 0.72, "name")]) == {}
