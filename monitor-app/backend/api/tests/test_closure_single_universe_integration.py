@@ -8,7 +8,7 @@ transacción revertida."""
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -16,11 +16,14 @@ from app.routers.daily_closures import _DETAIL_SQL, _REPORT_SQL
 
 pytestmark = pytest.mark.integracion
 
-# Días sin líneas: el universo del día es solo lo que crea el test, así que los
-# conteos no dependen de producción. D es posterior a la primera firma de
-# app.closure_signatures (el go-live); ANTES es anterior a ella.
-D = date.fromisoformat("2099-01-05")      # después del go-live del Cierre
-ANTES = date.fromisoformat("2020-01-06")  # antes de la primera firma
+# Autocontenido: el go-live es el min(business_date) de app.closure_signatures. Si
+# la base ya tiene firmas se usa el suyo; si no, el test inserta una (en la
+# transacción revertida) en GO_LIVE_SEMILLA. Nunca se borra nada de producción.
+# POSTERIOR queda lejos en el futuro; el día anterior al go-live se deriva de él.
+# El caso "closure_signatures vacía" no se prueba (haría falta borrar): lo garantiza
+# la semántica de SQL, min() de nada es NULL y `fecha >= NULL` es NULL, no se agrega nada.
+GO_LIVE_SEMILLA = date.fromisoformat("2000-01-10")
+D = date.fromisoformat("2099-01-05")  # POSTERIOR al go-live
 TRACTOREO_ID = "89822208-0189-463a-93a0-605fb570c71b"
 PREFIJO = "ZZ-TEST-DIRECTORIO"
 
@@ -47,6 +50,21 @@ async def _conductor_en_roster(conn) -> dict:
     return {"carrier": carrier, "driver": driver}
 
 
+async def _go_live(conn) -> date:
+    """El día de la primera firma; si no hay ninguna, siembra una en la transacción."""
+    primera = await conn.fetchval("SELECT min(business_date) FROM app.closure_signatures")
+    if primera is not None:
+        return primera
+    user = await conn.fetchval("SELECT id FROM public.profiles LIMIT 1")
+    await conn.execute(
+        "INSERT INTO app.closure_periods (business_date, status, closed_by, closed_at) "
+        "VALUES ($1, 'CLOSED', $2::uuid, now()) ON CONFLICT DO NOTHING", GO_LIVE_SEMILLA, user)
+    await conn.execute(
+        "INSERT INTO app.closure_signatures (business_date, version, signed_by, signed_at, totals, captured_from) "
+        "VALUES ($1, 1, $2::uuid, now(), '{}'::jsonb, 'signing')", GO_LIVE_SEMILLA, user)
+    return GO_LIVE_SEMILLA
+
+
 async def _linea_sin_motivo(conn, driver, dia=D) -> None:
     # closure_lines.business_date tiene FK a closure_periods: primero el período.
     await conn.execute(
@@ -58,23 +76,25 @@ async def _linea_sin_motivo(conn, driver, dia=D) -> None:
 
 async def test_antes_del_go_live_la_linea_de_quien_salio_sigue_oculta(conexion_revertida):
     conn = conexion_revertida
-    primera_firma = await conn.fetchval("SELECT min(business_date) FROM app.closure_signatures")
-    assert primera_firma is not None and ANTES < primera_firma < D
+    antes = await _go_live(conn) - timedelta(days=1)
     queda = await _conductor_en_roster(conn)
     sale = await _conductor_en_roster(conn)
-    await _linea_sin_motivo(conn, queda["driver"], ANTES)
-    await _linea_sin_motivo(conn, sale["driver"], ANTES)
+    await _linea_sin_motivo(conn, queda["driver"], antes)
+    await _linea_sin_motivo(conn, sale["driver"], antes)
     await conn.execute(
         "UPDATE public.driver_assignments SET status = 'INACTIVE' WHERE driver_id = $1", sale["driver"])
 
-    detalle = {f["driver_id"] for f in await conn.fetch(_DETAIL_SQL, ANTES)}
-    reporte = {f["driver_id"] for f in await conn.fetch(_REPORT_SQL, ANTES, ANTES)}
+    # El día anterior al go-live puede tener líneas reales: solo se miran las del test.
+    nuestros = {queda["driver"], sale["driver"]}
+    detalle = {f["driver_id"] for f in await conn.fetch(_DETAIL_SQL, antes)} & nuestros
+    reporte = {f["driver_id"] for f in await conn.fetch(_REPORT_SQL, antes, antes)} & nuestros
 
     assert detalle == reporte == {queda["driver"]}
 
 
 async def test_la_linea_de_quien_salio_del_roster_se_ve_marcada(conexion_revertida):
     conn = conexion_revertida
+    await _go_live(conn)
     queda = await _conductor_en_roster(conn)
     sale = await _conductor_en_roster(conn)
     await _linea_sin_motivo(conn, queda["driver"])
@@ -95,6 +115,7 @@ async def test_la_tabla_cuenta_lo_mismo_que_la_firma(conexion_revertida):
     """Review Focus 3: un día cuya única línea que bloquea es de alguien que ya
     no está en el roster (aquí, por una baja del conductor)."""
     conn = conexion_revertida
+    await _go_live(conn)
     sale = await _conductor_en_roster(conn)
     await _linea_sin_motivo(conn, sale["driver"])
     await conn.execute("UPDATE public.drivers SET operational_status = 'INACTIVE' WHERE id = $1", sale["driver"])
@@ -115,6 +136,7 @@ async def test_la_tabla_cuenta_lo_mismo_que_la_firma(conexion_revertida):
 
 async def test_el_reporte_tambien_trae_a_quien_salio(conexion_revertida):
     conn = conexion_revertida
+    await _go_live(conn)
     sale = await _conductor_en_roster(conn)
     await _linea_sin_motivo(conn, sale["driver"])
     await conn.execute(
