@@ -17,6 +17,7 @@ from ..services.entity_summary import driver_summary
 from ..services.fleet_compliance import compliance_record_columns_sql
 from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
 from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente
+from ..services.entity_summary import usual_tractor_lateral
 from ..services.origen_del_viaje import origen_del_viaje
 from ..utils.document_storage import resolve_signed_url
 from ..utils.identity import canonical_rut, rut_matches_sql
@@ -61,10 +62,9 @@ async def list_drivers(
             a.id       AS tractor_asset_id,
             a.license_plate AS tractor_plate
         FROM public.drivers d
-        LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
-        LEFT JOIN public.carriers c ON c.id = da.carrier_id
-        LEFT JOIN public.vehicle_driver_assignments vda ON vda.driver_id = d.id AND vda.status = 'ACTIVE'
-        LEFT JOIN public.assets a ON a.id = vda.asset_id
+        -- "¿De qué empresa es?" (D1, spec §4.2) y UN tracto: el habitual (F-07).
+        LEFT JOIN public.carriers c ON c.id = app.carrier_of('DRIVER', d.id)
+        {usual_tractor_lateral('d.id', 'a')}
         WHERE d.operational_status = 'ACTIVE'
           AND (d.full_name ILIKE '%'||$1||'%' OR {rut_matches_sql('d.tax_id', '$1')})
         ORDER BY d.full_name
@@ -108,7 +108,7 @@ async def fuzzy_match_drivers(
     if len(cleaned) < 2:
         return []
     rows = await pool.fetch(
-        """
+        f"""
         SELECT
             d.id       AS driver_id,
             d.full_name AS driver_name,
@@ -124,10 +124,9 @@ async def fuzzy_match_drivers(
             a.license_plate AS tractor_plate,
             similarity(upper(d.full_name), upper($1)) AS similarity
         FROM public.drivers d
-        LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
-        LEFT JOIN public.carriers c ON c.id = da.carrier_id AND c.operational_status = 'ACTIVE'
-        LEFT JOIN public.vehicle_driver_assignments vda ON vda.driver_id = d.id AND vda.status = 'ACTIVE'
-        LEFT JOIN public.assets a ON a.id = vda.asset_id
+        LEFT JOIN public.carriers c
+               ON c.id = app.carrier_of('DRIVER', d.id) AND c.operational_status = 'ACTIVE'
+        {usual_tractor_lateral('d.id', 'a')}
         WHERE d.operational_status = 'ACTIVE'
           AND (similarity(upper(d.full_name), upper($1)) >= $2 OR d.tax_id = $4::text)
         ORDER BY (d.tax_id = $4::text) DESC NULLS LAST, similarity DESC

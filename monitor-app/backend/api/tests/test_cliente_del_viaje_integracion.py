@@ -6,8 +6,16 @@ from uuid import UUID
 
 import asyncpg
 import pytest
+from tests.d1_subjects import apply_fleet_facts
 
 pytestmark = pytest.mark.integracion
+
+
+@pytest.fixture(autouse=True)
+async def _hechos_de_la_flota(conexion_revertida):
+    """D1 Task 7: el Monitor y /drivers leen app.carrier_of / app.active_fleet;
+    hasta la Task 10 la migración no está aplicada."""
+    await apply_fleet_facts(conexion_revertida)
 
 
 async def test_el_directorio_no_admite_el_mismo_nombre_con_otra_capitalizacion(conexion_revertida):
