@@ -53,7 +53,8 @@ async def test_cuenta_los_viajes_activos_de_un_conductor_que_los_tiene(conexion_
         SELECT vfr.resolved_driver_id AS id, count(*) AS activos
         FROM app.trips t
         JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-        WHERE t.is_active AND vfr.resolved_driver_id IS NOT NULL
+        -- Mismo universo que el endpoint: un viaje anulado no cuenta aunque siga is_active.
+        WHERE t.is_active AND t.voided_at IS NULL AND vfr.resolved_driver_id IS NOT NULL
         GROUP BY 1 ORDER BY 2 DESC LIMIT 1
         """,
     )
