@@ -60,3 +60,25 @@ Aplicada el 12/10 a las 16:41 (Chile), sin extracción en vuelo, sin transaccion
   LEFT JOIN con un comentario. Resultado idéntico (37 filas iguales).
 - **T7-P:** `_attach_carrier_can_operate` suma ~110 ms en el servidor (plan + ejecución) más un viaje de red.
   Bajo el umbral de 150 ms.
+
+## Despliegue 3 (Task 16): contraer
+
+- **Retirado:** `compliance_health`, el filtro `health` de GET /carriers y sus facetas `pending`/`ok` (R-E7),
+  `pending_mandatory` del Directorio y de los rosters (R-E6; se queda el de /compliance-records/status),
+  `urgencia` de /pending (Pendientes agrupa sobre `document_state`), `funnel_group` con `'catalogo'` y
+  `expired_count` (R-E12), `*_pending_docs_critical` de /trips (R-E13; se queda el del Cierre) y
+  `alert_thresholds` de /trips/meta con la invalidación de su caché en el PATCH (R-E4).
+- **T16-F:** el total del encabezado del embudo suma solo las empresas ACTIVE (= Pendientes). Producción tras el
+  despliegue: embudo 2226 = Pendientes 2226 con 1 empresa en onboarding en la lista.
+- **T16-CO:** sobre el SQL real del embudo (37 filas iguales en las tres variantes): LEFT JOIN 145-152 ms,
+  `app.carrier_of` con `SET search_path` 270-277 ms, sin `SET search_path` 261-278 ms. `EXPLAIN VERBOSE` muestra
+  la llamada a la función también sin el SET: Postgres no inlinea una función SQL escalar cuyo cuerpo tiene
+  subconsultas. Se mantiene el fallback, con entrada `carrier_attribution_case` en la guarda y su motivo, y la
+  función NO se redefinió (el cambio no daba el inline que lo justificaba y sumaba un aviso de search_path mutable).
+- **Guardas:** backend `retired_fields` (campos retirados como alias o clave; topes permanentes: Cierre 1, R-E6 1),
+  `carrier_attribution_case` (embudo 1, plantilla 1), `mandatory_blocking` de carriers.py a 0; frontend etiquetas
+  `toEqual([])` y recálculo con el residuo R-E6 de CertificationStatusTable.tsx con motivo.
+- **Migración `20261015090000_retire_per_document_alert_thresholds`:** ensayo con ROLLBACK: 1 fila
+  (`documento_por_vencer` 30/0), 9 copias, segunda corrida sin duplicar. Aplicada el 12/10 a las 19:27 (Chile),
+  después de Deploy Monitor API en verde, sin jobs de extracción en vuelo ni transacciones largas. Queda una fila
+  (30/0) y 9 copias en audit_log (`ALERT_THRESHOLD`). El MCP la registró como versión `20261012222653`.
