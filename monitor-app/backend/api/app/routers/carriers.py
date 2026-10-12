@@ -406,7 +406,8 @@ LIMIT $2
 
 _SQL_BUSCAR_CONDUCTORES = """
 SELECT d.id, d.full_name, d.tax_id, d.operational_status,
-       c.id AS carrier_id, c.business_name AS carrier_name
+       c.id AS carrier_id, c.business_name AS carrier_name,
+       c.operational_status AS carrier_operational_status
 FROM public.drivers d
 LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = da.carrier_id
@@ -420,7 +421,8 @@ LIMIT $2
 _SQL_BUSCAR_VEHICULOS = """
 SELECT a.id, a.license_plate, a.asset_type, a.operational_status,
        wot.label AS webcarga_operation_type_label,
-       c.id AS carrier_id, c.business_name AS carrier_name
+       c.id AS carrier_id, c.business_name AS carrier_name,
+       c.operational_status AS carrier_operational_status
 FROM public.assets a
 LEFT JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
 LEFT JOIN public.carriers c ON c.id = aa.carrier_id

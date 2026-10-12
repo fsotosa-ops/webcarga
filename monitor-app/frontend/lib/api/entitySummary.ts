@@ -6,7 +6,7 @@ import { apiFetch } from './client'
  *  (GET /{drivers|assets|carriers}/{id}/summary, HU 20261011/01). */
 export type EntityKind = DirectoryEntity
 
-export type EntityRef = { id: string; name: string }
+export type EntityRef = { id: string; name: string; operational_status?: string }
 
 type Base = { id: string; operational_status: string; documents: DocumentSummary }
 

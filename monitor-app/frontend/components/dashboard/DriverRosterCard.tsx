@@ -2,12 +2,14 @@
 'use client'
 
 import { ShieldAlert, ShieldCheck } from 'lucide-react'
-import type { CarrierDriverRosterItem } from '@/lib/types'
+import { isCarrierDeactivated, type CarrierDriverRosterItem, type CarrierOperationalStatus } from '@/lib/types'
 import { getInitials, getInitialColor } from '@/lib/utils/avatar'
 import { ChipDeBaja } from './ChipDeBaja'
 
 interface Props {
   driver: CarrierDriverRosterItem
+  /** Estado de la empresa: si está dada de baja, la tarjeta lo dice (bloque 0, 0.9). */
+  carrierStatus?: CarrierOperationalStatus
   onOpen: () => void
 }
 
@@ -22,7 +24,7 @@ interface Props {
  *  payload y no se dibujaba, así que sólo se sabía abriendo la ficha de a una.
  *  Y lo dice EN LUGAR del pill de documentación — uno de baja con los papeles
  *  al día se veía en verde "Al día". */
-export function DriverRosterCard({ driver, onOpen }: Props) {
+export function DriverRosterCard({ driver, carrierStatus, onOpen }: Props) {
   return (
     <button
       type="button"
@@ -37,8 +39,8 @@ export function DriverRosterCard({ driver, onOpen }: Props) {
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-xs font-bold text-text-primary truncate">{driver.full_name}</p>
-        {driver.operational_status !== 'ACTIVE' ? (
-          <ChipDeBaja estado={driver.operational_status} />
+        {driver.operational_status !== 'ACTIVE' || isCarrierDeactivated(carrierStatus) ? (
+          <ChipDeBaja estado={driver.operational_status} carrierStatus={carrierStatus} />
         ) : driver.compliance_health === 'PENDING' ? (
           <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 mt-0.5">
             <ShieldAlert size={9} /> {driver.pending_mandatory} pendiente{driver.pending_mandatory === 1 ? '' : 's'}

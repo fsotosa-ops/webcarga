@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { User, Truck } from 'lucide-react'
-import { statusLabel, type DirectorioBusqueda } from '@/lib/types'
+import { CARRIER_DEACTIVATED_LABEL, isCarrierDeactivated, statusLabel, type DirectorioBusqueda } from '@/lib/types'
 import { carrierPanelHref } from '@/lib/navegacion/directory'
 
 /**
@@ -41,6 +41,7 @@ export function ResultadosDelDirectorio({ datos }: { datos: DirectorioBusqueda }
             secundario={c.tax_id}
             empresa={c.carrier_name}
             deBaja={c.operational_status !== 'ACTIVE'}
+            empresaDeBaja={isCarrierDeactivated(c.carrier_operational_status)}
           />
         ))}
       </Grupo>
@@ -54,6 +55,7 @@ export function ResultadosDelDirectorio({ datos }: { datos: DirectorioBusqueda }
             secundario={v.webcarga_operation_type_label ?? 'Sin tipo de operación'}
             empresa={v.carrier_name}
             deBaja={v.operational_status !== 'ACTIVE'}
+            empresaDeBaja={isCarrierDeactivated(v.carrier_operational_status)}
           />
         ))}
       </Grupo>
@@ -81,13 +83,14 @@ function Grupo({
 }
 
 function Fila({
-  href, principal, secundario, empresa, deBaja,
+  href, principal, secundario, empresa, deBaja, empresaDeBaja,
 }: {
   href:       string | null
   principal:  string
   secundario: string | null
   empresa:    string | null
   deBaja:     boolean
+  empresaDeBaja: boolean
 }) {
   const contenido = (
     <div className="flex items-center gap-3 px-4 py-2.5">
@@ -98,6 +101,11 @@ function Fila({
       {deBaja && (
         <span className="text-etiqueta font-semibold px-1.5 py-0.5 rounded-full border border-border text-informativo shrink-0">
           {statusLabel('driver', 'INACTIVE')}
+        </span>
+      )}
+      {!deBaja && empresaDeBaja && (
+        <span className="text-etiqueta font-semibold px-1.5 py-0.5 rounded-full border border-border text-informativo shrink-0">
+          {CARRIER_DEACTIVATED_LABEL}
         </span>
       )}
       <p className="text-etiqueta text-informativo truncate max-w-[45%] text-right">

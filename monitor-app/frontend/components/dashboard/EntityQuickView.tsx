@@ -14,7 +14,7 @@ import {
   entitySummaryKey, fetchEntitySummary,
   type AssetSummary, type CarrierSummary, type DriverSummary, type EntityKind,
 } from '@/lib/api/entitySummary'
-import { statusLabel } from '@/lib/types'
+import { CARRIER_DEACTIVATED_LABEL, isCarrierDeactivated, statusLabel } from '@/lib/types'
 import { assetHref, carrierHref, driverHref } from '@/lib/navegacion/directory'
 import type { QuickViewTarget } from '@/lib/quickView'
 import { getInitials } from '@/lib/utils/avatar'
@@ -153,9 +153,14 @@ function Identity({ target, data }: { target: QuickViewTarget; data?: DriverSumm
             {target.kind === 'asset' && (data as AssetSummary).operation_type && (
               <StatusChip tone="action">{(data as AssetSummary).operation_type}</StatusChip>
             )}
-            <StatusChip tone={isActive(data.operational_status) ? 'resolved' : 'neutral'}>
-              {statusLabel(target.kind, data.operational_status)}
-            </StatusChip>
+            {target.kind !== 'carrier' && isActive(data.operational_status)
+              && isCarrierDeactivated((data as DriverSummary | AssetSummary).carrier?.operational_status)
+              ? <StatusChip tone="neutral">{CARRIER_DEACTIVATED_LABEL}</StatusChip>
+              : (
+                <StatusChip tone={isActive(data.operational_status) ? 'resolved' : 'neutral'}>
+                  {statusLabel(target.kind, data.operational_status)}
+                </StatusChip>
+              )}
           </div>
         )}
       </div>

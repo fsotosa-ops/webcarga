@@ -52,11 +52,15 @@ async def list_drivers(
             )          AS driver_phone,
             c.id       AS carrier_id,
             c.business_name AS carrier_name,
+            -- La empresa aunque esté de baja, con su estado (bloque 0, 0.9; R10):
+            -- antes salía "Sin empresa". FleetAssignSection solo la autocompleta
+            -- si no está dada de baja, así que lo que se asigna no cambia.
+            c.operational_status AS carrier_operational_status,
             a.id       AS tractor_asset_id,
             a.license_plate AS tractor_plate
         FROM public.drivers d
         LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
-        LEFT JOIN public.carriers c ON c.id = da.carrier_id AND c.operational_status = 'ACTIVE'
+        LEFT JOIN public.carriers c ON c.id = da.carrier_id
         LEFT JOIN public.vehicle_driver_assignments vda ON vda.driver_id = d.id AND vda.status = 'ACTIVE'
         LEFT JOIN public.assets a ON a.id = vda.asset_id
         WHERE d.operational_status = 'ACTIVE'
@@ -112,6 +116,10 @@ async def fuzzy_match_drivers(
             )          AS driver_phone,
             c.id       AS carrier_id,
             c.business_name AS carrier_name,
+            -- La empresa aunque esté de baja, con su estado (bloque 0, 0.9; R10):
+            -- antes salía "Sin empresa". FleetAssignSection solo la autocompleta
+            -- si no está dada de baja, así que lo que se asigna no cambia.
+            c.operational_status AS carrier_operational_status,
             a.id       AS tractor_asset_id,
             a.license_plate AS tractor_plate,
             similarity(upper(d.full_name), upper($1)) AS similarity

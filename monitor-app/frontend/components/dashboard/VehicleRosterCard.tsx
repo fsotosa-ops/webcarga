@@ -2,11 +2,13 @@
 'use client'
 
 import { Truck, ShieldAlert, ShieldCheck } from 'lucide-react'
-import { ASSET_TYPE_LABELS, type AssetType, type CarrierAssetRosterItem } from '@/lib/types'
+import { ASSET_TYPE_LABELS, isCarrierDeactivated, type AssetType, type CarrierAssetRosterItem, type CarrierOperationalStatus } from '@/lib/types'
 import { ChipDeBaja } from './ChipDeBaja'
 
 interface Props {
   vehicle: CarrierAssetRosterItem
+  /** Estado de la empresa: si está dada de baja, la tarjeta lo dice (bloque 0, 0.9). */
+  carrierStatus?: CarrierOperationalStatus
   onOpen:  () => void
 }
 
@@ -23,7 +25,7 @@ interface Props {
  *  el cierre del día, y la ficha no lo mostraba. Pablo, 04/09: *"en el
  *  directorio debería mostrarte esto, este tractoreo… aquí no dice nada"*.
  *  Cuando falta se dice, porque faltar tiene consecuencia. */
-export function VehicleRosterCard({ vehicle, onOpen }: Props) {
+export function VehicleRosterCard({ vehicle, carrierStatus, onOpen }: Props) {
   return (
     <button
       type="button"
@@ -63,8 +65,8 @@ export function VehicleRosterCard({ vehicle, onOpen }: Props) {
             </span>
           )}
         </div>
-        {vehicle.operational_status !== 'ACTIVE' ? (
-          <ChipDeBaja estado={vehicle.operational_status} />
+        {vehicle.operational_status !== 'ACTIVE' || isCarrierDeactivated(carrierStatus) ? (
+          <ChipDeBaja estado={vehicle.operational_status} carrierStatus={carrierStatus} />
         ) : vehicle.compliance_health === 'PENDING' ? (
           <span className="inline-flex items-center gap-1 text-etiqueta font-semibold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 mt-0.5">
             <ShieldAlert size={9} /> {vehicle.pending_mandatory} pendiente{vehicle.pending_mandatory === 1 ? '' : 's'}

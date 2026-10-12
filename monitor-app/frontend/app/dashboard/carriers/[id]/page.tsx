@@ -682,7 +682,7 @@ function EmpresaDetailPageInner() {
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
               {visibleDrivers.map(d => (
-                <DriverRosterCard key={d.id} driver={d} onOpen={() => setSelectedDriverId(d.id)} />
+                <DriverRosterCard key={d.id} driver={d} carrierStatus={carrier.operational_status} onOpen={() => setSelectedDriverId(d.id)} />
               ))}
             </div>
             {!driverShowAll && filteredDrivers.length > ROSTER_PAGE_SIZE && (
@@ -780,7 +780,7 @@ function EmpresaDetailPageInner() {
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
               {visibleAssets.map(a => (
-                <VehicleRosterCard key={a.id} vehicle={a} onOpen={() => setSelectedAssetId(a.id)} />
+                <VehicleRosterCard key={a.id} vehicle={a} carrierStatus={carrier.operational_status} onOpen={() => setSelectedAssetId(a.id)} />
               ))}
             </div>
             {!assetShowAll && filteredAssets.length > ROSTER_PAGE_SIZE && (

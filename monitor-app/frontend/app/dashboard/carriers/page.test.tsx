@@ -88,7 +88,7 @@ describe('EmpresasTransportePage', () => {
       empresas: [],
       conductores: [{
         id: 'd1', full_name: 'Manuel Pardo', tax_id: '11111111-1',
-        operational_status: 'ACTIVE', carrier_id: 'c9', carrier_name: 'Transportes Sur',
+        operational_status: 'ACTIVE', carrier_id: 'c9', carrier_name: 'Transportes Sur', carrier_operational_status: 'ACTIVE',
       }],
       vehiculos: [],
     })
@@ -111,7 +111,7 @@ describe('EmpresasTransportePage', () => {
       empresas: [],
       conductores: [{
         id: 'd1', full_name: 'Manuel Pardo', tax_id: '11111111-1',
-        operational_status: 'ACTIVE', carrier_id: 'c9', carrier_name: 'Transportes Sur',
+        operational_status: 'ACTIVE', carrier_id: 'c9', carrier_name: 'Transportes Sur', carrier_operational_status: 'ACTIVE',
       }],
       vehiculos: [],
     })
@@ -132,7 +132,7 @@ describe('EmpresasTransportePage', () => {
       vehiculos: [{
         id: 'a1', license_plate: 'DTBY52', asset_type: 'TRACTOCAMION',
         operational_status: 'ACTIVE', webcarga_operation_type_label: 'Tractoreo',
-        carrier_id: 'cf', carrier_name: 'La Fortaleza',
+        carrier_id: 'cf', carrier_name: 'La Fortaleza', carrier_operational_status: 'ACTIVE',
       }],
     })
     renderPage()
@@ -152,7 +152,7 @@ describe('EmpresasTransportePage', () => {
       empresas: [],
       conductores: [{
         id: 'd2', full_name: 'Conductor Huerfano', tax_id: '22222222-2',
-        operational_status: 'ACTIVE', carrier_id: null, carrier_name: null,
+        operational_status: 'ACTIVE', carrier_id: null, carrier_name: null, carrier_operational_status: null,
       }],
       vehiculos: [],
     })

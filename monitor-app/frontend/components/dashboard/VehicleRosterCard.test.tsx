@@ -67,4 +67,10 @@ describe('VehicleRosterCard', () => {
     expect(screen.getByText('Dado de baja')).toBeInTheDocument()
     expect(screen.queryByText('Al día')).not.toBeInTheDocument()
   })
+
+  it('marca al equipo de una empresa dada de baja (0.9)', () => {
+    render(<VehicleRosterCard vehicle={VEHICLE} carrierStatus="INACTIVE" onOpen={vi.fn()} />)
+    expect(screen.getByText('Empresa dada de baja')).toBeInTheDocument()
+    expect(screen.queryByText('Al día')).not.toBeInTheDocument()
+  })
 })

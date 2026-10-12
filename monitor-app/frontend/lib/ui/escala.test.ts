@@ -67,7 +67,8 @@ describe('la escala tipografica', () => {
     // 260 -> 214 el 2026-10-11: la Bitácora y los indicadores del detalle del
     // viaje dejaron los 9-10 px (pasada visual del detalle), más bajas previas
     // que no se habían descontado.
-    const DEUDA = 214
+    // 214 -> 213 el 2026-10-12: la línea de empresa de DriverSearchPicker pasó a tokens (bloque 0, 0.9).
+    const DEUDA = 213
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

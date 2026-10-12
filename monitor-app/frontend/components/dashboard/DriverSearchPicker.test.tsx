@@ -75,4 +75,14 @@ describe('DriverSearchPicker', () => {
     render(<Controlled suggested={[SUGGESTED]} />)
     expect(screen.queryByText(/%$/)).not.toBeInTheDocument()
   })
+
+  it('marca al conductor de una empresa dada de baja', () => {
+    render(<Controlled suggested={[{ ...SUGGESTED, carrier_operational_status: 'INACTIVE' }]} />)
+    expect(screen.getByText(/Empresa dada de baja/)).toBeInTheDocument()
+  })
+
+  it('no marca al conductor de una empresa activa', () => {
+    render(<Controlled suggested={[{ ...SUGGESTED, carrier_operational_status: 'ACTIVE' }]} />)
+    expect(screen.queryByText(/Empresa dada de baja/)).not.toBeInTheDocument()
+  })
 })

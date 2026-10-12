@@ -4,7 +4,7 @@ import { Search, Loader2, User } from 'lucide-react'
 import { driversApi } from '@/lib/api/drivers'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useQuery } from '@tanstack/react-query'
-import type { DriverPickCandidate } from '@/lib/types'
+import { CARRIER_DEACTIVATED_LABEL, isCarrierDeactivated, type DriverPickCandidate } from '@/lib/types'
 
 interface Props {
   query:          string
@@ -79,8 +79,9 @@ export function DriverSearchPicker({
             <User size={12} className="text-gray-400 shrink-0" />
             <div className="min-w-0 flex-1">
               <p className="text-[11px] font-semibold text-text-primary truncate">{d.driver_name}</p>
-              <p className="text-[10px] text-gray-400">
+              <p className="text-etiqueta text-informativo">
                 {d.carrier_name ?? 'Sin empresa'}{d.tractor_plate ? ` · ${d.tractor_plate}` : ''}
+                {isCarrierDeactivated(d.carrier_operational_status) && <> · {CARRIER_DEACTIVATED_LABEL}</>}
               </p>
             </div>
             {/* HU-06 (Fase 3): % de similitud — solo presente en sugerencias

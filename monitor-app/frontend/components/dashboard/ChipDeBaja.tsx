@@ -1,7 +1,7 @@
 'use client'
 
-import { UserX } from 'lucide-react'
-import { statusLabel, type OperationalStatus } from '@/lib/types'
+import { Building2, UserX } from 'lucide-react'
+import { CARRIER_DEACTIVATED_LABEL, isCarrierDeactivated, statusLabel, type OperationalStatus } from '@/lib/types'
 
 /**
  * "Dado de baja", dicho en la lista.
@@ -17,11 +17,13 @@ import { statusLabel, type OperationalStatus } from '@/lib/types'
  * los papeles al día se veía con un "Al día" verde, que es exactamente la
  * lectura contraria. Una fila dice un estado.
  */
-export function ChipDeBaja({ estado }: { estado: OperationalStatus }) {
-  if (estado === 'ACTIVE') return null
+export function ChipDeBaja({ estado, carrierStatus }: { estado: OperationalStatus; carrierStatus?: string | null }) {
+  const propia = estado !== 'ACTIVE'
+  if (!propia && !isCarrierDeactivated(carrierStatus)) return null
   return (
     <span className="inline-flex items-center gap-1 text-etiqueta font-semibold px-1.5 py-0.5 rounded-full border border-border text-informativo mt-0.5">
-      <UserX size={9} /> {statusLabel('driver', estado)}
+      {propia ? <UserX size={9} /> : <Building2 size={9} />}
+      {propia ? statusLabel('driver', estado) : CARRIER_DEACTIVATED_LABEL}
     </span>
   )
 }

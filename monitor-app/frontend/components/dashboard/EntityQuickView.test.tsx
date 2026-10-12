@@ -139,4 +139,12 @@ describe('EntityQuickView accesible', () => {
     renderView({ kind: 'driver', id: 'd1', label: 'Vidal Gallardo' })
     expect(screen.getByRole('dialog', { name: 'Conductor Vidal Gallardo' })).toBeInTheDocument()
   })
+
+  it('con la empresa dada de baja no dice "Activo" (0.9)', async () => {
+    vi.mocked(fetchEntitySummary).mockResolvedValue(
+      { ...DRIVER, carrier: { ...DRIVER.carrier, operational_status: 'INACTIVE' } } as never)
+    renderView({ kind: 'driver', id: 'd1', label: 'Vidal' })
+    expect(await screen.findByText('Empresa dada de baja')).toBeInTheDocument()
+    expect(screen.queryByText('Activo')).not.toBeInTheDocument()
+  })
 })

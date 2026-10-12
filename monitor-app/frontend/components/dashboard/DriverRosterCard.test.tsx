@@ -47,4 +47,16 @@ describe('DriverRosterCard', () => {
     render(<DriverRosterCard driver={{ ...DRIVER, operational_status: 'INACTIVE', compliance_health: 'OK' }} onOpen={vi.fn()} />)
     expect(screen.queryByText('Al día')).not.toBeInTheDocument()
   })
+
+  it('marca al conductor de una empresa dada de baja (0.9)', () => {
+    render(<DriverRosterCard driver={DRIVER} carrierStatus="INACTIVE" onOpen={vi.fn()} />)
+    expect(screen.getByText('Empresa dada de baja')).toBeInTheDocument()
+    expect(screen.queryByText('Al día')).not.toBeInTheDocument()
+  })
+
+  it('con la empresa activa no marca nada', () => {
+    render(<DriverRosterCard driver={DRIVER} carrierStatus="ACTIVE" onOpen={vi.fn()} />)
+    expect(screen.queryByText('Empresa dada de baja')).not.toBeInTheDocument()
+    expect(screen.getByText('Al día')).toBeInTheDocument()
+  })
 })

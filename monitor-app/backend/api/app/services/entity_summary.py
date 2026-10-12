@@ -62,6 +62,15 @@ def _ref(row, id_key: str, name_key: str) -> dict | None:
     return {"id": str(row[id_key]), "name": row[name_key]}
 
 
+def _carrier_ref(row) -> dict | None:
+    """La empresa, con su estado: un conductor o equipo de una empresa dada de
+    baja tiene que poder decirlo (bloque 0, 0.9)."""
+    if row["carrier_id"] is None:
+        return None
+    return {"id": str(row["carrier_id"]), "name": row["carrier_name"],
+            "operational_status": row["carrier_status"]}
+
+
 _PRIMARY_PHONE = """
     (SELECT ct.phone FROM public.contacts ct
      WHERE ct.entity_type = {kind} AND ct.entity_id = {entity}
@@ -76,6 +85,7 @@ async def driver_summary(conn, driver_id: UUID) -> dict | None:
         f"""
         SELECT d.id, d.full_name, d.tax_id, d.operational_status,
                c.id AS carrier_id, c.business_name AS carrier_name,
+               c.operational_status AS carrier_status,
                hl.name AS home_location_name, hs.name AS home_location_shipper,
                a.id AS tractor_id, a.license_plate AS tractor_plate,
                {_PRIMARY_PHONE.format(kind="'DRIVER'", entity="d.id")} AS phone
@@ -106,7 +116,7 @@ async def driver_summary(conn, driver_id: UUID) -> dict | None:
         "full_name": row["full_name"],
         "tax_id": row["tax_id"],
         "operational_status": row["operational_status"],
-        "carrier": _ref(row, "carrier_id", "carrier_name"),
+        "carrier": _carrier_ref(row),
         "home_location": (
             {"name": row["home_location_name"], "shipper": row["home_location_shipper"]}
             if row["home_location_name"] else None
@@ -125,6 +135,7 @@ async def asset_summary(conn, asset_id: UUID) -> dict | None:
         SELECT a.id, a.license_plate, a.asset_type, a.manufacture_year, a.operational_status,
                wot.label AS operation_type,
                c.id AS carrier_id, c.business_name AS carrier_name,
+               c.operational_status AS carrier_status,
                d.id AS driver_id, d.full_name AS driver_name
         FROM public.assets a
         LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
@@ -146,7 +157,7 @@ async def asset_summary(conn, asset_id: UUID) -> dict | None:
         "manufacture_year": row["manufacture_year"],
         "operation_type": row["operation_type"],
         "operational_status": row["operational_status"],
-        "carrier": _ref(row, "carrier_id", "carrier_name"),
+        "carrier": _carrier_ref(row),
         "usual_driver": _ref(row, "driver_id", "driver_name"),
         "documents": await document_summary(conn, row["id"], "ASSET"),
     }

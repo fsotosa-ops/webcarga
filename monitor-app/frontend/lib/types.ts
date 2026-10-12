@@ -166,6 +166,8 @@ export type DriverPickCandidate = {
   driver_phone:      string | null
   carrier_id:        string | null
   carrier_name:      string | null
+  /** Estado de la empresa, aunque esté dada de baja (bloque 0, 0.9; R10). */
+  carrier_operational_status?: CarrierOperationalStatus | null
   tractor_asset_id:  string | null
   tractor_plate:     string | null
   /** Solo presente en resultados de GET /drivers/fuzzy-match (HU-06,
@@ -980,6 +982,13 @@ export function statusLabel(entity: DirectoryEntity, status: string): string {
   return labels[status] ?? status
 }
 
+/** La empresa está dada de baja (no "en onboarding"). Su flota queda vinculada
+ *  como historial (P1) y se marca en lugar de decir "Activo" (bloque 0, 0.9). */
+export function isCarrierDeactivated(status: string | null | undefined): boolean {
+  return status === 'INACTIVE' || status === 'LEGACY_INACTIVE'
+}
+export const CARRIER_DEACTIVATED_LABEL = 'Empresa dada de baja'
+
 /** Una cabecera de la ficha de empresa: la empresa misma, o uno de sus
  *  conductores o vehículos, con sus cuatro cifras — sin las filas de
  *  detalle. Esas se piden aparte, sólo al desplegar el sujeto
@@ -1546,6 +1555,7 @@ export type DirectorioBusqueda = {
      *  pre-cierre. */
     carrier_id: string | null
     carrier_name: string | null
+    carrier_operational_status: CarrierOperationalStatus | null
   }[]
   vehiculos: {
     id: string
@@ -1555,6 +1565,7 @@ export type DirectorioBusqueda = {
     webcarga_operation_type_label: string | null
     carrier_id: string | null
     carrier_name: string | null
+    carrier_operational_status: CarrierOperationalStatus | null
   }[]
 }
 

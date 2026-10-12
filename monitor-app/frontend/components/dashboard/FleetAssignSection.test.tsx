@@ -108,4 +108,18 @@ describe('FleetAssignSection', () => {
     fireEvent.change(screen.getByLabelText('Buscar conductor'), { target: { value: 'N' } })
     expect(screen.queryByText('Alta en Empresas')).not.toBeInTheDocument()
   })
+
+  it('no autocompleta una empresa dada de baja (R10)', () => {
+    const spy = vi.fn()
+    render(<Harness onChangeSpy={spy} suggested={[{ ...CANDIDATE, carrier_operational_status: 'INACTIVE' }]} />)
+    fireEvent.click(screen.getByText('Juan Pérez'))
+    expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ driver_id: 'd1', carrier_id: null, carrier_name: null }))
+  })
+
+  it('autocompleta la empresa cuando opera', () => {
+    const spy = vi.fn()
+    render(<Harness onChangeSpy={spy} suggested={[{ ...CANDIDATE, carrier_operational_status: 'ACTIVE' }]} />)
+    fireEvent.click(screen.getByText('Juan Pérez'))
+    expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ carrier_id: 'c1', carrier_name: 'TransCargo' }))
+  })
 })

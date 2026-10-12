@@ -102,7 +102,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // (encabezado, tabla de paradas, Gestión, Bitácora, línea de paradas) y la
     // vista rápida nacieron o pasaron a tokens; el tope no se había bajado
     // desde la entrega 2c.
-    const DEUDA = 1406
+    // 1.406 -> 1.405 el 2026-10-12: la línea de empresa de DriverSearchPicker pasó a tokens (bloque 0, 0.9).
+    const DEUDA = 1405
 
     const total = usosDeColorCrudo()
     expect(
