@@ -335,3 +335,19 @@ Están agrupadas y sin repetir. Las que vienen de la auditoría de Sin clasifica
   - el historial de asignaciones y el override por campo se diseñan para los escritores de la app (Directorio, Certificación,
     Monitor, pre-cierre del Cierre, padrón), sin la restricción de "cubrir a Mage sin tocarlo". El trigger sigue siendo la
     forma de capturar a todos los escritores de la app.
+
+### Preguntas resueltas (12/10)
+
+- **P1 — resuelta por una decisión previa:** dar de baja archiva, no oculta (Ronda 135; Avetta/ISNetworld/Ariba). La flota
+  queda vinculada a la empresa como historial, sale de las colas de trabajo (Pendientes ya lo aplica con `in_scope_sql`) y se
+  bloquea la escritura, no la lectura. Lo que falta es mostrarlo: marcar en Directorio, vista rápida y Monitor que la flota es
+  de una empresa dada de baja (A-9) → bloque 0.
+- **P9 — resuelta por la regla "fuente de verdad por campo":** el nombre del conductor es del maestro y lo gestiona el
+  Directorio; el TMS solo dice quién manejó cada viaje. Con Mage fuera del maestro, el pre-cierre deja de renombrar
+  conductores (A-7) → bloque 0.
+- **P6 — sí:** cada día se juzga con la empresa que el conductor o el equipo tenía ESE día. Las asignaciones pasan a tener
+  vigencia (D2) y una transferencia no reescribe días anteriores a su fecha efectiva.
+- **P5 — estándar de trazabilidad:** el recálculo nunca borra hechos del viaje (empresa, conductor, equipo, eventos). Con la
+  vigencia de P6, las líneas de un día anterior a la salida son normales (esa persona estaba en el roster ese día). Las líneas
+  de un día posterior a la salida (el TMS dice que manejó) son una excepción: se muestran en un grupo propio con su motivo y su
+  acción, y la tabla y la firma cuentan el mismo universo. Nada se elimina en silencio; un día firmado no se reabre.

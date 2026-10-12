@@ -37,7 +37,9 @@ vigencia vía historial por trigger (cubre a Mage sin tocarlo) + override por ca
 **Siguiente paso exacto:**
 - [x] **12/10: el usuario elige B.** Mage ya no escribe empresas/conductores/equipos/asignaciones (todo migrado y gestionado
   desde la app): F-27 sale y Mage deja de ser escritor en el mapa (§7 del informe).
-- [ ] Responder las 21 preguntas P1-P21 (varias con Pablo); P1, P5, P6 y P9 condicionan el diseño.
+- [x] 12/10: P1 y P9 resueltas por decisiones previas; P6 = sí (vigencia por día); P5 = trazabilidad, nada se borra
+  (§7 del informe). Quedan P2-P4, P7-P8, P10-P21 (varias con Pablo).
+- [ ] Spec del bloque 0 (8 arreglos + marcar flota de empresa dada de baja + pre-cierre no renombra) y de D1.
 - [ ] Luego: spec del bloque 0 / D1 "Una sola respuesta" (funciones `app.is_operating`, `app.carrier_of`,
   `app.carrier_operation_types`), intercalado con Certificación 2a (Sin clasificar).
 
