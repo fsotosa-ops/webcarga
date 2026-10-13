@@ -33,6 +33,25 @@
 5. **Validar con Pablo:** D7 "Pedir a Certificación". (P14 resuelta: solo aviso.) Dato de Operaciones: tracto GPRZ30 sin
    tipo ni empresa (28 viajes fuera del Cierre).
 
+### 2026-10-12 (noche) — Bitácora: "Divergencia TMS" pasa a ser una nota automática del sistema — DESPLEGADO en dev
+
+Pedido del usuario: la nota la genera el sistema, no se le atribuye a nadie, y no debe escribirse al abrir un viaje.
+Commits `b3d9e7c7..9a3e9d19`; migraciones `20261016090000_tms_divergence_system_note.sql` y
+`20261016100000_tms_divergence_normalized.sql` APLICADAS.
+- `app.trip_notes.author_id` admite NULL solo para notas `sistema` (CHECK `trip_notes_author_required_unless_system`).
+- La detección vive en `app.log_tms_divergence(uuid[])`, llamada desde `app.resolve_trip_fleet()` (corre en cada carga del TMS;
+  el trigger de dbt en Mage no se tocó). Solo vínculos manuales; compara normalizado (`public.name_tokens`,
+  `public.canonical_plate`); una nota por valor; si falla, la carga sigue (WARNING en el log).
+- `GET /trips/{id}` ya no escribe nada (se retiró `_log_tms_divergence_once`). La bitácora muestra "Sistema" (ícono Bot) cuando
+  la nota no tiene autor.
+- Datos: las 98 notas de divergencia que estaban atribuidas a quien abrió el viaje quedaron sin autor (copia previa en
+  `audit_log`, entity_type `TRIP_NOTE`). Las demás notas `sistema` conservan su autor (ahí la persona hizo la acción).
+- Medido: con texto exacto se habrían escrito 219 notas pendientes; normalizado, 52 divergencias reales. Con vínculos automáticos
+  habría 2.788 "divergencias", 2.680 solo de formato (el TMS contra sí mismo): por eso solo manuales.
+- Verificado con el usuario: los 19 viajes resueltos "por RUT" (`tms_rut`) están bien; en 7 el TMS manda el nombre abreviado
+  (todas sus palabras están en el nombre completo del Directorio) y el RUT es el correcto. No hay nada que cuadrar.
+- Suite backend completa 1.746 en verde; revisión (opus) aprobada.
+
 ### 2026-10-12 — Directorio D1 "Una sola respuesta": EJECUTADO (subagent-driven, dos carriles) y DESPLEGADO en dev
 
 Spec `docs/superpowers/specs/2026-10-12-directory-d1-one-answer-design.md` · plan
