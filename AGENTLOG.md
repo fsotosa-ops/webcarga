@@ -16,26 +16,61 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
-### PARA LA PRÓXIMA SESIÓN (guardado el 12/10 a pedido del usuario)
+### PARA LA PRÓXIMA SESIÓN (actualizado 12/10 noche, cierre de D1)
 
-Orden sugerido; el detalle de cada punto está en su entrada de abajo.
-1. ~~Mirar dev con sesión iniciada~~ **HECHO 12/10 ~05:55 UTC (solo lectura):** ficha de empresa dada de baja con "Dada de
-   baja", "Reactivar" para el Propietario y "Empresa dada de baja" en las tarjetas de sus conductores; Cierre de hoy OK;
-   Sin clasificar con la cola vacía real (200, no un error); Pendientes a 390 px (lista → panel con flecha, estado bajo el
-   nombre); portada de Certificación igual que antes. Capturas `.playwright-mcp/dev-*.png`. Observado para D1: nombres de
-   conductor con un "\N" literal (artefacto de importación), una empresa con el mismo nombre en dos grupos de la portada
-   (¿dos RUT?), la portada cuenta 84 conductores (los activos son 78, F-03), y en el teléfono el panel oculto ya se monta.
-2. ~~Decisión A/B/C de Sin clasificar~~ **12/10: el usuario elige B.** Quedan sus preguntas §6 para el brainstorming.
-   **P13 resuelta:** "al día" = empresa + flota activa en alcance; "por vencer" cuenta como al día (regla de `app.is_operating`).
-3. **D1 "Una sola respuesta"** del Directorio (brainstorming → spec → plan → subagent-driven): `app.is_operating`,
-   `app.carrier_of`, `app.carrier_operation_types`, migrar lectores; incluir la guarda en la API contra asignar viajes a
-   una empresa no activa. En paralelo, Certificación 2a (Sin clasificar) cuando esté elegida la opción.
-4. **Preguntas abiertas de la auditoría del Directorio** (P3, P4, P7, P8, P10-P21; varias con Pablo). Resueltas: P1, P2, P5, P6, P9.
-5. **Deuda chica anotada:** `periodoSugerido` ignora `period_offset_months` (migrar a `periodoQueSeExige`); barra inferior
-   móvil (layout); "Conductor habitual" ofrece conductores dados de baja; badge de Sin clasificar sin señal si falla el conteo;
-   Escape en los paneles cierra ficha y confirmación juntas.
-6. **Validar con Pablo:** D7 "Pedir a Certificación" (incluye "solicitar baja de empresa" desde Operaciones, bloque 3) y la
-   respuesta sobre el seguro de Certificación ≠ Seguros.
+1. ~~Mirar M2 en dev~~ **HECHO 12/10 noche:** chip gris "Dada de baja" y "La empresa no está activa", sin "se puede asignar".
+   Ojo: abrir un viaje con divergencia TMS deja una nota "sistema" a nombre de quien lo abre (`_log_tms_divergence_once`,
+   comportamiento de julio, una vez por valor): un recorrido "de solo lectura" no es 100 % de solo lectura en el Monitor.
+2. **Certificación 2a — Sin clasificar, opción B** (elegida 12/10): brainstorming → spec. Quedan sus preguntas §6.
+3. **D2 "Asignaciones con vigencia"** (hoja de ruta del informe del Directorio §5): conductor–empresa, equipo–empresa y
+   **empresa–cliente** (P10: se declaran, los viajes proponen; editar clientes F-30 pasó a D2), reactivar eligiendo la flota
+   (P3), `carrier_of` con fecha, Cierre juzga con la empresa del día, `daily_closures.py` adopta `carrier_of`, atribución "al
+   término" de equipos (F19), `in_scope_sql` sobre `app.active_fleet` (M4).
+4. **Deuda anotada de D1** (ledger SDD, triage de la revisión final): fechas del navegador en UTC en `vigenciaDeLaFila` y
+   `expiryRelative` (M5; `/pending` no trae `days_to_expiry`); PATCH guarda patentes crudas (M6, D3); chip "Tractoreo" doble
+   en la ficha de Certificación (D4); encabezados ESTADO/FECHA superpuestos en la tabla del Monitor (anterior a D1);
+   "sin actualizar hace N días" para documentos que faltan (redacción); orden del Directorio sin desempate por id.
+5. **Validar con Pablo:** D7 "Pedir a Certificación". (P14 resuelta: solo aviso.) Dato de Operaciones: tracto GPRZ30 sin
+   tipo ni empresa (28 viajes fuera del Cierre).
+
+### 2026-10-12 — Directorio D1 "Una sola respuesta": EJECUTADO (subagent-driven, dos carriles) y DESPLEGADO en dev
+
+Spec `docs/superpowers/specs/2026-10-12-directory-d1-one-answer-design.md` · plan
+`docs/superpowers/plans/2026-10-12-directory-d1-one-answer.md` (16 tareas) · auditoría de estados
+`docs/superpowers/plans/2026-10-12-states-audit.md`. Commits `dbe856fa..8754a13b` en `dev`. Nada a `main`, Mage sin tocar.
+
+**Qué quedó (tres capas de estado + glosario único):**
+- Base (migración `20261013090000_directory_one_answer.sql`, APLICADA 16:41 CL): `app.active_fleet` (única definición de
+  flota activa), `app.carrier_of`, `carrier_management_types` sobre tractos activos, CHECK y NOT NULL en `operational_status`.
+  Migración `20261015090000_retire_per_document_alert_thresholds.sql` (APLICADA 19:27 CL): 9 filas de umbral por documento
+  copiadas al `audit_log` y borradas; queda solo el aviso global (30/0).
+- Backend: `services/fleet_compliance.py` (base de Pendientes mudada sin cambios + resumen por entidad/empresa, `can_operate`,
+  aviso `critical`/`warning`), `schemas/states.py`, guarda 409 de asignación (`services/assignment_guard.py`; ONBOARDING →
+  `CARRIER_NOT_ACTIVE`; No habilitada → aviso `CARRIER_NOT_ENABLED`), identidad canónica de RUT y patente
+  (`utils/identity.py`), filtro `enablement` en el Directorio, campos viejos retirados (`compliance_health`, `urgencia`,
+  `funnel_group`, `expired_count`, `*_pending_docs_critical` del viaje, meta de umbrales). Guardas con trinquete
+  (`tests/test_d1_single_definition_guards.py`).
+- Frontend: `lib/states.ts` (glosario: Activa · En onboarding · Dada de baja; Al día · Por vencer · Vencido · Falta · Aún no se
+  exige; Habilitada · No habilitada), los componentes solo pintan; trinquete de etiquetas en 0; "Sin clasificar" y "Directorio"
+  en todos los textos; aviso "Crítico" en el checklist; Configuración › Alertas con aviso y crítico globales.
+
+**Medido en dev:** 36 activas = 0 habilitadas (decisión del usuario: se muestra tal cual), 214 dadas de baja, 1 en onboarding;
+78 conductores; embudo 2.226 por empresa = 2.226 por requisito = Pendientes; cifras iguales en Directorio, Pendientes y
+Certificación para 2 empresas revisadas con sesión. Tiempos: Directorio ~100 ms, embudo ~150 ms, habilitación del Monitor
+~110 ms; `/trips` igual que antes de D1 (1,9 s, logs de Cloud Run). Suites finales: backend 1.737, frontend 1.965, tsc y build OK.
+
+**Decisiones del usuario (12/10, en el informe §7):** Sin clasificar = B; P13 (empresa + flota activa, por vencer cuenta como
+al día); P8 (el tipo sale del tracto; medido: equivale a clasificar por empresa); P10; P3; P14 (solo aviso); P16/P20 (nombres);
+"crítico" = aviso calculado; reactivar = recalificar; onboarding: se le piden documentos, no recibe viajes.
+
+**Decisiones de arquitectura:** hechos de flota en la base, regla documental en un módulo de la API (materializar solo si la
+escala lo pide); el embudo atribuye con LEFT JOIN (Postgres no expande `carrier_of`, 270 vs 150 ms) con excepción declarada en
+la guarda; `daily_closures.py` y la atribución "al término" de equipos quedan para D2.
+
+**Siguiente paso exacto:**
+- [x] M2 mirado en dev con sesión (12/10 noche).
+- [ ] Certificación 2a (Sin clasificar B): brainstorming → spec.
+- [ ] D2: brainstorming → spec (asignaciones y clientes con vigencia).
 
 ### 2026-10-12 — Auditoría del Directorio y su sincronía con Certificación, Cierre y Monitor (solo lectura)
 
@@ -96,8 +131,7 @@ vigencia vía historial por trigger (cubre a Mage sin tocarlo) + override por ca
   piden documentos pero no recibe viajes (409); Monitor con `*_has_critical_alert` por entidad (conserva el rojo de licencia y
   cédula); `worst_state` solo de obligatorios; `daily_closures.py` a D2; las 36 activas saldrán "No habilitada" (se muestra
   tal cual). Código de T1-T4 ya corrió en copia contra la base real (32 verdes).
-- [ ] **Siguiente: el usuario revisa el plan y elige el modo de ejecución** → ejecutar desde la Task 1. En paralelo:
-  brainstorming de Sin clasificar opción B (Certificación 2a).
+- [x] **D1 ejecutado y desplegado en dev (12/10 noche)** — ver la entrada de D1 arriba.
 ### 2026-10-11 — Auditoría UX de "Sin clasificar" (insumo del bloque 2; solo lectura)
 
 Informe: `docs/superpowers/plans/2026-10-11-sin-clasificar-ux-audit.md`. Las capturas son `.playwright-mcp/sinclasificar-*.png`.
