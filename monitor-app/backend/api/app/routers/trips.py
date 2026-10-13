@@ -2147,38 +2147,6 @@ async def bulk_create_trips(
     return {"created": len(ids), "ids": ids, "errors": [], "warnings": warnings}
 
 
-async def _log_tms_divergence_once(pool, trip_id: str, user: dict, d: dict) -> None:
-    """Reconciliación TMS↔manual (Fase 1.5b): si hay un vínculo manual
-    (fleet_link_id) y el TMS reporta un conductor/patente distinto al
-    vinculado, registra una nota de bitácora — pero solo la primera vez que
-    se ve ESE valor divergente (evita spamear la bitácora en cada GET),
-    chequeando la última nota 'sistema' de divergencia ya registrada."""
-    if not d.get("fleet_link_id"):
-        return
-    divergences = []
-    if d.get("driver_name_tms") and d.get("driver_name_tms") != d.get("driver_name"):
-        divergences.append(("conductor", d["driver_name_tms"]))
-    if d.get("tractor_plate_tms") and d.get("tractor_plate_tms") != d.get("tractor_plate"):
-        divergences.append(("patente", d["tractor_plate_tms"]))
-    if not divergences:
-        return
-    try:
-        last = await pool.fetchval(
-            """
-            SELECT body FROM app.trip_notes
-            WHERE trip_id = $1 AND note_type = 'sistema' AND body LIKE 'Divergencia TMS:%'
-            ORDER BY created_at DESC LIMIT 1
-            """,
-            trip_id,
-        )
-        new_values = ", ".join(f"{label} reportado por TMS: {value}" for label, value in divergences)
-        if last == f"Divergencia TMS: {new_values}":
-            return
-        await _log_system_note(pool, trip_id, user, f"Divergencia TMS: {new_values}")
-    except Exception:
-        pass  # best-effort: nunca romper la lectura del viaje
-
-
 @router.post("/assign-driver")
 async def assign_driver_bulk(
     body: AsignarConductorBody,
@@ -2512,7 +2480,8 @@ async def get_trip(
     shipper_ids = {str(d["shipper_id"])} if d.get("shipper_id") else set()
     op_type_buckets = await _load_operation_type_buckets(pool, shipper_ids)
     _apply_operation_types(d, op_type_buckets)
-    await _log_tms_divergence_once(pool, trip_id, user, d)
+    # Abrir un viaje no escribe nada: la Divergencia TMS la anota la base cuando
+    # llega el dato del TMS (app.log_tms_divergence, migración 20261016090000).
     anotar_anulable(d, user)
     return d
 
