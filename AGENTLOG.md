@@ -18,6 +18,12 @@
 
 ### PARA LA PRÓXIMA SESIÓN (actualizado 12/10 noche, cierre de D1)
 
+**Forma de trabajo acordada 12/10 (D1 tomó 9+ h; el usuario pidió optimizar):** tres entregas — **A = D2 + Cert 2a**,
+**B = Cert 3 + D3**, **C = D4 + Cert 2b + Cert 4 + D5** —; una sola sesión de decisiones al inicio con TODAS las preguntas
+abiertas; plan liviano (tareas + contratos + tests, sin código); un despliegue y una revisión por entrega (revisión propia solo
+en tareas de base); suite del backend en paralelo (pytest-xdist, cuidar Disk IO); tangentes a una lista.
+**Siguiente paso exacto:** (1) sesión de decisiones para A, B y C; (2) en paralelo, la tarea de suite en paralelo; (3) entrega A.
+
 1. ~~Mirar M2 en dev~~ **HECHO 12/10 noche:** chip gris "Dada de baja" y "La empresa no está activa", sin "se puede asignar".
    Ojo: abrir un viaje con divergencia TMS deja una nota "sistema" a nombre de quien lo abre (`_log_tms_divergence_once`,
    comportamiento de julio, una vez por valor): un recorrido "de solo lectura" no es 100 % de solo lectura en el Monitor.
