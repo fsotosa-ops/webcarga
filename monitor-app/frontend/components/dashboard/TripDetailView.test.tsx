@@ -551,6 +551,28 @@ describe('TripDetailView — Bitácora (feed con historial)', () => {
     expect(screen.queryByTitle('Destacar nota')).not.toBeInTheDocument()
   })
 
+  it('shows an authorless system note as "Sistema"', async () => {
+    vi.mocked(tripsApi.listNotes).mockResolvedValue([
+      { ...note, id: 'n4', note_type: 'sistema', author_id: null, author_name: null,
+        body: 'Divergencia TMS: conductor reportado por TMS: ZZ-TEST-DIV Otro' },
+    ])
+    renderDetailView(baseTrip)
+    expect(await screen.findByText(/divergencia TMS: conductor reportado/)).toBeInTheDocument()
+    expect(screen.getByText('Sistema')).toBeInTheDocument()
+    expect(screen.getByLabelText('Nota automática del sistema')).toBeInTheDocument()
+  })
+
+  it('does not call a person "Sistema" when only their name is missing', async () => {
+    vi.mocked(tripsApi.listNotes).mockResolvedValue([
+      { ...note, id: 'n5', note_type: 'sistema', author_id: 'u9', author_name: null,
+        body: 'Estableció estado operativo manual: en_seguimiento' },
+    ])
+    renderDetailView(baseTrip)
+    expect(await screen.findByText(/estableció estado operativo manual/)).toBeInTheDocument()
+    expect(screen.queryByText('Sistema')).not.toBeInTheDocument()
+    expect(screen.getByText('Usuario')).toBeInTheDocument()
+  })
+
   it('filters the feed by note type', async () => {
     vi.mocked(tripsApi.listNotes).mockResolvedValue([
       { ...note, id: 'n1', note_type: 'llamada', body: 'nota de llamada' },

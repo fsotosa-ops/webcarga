@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import {
   Loader2, Paperclip, X, Pin, PinOff,
   Phone, MessageCircle, AlertTriangle, StickyNote, Activity,
-  FileText, ImageIcon, FolderOpen, ListOrdered,
+  FileText, ImageIcon, FolderOpen, ListOrdered, Bot,
 } from 'lucide-react'
 import type { Trip, TripNote, TripNoteAttachment, TripNoteType } from '@/lib/types'
 import { useTripNotes, useAddTripNote, usePinTripNote, useResolveTripNote } from '@/hooks/useTripNotes'
@@ -264,9 +264,15 @@ export function TripNotesFeed({ trip }: Props) {
               note.note_type === 'sistema' ? (
                 /* Evento del sistema: línea compacta, sin card */
                 <p key={note.id} className="flex items-center gap-1.5 px-1 text-etiqueta text-informativo">
-                  <Activity size={11} className="shrink-0" aria-hidden />
+                  {/* Sin autor = nota automática (p. ej. Divergencia TMS). Se decide por
+                      author_id: un author_name nulo con autor es un perfil sin nombre. */}
+                  {note.author_id === null
+                    ? <Bot size={11} className="shrink-0" role="img" aria-label="Nota automática del sistema" />
+                    : <Activity size={11} className="shrink-0" aria-hidden />}
                   <span className="truncate">
-                    <span className="font-semibold">{note.author_name ?? 'Sistema'}</span>{' '}
+                    <span className="font-semibold">
+                      {note.author_id === null ? 'Sistema' : (note.author_name ?? 'Usuario')}
+                    </span>{' '}
                     {note.body.charAt(0).toLowerCase() + note.body.slice(1)}
                   </span>
                   <span className="ml-auto shrink-0 whitespace-nowrap" title={fmtDT(note.created_at)}>

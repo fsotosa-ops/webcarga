@@ -304,7 +304,8 @@ export type TripNoteAttachment = {
 export type TripNote = {
   id:          string
   trip_id:     string
-  author_id:   string
+  /** null = nota automática del sistema (note_type 'sistema'), sin autor. */
+  author_id:   string | null
   author_name: string | null
   body:        string
   note_type:   TripNoteType
