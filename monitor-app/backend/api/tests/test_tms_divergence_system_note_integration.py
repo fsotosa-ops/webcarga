@@ -40,14 +40,16 @@ def _suf() -> str:
     return uuid.uuid4().hex[:6].upper()
 
 
-async def _viaje_con_vinculo_manual(conn, *, tractor_plate: str | None = None) -> tuple[str, str]:
+async def _viaje_con_vinculo_manual(conn, *, tractor_plate: str | None = None,
+                                    driver_name: str | None = None) -> tuple[str, str]:
     """Un viaje del TMS con un conductor vinculado a mano. Devuelve (trip_id,
-    nombre del conductor del TMS al crear el viaje)."""
-    nombre_tms = f"{PREFIX} Tms {_suf()}"
+    nombre del conductor del TMS al crear el viaje). Con `driver_name`, el
+    conductor vinculado se llama así y el TMS lo reporta con ese mismo texto."""
+    nombre_tms = driver_name or f"{PREFIX} Tms {_suf()}"
     trip_id = await insert_tms_trip(conn, await open_status(conn), {"driver_name_tms": nombre_tms})
     driver = await conn.fetchval(
         "INSERT INTO public.drivers (full_name, operational_status) VALUES ($1, 'ACTIVE') RETURNING id",
-        f"{PREFIX} Manual {_suf()}")
+        driver_name or f"{PREFIX} Manual {_suf()}")
     await conn.execute(
         "INSERT INTO app.trip_fleet_links (trip_id, driver_id, tractor_plate, link_source) "
         "VALUES ($1::uuid, $2, $3, 'manual') "
@@ -117,6 +119,44 @@ async def test_conductor_y_patente_van_en_una_sola_nota_con_el_texto_de_siempre(
 
     assert [n["body"] for n in await _divergencias(conn, trip_id)] == [
         f"Divergencia TMS: conductor reportado por TMS: {otro}, patente reportado por TMS: ZZDV02"]
+
+
+async def test_el_mismo_nombre_en_otro_orden_mayusculas_y_tildes_no_es_divergencia(conexion_revertida):
+    """Se compara con public.name_tokens, la misma normalización del matcher
+    (migración 20261016100000)."""
+    conn = conexion_revertida
+    suf = _suf()
+    trip_id, _ = await _viaje_con_vinculo_manual(conn, driver_name=f"{PREFIX} Ñandú Pérez {suf}")
+
+    await _nueva_carga_del_tms(conn, trip_id, {"driver_name_tms": f"PEREZ  nandu {PREFIX.lower()}   {suf.lower()}"})
+
+    assert await _divergencias(conn, trip_id) == []
+
+
+async def test_la_misma_patente_con_guion_y_minusculas_no_es_divergencia(conexion_revertida):
+    """Se compara con public.canonical_plate (migración 20261016100000)."""
+    conn = conexion_revertida
+    trip_id, _ = await _viaje_con_vinculo_manual(conn, tractor_plate="ZZDV12",
+                                                 driver_name=f"{PREFIX} Mismo {_suf()}")
+
+    await _nueva_carga_del_tms(conn, trip_id, {"tractor_plate": "zz-dv12"})
+
+    assert await _divergencias(conn, trip_id) == []
+
+
+async def test_otra_patente_sin_formato_de_patente_se_compara_como_texto(conexion_revertida):
+    """Si canonical_plate no reconoce alguno de los dos lados, se compara
+    upper(btrim()): ' zzdv-123 ' no es 'ZZDV-124'."""
+    conn = conexion_revertida
+    trip_id, _ = await _viaje_con_vinculo_manual(conn, tractor_plate="ZZDV-124",
+                                                 driver_name=f"{PREFIX} Mismo {_suf()}")
+
+    await _nueva_carga_del_tms(conn, trip_id, {"tractor_plate": " zzdv-124 "})
+    assert await _divergencias(conn, trip_id) == []
+
+    await _nueva_carga_del_tms(conn, trip_id, {"tractor_plate": "ZZDV-123"})
+    assert [n["body"] for n in await _divergencias(conn, trip_id)] == [
+        "Divergencia TMS: patente reportado por TMS: ZZDV-123"]
 
 
 async def test_sin_vinculo_manual_no_hay_divergencia(conexion_revertida):
