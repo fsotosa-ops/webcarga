@@ -146,8 +146,11 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
 - Tests: P1-P7 y D1-D6 en verde; backend del área 424 en la copia local; vitest 1.976/1.976; humo 7/7 (incluye pedir y
   resolver). Suite del backend contra la base real: corriendo.
 - **El Google Sheet del tipo de operación se rehízo como formulario** (mismo enlace; 8 preguntas, celdas amarillas).
-- Siguiente: suite real en verde → commit + push a `dev`; después recorrido en dev con sesión y la Entrega C
-  (D4 + Cert 2b + Cert 4 + D5).
+- **DESPLEGADA en dev** (`2533415b`): suite contra la base real 1.761/1.761 (47 min); Deploy Monitor API y Deploy
+  Frontend en verde.
+- Siguiente: recorrido en dev con sesión (A y B) y documento de la Entrega C (D4 + Cert 2b + Cert 4 + D5).
+- Esperando: respuestas del equipo en el Google Sheet (tipo de operación); Pablo valida "Pedir a Certificación";
+  dato del tracto GPRZ30.
 - Tangentes anotadas: purga de blobs descartados (> 30 días); quitar de la UI del pre-cierre el grupo
   `EMPRESA_NO_RECONOCIDA` (ya siempre vacío) y la rama `PATENTE_EMPRESA` de "resueltas"; duplicados contra registros
   cargados por otros caminos (no guardan hash).
