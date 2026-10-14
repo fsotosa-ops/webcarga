@@ -19,6 +19,9 @@ vi.mock('@/lib/supabase/client', () => ({
 vi.mock('@/lib/api/documentIngest', () => ({
   documentIngestApi: { listQueue: vi.fn() },
 }))
+vi.mock('@/lib/api/certificationRequests', () => ({
+  certificationRequestsApi: { listOpen: vi.fn().mockResolvedValue({ total: 0, rows: [] }) },
+}))
 
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import Sidebar from './Sidebar'

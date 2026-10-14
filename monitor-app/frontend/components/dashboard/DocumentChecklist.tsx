@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertTriangle, Upload, Eye } from 'lucide-react'
+import { AlertTriangle, Upload, Eye, Send, Loader2 } from 'lucide-react'
 import { dueRelative, fileHistoryLabel, formatExpiry } from '@/lib/compliance'
 import { StatusChip } from '@/components/ui/StatusChip'
 import { useGestoDeCarga } from '@/hooks/useGestoDeCarga'
@@ -33,7 +33,12 @@ export type ChecklistItem = {
    *  de los 10 de vehículo. Puede faltar mientras el backend no lo mande;
    *  la ausencia significa "no sé", nunca "no vence". */
   expiration_policy?: PoliticaVencimiento
+  /** Operaciones ya lo pidió a Certificación (Entrega B): el pedido abierto. */
+  open_request_id?:  string | null
 }
+
+/** Los estados en que tiene sentido pedir el documento a Certificación. */
+const PEDIBLE: ReadonlySet<DocumentState> = new Set(['OVERDUE', 'EXPIRING', 'MISSING'])
 
 interface Props {
   items:               ChecklistItem[]
@@ -59,6 +64,9 @@ interface Props {
    *  para ofrecerle sus huecos como destino. */
   carrierId?:          string
   onReassigned?:       () => void
+  /** "Pedir a Certificación" (Entrega B): Operaciones no sube, pide. Se ofrece en
+   *  lo pendiente cuando quien mira no puede subir. */
+  onRequest?:          (item: ChecklistItem) => Promise<void>
 }
 
 /** Lo único que se guarda a mano en un requisito sin archivo (auditoría B: en
@@ -67,8 +75,9 @@ interface Props {
 const STATUS_OPTIONS: { value: ComplianceStatus; label: string }[] =
   (['MISSING', 'APPROVED_MANUAL'] as const).map(value => ({ value, label: fileHistoryLabel(value) }))
 
-function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, onExpirationChange, onDelete, carrierId, onReassigned }: {
+function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, onExpirationChange, onDelete, carrierId, onReassigned, onRequest }: {
   item: ChecklistItem
+  onRequest?: (item: ChecklistItem) => Promise<void>
   canUpload: boolean
   canReview: boolean
   onUpload?: (recordId: string, file: File, datos?: DatosDelDocumento) => void | Promise<void>
@@ -79,7 +88,17 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
   onReassigned?: () => void
 }) {
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [requesting, setRequesting] = useState(false)
+  const [requestError, setRequestError] = useState<string | null>(null)
   const state = documentStateStyle(item.document_state)
+  const puedePedir = !canUpload && !!onRequest && PEDIBLE.has(item.document_state)
+  async function pedir() {
+    if (!onRequest) return
+    setRequesting(true); setRequestError(null)
+    try { await onRequest(item) } catch (e) {
+      setRequestError(e instanceof Error ? e.message : 'No se pudo pedir')
+    } finally { setRequesting(false) }
+  }
   /** EL MISMO gesto que Certificación, no una segunda versión: recibe el
    *  archivo, pide la fecha si el requisito la exige, y no sube nada hasta
    *  estar completo. Es un hook y no el componente `RenglonPendiente` porque
@@ -170,6 +189,19 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
           />
         </label>
       )}
+      {puedePedir && (item.open_request_id
+        ? <span className="text-etiqueta font-semibold text-informativo shrink-0">Pedido a Certificación</span>
+        : (
+          <button
+            type="button"
+            onClick={() => void pedir()}
+            disabled={requesting}
+            aria-label={`Pedir ${item.label} a Certificación`}
+            className="flex items-center gap-1 text-etiqueta font-semibold text-accion hover:underline disabled:opacity-50 shrink-0"
+          >
+            {requesting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Pedir a Certificación
+          </button>
+        ))}
       {/* HU-03: el archivo está, pero puede estar en el lugar equivocado. */}
       {canReview && item.file_url && carrierId && (
         <ReassignDocument
@@ -220,6 +252,8 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
         originó este trabajo. */}
     <PedirDatoDelDocumento carga={carga} id={fechaId} />
 
+    {requestError && <p role="alert" className="text-etiqueta text-espera mt-1">{requestError}</p>}
+
     {carga.estado.tipo === 'error' && (
       <div role="alert" className="flex items-center gap-2 flex-wrap mt-2">
         <AlertTriangle size={12} className="text-espera shrink-0" aria-hidden="true" />
@@ -245,7 +279,7 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
  *  Certificación. Cambiar el estado a mano es la excepción: solo para un
  *  requisito sin archivo (`requires_file = false`) y solo si quien llama pasa
  *  `onStatusChange`; un mismo carrier/driver/asset puede mezclar los dos. */
-export function DocumentChecklist({ items, canUpload, canReview = false, onUpload, onStatusChange, onExpirationChange, onDelete, hideCounter, carrierId, onReassigned }: Props) {
+export function DocumentChecklist({ items, canUpload, canReview = false, onUpload, onStatusChange, onExpirationChange, onDelete, hideCounter, carrierId, onReassigned, onRequest }: Props) {
   const upToDate = documentStateCounts(items).UP_TO_DATE
 
   return (
@@ -266,6 +300,7 @@ export function DocumentChecklist({ items, canUpload, canReview = false, onUploa
             onDelete={onDelete}
             carrierId={carrierId}
             onReassigned={onReassigned}
+            onRequest={onRequest}
           />
         ))}
       </div>

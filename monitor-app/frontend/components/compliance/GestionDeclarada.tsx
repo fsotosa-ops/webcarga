@@ -17,6 +17,11 @@ interface Props {
   declarado: ManagementType[] | null
   canEdit: boolean
   onGuardado: () => Promise<void> | void
+  /** El tipo derivado de la flota, como lo muestra el chip vecino ("Tractoreo",
+   *  "Tractoreo + Equipo Completo"). Si lo declarado dice lo mismo, no se repite:
+   *  queda solo el lápiz. Si difiere, se marca como "Declarado: …" (regla del 12/10:
+   *  lo observado manda y la ficha marca la diferencia; D3, Entrega B). */
+  derivado?: string | null
 }
 
 /**
@@ -42,7 +47,7 @@ interface Props {
  * Dos marcas independientes y no un desplegable de tres: marcar las dos **es**
  * el caso mixto.
  */
-export function GestionDeclarada({ carrierId, declarado, canEdit, onGuardado }: Props) {
+export function GestionDeclarada({ carrierId, declarado, canEdit, onGuardado, derivado }: Props) {
   const [editando, setEditando] = useState(false)
   const [borrador, setBorrador] = useState<ManagementType[]>(declarado ?? [])
   const [guardando, setGuardando] = useState(false)
@@ -77,16 +82,18 @@ export function GestionDeclarada({ carrierId, declarado, canEdit, onGuardado }: 
   }
 
   if (!editando) {
-    const etiqueta = declarado?.length
-      ? declarado.map(t => GESTIONES.find(g => g.codigo === t)?.label ?? t).join(' + ')
-      : 'Gestión sin declarar'
+    const etiquetas = (declarado ?? []).map(t => GESTIONES.find(g => g.codigo === t)?.label ?? t)
+    const etiqueta = etiquetas.length ? etiquetas.join(' + ') : 'Gestión sin declarar'
+    const mismaQueLaFlota = !!derivado && etiquetas.length > 0 &&
+      [...etiquetas].sort().join('+') === derivado.split(' + ').sort().join('+')
+    const difiere = !!derivado && etiquetas.length > 0 && !mismaQueLaFlota
     return (
       <span className="inline-flex items-center gap-1">
-        <span className={`text-etiqueta px-2 py-0.5 rounded-full ${
+        {!mismaQueLaFlota && <span className={`text-etiqueta px-2 py-0.5 rounded-full ${
           declarado?.length ? 'bg-accent/10 text-accent font-semibold' : 'bg-accent/5 text-informativo font-medium'
         }`}>
-          {etiqueta}
-        </span>
+          {difiere ? `Declarado: ${etiqueta}` : etiqueta}
+        </span>}
         {canEdit && (
           <button type="button" onClick={abrir}
                   aria-label="Editar el tipo de gestión"

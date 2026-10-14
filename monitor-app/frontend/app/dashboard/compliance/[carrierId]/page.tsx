@@ -813,6 +813,7 @@ export default function FichaEmpresaPage() {
             <GestionDeclarada
               carrierId={carrierId}
               declarado={carrier.management_types}
+              derivado={!resumenQuery.isPending && !resumenQuery.error ? tipoOperacion ?? null : null}
               canEdit={puedeGestionarFlota}
               onGuardado={async () => {
                 await invalidateDirectory(queryClient, { entity: 'carrier', id: carrierId, type: 'update' })

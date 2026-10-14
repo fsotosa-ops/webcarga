@@ -15,7 +15,7 @@ from .fleet_compliance import (
     carrier_compliance_cte, carrier_summary_columns_sql, entity_compliance_cte,
     entity_summary_columns_sql, take_summary,
 )
-from .vencimientos import cubierto_predicate, exigible_sql, por_vencer_predicate, vence_el_sql, vencido_predicate
+from .vencimientos import document_state_sql, vence_el_sql
 
 EntityType = Literal["CARRIER", "DRIVER", "ASSET"]
 
@@ -23,17 +23,17 @@ EntityType = Literal["CARRIER", "DRIVER", "ASSET"]
 _ATTENTION_ORDER = {"expired": 0, "expiring": 1, "missing": 2}
 ATTENTION_LIMIT = 3
 
-# Un estado por documento vigente, excluyente: un documento que todavía no se exige
-# no cuenta para nada (no está "al día" ni "falta").
+# Un estado por documento vigente: el de document_state_sql, la única definición
+# (Entrega B, 14/10; hasta acá este archivo armaba su propio CASE y la vista rápida
+# podía contar distinto que Pendientes). Lo que todavía no se exige no cuenta.
 _DOCUMENTS_SQL = f"""
 SELECT req.name,
        NULLIF({vence_el_sql('cr')}, '-infinity') AS due_on,
-       CASE
-           WHEN NOT {exigible_sql('cr')} THEN NULL
-           WHEN cr.status = 'EXPIRED' OR {vencido_predicate('cr')} THEN 'expired'
-           WHEN {por_vencer_predicate('cr')} THEN 'expiring'
-           WHEN cr.status = 'MISSING' THEN 'missing'
-           WHEN {cubierto_predicate('cr')} THEN 'ok'
+       CASE {document_state_sql('cr')}
+           WHEN 'UP_TO_DATE' THEN 'ok'
+           WHEN 'OVERDUE'    THEN 'expired'
+           WHEN 'EXPIRING'   THEN 'expiring'
+           WHEN 'MISSING'    THEN 'missing'
        END AS state
 FROM public.compliance_records cr
 JOIN public.compliance_requirements req ON req.id = cr.requirement_id

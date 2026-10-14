@@ -22,10 +22,9 @@ export type AssetPatchBody = {
    *  —donde además es opcional— y un tracto mal clasificado, o sin clasificar,
    *  bloqueaba el cierre del día sin que hubiera dónde corregirlo.
    *
-   *  `undefined` es "no lo toques": el UPDATE hace COALESCE, así que no se
-   *  puede volver a dejar sin clasificar desde acá. Es intencional — sin
-   *  clasificar es justo el estado que bloquea. */
-  webcarga_operation_type_id?: string
+   *  `undefined` es "no lo toques"; `null` lo quita (D3, Entrega B 14/10:
+   *  un tipo mal puesto tiene que poder corregirse a "sin clasificar"). */
+  webcarga_operation_type_id?: string | null
 }
 
 /** POST /assets RETURNING es más angosto que GET /assets/{id} — sin
@@ -51,6 +50,12 @@ export const assetsApi = {
 
   listComplianceRecords: (id: string) =>
     apiFetch<ComplianceRecord[]>(`/api/v1/assets/${id}/compliance-records`),
+
+  /** Corregir la patente con motivo (D3): la anterior queda como alias del mismo equipo. */
+  correctPlate: (id: string, value: string, reason: string) =>
+    apiFetch<{ license_plate: string }>(`/api/v1/assets/${id}/identity`, {
+      method: 'POST', body: JSON.stringify({ value, reason }),
+    }),
 
   getDriverAssignment: (id: string) =>
     apiFetch<VehicleDriverAssignment | null>(`/api/v1/assets/${id}/driver-assignment`),

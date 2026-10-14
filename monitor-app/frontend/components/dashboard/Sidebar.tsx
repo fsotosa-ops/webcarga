@@ -14,6 +14,7 @@ import { useQuery } from '@tanstack/react-query'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { getDisplayName, puedeVerConfiguracion, type Acceso } from '@/lib/authz/acceso'
+import { certificationRequestsApi } from '@/lib/api/certificationRequests'
 import LogoWebCarga from '@/components/brand/LogoWebCarga'
 import SidebarAccount, { SETTINGS_HREF } from './SidebarAccount'
 
@@ -25,7 +26,7 @@ import SidebarAccount, { SETTINGS_HREF } from './SidebarAccount'
 // "Cierres" (ex-Reportería, ahora en /operations/closures/history) se sacó
 // del Sidebar — /dashboard/operations/closures pasará a ser el Centro de
 // Cierre del Día (tarea futura), que todavía no tiene link de nav propio.
-type NavLeaf  = { href: string; label: string; badge?: 'inbox' }
+type NavLeaf  = { href: string; label: string; badge?: 'inbox' | 'requests' }
 type NavGroupDef = { label: string; icon: LucideIcon; items: NavLeaf[] }
 
 // Un modulo por objeto de trabajo, con sus vistas adentro (HU-04). La
@@ -64,7 +65,7 @@ const NAV_GROUPS: NavGroupDef[] = [
     items: [
       { href: '/dashboard/compliance',       label: 'Empresas' },
       { href: '/dashboard/compliance/inbox', label: 'Sin clasificar', badge: 'inbox' },
-      { href: '/dashboard/compliance/pending', label: 'Pendientes' },
+      { href: '/dashboard/compliance/pending', label: 'Pendientes', badge: 'requests' },
     ],
   },
 ]
@@ -113,13 +114,17 @@ const MOBILE_NAV_ITEMS = [
  *  Bandeja termino colgando del primer nivel en vez de vivir dentro de
  *  Certificacion, como manda la HU-04. */
 function NavGroup({
-  group, pathname, collapsed, inboxCount,
+  group, pathname, collapsed, inboxCount, requestsCount = 0,
 }: {
   group:      NavGroupDef
   pathname:   string
   collapsed:  boolean
   inboxCount: number
+  /** Pedidos de Operaciones abiertos (Entrega B): el contador de Pendientes. */
+  requestsCount?: number
 }) {
+  const countOf = (badge?: NavLeaf['badge']) =>
+    badge === 'inbox' ? inboxCount : badge === 'requests' ? requestsCount : 0
   // Match mas especifico primero: /dashboard/compliance/inbox gana sobre
   // /dashboard/compliance, que es su prefijo.
   const activeHref = group.items
@@ -136,7 +141,7 @@ function NavGroup({
   }, [groupActive])
 
   const Icon = group.icon
-  const pending = group.items.some(i => i.badge === 'inbox') ? inboxCount : 0
+  const pending = group.items.reduce((n, i) => n + countOf(i.badge), 0)
 
   if (collapsed) {
     return (
@@ -193,9 +198,9 @@ function NavGroup({
                 }`}
               >
                 <span className="truncate">{label}</span>
-                {badge === 'inbox' && inboxCount > 0 && (
+                {countOf(badge) > 0 && (
                   <span className="ml-auto shrink-0 bg-red-500/90 text-white text-[9px] font-bold rounded-full px-1.5 py-0.5 tabular-nums">
-                    {inboxCount}
+                    {countOf(badge)}
                   </span>
                 )}
               </Link>
@@ -240,6 +245,13 @@ export default function Sidebar({ acceso }: SidebarProps) {
   const inboxCount = useQuery({
     queryKey: clavesCertificacion.colaTotal(),
     queryFn: () => documentIngestApi.listQueue({ limit: 1 }),
+    staleTime: 60_000,
+    enabled: puedeClasificar,
+  }).data?.total ?? 0
+  // Pedidos de Operaciones (Entrega B): los ve y los resuelve quien revisa documentos.
+  const requestsCount = useQuery({
+    queryKey: ['certification-requests', 'open'],
+    queryFn: () => certificationRequestsApi.listOpen(),
     staleTime: 60_000,
     enabled: puedeClasificar,
   }).data?.total ?? 0
@@ -313,6 +325,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
                   pathname={pathname}
                   collapsed={collapsed}
                   inboxCount={inboxCount}
+                  requestsCount={requestsCount}
                 />
               )
             }

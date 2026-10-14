@@ -20,6 +20,7 @@ from ..schemas.common import PaginatedResponse
 from ..schemas.contact import ContactCreateBody
 from ..schemas.insurance import CarrierInsuranceOverviewResponse, InsurancePolicyCreateBody
 from ..services import fleet_assignments
+from ..services.entity_documents import entity_documents
 from ..services.audit import log_change, record_manual_edit
 from ..services.fleet_compliance import (
     CARRIER_SUMMARY_COLUMNS,
@@ -625,8 +626,10 @@ async def patch_carrier(
                 raise HTTPException(422, "No se puede activar una empresa sin RUT/tax_id")
 
             if body.tax_id:
+                # En forma canónica (D3): "76.123.456-7" y "761234567" son el mismo RUT.
                 dup = await conn.fetchval(
-                    "SELECT id FROM public.carriers WHERE tax_id = $1 AND id != $2", body.tax_id, carrier_id,
+                    "SELECT id FROM public.carriers WHERE public.canonical_rut(tax_id) = public.canonical_rut($1) "
+                    "AND id != $2", body.tax_id, carrier_id,
                 )
                 if dup:
                     raise HTTPException(409, f"Ya existe una empresa con tax_id {body.tax_id}")
@@ -953,6 +956,16 @@ async def create_carrier_policy(
                 action="create", field="insurance_policy", new_value=str(row["id"]), source="api",
             )
     return dict(row)
+
+
+# ── Documentos de la empresa: el panel único (Cert 3, Entrega B) ──
+
+@router.get("/{carrier_id}/documents")
+async def get_carrier_documents(
+    carrier_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase),
+    _=Depends(require(Permission.DIRECTORY_READ)),
+):
+    return await entity_documents(pool, supabase, "CARRIER", carrier_id)
 
 
 # ── Clientes de la empresa (P10: se declaran; D2: con vigencia) ──

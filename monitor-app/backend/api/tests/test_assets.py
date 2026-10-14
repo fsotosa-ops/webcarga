@@ -122,8 +122,9 @@ def test_list_asset_compliance_records():
 
     assert res.status_code == 200
     assert res.json()[0]["requirement_code"] == "PADRON"
-    sql = pool.fetch.call_args.args[0]
-    assert "entity_type = 'ASSET'" in sql
+    # Desde la Entrega B la consulta es la del panel único (services/entity_documents.py),
+    # con el tipo como parámetro.
+    assert pool.fetch.call_args.args[2] == "ASSET"
 
 
 def test_asset_detail_carries_its_carrier():

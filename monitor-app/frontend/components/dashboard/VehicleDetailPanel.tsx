@@ -1,5 +1,7 @@
 'use client'
 
+import { CorrectIdentityModal } from './CorrectIdentityModal'
+import { certificationRequestsApi } from '@/lib/api/certificationRequests'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -30,6 +32,10 @@ interface Props {
    *  (`documents.review`): permisos de Certificación, no de editar la ficha. */
   canUploadDocuments: boolean
   canReviewDocuments: boolean
+  /** Pedir a Certificación lo pendiente (`certification.request`, Entrega B). */
+  canRequestDocuments?: boolean
+  /** Corregir RUT o patente con motivo (`directory.identity`, D3). */
+  canCorrectIdentity?: boolean
   /** Dar de baja y reactivar (`directory.fleet_status`): Operaciones lo tiene
    *  aunque no edite la ficha (D-e, 12/10). */
   canChangeFleetStatus: boolean
@@ -60,7 +66,7 @@ interface Props {
  *  exige motivo—, así que un equipo importado por la ingesta sin clasificar
  *  bloqueaba el cierre sin que hubiera dónde arreglarlo. Pablo, 04/09: *"no
  *  puedo definir qué tractoreo, entonces no me lo muestra aquí"*. */
-export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, canChangeFleetStatus, canUploadDocuments, canReviewDocuments, onClose, onPatch, onRemove, onTransferClick, drivers = [] }: Props) {
+export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, canChangeFleetStatus, canUploadDocuments, canReviewDocuments, canRequestDocuments = false, canCorrectIdentity = false, onClose, onPatch, onRemove, onTransferClick, drivers = [] }: Props) {
   const open = !!asset
   const panelRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
@@ -76,6 +82,7 @@ export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, can
   const [driverErr, setDriverErr] = useState<string | null>(null)
 
   const subirDocumento = useSubirDocumento()
+  const [correcting, setCorrecting] = useState(false)
 
   const complianceQuery = useQuery({
     queryKey: ['asset-compliance-records', asset?.id],
@@ -155,9 +162,10 @@ export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, can
       await onPatch(asset.id, {
         asset_type: draft.asset_type,
         manufacture_year: draft.manufacture_year ? Number(draft.manufacture_year) : undefined,
-        // Vacío es "no lo toques", no "déjalo sin clasificar": el UPDATE hace
-        // COALESCE y sin clasificar es justo el estado que bloquea el cierre.
-        webcarga_operation_type_id: draft.webcarga_operation_type_id || undefined,
+        // "Sin clasificar" elegido sobre un equipo que tenía tipo lo quita (null,
+        // D3); vacío sobre vacío no manda nada.
+        webcarga_operation_type_id: draft.webcarga_operation_type_id
+          || (asset.webcarga_operation_type_id ? null : undefined),
       })
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Error al guardar')
@@ -230,6 +238,12 @@ export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, can
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-bold text-text-primary font-mono truncate">{asset.license_plate}</p>
+                {canCorrectIdentity && (
+                  <button type="button" onClick={() => setCorrecting(true)}
+                          className="text-etiqueta font-semibold text-accion hover:underline">
+                    Corregir patente
+                  </button>
+                )}
               </div>
             </div>
 
@@ -447,11 +461,29 @@ export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, can
                 }}
                 carrierId={carrierId}
                 onReassigned={() => complianceQuery.refetch()}
+                /* Operaciones no sube: pide (Entrega B). */
+                onRequest={canRequestDocuments ? async item => {
+                  await certificationRequestsApi.create({ entity_type: 'ASSET', entity_id: asset!.id, requirement_id: item.requirement_id })
+                  await complianceQuery.refetch()
+                } : undefined}
               />
             )}
           </div>
         </div>
       </div>
+      {correcting && asset && (
+        <CorrectIdentityModal
+          field="patente"
+          current={asset.license_plate}
+          hint="Es el mismo equipo: la patente anterior queda como alias, y los viajes que lleguen con ella lo siguen encontrando."
+          onClose={() => setCorrecting(false)}
+          onConfirm={async (value, reason) => {
+            await assetsApi.correctPlate(asset.id, value, reason)
+            await invalidateDirectory(queryClient, { entity: 'asset', id: asset.id, type: 'update' })
+          }}
+        />
+      )}
+
       {bajaModalOpen && (
         <BajaReasonModal
           label={`equipo ${asset.license_plate}`}

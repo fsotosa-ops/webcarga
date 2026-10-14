@@ -2,8 +2,14 @@
 
 import type { ReactNode } from 'react'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { DocumentChecklist } from '@/components/dashboard/DocumentChecklist'
+import { apiFetch } from '@/lib/api/client'
+import { certificationRequestsApi } from '@/lib/api/certificationRequests'
+import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceChecklist'
+import type { ComplianceRecord } from '@/lib/types'
 import { PanelLateral } from '@/components/ui/PanelLateral'
 import { Section } from '@/components/ui/Section'
 import { KeyValueList } from '@/components/ui/KeyValueList'
@@ -35,12 +41,16 @@ interface EntityQuickViewProps {
   onClose:    () => void
   /** Adónde vuelve la ficha completa (la URL del Cierre). */
   returnTo?:  string
+  /** El día del Cierre desde el que se abrió: viaja con un "Pedir a Certificación". */
+  closureDate?: string
+  /** `certification.request`: ofrecer "Pedir a Certificación" en la lista de documentos. */
+  canRequestDocuments?: boolean
 }
 
 /** La vista rápida de una empresa, un conductor o un equipo: un panel lateral de
  *  solo lectura que deja ver el Cierre detrás (HU 20261011/01; patrón de Linear,
  *  Samsara y Salesforce Quick View). La variante sale de `target.kind`. */
-export function EntityQuickView({ target, canGoBack, onNavigate, onBack, onClose, returnTo }: EntityQuickViewProps) {
+export function EntityQuickView({ target, canGoBack, onNavigate, onBack, onClose, returnTo, closureDate, canRequestDocuments = false }: EntityQuickViewProps) {
   const query = useQuery({
     queryKey: entitySummaryKey(target.kind, target.id),
     queryFn: () => fetchEntitySummary(target.kind, target.id),
@@ -85,6 +95,7 @@ export function EntityQuickView({ target, canGoBack, onNavigate, onBack, onClose
   return (
     <PanelLateral titulo={title} label={`${KIND_LABEL[target.kind]} ${target.label}`} onCerrar={onClose} pie={footer} overlay="none">
       <Body target={target} query={query} onNavigate={onNavigate} />
+      {query.data && <QuickViewDocuments target={target} closureDate={closureDate} canRequest={canRequestDocuments} />}
     </PanelLateral>
   )
 }
@@ -299,5 +310,49 @@ function CarrierSections({ data }: { data: CarrierSummary }) {
         <DocumentStatusBar documents={data.documents} counts={data.compliance_summary.own} fleet={data.compliance_summary.fleet} />
       </Section>
     </>
+  )
+}
+
+const ENTITY_PATH: Record<EntityKind, string> = { carrier: 'carriers', driver: 'drivers', asset: 'assets' }
+const ENTITY_TYPE: Record<EntityKind, 'CARRIER' | 'DRIVER' | 'ASSET'> = { carrier: 'CARRIER', driver: 'DRIVER', asset: 'ASSET' }
+
+/** La lista de documentos en solo lectura, con "Pedir a Certificación" (Entrega B):
+ *  la misma fila que las fichas del Directorio. Se pide al desplegarla. */
+function QuickViewDocuments({ target, closureDate, canRequest }: { target: QuickViewTarget; closureDate?: string; canRequest: boolean }) {
+  const [open, setOpen] = useState(false)
+  const qc = useQueryClient()
+  const key = ['entity-documents', target.kind, target.id]
+  const docs = useQuery({
+    queryKey: key,
+    queryFn: () => apiFetch<{ rows: ComplianceRecord[] }>(`/api/v1/${ENTITY_PATH[target.kind]}/${target.id}/documents`),
+    enabled: open,
+  })
+  return (
+    <Section title="Documentos">
+      <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open}
+              className="flex items-center gap-1 text-dato font-semibold text-accion hover:underline">
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />} {open ? 'Ocultar documentos' : 'Ver documentos'}
+      </button>
+      {open && (
+        <div className="mt-2">
+          {docs.isPending && <p className="text-dato text-informativo">Cargando…</p>}
+          {docs.isError && <p className="text-dato text-espera">No se pudieron cargar los documentos.</p>}
+          {docs.data && (
+            <DocumentChecklist
+              items={complianceRecordsToChecklistItems(docs.data.rows)}
+              canUpload={false}
+              hideCounter
+              onRequest={canRequest ? async item => {
+                await certificationRequestsApi.create({
+                  entity_type: ENTITY_TYPE[target.kind], entity_id: target.id,
+                  requirement_id: item.requirement_id, closure_date: closureDate ?? null,
+                })
+                await qc.invalidateQueries({ queryKey: key })
+              } : undefined}
+            />
+          )}
+        </div>
+      )}
+    </Section>
   )
 }

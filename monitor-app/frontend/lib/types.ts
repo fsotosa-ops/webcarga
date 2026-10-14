@@ -702,6 +702,8 @@ export type ComplianceRecord = {
    *  hace X días" (pedido explícito del usuario 2026-07-16: las alertas
    *  eran binarias MISSING/vencido sin decir desde cuándo). */
   updated_at:         string | null
+  /** Pedido abierto de Operaciones a Certificación para este documento (Entrega B). */
+  open_request_id?:   string | null
 }
 
 /** GET/PATCH /compliance-records/{id} standalone — shape distinto al
@@ -2138,4 +2140,30 @@ export type TmsClient = {
   trips:            number
   shipper_id:       string | null
   shipper_name:     string | null
+}
+
+/** Pedir a Certificación (Entrega B, 14/10). */
+export type CertificationRequestBody = {
+  entity_type:     'CARRIER' | 'DRIVER' | 'ASSET'
+  entity_id:       string
+  requirement_id?: string | null
+  note?:           string | null
+  trip_id?:        string | null
+  closure_date?:   string | null
+}
+export type CertificationRequest = {
+  id:                string
+  entity_type:       'CARRIER' | 'DRIVER' | 'ASSET'
+  entity_id:         string
+  entity_name:       string | null
+  carrier_id:        string | null
+  carrier_name:      string | null
+  requirement_id:    string | null
+  requirement_name:  string | null
+  note:              string | null
+  trip_id:           string | null
+  trip_number:       string | null
+  closure_date:      string | null
+  created_at:        string
+  created_by_name:   string | null
 }

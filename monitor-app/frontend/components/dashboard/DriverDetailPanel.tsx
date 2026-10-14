@@ -1,5 +1,7 @@
 'use client'
 
+import { CorrectIdentityModal } from './CorrectIdentityModal'
+import { certificationRequestsApi } from '@/lib/api/certificationRequests'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -31,6 +33,10 @@ interface Props {
    *  (`documents.review`): permisos de Certificación, no de editar la ficha. */
   canUploadDocuments: boolean
   canReviewDocuments: boolean
+  /** Pedir a Certificación lo pendiente (`certification.request`, Entrega B). */
+  canRequestDocuments?: boolean
+  /** Corregir RUT o patente con motivo (`directory.identity`, D3). */
+  canCorrectIdentity?: boolean
   /** Dar de baja y reactivar (`directory.fleet_status`): Operaciones lo tiene
    *  aunque no edite la ficha (D-e, 12/10). */
   canChangeFleetStatus: boolean
@@ -47,7 +53,7 @@ interface Props {
  *  el roster, que solo expone el agregado) vía GET /drivers/{id}/compliance-records.
  *  Solo lectura desde Ronda 88 — subir/editar documentos se hace en
  *  Certificación, ver TransporterDocumentsPanel. */
-export function DriverDetailPanel({ driver, carrierId, carrierName, canEdit, canChangeFleetStatus, canDeleteContacts, canUploadDocuments, canReviewDocuments, onClose, onPatch, onRemove, onTransferClick }: Props) {
+export function DriverDetailPanel({ driver, carrierId, carrierName, canEdit, canChangeFleetStatus, canDeleteContacts, canUploadDocuments, canReviewDocuments, canRequestDocuments = false, canCorrectIdentity = false, onClose, onPatch, onRemove, onTransferClick }: Props) {
   const open = !!driver
   const panelRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
@@ -58,6 +64,7 @@ export function DriverDetailPanel({ driver, carrierId, carrierName, canEdit, can
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
 
   const subirDocumento = useSubirDocumento()
+  const [correcting, setCorrecting] = useState(false)
 
   const complianceQuery = useQuery({
     queryKey: ['driver-compliance-records', driver?.id],
@@ -198,6 +205,12 @@ export function DriverDetailPanel({ driver, carrierId, carrierName, canEdit, can
               <div className="min-w-0">
                 <p className="text-sm font-bold text-text-primary truncate">{driver.full_name}</p>
                 <p className="text-[11px] text-gray-400 font-mono">{driver.tax_id}</p>
+                {canCorrectIdentity && (
+                  <button type="button" onClick={() => setCorrecting(true)}
+                          className="text-etiqueta font-semibold text-accion hover:underline">
+                    Corregir RUT
+                  </button>
+                )}
               </div>
             </div>
 
@@ -356,6 +369,11 @@ export function DriverDetailPanel({ driver, carrierId, carrierName, canEdit, can
                 }}
                 carrierId={carrierId}
                 onReassigned={() => complianceQuery.refetch()}
+                /* Operaciones no sube: pide (Entrega B). */
+                onRequest={canRequestDocuments ? async item => {
+                  await certificationRequestsApi.create({ entity_type: 'DRIVER', entity_id: driver!.id, requirement_id: item.requirement_id })
+                  await complianceQuery.refetch()
+                } : undefined}
               />
             )}
 
@@ -383,6 +401,19 @@ export function DriverDetailPanel({ driver, carrierId, carrierName, canEdit, can
           </div>
         </div>
       </div>
+      {correcting && driver && (
+        <CorrectIdentityModal
+          field="RUT"
+          current={driver.tax_id}
+          hint="El RUT viejo queda en la auditoría."
+          onClose={() => setCorrecting(false)}
+          onConfirm={async (value, reason) => {
+            await driversApi.correctRut(driver.id, value, reason)
+            await invalidateDirectory(queryClient, { entity: 'driver', id: driver.id, type: 'update' })
+          }}
+        />
+      )}
+
       {bajaModalOpen && (
         <BajaReasonModal
           label={`conductor ${driver.full_name}`}

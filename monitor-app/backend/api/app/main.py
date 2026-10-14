@@ -12,6 +12,7 @@ from .db import close_pool, init_pool
 from .middleware.cache import CacheMiddleware
 from .routers.assets import router as assets_router
 from .routers.carriers import router as carriers_router
+from .routers.certification_requests import router as certification_requests_router
 from .routers.compliance import router as compliance_router
 from .routers.config import router as config_router
 from .routers.config_reviews import buscador as config_search_router
@@ -131,6 +132,7 @@ app.include_router(assets_router,              prefix="/api/v1")
 app.include_router(contacts_router,            prefix="/api/v1")
 app.include_router(policies_router,            prefix="/api/v1")
 app.include_router(compliance_router,          prefix="/api/v1")
+app.include_router(certification_requests_router, prefix="/api/v1")
 app.include_router(compliance_requirements_router, prefix="/api/v1")
 app.include_router(document_ingest_router,      prefix="/api/v1")
 app.include_router(coverage_types_router,      prefix="/api/v1")

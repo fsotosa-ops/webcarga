@@ -34,11 +34,13 @@ class Permission(str, Enum):
     DIRECTORY_EDIT = "directory.edit"
     DIRECTORY_DELETE = "directory.delete"
     DIRECTORY_FLEET_STATUS = "directory.fleet_status"
+    DIRECTORY_IDENTITY = "directory.identity"
     # Certificación
     CERTIFICATION_READ = "certification.read"
     DOCUMENTS_UPLOAD = "documents.upload"
     DOCUMENTS_REVIEW = "documents.review"
     CERTIFICATION_CONFIGURE = "certification.configure"
+    CERTIFICATION_REQUEST = "certification.request"
     # Seguros
     INSURANCE_READ = "insurance.read"
     POLICIES_EDIT = "policies.edit"
@@ -79,10 +81,12 @@ PERMISSION_META: dict[Permission, PermissionMeta] = {
     P.DIRECTORY_EDIT: PermissionMeta("directory", "Crear y editar empresas, conductores, flota y contactos"),
     P.DIRECTORY_DELETE: PermissionMeta("directory", "Dar de baja y reactivar empresas, y eliminar empresas y contactos"),
     P.DIRECTORY_FLEET_STATUS: PermissionMeta("directory", "Dar de baja y reactivar conductores y equipos"),
+    P.DIRECTORY_IDENTITY: PermissionMeta("directory", "Corregir el RUT de un conductor y la patente de un equipo, con motivo"),
     P.CERTIFICATION_READ: PermissionMeta("certification", "Ver documentos y el catálogo de requisitos"),
     P.DOCUMENTS_UPLOAD: PermissionMeta("certification", "Cargar, clasificar y mover documentos"),
     P.DOCUMENTS_REVIEW: PermissionMeta("certification", "Aprobar, rechazar, reasignar y solicitar documentos"),
     P.CERTIFICATION_CONFIGURE: PermissionMeta("certification", "Configurar requisitos y reglas de vencimiento"),
+    P.CERTIFICATION_REQUEST: PermissionMeta("certification", "Pedir a Certificación un documento que falta o vence"),
     P.INSURANCE_READ: PermissionMeta("insurance", "Ver pólizas, coberturas y cuotas"),
     P.POLICIES_EDIT: PermissionMeta("insurance", "Crear y editar pólizas, coberturas, vehículos asegurados y cuotas"),
     P.POLICIES_DELETE: PermissionMeta("insurance", "Eliminar pólizas"),
@@ -116,7 +120,9 @@ def _rol(code: str, name: str, description: str, *extra: Permission) -> SystemRo
 
 # DIRECTORY_FLEET_STATUS (bloque 0 del Directorio, D-e 12/10): Operaciones da
 # de baja y reactiva conductores y equipos; el Supervisor lo hereda de acá.
-_OPS_OPERADOR = (P.TRIPS_EDIT_BASIC, P.TRIPS_VOID, P.CLOSURES_DECLARE, P.CLOSURES_SIGN, P.DIRECTORY_FLEET_STATUS)
+# CERTIFICATION_REQUEST (Entrega B, 14/10): Operaciones pide a Certificación; no sube.
+_OPS_OPERADOR = (P.TRIPS_EDIT_BASIC, P.TRIPS_VOID, P.CLOSURES_DECLARE, P.CLOSURES_SIGN, P.DIRECTORY_FLEET_STATUS,
+                 P.CERTIFICATION_REQUEST)
 _CERT_OPERADOR = (P.DOCUMENTS_UPLOAD,)
 _SEG_OPERADOR = (P.POLICIES_EDIT,)
 
@@ -140,7 +146,7 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
     _rol("certification_supervisor", "Supervisor de Certificación",
          "Operador + aprobación de documentos, requisitos y directorio.",
          *_CERT_OPERADOR, P.DOCUMENTS_REVIEW, P.CERTIFICATION_CONFIGURE, P.DIRECTORY_EDIT, P.DIRECTORY_DELETE,
-         P.DIRECTORY_FLEET_STATUS),
+         P.DIRECTORY_FLEET_STATUS, P.DIRECTORY_IDENTITY),
     _rol("insurance_operator", "Operador de Seguros", "Gestiona pólizas, coberturas y cuotas.", *_SEG_OPERADOR),
     _rol("insurance_supervisor", "Supervisor de Seguros", "Operador + eliminación de pólizas y tipos de cobertura.",
          *_SEG_OPERADOR, P.POLICIES_DELETE, P.INSURANCE_CONFIGURE),

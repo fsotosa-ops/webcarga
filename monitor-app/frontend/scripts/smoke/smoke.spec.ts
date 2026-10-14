@@ -130,3 +130,52 @@ test('Sin clasificar: la sección Descartados abre sin errores', async ({ page }
   await expect(page.getByText(/No hay documentos descartados|Restaurar/).first()).toBeVisible({ timeout: 15000 })
   expect(problems).toEqual([])
 })
+
+test('Pedir a Certificación: Operaciones pide un documento y Certificación lo resuelve (Entrega B)', async ({ browser }) => {
+  test.setTimeout(180000)
+  // Operaciones: desde la ficha de un conductor del Directorio.
+  const ops = await (await browser.newContext()).newPage()
+  const opsProblems = watch(ops)
+  await login(ops, 'oper@sim.local')
+  await ops.goto('/dashboard/carriers')
+  await ops.locator('a[href^="/dashboard/carriers/"]').first().waitFor({ timeout: 30000 })
+  const fichas = await ops.locator('a[href^="/dashboard/carriers/"]').evaluateAll(
+    as => [...new Set(as.map(a => (a as HTMLAnchorElement).getAttribute('href')!))])
+  let pedido = false
+  for (const href of fichas.slice(0, 6)) {
+    await ops.goto(href)
+    await ops.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
+    await ops.getByRole('button', { name: /^Conductores/ }).click()
+    await ops.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
+    // Tarjetas del roster de conductores: un botón con el avatar de iniciales.
+    const cards = ops.locator('button:has(div.rounded-full.w-8)')
+    const total = await cards.count()
+    for (let i = 0; i < Math.min(total, 4) && !pedido; i++) {
+      await cards.nth(i).click()
+      const pedir = ops.getByRole('button', { name: /^Pedir .* a Certificación$/ }).first()
+      // isVisible no espera: waitFor sí.
+      if (await pedir.waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false)) {
+        await pedir.click()
+        await expect(ops.getByText('Pedido a Certificación').first()).toBeVisible({ timeout: 15000 })
+        pedido = true
+      }
+      await ops.keyboard.press('Escape')
+    }
+    if (pedido) break
+  }
+  expect(pedido, 'no se encontró ningún documento pendiente para pedir').toBe(true)
+  expect(opsProblems).toEqual([])
+
+  // Certificación: lo ve arriba de Pendientes y lo resuelve.
+  const cert = await (await browser.newContext()).newPage()
+  const certProblems = watch(cert)
+  await login(cert, 'cert@sim.local')
+  await cert.goto('/dashboard/compliance/pending')
+  const bloque = cert.getByRole('region', { name: 'Pedidos de Operaciones' })
+  await expect(bloque).toBeVisible({ timeout: 20000 })
+  const antes = await bloque.getByRole('button', { name: 'Resolver' }).count()
+  await bloque.getByRole('button', { name: 'Resolver' }).first().click()
+  await expect.poll(async () => (await bloque.isVisible()) ? bloque.getByRole('button', { name: 'Resolver' }).count() : 0,
+    { timeout: 15000 }).toBeLessThan(antes)
+  expect(certProblems).toEqual([])
+})

@@ -11,6 +11,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Estado } from '@/components/ui/Estado'
 import { PendingSummaryList } from '@/components/compliance/pending/PendingSummaryList'
 import { PendingHoldersPanel } from '@/components/compliance/pending/PendingHoldersPanel'
+import { OperationsRequests } from '@/components/compliance/pending/OperationsRequests'
 import { PendingLoadError, PendingSkeleton } from '@/components/compliance/pending/PendingStates'
 import { defaultPendingFilter } from '@/lib/pending'
 import type { PendingFilter, PendingGroupBy, PendingSummaryRow } from '@/lib/types'
@@ -98,6 +99,7 @@ function Pending() {
           options={[{ id: 'requirement', label: 'Documento' }, { id: 'carrier', label: 'Empresa' }]}
         />
       </EncabezadoDePagina>
+      <OperationsRequests />
 
       {resumen.isPending && (
         <div className="overflow-hidden rounded-lg border border-border bg-white"><PendingSkeleton rows={6} /></div>

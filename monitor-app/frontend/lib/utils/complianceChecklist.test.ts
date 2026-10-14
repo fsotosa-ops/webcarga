@@ -37,6 +37,8 @@ describe('complianceRecordsToChecklistItems', () => {
       days_to_expiry: null,
       alert_severity: null,
       file_url: null,
+      // Sin pedido abierto de Operaciones (Entrega B).
+      open_request_id: null,
     }])
   })
 

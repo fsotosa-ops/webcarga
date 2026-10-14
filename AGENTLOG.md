@@ -121,6 +121,33 @@ escrito, pero contra la instrucción. El worktree se borró.
    autorizado por el usuario).
 2. Recorrido en dev con sesión (Directorio: transferir, clientes, baja con vista previa, reactivar; Sin clasificar:
    descartar/restaurar; Pendientes: Enviar a Sin clasificar), AGENTLOG, y documento de la Entrega B.
+
+**14/10 noche — Entrega A DESPLEGADA en dev** (`af2f5016`; los 4 workflows en verde, incluida la barrera tsc + vitest).
+- GitGuardian alertó por la contraseña de los usuarios ficticios de la copia local en el humo y en este
+  AGENTLOG: 0 usuarios @sim.local en la base real. `1738b5cc` la saca del repo (`.superpowers/local-sim/sim.env`, fuera de
+  git). Sigue en commits viejos: reescribir la historia solo si el usuario lo pide.
+- **Tipo de operación de Sodimac (pregunta del usuario):** el tipo sale del tracto; el portal de Sodimac nunca manda patente
+  (0/56 en 30 días), así que 38 viajes quedan sin tipo. Propuesta: tipo por defecto declarado por cliente como respaldo. Pero
+  hay 7 tractos que cruzan clientes (Equipo Completo haciendo Walmart, Tractoreo haciendo Iansa), y la definición de negocio
+  (A arreglo del tracto / B servicio del cliente / C quién pone la rampla) no está clara → **Google Sheet para el equipo**:
+  https://docs.google.com/spreadsheets/d/1DV6WDXKwW-bheQI_a5zkKnsiKZ74vXvdAsgrFNL6gZQ/edit (sin compartir; lo comparte el
+  usuario). No se construye nada hasta tener la respuesta.
+- Siguiente: documento de la Entrega B (Cert 3 + D3).
+
+**14/10 noche — Entrega B EJECUTADA** (doc `docs/superpowers/plans/2026-10-14-entrega-b-panel-documentos-d3.md`, aprobado:
+sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/patente = Supervisor de Certificación).
+- Base: `20261018090000_requests_and_plate_aliases.sql` APLICADA (certification_requests, asset_plate_aliases,
+  resolve_trip_fleet con alias de patente y empresa del día del viaje).
+- Backend: panel `…/documents` + `entity_documents.py`; `entity_summary` sobre `document_state_sql`; pedidos
+  (`/certification-requests`); corrección de RUT/patente (`/drivers|assets/{id}/identity`, motivo, auditoría, alias);
+  RUT de empresa con duplicado canónico; tipo de operación que se puede quitar.
+- Frontend: "Pedir a Certificación" en las fichas y en la vista rápida del Cierre, bloque "Pedidos de Operaciones" arriba de
+  Pendientes + contador en el menú, corregir RUT/patente en las fichas, chip único de tipo en Certificación.
+- Tests: P1-P7 y D1-D6 en verde; backend del área 424 en la copia local; vitest 1.976/1.976; humo 7/7 (incluye pedir y
+  resolver). Suite del backend contra la base real: corriendo.
+- **El Google Sheet del tipo de operación se rehízo como formulario** (mismo enlace; 8 preguntas, celdas amarillas).
+- Siguiente: suite real en verde → commit + push a `dev`; después recorrido en dev con sesión y la Entrega C
+  (D4 + Cert 2b + Cert 4 + D5).
 - Tangentes anotadas: purga de blobs descartados (> 30 días); quitar de la UI del pre-cierre el grupo
   `EMPRESA_NO_RECONOCIDA` (ya siempre vacío) y la rama `PATENTE_EMPRESA` de "resueltas"; duplicados contra registros
   cargados por otros caminos (no guardan hash).

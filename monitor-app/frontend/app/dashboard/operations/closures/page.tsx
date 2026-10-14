@@ -81,6 +81,7 @@ function ClosuresCenterPageInner() {
   const [tripsMeta, setTripsMeta] = useState<TripsMeta | null>(null)
   // Forzar con pendientes: closures.override; reabrir: closures.sign (RBAC).
   const puedeForzar = usePermiso('closures.override')
+  const puedePedirDocumentos = usePermiso('certification.request')
   // Firmar y reabrir son el mismo permiso (closures.sign).
   const puedeReabrir = usePermiso('closures.sign')
   const puedeFirmar = puedeReabrir
@@ -561,6 +562,8 @@ function ClosuresCenterPageInner() {
           onBack={quickView.back}
           onClose={closeQuickView}
           returnTo={urlDeEsteCierre()}
+          closureDate={fecha}
+          canRequestDocuments={puedePedirDocumentos}
         />
       )}
     </div>

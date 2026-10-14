@@ -11,9 +11,9 @@ from ..schemas.asset import ASSET_FIELD_PERMISSIONS, AssetCreateBody, AssetPatch
 from ..services.assignment_guard import AssignmentSubjects, enforce_assignment
 from ..services.audit import log_change, record_manual_edit
 from ..services.entity_summary import asset_summary
-from ..services.fleet_compliance import compliance_record_columns_sql
-from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
-from ..utils.document_storage import resolve_signed_url
+from ..services import identity_corrections
+from ..services.entity_documents import entity_document_rows, entity_documents
+from ..schemas.identity import IdentityCorrectionBody
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -107,7 +107,10 @@ async def patch_asset(
     # sin poder editar el resto (R8 del plan del bloque 0).
     asset_id: str, body: AssetPatchBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_READ)),
 ):
-    require_fields(user, body.model_dump(exclude_none=True), ASSET_FIELD_PERMISSIONS)
+    # "Sin tipo" es un valor: mandar null quita el tipo de operación (D3); no mandarlo no lo toca.
+    clears_type = "webcarga_operation_type_id" in body.model_fields_set and body.webcarga_operation_type_id is None
+    require_fields(user, {**body.model_dump(exclude_none=True),
+                          **({"webcarga_operation_type_id": None} if clears_type else {})}, ASSET_FIELD_PERMISSIONS)
     async with pool.acquire() as conn:
         async with conn.transaction():
             current = await conn.fetchrow(
@@ -123,7 +126,7 @@ async def patch_asset(
                     "asset_type", "operational_status", "manufacture_year",
                     "fleet_service_type_id", "webcarga_operation_type_id",
                 ) if getattr(body, f) is not None
-            ]
+            ] + (["webcarga_operation_type_id"] if clears_type else [])
             if not touched:
                 raise HTTPException(422, "Ningún campo enviado")
 
@@ -134,11 +137,12 @@ async def patch_asset(
                     operational_status = COALESCE($3, operational_status),
                     manufacture_year = COALESCE($4, manufacture_year),
                     fleet_service_type_id = COALESCE($5::uuid, fleet_service_type_id),
-                    webcarga_operation_type_id = COALESCE($6::uuid, webcarga_operation_type_id)
+                    webcarga_operation_type_id = CASE WHEN $7 THEN NULL
+                        ELSE COALESCE($6::uuid, webcarga_operation_type_id) END
                 WHERE id = $1
                 """,
                 asset_id, body.asset_type, body.operational_status, body.manufacture_year,
-                body.fleet_service_type_id, body.webcarga_operation_type_id,
+                body.fleet_service_type_id, body.webcarga_operation_type_id, clears_type,
             )
             for field in touched:
                 await record_manual_edit(
@@ -254,33 +258,30 @@ async def unassign_driver_from_asset(
     return {"ok": True}
 
 
+@router.post("/{asset_id}/identity")
+async def correct_asset_identity(
+    asset_id: str, body: IdentityCorrectionBody, pool=Depends(get_pool),
+    user=Depends(require(Permission.DIRECTORY_IDENTITY)),
+):
+    """Corregir el patente con motivo (D3). Ver services/identity_corrections.py."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            value = await identity_corrections.correct_asset_plate(conn, asset_id, body.value, body.reason, actor=user["sub"])
+    return {"license_plate": value}
+
+
 @router.get("/{asset_id}/compliance-records")
 async def list_asset_compliance_records(
     asset_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(require(Permission.DIRECTORY_READ)),
 ):
-    """Checklist itemizado del activo — mismo shape que el anidado en
-    GET /carriers/{id} (_assemble_carrier_detail), filtrado a ASSET."""
-    rows = await pool.fetch(
-        f"""
-        SELECT cr.id, cr.requirement_id, req.requirement_code, req.name, req.requirement_level,
-               req.requires_file, req.expiration_policy,
-               cr.status, cr.expiration_date, cr.file_url, cr.metadata,
-               cr.is_manual_override, cr.updated_at,
-               {vencido_predicate('cr')} AS is_expired,
-               {por_vencer_predicate('cr')} AS is_expiring_soon,
-               -- El vencimiento calculado según el tipo (HU-C1, entrega 2b);
-               -- -infinity (falta la emisión o el período) no es una fecha.
-               NULLIF({vence_el_sql('cr')}, '-infinity') AS vence_el,
-               {compliance_record_columns_sql('cr')},
-               cr.issue_date, cr.period_start
-        FROM public.compliance_records cr
-        JOIN public.compliance_requirements req ON req.id = cr.requirement_id
-        WHERE cr.entity_id = $1 AND cr.entity_type = 'ASSET' AND cr.is_current = true
-        ORDER BY req.requirement_level, req.name
-        """,
-        asset_id,
-    )
-    records = [dict(r) for r in rows]
-    for record in records:
-        record["file_url"] = resolve_signed_url(supabase, record["file_url"])
-    return records
+    """Las filas del panel de documentos (activo). Se queda mientras las pantallas
+    migran a GET …/documents (Entrega B); misma consulta, sin el resumen."""
+    return await entity_document_rows(pool, supabase, "ASSET", asset_id)
+
+
+@router.get("/{asset_id}/documents")
+async def get_asset_documents(
+    asset_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(require(Permission.DIRECTORY_READ)),
+):
+    """El panel único de documentos (Cert 3): filas con su estado canónico y el resumen."""
+    return await entity_documents(pool, supabase, "ASSET", asset_id)

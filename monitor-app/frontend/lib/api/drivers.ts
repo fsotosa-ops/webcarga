@@ -53,6 +53,12 @@ export const driversApi = {
   listComplianceRecords: (id: string) =>
     apiFetch<ComplianceRecord[]>(`/api/v1/drivers/${id}/compliance-records`),
 
+  /** Corregir el RUT con motivo (D3): queda en la auditoría. */
+  correctRut: (id: string, value: string, reason: string) =>
+    apiFetch<{ tax_id: string }>(`/api/v1/drivers/${id}/identity`, {
+      method: 'POST', body: JSON.stringify({ value, reason }),
+    }),
+
   // ── Contactos (alta anidada; PATCH/DELETE en lib/api/contacts.ts) ─────
 
   listContacts: (id: string) =>

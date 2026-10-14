@@ -153,6 +153,8 @@ function EmpresaDetailPageInner() {
   const backLink            = returnLink(searchParams.get('next'))
   const canEdit = usePermiso('directory.edit')
   const canAdmin = usePermiso('directory.delete')
+  const canRequestDocuments = usePermiso('certification.request')
+  const canCorrectIdentity = usePermiso('directory.identity')
   // Cada botón con el permiso de SU endpoint (bloque 0, 0.3): ninguno responde 403.
   const canChangeFleetStatus = usePermiso('directory.fleet_status')
   const canEditPolicies = usePermiso('policies.edit')
@@ -911,6 +913,8 @@ function EmpresaDetailPageInner() {
         canDeleteContacts={canAdmin}
         canUploadDocuments={canUploadDocuments}
         canReviewDocuments={canReviewDocuments}
+          canRequestDocuments={canRequestDocuments}
+          canCorrectIdentity={canCorrectIdentity}
         onClose={() => setSelectedDriverId(null)}
         onPatch={handlePatchDriver}
         onRemove={() => handleRemoveDriver(selectedDriver!.id)}
@@ -925,6 +929,8 @@ function EmpresaDetailPageInner() {
         canChangeFleetStatus={canChangeFleetStatus}
         canUploadDocuments={canUploadDocuments}
         canReviewDocuments={canReviewDocuments}
+          canRequestDocuments={canRequestDocuments}
+          canCorrectIdentity={canCorrectIdentity}
         onClose={() => setSelectedAssetId(null)}
         onPatch={handlePatchAsset}
         onRemove={() => handleRemoveAsset(selectedAsset!.id)}

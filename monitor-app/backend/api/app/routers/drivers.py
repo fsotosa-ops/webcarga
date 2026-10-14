@@ -14,12 +14,12 @@ from ..schemas.contact import ContactCreateBody
 from ..schemas.driver import DRIVER_FIELD_PERMISSIONS, DriverCreateBody, DriverPatchBody
 from ..services.audit import log_change, record_manual_edit
 from ..services.entity_summary import driver_summary
-from ..services.fleet_compliance import compliance_record_columns_sql
-from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
+from ..services import identity_corrections
+from ..services.entity_documents import entity_document_rows, entity_documents
+from ..schemas.identity import IdentityCorrectionBody
 from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente
 from ..services.entity_summary import usual_tractor_lateral
 from ..services.origen_del_viaje import origen_del_viaje
-from ..utils.document_storage import resolve_signed_url
 from ..utils.identity import canonical_rut, rut_matches_sql
 
 router = APIRouter(prefix="/drivers", tags=["drivers"])
@@ -384,36 +384,33 @@ async def patch_driver(
     return await get_driver(driver_id, pool, user)
 
 
+@router.post("/{driver_id}/identity")
+async def correct_driver_identity(
+    driver_id: str, body: IdentityCorrectionBody, pool=Depends(get_pool),
+    user=Depends(require(Permission.DIRECTORY_IDENTITY)),
+):
+    """Corregir el RUT con motivo (D3). Ver services/identity_corrections.py."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            value = await identity_corrections.correct_driver_rut(conn, driver_id, body.value, body.reason, actor=user["sub"])
+    return {"tax_id": value}
+
+
 @router.get("/{driver_id}/compliance-records")
 async def list_driver_compliance_records(
     driver_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(require(Permission.DIRECTORY_READ)),
 ):
-    """Checklist itemizado del conductor — mismo shape que el anidado en
-    GET /carriers/{id} (_assemble_carrier_detail), filtrado a DRIVER."""
-    rows = await pool.fetch(
-        f"""
-        SELECT cr.id, cr.requirement_id, req.requirement_code, req.name, req.requirement_level,
-               req.requires_file, req.expiration_policy,
-               cr.status, cr.expiration_date, cr.file_url, cr.metadata,
-               cr.is_manual_override, cr.updated_at,
-               {vencido_predicate('cr')} AS is_expired,
-               {por_vencer_predicate('cr')} AS is_expiring_soon,
-               -- El vencimiento calculado según el tipo (HU-C1, entrega 2b);
-               -- -infinity (falta la emisión o el período) no es una fecha.
-               NULLIF({vence_el_sql('cr')}, '-infinity') AS vence_el,
-               {compliance_record_columns_sql('cr')},
-               cr.issue_date, cr.period_start
-        FROM public.compliance_records cr
-        JOIN public.compliance_requirements req ON req.id = cr.requirement_id
-        WHERE cr.entity_id = $1 AND cr.entity_type = 'DRIVER' AND cr.is_current = true
-        ORDER BY req.requirement_level, req.name
-        """,
-        driver_id,
-    )
-    records = [dict(r) for r in rows]
-    for record in records:
-        record["file_url"] = resolve_signed_url(supabase, record["file_url"])
-    return records
+    """Las filas del panel de documentos (conductor). Se queda mientras las pantallas
+    migran a GET …/documents (Entrega B); misma consulta, sin el resumen."""
+    return await entity_document_rows(pool, supabase, "DRIVER", driver_id)
+
+
+@router.get("/{driver_id}/documents")
+async def get_driver_documents(
+    driver_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(require(Permission.DIRECTORY_READ)),
+):
+    """El panel único de documentos (Cert 3): filas con su estado canónico y el resumen."""
+    return await entity_documents(pool, supabase, "DRIVER", driver_id)
 
 
 # ── Contactos (polimórfico — alta anidada bajo driver, edición flat en routers/contacts.py) ──

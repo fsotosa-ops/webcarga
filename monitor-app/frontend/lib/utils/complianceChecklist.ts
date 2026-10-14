@@ -24,5 +24,6 @@ export function complianceRecordsToChecklistItems(records: ComplianceRecord[]): 
     // ANTES de subir: sin esto subía el archivo y el servidor lo rechazaba con
     // 422, dejándolo varado — el mismo defecto que tenía Certificación.
     expiration_policy: r.expiration_policy,
+    open_request_id:   r.open_request_id ?? null,
   }))
 }
