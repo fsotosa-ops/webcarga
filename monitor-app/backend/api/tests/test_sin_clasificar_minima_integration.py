@@ -164,3 +164,20 @@ async def test_s5_the_declared_type_can_come_as_code_and_entity(conexion_reverti
     with pytest.raises(HTTPException) as exc:
         await _declared_requirement(conn, None, "ZZ_NO_EXISTE", "DRIVER")
     assert exc.value.status_code == 422
+
+
+async def test_s1b_an_old_discard_without_file_is_not_offered_to_restore(conexion_revertida, monkeypatch):
+    """Los descartados de antes del 14/10 ya no tienen archivo: no se listan ni se restauran."""
+    conn = conexion_revertida
+    monkeypatch.setattr("app.routers.document_ingest.match_document", lambda **kw: [])
+    user = await _usuario_real(conn)
+    _, items, _, _ = await _upload(conn, uuid4().bytes)
+    item = items[0]["id"]
+    # Como quedaban antes: DISCARDED, sin quién ni cuándo.
+    await conn.execute("UPDATE public.document_ingest_items SET match_status = 'DISCARDED' WHERE id = $1", item)
+
+    discarded = await list_queue(status="discarded", pool=PoolDeUnaConexion(conn), _=None)
+    assert item not in {r["id"] for r in discarded["rows"]}
+    with pytest.raises(HTTPException) as exc:
+        await restore_item(item, pool=PoolDeUnaConexion(conn), user=user)
+    assert exc.value.status_code == 404

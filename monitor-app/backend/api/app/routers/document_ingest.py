@@ -370,7 +370,10 @@ async def list_queue(
     # El predicado sale de unclassified_predicate() y no se escribe a mano: es
     # el mismo que cuenta el "sin clasificar" por empresa en compliance.py.
     # "Descartados" (14/10): el borrado es lógico y se puede restaurar.
-    estado = unclassified_predicate('i') if status == "pending" else "i.match_status = 'DISCARDED'"
+    # Solo los descartes lógicos (con discarded_at): los de antes del 14/10 perdieron su
+    # archivo en Storage y restaurarlos devolvería a la cola un documento sin archivo.
+    estado = (unclassified_predicate('i') if status == "pending"
+              else "i.match_status = 'DISCARDED' AND i.discarded_at IS NOT NULL")
     where = f"""
         WHERE {estado}
           AND ($1::uuid IS NULL OR COALESCE(i.carrier_id, b.carrier_id) = $1::uuid)
@@ -454,7 +457,7 @@ async def restore_item(
                     match_status = COALESCE(discarded_from_status, 'UNMATCHED'),
                     discarded_at = NULL, discarded_by = NULL, discard_reason = NULL,
                     discarded_from_status = NULL, updated_at = NOW()
-                WHERE id = $1 AND match_status = 'DISCARDED'
+                WHERE id = $1 AND match_status = 'DISCARDED' AND discarded_at IS NOT NULL
                 RETURNING match_status
                 """,
                 item_id,
