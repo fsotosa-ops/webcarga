@@ -148,7 +148,14 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
 - **El Google Sheet del tipo de operación se rehízo como formulario** (mismo enlace; 8 preguntas, celdas amarillas).
 - **DESPLEGADA en dev** (`2533415b`): suite contra la base real 1.761/1.761 (47 min); Deploy Monitor API y Deploy
   Frontend en verde.
-- Siguiente: recorrido en dev con sesión (A y B) y documento de la Entrega C (D4 + Cert 2b + Cert 4 + D5).
+- **Recorrido en dev con sesión (14/10 noche, Propietario, solo lectura, sin guardar nada):** ficha de empresa (clientes
+  Colun/Walmart + "Editar clientes"; baja con vista previa: 1 conductor, 2 equipos, 0 viajes hoy, 10 días abiertos;
+  cancelado), ficha de conductor (13 documentos, "Corregir RUT" abre y se cancela), ficha de equipo ("Corregir patente",
+  tipo con "Sin clasificar"), Certificación (un solo chip "Equipo Completo"), Pendientes (sin pedidos), Cierre (vista
+  rápida con "Ver documentos": 13 filas, "Pedir a Certificación", sin subir) y Monitor. 0 errores de página o de API.
+- **Bug hallado y corregido** (`d622834a`, desplegado): "Descartados (85)" listaba los descartes viejos, sin archivo;
+  ahora solo los lógicos → "Descartados (0)" en dev.
+- Siguiente: documento de la Entrega C (D4 + Cert 2b + Cert 4 + D5).
 - Esperando: respuestas del equipo en el Google Sheet (tipo de operación); Pablo valida "Pedir a Certificación";
   dato del tracto GPRZ30.
 - Tangentes anotadas: purga de blobs descartados (> 30 días); quitar de la UI del pre-cierre el grupo
