@@ -126,9 +126,9 @@ describe('BulkUploadReview', () => {
     expect(guardar()).toHaveTextContent('Guardar 1 listo')
   })
 
-  it('Sin asignar se puede quitar: no se sube y se sugiere Sin clasificar', async () => {
+  it('Sin asignar se puede quitar: no se sube y se ofrece enviarlo a Sin clasificar', async () => {
     await montar(F30, [SCAN, CORDILLERA])
-    expect(grupo(/^Sin asignar/).getByText(/Sin clasificar/)).toBeInTheDocument()
+    expect(grupo(/^Sin asignar/).getByRole('button', { name: 'Enviar scan_0042.pdf a Sin clasificar' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Quitar scan_0042.pdf' }))
     expect(screen.queryByText('scan_0042.pdf')).not.toBeInTheDocument()
     expect(screen.getByText('1 archivo de F30-1')).toBeInTheDocument()

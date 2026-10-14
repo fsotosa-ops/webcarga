@@ -47,9 +47,11 @@ async def test_a_las_2230_de_chile_la_asignacion_toma_el_dia_de_chile(conexion_r
         "INSERT INTO public.drivers (full_name, operational_status) VALUES ($1, 'ACTIVE') RETURNING id",
         f"{PREFIJO} Conductor {uuid.uuid4().hex[:6]}")
 
-    # Sin start_date: como lo inserta carriers.py:_transferir.
+    # Sin start_date. INACTIVE a propósito (D2, 14/10): la víspera puede ser un día ya
+    # cerrado del Cierre, y una ACTIVE abriría un período que la guarda rechaza. El
+    # default de la columna es el mismo para los dos estados.
     inicio = await conn.fetchval(
         "INSERT INTO public.driver_assignments (driver_id, carrier_id, status) "
-        "VALUES ($1, $2, 'ACTIVE') RETURNING start_date", driver, carrier)
+        "VALUES ($1, $2, 'INACTIVE') RETURNING start_date", driver, carrier)
 
     assert inicio == vispera

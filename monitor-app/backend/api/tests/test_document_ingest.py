@@ -241,9 +241,9 @@ def test_si_el_motor_falla_el_archivo_igual_entra(monkeypatch):
                   if "document_ingest_items" in c.args[0])
     args = insert.args[1:]
     assert "UNMATCHED" in args
-    # `error` es el penúltimo argumento: el último es `content_sha256`, que se
-    # calcula igual haya fallado el motor o no —el archivo ya está en storage.
-    assert args[-2] == "ValueError: catalogo corrupto", (
+    # `error` va antes de `content_sha256` (que se calcula igual haya fallado el
+    # motor o no) y de `carrier_id` (H1, 14/10).
+    assert args[-3] == "ValueError: catalogo corrupto", (
         "el motivo del fallo (tipo + mensaje, sin nombre de archivo) tiene "
         "que quedar en la columna `error`"
     )
@@ -269,10 +269,11 @@ def test_el_catalogo_se_lee_una_vez_por_lote_no_una_por_archivo(monkeypatch):
     pool, conn = _pool_de_ingesta()
     client = make_client(pool)
 
+    # Contenidos distintos: tres archivos idénticos serían dos duplicados (14/10).
     client.post("/api/v1/document-ingest/files", files=[
-        ("files", ("a.pdf", b"%PDF-1.4", "application/pdf")),
-        ("files", ("b.pdf", b"%PDF-1.4", "application/pdf")),
-        ("files", ("c.pdf", b"%PDF-1.4", "application/pdf")),
+        ("files", ("a.pdf", b"%PDF-1.4 a", "application/pdf")),
+        ("files", ("b.pdf", b"%PDF-1.4 b", "application/pdf")),
+        ("files", ("c.pdf", b"%PDF-1.4 c", "application/pdf")),
     ])
 
     assert llamadas == {"catalogo": 1, "universo": 1}
@@ -370,10 +371,11 @@ def test_el_lote_cuenta_auto_y_revision_por_separado(monkeypatch):
     ]
     client = make_client(pool)
 
+    # Contenidos distintos: tres archivos idénticos serían dos duplicados (14/10).
     client.post("/api/v1/document-ingest/files", files=[
-        ("files", ("a.pdf", b"%PDF-1.4", "application/pdf")),
-        ("files", ("b.pdf", b"%PDF-1.4", "application/pdf")),
-        ("files", ("c.pdf", b"%PDF-1.4", "application/pdf")),
+        ("files", ("a.pdf", b"%PDF-1.4 a", "application/pdf")),
+        ("files", ("b.pdf", b"%PDF-1.4 b", "application/pdf")),
+        ("files", ("c.pdf", b"%PDF-1.4 c", "application/pdf")),
     ])
 
     update = next(c for c in conn.execute.call_args_list
@@ -711,26 +713,29 @@ def test_preview_url_404_when_missing():
 
 # ── Bandeja: eliminar ──────────────────────────────────────────────────────
 
-def test_delete_item_marks_discarded_and_removes_the_blob():
+def test_delete_item_is_a_soft_discard_and_keeps_the_blob():
+    """Cert 2a (14/10): descartar es un borrado lógico; el archivo se conserva."""
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchrow.return_value = {"storage_path": "staging/b1/x.png"}
+    conn.fetchval.return_value = "UNMATCHED"
     supabase = MagicMock()
     client = make_client(pool, supabase=supabase)
 
-    res = client.delete("/api/v1/document-ingest/items/item-1")
+    res = client.delete("/api/v1/document-ingest/items/item-1?reason=ilegible")
 
     assert res.status_code == 204
-    assert "DISCARDED" in conn.execute.call_args.args[0]
-    supabase.storage.from_.return_value.remove.assert_called_once_with(["staging/b1/x.png"])
+    sql, *params = conn.execute.call_args.args
+    assert "DISCARDED" in sql and "discarded_from_status = match_status" in sql
+    assert params[-1] == "ilegible"
+    supabase.storage.from_.return_value.remove.assert_not_called()
 
 
 def test_delete_item_404_when_missing():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchrow.return_value = None
+    conn.fetchval.return_value = None
     client = make_client(pool)
 
     res = client.delete("/api/v1/document-ingest/items/nope")

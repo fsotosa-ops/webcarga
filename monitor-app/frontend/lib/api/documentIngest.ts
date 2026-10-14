@@ -1,4 +1,4 @@
-import type { IngestUploadResult, TrayPage } from '@/lib/types'
+import type { IngestUploadResult, TrayPage, TrayStatus } from '@/lib/types'
 import { apiFetch } from './client'
 
 /** Bandeja de documentos sin clasificar de una empresa (HU-01). */
@@ -27,9 +27,18 @@ export const documentIngestApi = {
   /** Sube archivos a la bandeja. Sin `carrierId` van a la bandeja global —
    *  la tanda que llega por correo mezcla empresas y quien carga todavía no
    *  sabe de quién es nada. */
-  upload: (carrierId: string | undefined, files: File[]) => {
+  upload: (
+    carrierId: string | undefined,
+    files: File[],
+    declared?: { code: string; target: string | null },
+  ) => {
     const form = new FormData()
     for (const f of files) form.append('files', f)
+    // El tipo ya conocido, cuando el archivo viene de Pendientes (14/10).
+    if (declared) {
+      form.append('requirement_code', declared.code)
+      if (declared.target) form.append('requirement_target', declared.target)
+    }
     const url = carrierId
       ? `/api/v1/document-ingest/${carrierId}/files`
       : '/api/v1/document-ingest/files'
@@ -39,9 +48,10 @@ export const documentIngestApi = {
   /** La cola global de sin clasificar. Sin `carrierId` trae todas las empresas:
    *  una bandeja que obliga a elegir empresa antes de mostrar algo es un
    *  buscador, no una bandeja. */
-  listQueue: (params: { carrierId?: string; limit?: number; offset?: number } = {}) => {
+  listQueue: (params: { carrierId?: string; limit?: number; offset?: number; status?: TrayStatus } = {}) => {
     const qs = new URLSearchParams()
     if (params.carrierId) qs.set('carrier_id', params.carrierId)
+    if (params.status && params.status !== 'pending') qs.set('status', params.status)
     if (params.limit  != null) qs.set('limit',  String(params.limit))
     if (params.offset != null) qs.set('offset', String(params.offset))
     const suffix = qs.toString() ? `?${qs}` : ''
@@ -67,8 +77,15 @@ export const documentIngestApi = {
       method: 'POST', body: JSON.stringify({ item_ids: itemIds, carrier_id: carrierId }),
     }),
 
-  remove: (itemId: string) =>
-    apiFetch<void>(`/api/v1/document-ingest/items/${itemId}`, { method: 'DELETE' }),
+  /** Borrado lógico: el archivo se conserva y se puede restaurar (14/10). */
+  remove: (itemId: string, reason?: string) =>
+    apiFetch<void>(
+      `/api/v1/document-ingest/items/${itemId}${reason ? `?reason=${encodeURIComponent(reason)}` : ''}`,
+      { method: 'DELETE' },
+    ),
+
+  restore: (itemId: string) =>
+    apiFetch<{ match_status: string }>(`/api/v1/document-ingest/items/${itemId}/restore`, { method: 'POST' }),
 
   /** Revierte una clasificación en lote: vacía los requisitos y devuelve los
    *  archivos a la bandeja. Se le pasan los mismos ids que `classifyBatch`

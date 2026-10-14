@@ -644,8 +644,13 @@ _FLEET_MATCH_CASE = """
            AND (t.fleet->>'tractor_plate' IS NOT NULL OR fl.tractor_plate IS NOT NULL
                 OR t.fleet->>'driver_name_tms' IS NOT NULL OR fl.driver_name_raw IS NOT NULL)
         THEN 'UNMATCHED'
-      WHEN vfr.resolved_driver_home_carrier_id IS NOT NULL
-           AND vfr.resolved_driver_home_carrier_id IS DISTINCT FROM vfr.resolved_carrier_id
+      -- D2 (14/10): la empresa que el conductor y el tracto tenían EL DÍA del viaje
+      -- (app.fleet_assignment_periods). Transferir a alguien ya no deja en MISMATCH
+      -- sus viajes anteriores.
+      WHEN (vfr.resolved_driver_home_carrier_id IS NOT NULL
+            AND vfr.resolved_driver_home_carrier_id IS DISTINCT FROM vfr.resolved_carrier_id)
+        OR (vfr.resolved_tractor_home_carrier_id IS NOT NULL
+            AND vfr.resolved_tractor_home_carrier_id IS DISTINCT FROM vfr.resolved_carrier_id)
         THEN 'MISMATCH'
       ELSE 'MATCHED'
     END

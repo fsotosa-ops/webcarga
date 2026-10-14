@@ -11,6 +11,7 @@ from app.routers.assets import get_asset_summary
 from app.routers.carriers import buscar_en_el_directorio
 from app.routers.drivers import get_driver_summary, list_drivers
 from tests.conftest import PoolDeUnaConexion
+from tests.conftest import asignacion_previa
 
 pytestmark = pytest.mark.integracion
 
@@ -25,13 +26,11 @@ async def _flota_de_empresa_de_baja(conn) -> dict:
     driver = await conn.fetchval(
         "INSERT INTO public.drivers (full_name, operational_status) VALUES ($1, 'ACTIVE') RETURNING id",
         f"{PREFIJO} Conductor {s}")
-    await conn.execute(
-        "INSERT INTO public.driver_assignments (driver_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')", driver, carrier)
+    await asignacion_previa(conn, 'DRIVER', driver, carrier)
     asset = await conn.fetchval(
         "INSERT INTO public.assets (license_plate, asset_type, operational_status) VALUES ($1, 'TRACTOCAMION', 'ACTIVE') RETURNING id",
         f"ZZ{uuid.uuid4().hex[:4].upper()}")
-    await conn.execute(
-        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')", asset, carrier)
+    await asignacion_previa(conn, 'ASSET', asset, carrier)
     return {"carrier": carrier, "driver": driver, "asset": asset, "sufijo": s}
 
 

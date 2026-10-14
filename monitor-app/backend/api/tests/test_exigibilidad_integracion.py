@@ -24,6 +24,7 @@ from app.routers.compliance import (
 from app.schemas.compliance import SolicitudBody
 from app.services.requirement_conditions import calcular_diferencias
 from tests.conftest import USER, PoolDeUnaConexion, _usuario_real
+from tests.conftest import insertar_asignacion
 
 pytestmark = pytest.mark.integracion
 
@@ -62,10 +63,7 @@ async def _conductor(conn, empresa=None, *, desde=None, estado="ACTIVE"):
     conductor = await conn.fetchval(
         "INSERT INTO public.drivers (full_name) VALUES ($1) RETURNING id", f"{PREFIJO} {_s()}")
     if empresa:
-        await conn.execute(
-            "INSERT INTO public.driver_assignments (driver_id, carrier_id, status, start_date) "
-            "VALUES ($1, $2, $3, COALESCE($4::date, CURRENT_DATE))",
-            conductor, empresa, estado, desde)
+        await insertar_asignacion(conn, "DRIVER", conductor, empresa, status=estado, desde=desde)
     return conductor
 
 

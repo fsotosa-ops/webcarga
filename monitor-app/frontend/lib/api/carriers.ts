@@ -7,7 +7,7 @@ import type {
   CarrierListResponse,
   CarrierOperationalStatus,
   CarrierPolicyListItem,
-  CarrierShipper,
+  CarrierShipper, CarrierDeactivationImpact,
   Contact,
   FleetDriverGapRow,
   PolicyStatus,
@@ -202,10 +202,30 @@ export const carriersApi = {
       body: JSON.stringify({ ...body, carrier_id: id }),
     }),
 
-  // ── Generadores de carga (solo lectura por ahora) ──────────────────────
+  // ── Clientes de la empresa (P10: se declaran; D2: con vigencia) ─────────
 
+  /** Vigentes y terminados, con sus fechas. */
   listShippers: (id: string) =>
     apiFetch<CarrierShipper[]>(`/api/v1/carriers/${id}/shippers`),
+
+  addShipper: (id: string, shipperId: string) =>
+    apiFetch<{ ok: boolean }>(`/api/v1/carriers/${id}/shippers`, {
+      method: 'POST', body: JSON.stringify({ shipper_id: shipperId }),
+    }),
+
+  /** Termina el vínculo hoy; queda en el historial. */
+  endShipper: (id: string, shipperId: string) =>
+    apiFetch<{ ok: boolean }>(`/api/v1/carriers/${id}/shippers/${shipperId}`, { method: 'DELETE' }),
+
+  // ── Baja y reactivación (D2: P4 impacto, P3 elegir la flota) ────────────
+
+  deactivationImpact: (id: string) =>
+    apiFetch<CarrierDeactivationImpact>(`/api/v1/carriers/${id}/deactivation-impact`),
+
+  reactivate: (id: string, body: { driver_ids: string[]; asset_ids: string[] }) =>
+    apiFetch<{ released_drivers: number; released_assets: number }>(`/api/v1/carriers/${id}/reactivate`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
 
   // ── Landing de Seguros — agregado por carrier (GET /carriers/insurance-overview) ──
 

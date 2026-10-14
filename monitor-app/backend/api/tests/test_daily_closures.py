@@ -103,36 +103,37 @@ def test_detail_sql_lee_los_viajes_del_dia_de_la_funcion():
 # constante TRACTOREO_ROSTER_CTE, no una copia divergente. ──────────
 
 def test_tractoreo_roster_cte_filters_by_operation_type_code():
-    from app.routers.daily_closures import TRACTOREO_ROSTER_CTE
+    from app.services.driver_roster import TRACTOREO_ROSTER_CTE
     assert "app.status_taxonomies" in TRACTOREO_ROSTER_CTE
     assert "wot.code = 'TRACTOREO'" in TRACTOREO_ROSTER_CTE
     assert "a.asset_type = 'TRACTOCAMION'" in TRACTOREO_ROSTER_CTE
 
 
 def test_detail_sql_uses_shared_tractoreo_roster_cte():
-    from app.routers.daily_closures import _DETAIL_SQL, TRACTOREO_ROSTER_CTE
-    assert TRACTOREO_ROSTER_CTE in _DETAIL_SQL
+    # D2: el roster del día que se mira, no el de hoy.
+    from app.routers.daily_closures import _DETAIL_SQL, tractoreo_roster_cte
+    assert tractoreo_roster_cte('$1::date') in _DETAIL_SQL
     assert "wot.code = 'TRACTOREO'" in _DETAIL_SQL
     assert "LEFT JOIN active_roster ar ON ar.driver_id = dds.driver_id" in _DETAIL_SQL
     assert "min(business_date) FROM app.closure_signatures" in _DETAIL_SQL
 
 
 def test_report_sql_uses_shared_tractoreo_roster_cte():
-    from app.routers.daily_closures import _REPORT_SQL, TRACTOREO_ROSTER_CTE
-    assert TRACTOREO_ROSTER_CTE in _REPORT_SQL
+    # D2: el roster de cada día del rango.
+    from app.routers.daily_closures import _REPORT_SQL, tractoreo_roster_by_day_cte
+    assert tractoreo_roster_by_day_cte('$1', '$2') in _REPORT_SQL
     assert "wot.code = 'TRACTOREO'" in _REPORT_SQL
-    assert "LEFT JOIN active_roster ar ON ar.driver_id = dds.driver_id" in _REPORT_SQL
+    assert ("LEFT JOIN active_roster ar ON ar.driver_id = dds.driver_id "
+            "AND ar.business_date = dds.business_date") in _REPORT_SQL
     assert "min(business_date) FROM app.closure_signatures" in _REPORT_SQL
 
 
-def test_detail_sql_keeps_driver_assignments_and_carriers_as_left_join():
-    """El JOIN nuevo a active_roster ya restringe el roster — da/c deben
-    seguir siendo LEFT JOIN para no perder un conductor cuyo día ya quedó
-    calculado y después perdió su asignación activa antes del próximo
-    recompute (caso borde documentado en el brief de la Tarea 4)."""
+def test_detail_sql_keeps_the_carrier_as_left_join_of_that_day():
+    """La empresa sigue siendo LEFT JOIN, para no perder un conductor cuyo día ya
+    quedó calculado y después perdió su asignación (Tarea 4). Desde D2 es la
+    empresa que tenía ESE día."""
     from app.routers.daily_closures import _DETAIL_SQL
-    assert "LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'" in _DETAIL_SQL
-    assert "LEFT JOIN public.carriers c ON c.id = da.carrier_id" in _DETAIL_SQL
+    assert "LEFT JOIN public.carriers c ON c.id = app.carrier_of('DRIVER', d.id, dds.business_date)" in _DETAIL_SQL
 
 
 # ── GET /cuadratura ──────────────────────────────────────────────────────
@@ -459,7 +460,7 @@ def test_set_batch_reason_422_cuando_driver_ids_vacio():
 # mismo reporte. ──────────
 
 def test_tractoreo_roster_cte_excluye_conductores_de_baja():
-    from app.routers.daily_closures import TRACTOREO_ROSTER_CTE
+    from app.services.driver_roster import TRACTOREO_ROSTER_CTE
     assert "d.operational_status = 'ACTIVE'" in TRACTOREO_ROSTER_CTE
     # los otros dos filtros ya estaban y no deben perderse
     assert "c.operational_status = 'ACTIVE'" in TRACTOREO_ROSTER_CTE

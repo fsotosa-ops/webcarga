@@ -1,10 +1,11 @@
 'use client'
 
 import { useRef, useState, type ReactNode } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Check, Loader2, Upload } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
-import { clavesCertificacion } from '@/lib/queries/certificacion'
+import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
+import { documentIngestApi } from '@/lib/api/documentIngest'
 import { StatusChip } from '@/components/ui/StatusChip'
 import type { PendingComplianceRow, PendingSummaryRow } from '@/lib/types'
 import { usePendingBulkUpload, type BulkRow } from './usePendingBulkUpload'
@@ -109,12 +110,37 @@ export function BulkUploadReview({ requirement, done = false }: {
     enabled: lote.items.length > 0,
   })
   const owerRows = owers.data?.rows ?? []
-  const locked = lote.saving
+  const qc = useQueryClient()
+  const [sending, setSending] = useState<number | null>(null)
+  const [sentNotice, setSentNotice] = useState<string | null>(null)
+  const locked = lote.saving || sending !== null
+
+  /** Sin asignar: el archivo va a Sin clasificar con su tipo ya puesto, y allí se
+   *  elige de quién es (Cert 2a, 14/10). Antes había que quitarlo y volver a subirlo. */
+  async function sendToInbox(index: number, file: File) {
+    if (!requirement.requirement_code) return
+    setSending(index); setSentNotice(null)
+    try {
+      const res = await documentIngestApi.upload(undefined, [file], {
+        code: requirement.requirement_code, target: requirement.target_entity,
+      })
+      lote.remove(index)
+      setSentNotice(res.duplicates?.length
+        ? `${file.name} ya estaba en Sin clasificar.`
+        : `${file.name} quedó en Sin clasificar, con el tipo ${requirement.label}.`)
+      void invalidarCertificacion(qc)
+    } catch (e) {
+      setSentNotice(`No se pudo enviar ${file.name}: ${e instanceof Error ? e.message : 'intenta de nuevo'}`)
+    } finally {
+      setSending(null)
+    }
+  }
 
   if (!lote.items.length) {
     if (done) return null
     return (
       <div className="mb-3">
+        {sentNotice && <p role="status" className="mb-1 text-etiqueta text-informativo">{sentNotice}</p>}
         <div
           onDragOver={e => e.preventDefault()}
           onDrop={e => { e.preventDefault(); void lote.receive(Array.from(e.dataTransfer.files)) }}
@@ -239,6 +265,13 @@ export function BulkUploadReview({ requirement, done = false }: {
             Cambiar
           </button>
         )}
+        {row.group === 'unassigned' && requirement.requirement_code && (
+          <button type="button" disabled={locked} onClick={() => { setPicking(null); void sendToInbox(index, item.file) }}
+                  aria-label={`Enviar ${item.file.name} a Sin clasificar`}
+                  className="text-etiqueta font-semibold text-accion hover:underline disabled:opacity-50">
+            {sending === index ? 'Enviando…' : 'Enviar a Sin clasificar'}
+          </button>
+        )}
         <button type="button" disabled={locked} onClick={() => { setPicking(null); lote.remove(index) }}
                 aria-label={`Quitar ${item.file.name}`}
                 className="text-etiqueta font-semibold text-accion hover:underline disabled:opacity-50">
@@ -271,7 +304,7 @@ export function BulkUploadReview({ requirement, done = false }: {
   const groups = [
     { key: 'choose', title: 'Por elegir', hint: chooseHint, rows: byGroup.choose },
     { key: 'unassigned', title: 'Sin asignar',
-      hint: 'el nombre no permite saber a quién va. Busca entre quienes lo deben; si ya está al día no aparece: quítalo y súbelo en Sin clasificar',
+      hint: 'el nombre no permite saber a quién va. Busca entre quienes lo deben, o envíalo a Sin clasificar con su tipo ya puesto',
       rows: byGroup.unassigned },
     { key: 'assigned', title: 'Asignados', hint: `${byGroup.assigned.length} · revisa si quieres`, rows: byGroup.assigned },
   ].filter(g => g.rows.length)
@@ -290,6 +323,7 @@ export function BulkUploadReview({ requirement, done = false }: {
         {byGroup.unassigned.length > 0 && <StatusChip tone="urgent">{`${byGroup.unassigned.length} sin asignar`}</StatusChip>}
         <span className="text-etiqueta text-informativo md:ml-auto">Nada se guarda hasta que confirmes</span>
       </div>
+      {sentNotice && <p role="status" className="mt-1 text-etiqueta text-informativo">{sentNotice}</p>}
 
       {lote.needs === 'periodo' && (
         <div className="my-2 flex flex-wrap items-center gap-3 rounded-md bg-bg-main px-3 py-2 text-dato">

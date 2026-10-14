@@ -446,14 +446,14 @@ def in_scope_sql(alias: str = "cr") -> str:
         f"(CASE {alias}.entity_type "
         f"WHEN 'CARRIER' THEN EXISTS (SELECT 1 FROM public.carriers vg_sc "
         f"WHERE vg_sc.id = {alias}.entity_id AND {activa}) "
-        f"WHEN 'DRIVER' THEN EXISTS (SELECT 1 FROM public.drivers vg_sd "
-        f"JOIN public.driver_assignments vg_sa ON vg_sa.driver_id = vg_sd.id AND vg_sa.status = 'ACTIVE' "
-        f"JOIN public.carriers vg_sc ON vg_sc.id = vg_sa.carrier_id AND {activa} "
-        f"WHERE vg_sd.id = {alias}.entity_id AND vg_sd.operational_status = 'ACTIVE') "
-        f"WHEN 'ASSET' THEN EXISTS (SELECT 1 FROM public.assets vg_sx "
-        f"JOIN public.asset_assignments vg_sa ON vg_sa.asset_id = vg_sx.id AND vg_sa.status = 'ACTIVE' "
-        f"JOIN public.carriers vg_sc ON vg_sc.id = vg_sa.carrier_id AND {activa} "
-        f"WHERE vg_sx.id = {alias}.entity_id AND vg_sx.operational_status = 'ACTIVE') "
+        # Conductor y equipo: la flota activa de una empresa activa, con la única
+        # definición de "flota activa" (app.active_fleet, D1; M4 en D2).
+        f"WHEN 'DRIVER' THEN EXISTS (SELECT 1 FROM app.active_fleet vg_af "
+        f"JOIN public.carriers vg_sc ON vg_sc.id = vg_af.carrier_id AND {activa} "
+        f"WHERE vg_af.entity_type = 'DRIVER' AND vg_af.entity_id = {alias}.entity_id) "
+        f"WHEN 'ASSET' THEN EXISTS (SELECT 1 FROM app.active_fleet vg_af "
+        f"JOIN public.carriers vg_sc ON vg_sc.id = vg_af.carrier_id AND {activa} "
+        f"WHERE vg_af.entity_type = 'ASSET' AND vg_af.entity_id = {alias}.entity_id) "
         f"ELSE false END)"
     )
     # ON_ENTITY_END: el documento se exige cuando la persona o el equipo YA SE

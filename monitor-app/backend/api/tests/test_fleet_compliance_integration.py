@@ -24,6 +24,7 @@ from app.services.fleet_compliance import (
 )
 from app.services.vencimientos import document_state_sql
 from tests.conftest import PoolDeUnaConexion
+from tests.conftest import asignacion_previa
 
 pytestmark = pytest.mark.integracion
 
@@ -44,9 +45,8 @@ async def _conductor(conn, empresa: UUID, *, estado: str = "ACTIVE") -> UUID:
     d = await conn.fetchval(
         "INSERT INTO public.drivers (full_name, operational_status) VALUES ($1, $2) RETURNING id",
         f"{PREFIJO} Conductor {_suf()}", estado)
-    await conn.execute(
-        "INSERT INTO public.driver_assignments (driver_id, carrier_id, status, start_date) "
-        "VALUES ($1, $2, 'ACTIVE', public.hoy_chile() - 400)", d, empresa)
+    await asignacion_previa(conn, 'DRIVER', d, empresa,
+                            await conn.fetchval("SELECT public.hoy_chile() - 400"))
     return d
 
 
@@ -54,8 +54,7 @@ async def _tracto(conn, empresa: UUID) -> UUID:
     a = await conn.fetchval(
         "INSERT INTO public.assets (license_plate, asset_type) VALUES ($1, 'TRACTOCAMION') RETURNING id",
         f"ZZ{_suf()[:4]}")
-    await conn.execute(
-        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')", a, empresa)
+    await asignacion_previa(conn, 'ASSET', a, empresa)
     return a
 
 

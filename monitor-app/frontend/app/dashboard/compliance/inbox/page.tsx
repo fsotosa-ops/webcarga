@@ -7,6 +7,7 @@ import { carriersApi } from '@/lib/api/carriers'
 import { directoryKeys } from '@/lib/queries/directorio'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { TriageWorkbench } from '@/components/compliance/TriageWorkbench'
+import { DiscardedItems } from '@/components/compliance/DiscardedItems'
 
 /** La empresa con la que llega el lote, si se entró desde la ficha de una.
  *  Viaja sólo el id: el nombre se pregunta, para que un enlace compartido no
@@ -57,6 +58,7 @@ export default function ComplianceInboxPage() {
       <Suspense fallback={null}>
         <EmpresaDelEnlace />
       </Suspense>
+      <DiscardedItems />
     </div>
   )
 }

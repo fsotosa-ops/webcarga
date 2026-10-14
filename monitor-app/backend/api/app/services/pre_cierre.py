@@ -1,47 +1,19 @@
-"""HU-02 (Cierre del Día): pre-cierre — corrige lo que el sistema puede resolver
-con confianza (Tipo A) y avisa lo que no (Tipo B).
+"""HU-02 (Cierre del Día): pre-cierre — avisa lo que el sistema no puede resolver
+solo (Tipo B) y muestra lo que corrigió antes (lectura de la bitácora).
 
-Desde la spec 2026-10-10 son dos caminos:
+`avisos_del_dia` es lectura pura: la usan el GET de daily-closures y la firma.
+Las reglas viven en `clasificar`, que es pura.
 
-- `aplicar_correcciones` (Tipo A) corre DENTRO de `cierre_lineas.recalcular_en`,
-  con el período tomado y el origen de la escritura declarado, así que sus
-  escrituras no vuelven a encolar el día. Lee las señales por conjuntos (un
-  número fijo de consultas) y escribe en lote.
-- `avisos_del_dia` (Tipo B y lo resuelto solo) es lectura pura: la usan el GET
-  de daily-closures y la firma.
-
-Las reglas no cambiaron con eso; viven en `clasificar`, que es pura. MISMATCH
-sigue siendo la red para lo que el Tipo A decide NO tocar (señal ambigua, ver
-`_single_value`): Tipo A resuelve lo claro, MISMATCH atrapa lo que queda.
-
-Las correcciones Tipo A se auditan con `source='pre_cierre_auto'` y NUNCA fijan
-`is_manual_override`: un falso positivo tiene que poder autocorregirse con una
-señal nueva, no quedar fijado para siempre.
-
-Hallazgo verificado contra producción (2026-08-02): `transporter_name_tms` es una
-variante de "WEBCARGA" en ~3270 de ~3280 viajes — WebCarga opera la plataforma,
-no es una empresa transportista, así que ese valor nunca dispara una
-reasignación (`_looks_like_webcarga_itself`).
+Hasta D2 (14/10) había además un Tipo A que escribía el directorio dentro del
+recálculo: cambiaba la empresa del tracto según el nombre de empresa del TMS y
+agregaba clientes a la empresa. Se retiró: la empresa del tracto sale del
+Directorio (conductor y patente), nunca del TMS ("WebCarga SpA" en casi todos
+los viajes; P11), y los clientes de una empresa se declaran (P10). Las filas
+viejas de `audit_log` con source='pre_cierre_auto' se siguen mostrando.
 """
 import json
-import re
-import unicodedata
 from dataclasses import dataclass, field
 from datetime import date as _date
-
-from .cliente_del_viaje import join_cliente, nombre_del_cliente
-from .audit import auditar_en_lote
-
-
-def _normalize(value: str | None) -> str:
-    if not value:
-        return ""
-    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
-    return re.sub(r"\s+", " ", value).strip().upper()
-
-
-def _looks_like_webcarga_itself(tms_carrier_name: str) -> bool:
-    return "WEBCARGA" in _normalize(tms_carrier_name)
 
 
 def _single_value(values: list[str]) -> str | None:
@@ -57,7 +29,6 @@ def _single_value(values: list[str]) -> str | None:
     return next(iter(distinct)) if len(distinct) == 1 else None
 
 
-FUENTE = "pre_cierre_auto"
 ESCALACIONES = (
     "PATENTE_NO_REGISTRADA", "EMPRESA_NO_RECONOCIDA", "CONDUCTOR_NO_REGISTRADO",
     "EMPRESA_ONBOARDING", "SIN_TIPO_OPERACION", "CONDUCTOR_SIN_EMPRESA",
@@ -83,48 +54,13 @@ class Conductor:
 
 
 @dataclass(frozen=True)
-class ParCliente:
-    """Una patente y el cliente del directorio de su viaje del día (por id,
-    spec 2026-10-11)."""
-    plate: str
-    shipper_id: str
-    shipper_name: str
-
-
-@dataclass(frozen=True)
 class Senales:
     patentes: list[Patente]
     conductores: list[Conductor]
-    pares_cliente: list[ParCliente]
-    # clave = upper(trim(business_name)) → [(id, business_name)]
-    empresas_por_clave: dict[str, list[tuple[str, str]]]
-    vinculos_activos: set[tuple[str, str]]
-    nombres_empresa: dict[str, str]
-
-
-@dataclass(frozen=True)
-class Reasignacion:
-    plate: str
-    asset_id: str
-    old_carrier_id: str
-    old_name: str
-    new_carrier_id: str
-    new_name: str
-
-
-@dataclass(frozen=True)
-class Vinculo:
-    carrier_id: str
-    carrier_name: str | None
-    shipper_id: str
-    shipper_name: str
 
 
 @dataclass
 class Clasificacion:
-    reasignaciones: list[Reasignacion] = field(default_factory=list)
-    vinculos: list[Vinculo] = field(default_factory=list)
-    carrier_por_patente: dict[str, str] = field(default_factory=dict)
     escalations: dict[str, list[dict]] = field(default_factory=lambda: {k: [] for k in ESCALACIONES})
 
 
@@ -146,27 +82,6 @@ def clasificar(s: Senales) -> Clasificacion:
                 "tms_carrier_name": tms_carrier_name,
             })
             continue
-        c.carrier_por_patente[p.plate] = p.carrier_id
-        tms_name = tms_carrier_name
-        if not tms_name or _looks_like_webcarga_itself(tms_name):
-            continue
-        if _normalize(tms_name) == _normalize(p.carrier_name):
-            continue
-        if p.is_manual_override:
-            continue
-        candidatos = s.empresas_por_clave.get(_normalize(tms_name), [])
-        if len(candidatos) != 1:
-            c.escalations["EMPRESA_NO_RECONOCIDA"].append({
-                "tractor_plate": p.plate, "tms_carrier_name": tms_name,
-                "directory_carrier_name": p.carrier_name, "directory_carrier_id": str(p.carrier_id),
-            })
-            continue
-        nuevo_id, nuevo_nombre = candidatos[0]
-        c.reasignaciones.append(Reasignacion(
-            plate=p.plate, asset_id=p.asset_id, old_carrier_id=p.carrier_id, old_name=p.carrier_name,
-            new_carrier_id=nuevo_id, new_name=nuevo_nombre,
-        ))
-        c.carrier_por_patente[p.plate] = nuevo_id
 
     # El nombre del conductor lo gestiona el Directorio (P9, 12/10): el TMS solo
     # dice quién manejó cada viaje. Por eso acá ya no se propone renombrar.
@@ -179,19 +94,6 @@ def clasificar(s: Senales) -> Clasificacion:
             c.escalations["CONDUCTOR_NO_REGISTRADO"].append(
                 {"driver_rut": d.rut, "driver_name_tms": _single_value(d.names)})
 
-    vistos: set[tuple[str, str]] = set()
-    for par in s.pares_cliente:
-        carrier_id = c.carrier_por_patente.get(par.plate)
-        if not carrier_id:
-            continue
-        shipper_id, shipper_name = par.shipper_id, par.shipper_name
-        clave = (carrier_id, shipper_id)
-        if clave in s.vinculos_activos or clave in vistos:
-            continue
-        vistos.add(clave)
-        nombre = s.nombres_empresa.get(carrier_id)
-        c.vinculos.append(Vinculo(carrier_id=carrier_id, carrier_name=nombre,
-                                  shipper_id=shipper_id, shipper_name=shipper_name))
     return c
 
 
@@ -237,104 +139,11 @@ LEFT JOIN LATERAL (
 ) d ON r.es_canonico
 """
 
-_SQL_PARES_CLIENTE = f"""
-SELECT DISTINCT upper(trim(t.fleet->>'tractor_plate')) AS plate,
-       t.shipper_id::text AS shipper_id, sh.name AS shipper_name
-FROM app.trips t
--- El cliente del directorio, por id (spec 2026-10-11). Un viaje sin vincular no
--- propone vínculo empresa-cliente: no se sabe de qué cliente es.
-{join_cliente('t', 'sh', solo_vinculados=True)}
-WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND t.fleet->>'tractor_plate' IS NOT NULL
-"""
-
-
 async def leer_senales(conn, fecha: _date) -> Senales:
     """Todas las señales del día en un número fijo de consultas (antes, ~4 por fila)."""
     patentes = [Patente(**dict(r)) for r in await conn.fetch(_SQL_PATENTES, fecha)]
     conductores = [Conductor(**dict(r)) for r in await conn.fetch(_SQL_CONDUCTORES, fecha)]
-    pares = [ParCliente(**dict(r)) for r in await conn.fetch(_SQL_PARES_CLIENTE, fecha)]
-
-    claves_empresa = sorted({_normalize(n) for p in patentes if (n := _single_value(p.carrier_names))})
-    empresas: dict[str, list[tuple[str, str]]] = {}
-    for r in await conn.fetch(
-        "SELECT id::text AS id, business_name, upper(trim(business_name)) AS clave "
-        "FROM public.carriers WHERE upper(trim(business_name)) = ANY($1::text[]) ORDER BY id",
-        claves_empresa,
-    ):
-        empresas.setdefault(r["clave"], []).append((r["id"], r["business_name"]))
-
-    ids_empresa = sorted({p.carrier_id for p in patentes if p.carrier_id}
-                         | {i for lista in empresas.values() for i, _ in lista})
-    vinculos = {(r["carrier_id"], r["shipper_id"]) for r in await conn.fetch(
-        "SELECT carrier_id::text AS carrier_id, shipper_id::text AS shipper_id FROM public.carrier_shippers "
-        "WHERE status = 'ACTIVE' AND carrier_id = ANY($1::uuid[])", ids_empresa)}
-    nombres = {r["id"]: r["business_name"] for r in await conn.fetch(
-        "SELECT id::text AS id, business_name FROM public.carriers WHERE id = ANY($1::uuid[])", ids_empresa)}
-
-    return Senales(patentes=patentes, conductores=conductores, pares_cliente=pares,
-                   empresas_por_clave=empresas,
-                   vinculos_activos=vinculos, nombres_empresa=nombres)
-
-
-async def aplicar_correcciones(conn, fecha: _date) -> None:
-    """Tipo A, en lote. La llama `cierre_lineas.recalcular_en` dentro de su
-    transacción, con el período tomado.
-
-    Cada corrección audita lo que la sentencia efectivamente escribió (RETURNING),
-    no lo que `clasificar` propuso: un override manual puede impedir una
-    escritura, y entonces no hay nada que auditar."""
-    c = clasificar(await leer_senales(conn, fecha))
-
-    if c.reasignaciones:
-        por_activo = {r.asset_id: r for r in c.reasignaciones}
-        # Una sola empresa ACTIVA por tracto (idx_asset_assignments_one_active):
-        # primero se apaga la vieja, después se activa la nueva. Solo donde la
-        # fila (tracto, empresa nueva) no está fijada a mano: si lo está, el
-        # tracto conserva su empresa en vez de quedar sin ninguna.
-        apagados = [r["asset_id"] for r in await conn.fetch(
-            """
-            UPDATE public.asset_assignments aa SET status = 'INACTIVE'
-            FROM unnest($1::uuid[], $2::uuid[], $3::uuid[]) AS x(asset_id, viejo, nuevo)
-            WHERE aa.asset_id = x.asset_id AND aa.carrier_id = x.viejo
-              AND aa.status = 'ACTIVE' AND NOT aa.is_manual_override
-              AND NOT EXISTS (
-                  SELECT 1 FROM public.asset_assignments fijada
-                  WHERE fijada.asset_id = x.asset_id AND fijada.carrier_id = x.nuevo
-                    AND fijada.is_manual_override)
-            RETURNING aa.asset_id::text AS asset_id
-            """,
-            list(por_activo), [r.old_carrier_id for r in por_activo.values()],
-            [r.new_carrier_id for r in por_activo.values()],
-        )]
-        activados = [r["asset_id"] for r in await conn.fetch(
-            """
-            INSERT INTO public.asset_assignments (asset_id, carrier_id, status)
-            SELECT x.asset_id, x.carrier_id, 'ACTIVE' FROM unnest($1::uuid[], $2::uuid[]) AS x(asset_id, carrier_id)
-            ON CONFLICT (asset_id, carrier_id) DO UPDATE SET status = 'ACTIVE'
-            WHERE NOT asset_assignments.is_manual_override
-            RETURNING asset_id::text AS asset_id
-            """,
-            apagados, [por_activo[a].new_carrier_id for a in apagados],
-        )]
-        await auditar_en_lote(conn, entity_type="ASSET", action="pre_cierre_reasignar_empresa",
-                              field="carrier_id", source=FUENTE,
-                              filas=[(a, por_activo[a].old_name, por_activo[a].new_name) for a in activados])
-
-    if c.vinculos:
-        por_par = {(v.carrier_id, v.shipper_id): v for v in c.vinculos}
-        vinculados = [(r["carrier_id"], r["shipper_id"]) for r in await conn.fetch(
-            """
-            INSERT INTO public.carrier_shippers (carrier_id, shipper_id, status)
-            SELECT x.carrier_id, x.shipper_id, 'ACTIVE' FROM unnest($1::uuid[], $2::uuid[]) AS x(carrier_id, shipper_id)
-            ON CONFLICT (carrier_id, shipper_id) DO UPDATE SET status = 'ACTIVE'
-            WHERE NOT carrier_shippers.is_manual_override AND carrier_shippers.status <> 'ACTIVE'
-            RETURNING carrier_id::text AS carrier_id, shipper_id::text AS shipper_id
-            """,
-            [c_ for c_, _ in por_par], [s_ for _, s_ in por_par],
-        )]
-        await auditar_en_lote(conn, entity_type="CARRIER", action="pre_cierre_agregar_cliente",
-                              field="carrier_shippers", source=FUENTE,
-                              filas=[(par[0], None, por_par[par].shipper_name) for par in vinculados])
+    return Senales(patentes=patentes, conductores=conductores)
 
 
 # Trae el estado (bloque 0 del Directorio): "Activar empresa" se ofrece con

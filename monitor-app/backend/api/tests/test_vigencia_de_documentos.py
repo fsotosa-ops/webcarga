@@ -17,6 +17,7 @@ from uuid import uuid4
 import pytest
 
 from app.services.vencimientos import aviso_desde_sql, exigible_sql, vence_el_sql
+from tests.conftest import insertar_asignacion
 
 pytestmark = pytest.mark.integracion
 
@@ -83,11 +84,7 @@ async def _conductor(conn, empresa=None, *, desde=None, estado="ACTIVE"):
         "INSERT INTO public.drivers (full_name) VALUES ($1) RETURNING id", f"{PREFIJO} {_suf()}",
     )
     if empresa:
-        await conn.execute(
-            "INSERT INTO public.driver_assignments (driver_id, carrier_id, status, start_date) "
-            "VALUES ($1, $2, $3, COALESCE($4::date, CURRENT_DATE))",
-            conductor, empresa, estado, desde,
-        )
+        await insertar_asignacion(conn, "DRIVER", conductor, empresa, status=estado, desde=desde)
     return conductor
 
 

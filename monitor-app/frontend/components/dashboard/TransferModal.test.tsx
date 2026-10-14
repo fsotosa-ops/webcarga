@@ -35,6 +35,14 @@ async function elegirEmpresaDestino() {
 }
 
 describe('TransferModal', () => {
+  it('un día cerrado del Cierre se dice con la frase del servidor (A11, 14/10)', async () => {
+    const frase = 'El 13/10 ya está cerrado en el Cierre: elige una fecha posterior.'
+    montar({ onTransfer: vi.fn().mockRejectedValue(new Error(frase)) })
+    await elegirEmpresaDestino()
+    fireEvent.click(screen.getByText('Confirmar transferencia'))
+    expect(await screen.findByText(frase)).toBeInTheDocument()
+  })
+
   it('entrega el destino con su nombre, para poder avisar a dónde quedó', async () => {
     const onTransfer = vi.fn().mockResolvedValue(undefined)
     montar({ onTransfer })

@@ -95,6 +95,9 @@ class QueueRow(BaseModel):
     # esa señal sólo ve items que siguen sin clasificar, y el ocupante de este
     # casillero ya salió de la cola porque fue confirmado.
     casillero_ocupado: bool = False
+    # Solo en el filtro "Descartados" (borrado lógico, 14/10).
+    discarded_at: Optional[datetime] = None
+    discard_reason: Optional[str] = None
 
 
 class TrayPage(BaseModel):
@@ -107,10 +110,20 @@ class IngestUploadError(BaseModel):
     error: str
 
 
+class IngestDuplicate(BaseModel):
+    """Un archivo idéntico (SHA-256) a uno que ya pasó por Sin clasificar: no
+    entra otra vez (Cert 2a, 14/10). `existing_status` dice si el original está
+    pendiente o ya confirmado."""
+    file_name: str
+    existing_item_id: str
+    existing_status: MatchStatus
+
+
 class IngestUploadResult(BaseModel):
     batch_id: str
     items: list[IngestItem]
     errors: list[IngestUploadError]
+    duplicates: list[IngestDuplicate] = []
 
 
 class ClassifyBatchBody(BaseModel):

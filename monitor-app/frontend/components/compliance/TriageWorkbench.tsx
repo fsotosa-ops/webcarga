@@ -207,6 +207,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
     mutationFn: async (files: File[]) => {
       const items: IngestUploadResult['items'] = []
       const errores: IngestUploadResult['errors'] = []
+      let duplicados = 0
       setSubidos(0)
       for (let i = 0; i < files.length; i += LOTE_DE_SUBIDA) {
         const lote = files.slice(i, i + LOTE_DE_SUBIDA)
@@ -216,14 +217,24 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
         const res = await documentIngestApi.upload(empresa?.id, lote)
         items.push(...res.items)
         errores.push(...res.errors)
+        duplicados += res.duplicates?.length ?? 0
         // Se publican mientras avanza: si un lote posterior falla, lo que ya
         // se sabe no se pierde con el throw.
         setErrors([...errores])
         setSubidos(i + lote.length)
       }
-      return { items, errors: errores }
+      return { items, errors: errores, duplicados }
     },
-    onSuccess: res => { setErrors(res.errors); refrescarBandeja() },
+    onSuccess: res => {
+      setErrors(res.errors)
+      // Un archivo idéntico a uno que ya pasó por aquí no entra otra vez (14/10).
+      if (res.duplicados) {
+        setNotice(res.duplicados === 1
+          ? '1 archivo ya estaba en Sin clasificar y no se volvió a subir'
+          : `${res.duplicados} archivos ya estaban en Sin clasificar y no se volvieron a subir`)
+      }
+      refrescarBandeja()
+    },
     onError: e => {
       // Sin esto la zona volvía al estado vacío, sin un solo mensaje, y quien
       // soltó 120 archivos se quedaba creyendo que se subieron.
@@ -270,7 +281,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
         fallidos.length
           ? `${ok} de ${ids.length} descartados · `
             + (fallidos.length === 1 ? '1 no se pudo descartar' : `${fallidos.length} no se pudieron descartar`)
-          : ok === 1 ? '1 descartado' : `${ok} descartados`,
+          : `${ok === 1 ? '1 descartado' : `${ok} descartados`}. Puedes restaurarlos en Descartados.`,
       )
       clearSelection()
       refrescarBandeja()

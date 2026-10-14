@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 from uuid import uuid4
+from tests.conftest import insertar_asignacion
 
 MIGRATION_D1 = (Path(__file__).resolve().parents[2]
                 / "supabase/migrations/20261013090000_directory_one_answer.sql")
@@ -68,9 +69,7 @@ async def driver(conn, carrier_id: str | None, *, status: str = "ACTIVE", name: 
     if carrier_id:
         # La asignación queda ACTIVE aunque el conductor esté de baja: dar de
         # baja (PATCH operational_status) no la toca (F-03).
-        await conn.execute(
-            "INSERT INTO public.driver_assignments (driver_id, carrier_id, status, start_date) "
-            "VALUES ($1, $2, 'ACTIVE', public.hoy_chile() - 400)", d, carrier_id)
+        await insertar_asignacion(conn, "DRIVER", d, carrier_id, desde=await conn.fetchval("SELECT public.hoy_chile() - 400"))
     return d
 
 
@@ -81,9 +80,7 @@ async def asset(conn, carrier_id: str | None, *, status: str = "ACTIVE",
         "VALUES ($1, $2, $3) RETURNING id",
         f"ZZ{uuid4().hex[:4].upper()}", asset_type, status))
     if carrier_id:
-        await conn.execute(
-            "INSERT INTO public.asset_assignments (asset_id, carrier_id, status, start_date) "
-            "VALUES ($1, $2, 'ACTIVE', public.hoy_chile() - 400)", a, carrier_id)
+        await insertar_asignacion(conn, "ASSET", a, carrier_id, desde=await conn.fetchval("SELECT public.hoy_chile() - 400"))
     return a
 
 

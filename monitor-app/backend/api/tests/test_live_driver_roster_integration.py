@@ -10,6 +10,7 @@ import pytest
 
 from app.routers.carriers import list_carrier_drivers
 from tests.conftest import PoolDeUnaConexion
+from tests.conftest import asignacion_previa
 
 pytestmark = pytest.mark.integracion
 
@@ -26,9 +27,7 @@ async def test_renombrar_y_dar_de_baja_se_ve_en_el_roster_sin_refrescar_vistas(c
         f"{PREFIJO} Antes {uuid.uuid4().hex[:6]}")
     # Esta escritura SÍ refresca las vistas (trigger de sentencia en
     # driver_assignments): la vista queda con el nombre de antes.
-    await conn.execute(
-        "INSERT INTO public.driver_assignments (driver_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')",
-        driver, carrier)
+    await asignacion_previa(conn, 'DRIVER', driver, carrier)
     nuevo = f"{PREFIJO} Despues {uuid.uuid4().hex[:6]}"
     # Esta no: public.drivers no tiene trigger de refresco.
     await conn.execute(

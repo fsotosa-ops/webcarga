@@ -2,11 +2,19 @@
 
 import { useState } from 'react'
 import { X, Loader2, Ban } from 'lucide-react'
+import type { CarrierDeactivationImpact } from '@/lib/types'
 
 interface Props {
   label:     string
   onClose:   () => void
   onConfirm: () => Promise<void>
+  /** Solo para una empresa (D2, P4): lo que toca la baja, antes de confirmar.
+   *  `undefined` = no aplica (conductor o equipo); `null` = todavía cargando. */
+  impact?:   CarrierDeactivationImpact | null
+}
+
+function plural(n: number, uno: string, varios: string) {
+  return `${n} ${n === 1 ? uno : varios}`
 }
 
 /** Mini-modal de confirmación de baja (empresa/conductor/vehículo) — rol
@@ -14,7 +22,8 @@ interface Props {
  *  operational_status, ver schemas/{carrier,driver,asset}.py), así que esto
  *  es una confirmación simple, no un formulario — el cambio de estado ya
  *  queda en public.audit_log vía record_manual_edit. */
-export function BajaReasonModal({ label, onClose, onConfirm }: Props) {
+export function BajaReasonModal({ label, onClose, onConfirm, impact }: Props) {
+  const loadingImpact = impact === null
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr]               = useState<string | null>(null)
 
@@ -48,12 +57,26 @@ export function BajaReasonModal({ label, onClose, onConfirm }: Props) {
             Esto pasa el estado operativo a inactivo. Se puede reactivar en cualquier momento.
           </p>
 
+          {impact !== undefined && (
+            <div className="rounded-lg border border-border bg-bg-main px-3 py-2 text-xs text-informativo" aria-live="polite">
+              {loadingImpact ? (
+                <span className="flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Calculando qué toca la baja…</span>
+              ) : (
+                <ul className="space-y-0.5">
+                  <li>Su flota activa: {plural(impact.drivers, 'conductor', 'conductores')} y {plural(impact.assets, 'equipo', 'equipos')}. Quedan vinculados como historial.</li>
+                  <li>Viajes de hoy: {impact.trips_today}.</li>
+                  <li>Días abiertos del Cierre con su flota: {impact.open_closure_days}.</li>
+                </ul>
+              )}
+            </div>
+          )}
+
           {err && <p className="text-xs text-red-500">{err}</p>}
 
           <div className="flex gap-2 pt-1">
             <button
               onClick={handleConfirm}
-              disabled={submitting}
+              disabled={submitting || loadingImpact}
               className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-red-500 text-white text-xs font-semibold hover:bg-red-600 disabled:opacity-50"
             >
               {submitting ? <Loader2 size={13} className="animate-spin" /> : 'Confirmar baja'}

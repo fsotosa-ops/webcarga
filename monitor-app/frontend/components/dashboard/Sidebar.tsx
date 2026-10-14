@@ -93,6 +93,13 @@ const NAV_ORDEN: (NavGroupDef | (typeof NAV_ITEMS)[number])[] = [
 
 const esGrupo = (e: (typeof NAV_ORDEN)[number]): e is NavGroupDef => 'items' in e
 
+/** Sin clasificar solo para quien puede clasificar (Cert 2a, 14/10): Operaciones
+ *  lo veía con un contador rojo y sin poder actuar (H10). El menú lo decide el
+ *  permiso, igual que la API. */
+function soloLoQuePuede(items: NavLeaf[], puedeClasificar: boolean): NavLeaf[] {
+  return items.filter(i => i.badge !== 'inbox' || puedeClasificar)
+}
+
 // Solo para el bottom nav mobile — sin concepto de dropdown ahi, se listan
 // los items de los grupos ya aplanados junto a los demas.
 const MOBILE_NAV_ITEMS = [
@@ -221,7 +228,9 @@ export default function Sidebar({ acceso }: SidebarProps) {
   // El bottom nav mobile no tiene el concepto de grupo (§ MOBILE_NAV_ITEMS):
   // el match más específico se calcula sobre TODOS los hrefs juntos, para que
   // /dashboard/compliance/inbox no resalte también "Empresas".
-  const mobileActiveHref = MOBILE_NAV_ITEMS
+  const puedeClasificar = acceso.permissions.includes('documents.review')
+  const mobileItems = MOBILE_NAV_ITEMS.filter(i => !('badge' in i) || i.badge !== 'inbox' || puedeClasificar)
+  const mobileActiveHref = mobileItems
     .map(i => i.href)
     .filter(href => pathname.startsWith(href))
     .sort((a, b) => b.length - a.length)[0]
@@ -232,6 +241,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
     queryKey: clavesCertificacion.colaTotal(),
     queryFn: () => documentIngestApi.listQueue({ limit: 1 }),
     staleTime: 60_000,
+    enabled: puedeClasificar,
   }).data?.total ?? 0
 
   useEffect(() => {
@@ -299,7 +309,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
               return (
                 <NavGroup
                   key={entrada.label}
-                  group={entrada}
+                  group={{ ...entrada, items: soloLoQuePuede(entrada.items, puedeClasificar) }}
                   pathname={pathname}
                   collapsed={collapsed}
                   inboxCount={inboxCount}
@@ -344,7 +354,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
 
       {/* ── Mobile bottom nav ─────────────────────────────────── */}
       <nav aria-label="Navegación móvil" className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-sidebar border-t border-white/8 flex items-stretch safe-area-inset-bottom">
-        {MOBILE_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+        {mobileItems.map(({ href, label, icon: Icon }) => {
           const active = href === mobileActiveHref
             && (href !== '/dashboard/operations/monitor' || pathname === href)
           return (

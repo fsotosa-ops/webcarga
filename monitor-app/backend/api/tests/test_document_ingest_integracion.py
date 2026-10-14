@@ -77,7 +77,7 @@ async def test_las_seis_columnas_de_destino_llegan_a_su_columna(conexion_reverti
         "app.routers.document_ingest.match_document", lambda **kw: [candidato],
     )
 
-    batch_id, items, errors = await _ingest_files(
+    batch_id, items, errors, _duplicates = await _ingest_files(
         conn, _supabase_ok(), carrier_id=None, files=[_archivo()], actor=USER["sub"],
     )
 
@@ -123,7 +123,7 @@ async def test_un_empate_real_deja_las_cuatro_columnas_de_destino_en_null(conexi
         "app.routers.document_ingest.match_document", lambda **kw: empatados,
     )
 
-    batch_id, items, errors = await _ingest_files(
+    batch_id, items, errors, _duplicates = await _ingest_files(
         conn, _supabase_ok(), carrier_id=None, files=[_archivo("ANEXO 3 Felipe.jpeg")],
         actor=USER["sub"],
     )

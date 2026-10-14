@@ -1,11 +1,13 @@
 import type { ComplianceStatus, PoliticaVencimiento } from './types'
 import { documentStateStyle, type DocumentState } from './states'
+import { hoyEnChile } from './utils/datetime'
 
 /** "vence en 5 días" / "vencido hace 12 días" / "vence hoy" — mismo patrón
  *  que dueRelative() en lib/utils/installments.ts, pero para documentos
  *  (masculino) en vez de cuotas. Pedido explícito del usuario: las alertas
  *  eran binarias (MISSING/vencido) sin decir desde cuándo/hasta cuándo. */
-export function expiryRelative(expirationDate: string | null, isExpired: boolean, today: string = new Date().toISOString().slice(0, 10)): string | null {
+// Hoy en Chile, no el día UTC del navegador (M5, D1): de noche en Chile el día UTC ya es el siguiente.
+export function expiryRelative(expirationDate: string | null, isExpired: boolean, today: string = hoyEnChile()): string | null {
   if (!expirationDate) return null
   const diffDays = Math.round((new Date(expirationDate + 'T00:00:00').getTime() - new Date(today + 'T00:00:00').getTime()) / 86400000)
   if (diffDays === 0) return 'vence hoy'
@@ -121,7 +123,7 @@ export function vigenciaDeLaFila(fila: {
   falta_dato_de_vigencia?: boolean
   issue_date?: string | null
   period_start?: string | null
-}, hoy: string = new Date().toISOString().slice(0, 10)): string | null {
+}, hoy: string = hoyEnChile()): string | null {
   if (fila.document_state === 'NOT_REQUIRED') {
     return fila.exigible_desde ? `Se exige desde el ${formatExpiry(fila.exigible_desde)}` : documentStateStyle('NOT_REQUIRED').label
   }

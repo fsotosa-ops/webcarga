@@ -27,6 +27,7 @@ from fastapi import HTTPException
 from app.services import cierre_lineas
 from app.services.pre_cierre import avisos_del_dia
 from tests.conftest import PoolDeUnaConexion, _usuario_real, abrir_hoy, con_roles, ADMIN_EQUIVALENTE
+from tests.conftest import asignacion_previa
 
 pytestmark = pytest.mark.integracion
 
@@ -48,15 +49,11 @@ async def _escenario(conn):
         "INSERT INTO public.assets (license_plate, asset_type, operational_status, webcarga_operation_type_id) "
         "VALUES ($1, 'TRACTOCAMION', 'ACTIVE', $2) RETURNING id",
         _patente(), uuid.UUID(TRACTOREO_ID))
-    await conn.execute(
-        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')",
-        tractor, carrier)
+    await asignacion_previa(conn, 'ASSET', tractor, carrier)
     conductor = await conn.fetchval(
         "INSERT INTO public.drivers (full_name, operational_status) VALUES ('Conductor cierre de prueba', 'ACTIVE') "
         "RETURNING id")
-    await conn.execute(
-        "INSERT INTO public.driver_assignments (driver_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')",
-        conductor, carrier)
+    await asignacion_previa(conn, 'DRIVER', conductor, carrier)
     await conn.execute(
         "INSERT INTO public.vehicle_driver_assignments (asset_id, driver_id, status, source, is_manual_override) "
         "VALUES ($1, $2, 'ACTIVE', 'manual', true)",
@@ -617,47 +614,38 @@ async def test_una_marca_posterior_a_la_lectura_sobrevive(conexion_revertida):
     assert len(quedan) == 1 and quedan[0] not in leidas
 
 
-async def _escenario_con_correccion(conn):
-    """Un tracto cuya empresa del directorio no es la que informa el TMS: el
-    pre-cierre lo reasigna (una corrección real que escribe en asset_assignments)."""
+async def _escenario_con_otra_empresa_en_el_tms(conn):
+    """Un tracto cuya empresa del directorio no es la que informa el TMS."""
     vieja = await conn.fetchval(
         "INSERT INTO public.carriers (business_name, operational_status) VALUES ('ZZ-TEST Vieja', 'ACTIVE') RETURNING id")
-    nueva = await conn.fetchval(
-        "INSERT INTO public.carriers (business_name, operational_status) VALUES ('ZZ-TEST Nueva', 'ACTIVE') RETURNING id")
+    await conn.execute(
+        "INSERT INTO public.carriers (business_name, operational_status) VALUES ('ZZ-TEST Nueva', 'ACTIVE')")
     plate = _patente()
     asset = await conn.fetchval(
         "INSERT INTO public.assets (license_plate, asset_type, operational_status) "
         "VALUES ($1, 'TRACTOCAMION', 'ACTIVE') RETURNING id", plate)
-    await conn.execute(
-        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')", asset, vieja)
+    await asignacion_previa(conn, 'ASSET', asset, vieja)
     await conn.execute(
         "INSERT INTO app.trips (id, planning_date, client_name, source_system, source_system_trip_id, trip_status, "
         "is_active, is_assigned, fleet) VALUES ($1, $2, 'Walmart', 'qanalytics', $3, 'RUTA', true, true, $4::jsonb)",
         uuid.uuid4(), D, f"ZZ-{plate}", json.dumps({"tractor_plate": plate, "transporter_name_tms": "ZZ-TEST Nueva"}))
-    return asset, nueva
+    return asset, vieja
 
 
-async def test_una_correccion_del_recalculo_marca_los_dias_y_despues_converge(conexion_revertida):
-    """Review Focus 5 (revisión final 10/10). Lo que corrige el recálculo cambia
-    el directorio del que dependen TODOS los días abiertos: tiene que marcarlos
-    (antes una regla de origen lo impedía y los dejaba viejos). Y no se reencola
-    para siempre: la segunda pasada no encuentra nada que corregir, no escribe, y
-    no marca."""
+async def test_el_recalculo_no_escribe_el_directorio_ni_se_reencola(conexion_revertida):
+    """D2 (14/10, P11): la empresa del TMS se ignora, así que el recálculo no
+    cambia la empresa del tracto. Como no escribe el directorio, tampoco marca
+    otros días: antes una corrección los reencolaba (Review Focus 5, 10/10)."""
     conn = conexion_revertida
     pool = PoolDeUnaConexion(conn)
-    asset, nueva = await _escenario_con_correccion(conn)
-    hoy = await abrir_hoy(conn)
+    asset, vieja = await _escenario_con_otra_empresa_en_el_tms(conn)
+    await abrir_hoy(conn)
     await conn.execute("DELETE FROM app.closure_recompute_queue")
 
     await cierre_lineas.recalcular(pool, D)
 
     assert await conn.fetchval(
-        "SELECT carrier_id FROM public.asset_assignments WHERE asset_id = $1 AND status = 'ACTIVE'", asset) == nueva
-    assert await conn.fetchval(
-        "SELECT count(*) FROM app.closure_recompute_queue WHERE business_date = $1", hoy) > 0
-
-    await conn.execute("DELETE FROM app.closure_recompute_queue")
-    await cierre_lineas.recalcular(pool, D)
+        "SELECT carrier_id FROM public.asset_assignments WHERE asset_id = $1 AND status = 'ACTIVE'", asset) == vieja
     assert await conn.fetchval("SELECT count(*) FROM app.closure_recompute_queue") == 0
 
 

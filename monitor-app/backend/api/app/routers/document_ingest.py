@@ -10,9 +10,11 @@ public.compliance_records hasta que una persona lo clasifica explícitamente.
 Ningún archivo se descarta solo: lo que no se clasifica queda en la bandeja
 de esa empresa hasta que alguien lo resuelva o lo elimine.
 """
+import hashlib
 import json
+from typing import Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require
@@ -25,10 +27,8 @@ from ..schemas.document_ingest import (
 from ..services.audit import log_change
 from ..services.document_matcher import classify_match, match_document
 from ..services.matcher_io import cargar_catalogo, cargar_universo
-from ..services.vencimientos import falta_para_aprobar
-from ..utils.document_storage import (
-    delete_document_version, resolve_signed_url, upload_document_version,
-)
+from ..services.vencimientos import falta_para_aprobar, vencido_predicate
+from ..utils.document_storage import resolve_signed_url, upload_document_version
 
 router = APIRouter(prefix="/document-ingest", tags=["document-ingest"])
 
@@ -87,7 +87,8 @@ _SQL_COLA = """
                 WHERE cr.entity_id = i.entity_id
                   AND cr.requirement_id = i.requirement_id
                   AND cr.is_current = true
-                  AND cr.file_url IS NOT NULL) AS casillero_ocupado
+                  AND cr.file_url IS NOT NULL) AS casillero_ocupado,
+           i.discarded_at, i.discard_reason
     FROM public.document_ingest_items i
     JOIN public.document_ingest_batches b ON b.id = i.batch_id
     LEFT JOIN public.carriers c
@@ -125,7 +126,7 @@ def _dedup_candidates(candidatos: list) -> list:
     return unicos
 
 
-async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
+async def _ingest_files(conn, supabase, *, carrier_id, files, actor, requirement_id=None):
     """Sube N archivos a staging y los deja en la bandeja, sin clasificarlos.
 
     `carrier_id` puede ser None: la tanda que llega por correo mezcla empresas
@@ -134,9 +135,17 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
 
     Procesamiento por archivo, no todo-o-nada: un MIME inválido no tumba el
     resto del lote (mismo criterio que POST /compliance-records/bulk-file).
+
+    Un archivo idéntico (SHA-256) a uno que ya pasó por aquí y no se descartó no
+    entra otra vez: vuelve en `duplicates` con el original (Cert 2a, 14/10). Los
+    registros cargados por otros caminos no guardan hash y no se comparan.
+
+    `requirement_id` es el tipo declarado por quien manda el archivo (desde
+    Pendientes): le gana a lo que adivine el motor por el nombre.
     """
     items: list[dict] = []
     errors: list[dict] = []
+    duplicates: list[dict] = []
 
     batch_id = await conn.fetchval(
         """
@@ -156,7 +165,24 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
     catalogo = await cargar_catalogo(conn)
     universo = await cargar_universo(conn, carrier_id)
 
+    # Duplicados: una consulta por lote, no una por archivo.
+    hashes = []
     for file in files:
+        hashes.append(hashlib.sha256(await file.read()).hexdigest())
+        await file.seek(0)
+    ya_vistos = {r["content_sha256"]: (r["id"], r["match_status"]) for r in await conn.fetch(
+        "SELECT DISTINCT ON (content_sha256) content_sha256, id::text, match_status "
+        "FROM public.document_ingest_items WHERE content_sha256 = ANY($1::text[]) "
+        "AND match_status <> 'DISCARDED' ORDER BY content_sha256, created_at",
+        hashes,
+    )}
+
+    for file, sha in zip(files, hashes):
+        if sha in ya_vistos:
+            original_id, original_status = ya_vistos[sha]
+            duplicates.append({"file_name": file.filename or "archivo", "existing_item_id": original_id,
+                               "existing_status": original_status})
+            continue
         try:
             uploaded = await upload_document_version(
                 supabase, key_prefix=f"staging/{batch_id}", file=file,
@@ -187,22 +213,30 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
         # no por una decision. La lista completa sigue en `candidates`: de ahi
         # sale la eleccion cuando classify-batch la preseleccione.
         ambiguo = estado == "AMBIGUOUS"
+        entity_type = mejor.entity_type if mejor and not ambiguo else None
+        entity_id = mejor.entity_id if mejor and not ambiguo else None
+        # H1: la empresa del titular sugerido, para que el formulario la traiga
+        # puesta. La de la tanda manda si la hay.
+        item_carrier = carrier_id or (
+            await conn.fetchval("SELECT app.carrier_of($1, $2::uuid)::text", entity_type, entity_id)
+            if entity_id else None)
 
         row = await conn.fetchrow(
             """
             INSERT INTO public.document_ingest_items
                 (batch_id, storage_path, file_name, mime_type, size_bytes,
                  match_status, entity_type, entity_id, requirement_id,
-                 confidence, match_evidence, candidates, error, content_sha256)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid, $9::uuid, $10, $11::jsonb, $12::jsonb, $13, $14)
+                 confidence, match_evidence, candidates, error, content_sha256, carrier_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid, $9::uuid, $10, $11::jsonb, $12::jsonb, $13, $14,
+                    $15::uuid)
             RETURNING id::text, file_name, mime_type, size_bytes, storage_path, match_status
             """,
             batch_id, uploaded["storage_path"], uploaded["file_name"],
             uploaded["mime_type"], uploaded["size_bytes"],
             estado,
-            mejor.entity_type if mejor and not ambiguo else None,
-            mejor.entity_id if mejor and not ambiguo else None,
-            mejor.requirement_id if mejor and not ambiguo else None,
+            entity_type,
+            entity_id,
+            requirement_id or (mejor.requirement_id if mejor and not ambiguo else None),
             mejor.confidence if mejor and not ambiguo else None,
             json.dumps(mejor.evidence if mejor else {}),
             # La lista COMPLETA, para que AMBIGUOUS pueda ofrecer las dos
@@ -215,8 +249,10 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
             ]),
             motivo_error,
             uploaded["content_sha256"],
+            item_carrier,
         )
         items.append(dict(row))
+        ya_vistos[sha] = (row["id"], row["match_status"])
 
     # Instrumentacion, no el badge de la Bandeja: ese sale de
     # unclassified_predicate() en compliance.py, no de estos contadores.
@@ -230,7 +266,27 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor):
         "SET unmatched = $2, matched_auto = $3, matched_review = $4 WHERE id = $1",
         batch_id, sin_resolver, auto, para_revisar,
     )
-    return batch_id, items, errors
+    return batch_id, items, errors, duplicates
+
+
+async def _declared_requirement(conn, requirement_id: str | None, requirement_code: str | None,
+                                target_entity: str | None) -> str | None:
+    """El tipo que declara quien manda el archivo desde Pendientes: por id, o por
+    código y entidad (el resumen de Pendientes habla en códigos). Un código puede
+    tener una variante por cliente: se toma la general; si solo hay variantes por
+    cliente y son varias, no se adivina y el tipo queda para el motor."""
+    if requirement_id or not requirement_code:
+        return requirement_id
+    rows = await conn.fetch(
+        "SELECT id::text, shipper_id FROM public.compliance_requirements "
+        "WHERE requirement_code = $1 AND ($2::text IS NULL OR target_entity = $2) "
+        "ORDER BY shipper_id NULLS FIRST",
+        requirement_code, target_entity)
+    if not rows:
+        raise HTTPException(422, "Ese tipo de documento no existe")
+    if rows[0]["shipper_id"] is None or len(rows) == 1:
+        return rows[0]["id"]
+    return None
 
 
 def _check_upload_size(files: list[UploadFile]) -> None:
@@ -243,6 +299,9 @@ def _check_upload_size(files: list[UploadFile]) -> None:
 @router.post("/files", status_code=201, response_model=IngestUploadResult)
 async def upload_to_global_tray(
     files: list[UploadFile] = File(...),
+    requirement_id: str | None = Form(None),
+    requirement_code: str | None = Form(None),
+    requirement_target: str | None = Form(None),
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
     user=Depends(require(Permission.DOCUMENTS_UPLOAD)),
@@ -255,16 +314,20 @@ async def upload_to_global_tray(
     _check_upload_size(files)
     async with pool.acquire() as conn:
         async with conn.transaction():
-            batch_id, items, errors = await _ingest_files(
+            batch_id, items, errors, duplicates = await _ingest_files(
                 conn, supabase, carrier_id=None, files=files, actor=user["sub"],
+                requirement_id=await _declared_requirement(conn, requirement_id, requirement_code, requirement_target),
             )
-    return {"batch_id": batch_id, "items": items, "errors": errors}
+    return {"batch_id": batch_id, "items": items, "errors": errors, "duplicates": duplicates}
 
 
 @router.post("/{carrier_id}/files", status_code=201, response_model=IngestUploadResult)
 async def upload_to_tray(
     carrier_id: str,
     files: list[UploadFile] = File(...),
+    requirement_id: str | None = Form(None),
+    requirement_code: str | None = Form(None),
+    requirement_target: str | None = Form(None),
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),
     user=Depends(require(Permission.DOCUMENTS_UPLOAD)),
@@ -273,15 +336,17 @@ async def upload_to_tray(
     _check_upload_size(files)
     async with pool.acquire() as conn:
         async with conn.transaction():
-            batch_id, items, errors = await _ingest_files(
+            batch_id, items, errors, duplicates = await _ingest_files(
                 conn, supabase, carrier_id=carrier_id, files=files, actor=user["sub"],
+                requirement_id=await _declared_requirement(conn, requirement_id, requirement_code, requirement_target),
             )
-    return {"batch_id": batch_id, "items": items, "errors": errors}
+    return {"batch_id": batch_id, "items": items, "errors": errors, "duplicates": duplicates}
 
 
 @router.get("/items", response_model=TrayPage)
 async def list_queue(
     carrier_id: str | None = None,
+    status: Literal["pending", "discarded"] = "pending",
     limit: int = 200,
     offset: int = 0,
     pool=Depends(get_pool),
@@ -304,8 +369,10 @@ async def list_queue(
     #
     # El predicado sale de unclassified_predicate() y no se escribe a mano: es
     # el mismo que cuenta el "sin clasificar" por empresa en compliance.py.
+    # "Descartados" (14/10): el borrado es lógico y se puede restaurar.
+    estado = unclassified_predicate('i') if status == "pending" else "i.match_status = 'DISCARDED'"
     where = f"""
-        WHERE {unclassified_predicate('i')}
+        WHERE {estado}
           AND ($1::uuid IS NULL OR COALESCE(i.carrier_id, b.carrier_id) = $1::uuid)
     """
     total = await pool.fetchval(
@@ -344,29 +411,59 @@ async def get_preview_url(
 @router.delete("/items/{item_id}", status_code=204)
 async def delete_item(
     item_id: str,
+    reason: str | None = None,
     pool=Depends(get_pool),
-    supabase=Depends(get_supabase),
     user=Depends(require(Permission.DOCUMENTS_UPLOAD)),
 ):
-    """Descarta un documento de la bandeja.
+    """Descarta un documento de la bandeja: borrado lógico (14/10).
 
-    Se marca DISCARDED (no se borra la fila) para conservar el rastro de que
-    existió, y recién ahí se elimina el blob de staging.
-    """
+    Hasta el 14/10 el blob se borraba de Storage y no había vuelta atrás. Ahora
+    el archivo se conserva, queda quién, cuándo y por qué, y se puede restaurar."""
     async with pool.acquire() as conn:
         async with conn.transaction():
-            item = await conn.fetchrow(
-                "SELECT storage_path FROM public.document_ingest_items WHERE id = $1", item_id,
-            )
-            if not item:
+            previo = await conn.fetchval(
+                "SELECT match_status FROM public.document_ingest_items WHERE id = $1 FOR UPDATE", item_id)
+            if previo is None:
                 raise HTTPException(404, "Documento no encontrado en la bandeja")
+            if previo in ("COMMITTED", "DISCARDED"):
+                raise HTTPException(409, "Ese documento ya no está pendiente")
             await conn.execute(
-                "UPDATE public.document_ingest_items SET match_status = 'DISCARDED', "
-                "updated_at = NOW() WHERE id = $1",
+                """
+                UPDATE public.document_ingest_items SET match_status = 'DISCARDED',
+                    discarded_from_status = match_status, discarded_at = NOW(),
+                    discarded_by = $2::uuid, discard_reason = $3, updated_at = NOW()
+                WHERE id = $1
+                """,
+                item_id, user["sub"], reason,
+            )
+    return None
+
+
+@router.post("/items/{item_id}/restore")
+async def restore_item(
+    item_id: str,
+    pool=Depends(get_pool),
+    user=Depends(require(Permission.DOCUMENTS_UPLOAD)),
+):
+    """Devuelve un descartado a la cola, con el estado que tenía."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            estado = await conn.fetchval(
+                """
+                UPDATE public.document_ingest_items SET
+                    match_status = COALESCE(discarded_from_status, 'UNMATCHED'),
+                    discarded_at = NULL, discarded_by = NULL, discard_reason = NULL,
+                    discarded_from_status = NULL, updated_at = NOW()
+                WHERE id = $1 AND match_status = 'DISCARDED'
+                RETURNING match_status
+                """,
                 item_id,
             )
-    delete_document_version(supabase, item["storage_path"])
-    return None
+            if estado is None:
+                raise HTTPException(404, "No hay un descartado con ese id")
+            await log_change(conn, actor=user["sub"], entity_type="DOCUMENT_INGEST_ITEM", entity_id=item_id,
+                             action="restore", field="match_status", new_value=estado)
+    return {"match_status": estado}
 
 
 _UN_SOLO_ARCHIVO_POR_SLOT = (
@@ -414,9 +511,12 @@ async def classify_batch(
                 raise HTTPException(404, "Ningún documento encontrado en la bandeja")
 
             record = await conn.fetchrow(
-                """
+                f"""
                 SELECT cr.id::text, cr.entity_id::text, cr.entity_type, cr.status, cr.expiration_date,
-                       cr.period_start, req.expiration_policy,
+                       cr.period_start, req.expiration_policy, cr.file_url,
+                       -- Tiene un documento vigente: la misma regla de "vencido" de todo el módulo.
+                       (cr.file_url IS NOT NULL AND cr.expiration_date IS NOT NULL
+                        AND NOT {vencido_predicate('cr')}) AS vigente,
                        -- Misma regla que en el camino de carga directa
                        -- (`_apply_compliance_upload`): una empresa dada de baja
                        -- deja de pedir documentos. La Bandeja es el OTRO camino
@@ -456,6 +556,19 @@ async def classify_batch(
                 issue_date=body.issue_date, period_start=period_start)
             if falta:
                 raise HTTPException(422, falta)
+
+            # Renovación anticipada (Cert 2a, 14/10): un documento vigente se
+            # reemplaza solo por uno que vence después. El anterior queda en el
+            # historial de versiones (audit_log document_replace).
+            # Compara dos vencimientos entre sí; "vencido" (contra hoy) ya lo
+            # resolvió vencido_predicate en la consulta.
+            vigente_hasta, nuevo_hasta = record["expiration_date"], body.expiration_date
+            if record.get("vigente") and nuevo_hasta and vigente_hasta >= nuevo_hasta:
+                raise HTTPException(
+                    409,
+                    f"El documento vigente vence el {vigente_hasta:%d/%m/%Y} y este el "
+                    f"{nuevo_hasta:%d/%m/%Y}: solo se reemplaza por uno que vence después.",
+                )
 
             for item in items:
                 if item["match_status"] == "DISCARDED":

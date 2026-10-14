@@ -16,13 +16,114 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
-### PARA LA PRÓXIMA SESIÓN (actualizado 12/10 noche, cierre de D1)
+### PARA LA PRÓXIMA SESIÓN (actualizado 14/10, sesión de decisiones hecha)
 
-**Forma de trabajo acordada 12/10 (D1 tomó 9+ h; el usuario pidió optimizar):** tres entregas — **A = D2 + Cert 2a**,
-**B = Cert 3 + D3**, **C = D4 + Cert 2b + Cert 4 + D5** —; una sola sesión de decisiones al inicio con TODAS las preguntas
-abiertas; plan liviano (tareas + contratos + tests, sin código); un despliegue y una revisión por entrega (revisión propia solo
-en tareas de base); suite del backend en paralelo (pytest-xdist, cuidar Disk IO); tangentes a una lista.
-**Siguiente paso exacto:** (1) sesión de decisiones para A, B y C; (2) en paralelo, la tarea de suite en paralelo; (3) entrega A.
+**Plan aprobado 14/10:** `docs/superpowers/plans/2026-10-14-cerrar-directorio-y-certificacion.md`.
+Alcance: **A = D2 + Cert 2a, B = Cert 3 + D3, C = D4 + Cert 2b + Cert 4 + D5, las tres completas.**
+**Método nuevo (el usuario: "los subagentes son los que hacen que se demore demasiado" y "muchísimos tests"):** ejecución
+inline, sin subagentes; un documento por entrega (HU + criterios + contratos + tareas, sin código); **un test por criterio
+de aceptación**, sin mutación, guardas ni renders; suite completa una vez por entrega y solo si se tocó base compartida; un
+despliegue por entrega; una revisión por entrega; tangentes a una lista. Contra los bugs torpes: **humo E2E** (6-8 recorridos,
+Playwright, copia local `.superpowers/local-sim/`) antes de cada despliegue, y **tsc + vitest como barrera en
+`deploy-frontend.yml`** (hoy CI no corre ningún test). xdist descartado.
+
+**Decisiones 14/10 (todas las preguntas abiertas de A, B y C):**
+- D2: el historial parte el día del despliegue (P7); la transferencia retroactiva se permite, nunca sobre un día firmado;
+  la baja de empresa muestra vista previa del impacto (P4).
+- Sin clasificar: "Confirmar N" para lo seguro (≥ 0,90); la renovación anticipada reemplaza al vigente (el anterior queda en
+  el historial); dedupe por SHA-256 con "N duplicados omitidos" y enlace al original; descartar = borrado lógico con
+  restauración; el menú se filtra por `documents.review` (Operaciones no lo ve, P19); sin OCR.
+- D3: **la empresa que informa el TMS ("WebCarga SpA") se ignora; la empresa sale del Directorio a partir del conductor y la
+  patente** (P11); RUT/patente los corrige Certificación con permiso y motivo, y una patente nueva conserva el mismo equipo
+  con la vieja como alias (P12).
+- Cert 3: "Pedir a Certificación" mínimo; Pablo lo valida en dev durante B.
+- D4: la ficha de conductor/equipo lleva una tarjeta "Actividad" (último viaje, viajes de los últimos 30 días) y el enlace
+  "Ver viajes en el Monitor" filtrado; no repite el Monitor (P18). Listas propias de conductores y equipos: sí (P17).
+
+**Verificado 14/10 contra la base real (solo lectura) y el frontend → dos recortes decididos por el usuario:**
+- **Sin clasificar casi no se usa** (152 ítems en total, 0 pendientes, el último de la semana del 28/09; ~330 documentos
+  entraron por otros caminos en 5 semanas) → **Cert 2a en versión mínima**: menú por permiso, descarte lógico sin borrar
+  el archivo, H1, dedupe por hash, renovación que reemplaza solo si vence después, "Enviar a Sin clasificar" con su tipo.
+  Los grupos, "Confirmar N" y el lote por pares quedan diferidos hasta que haya volumen.
+- **El Cierre se firma a diario** (29 días firmados, el último el 13/10) → **sin selector de fecha**: transferir y quitar
+  son de hoy; la API acepta `effective_date` y rechaza los días firmados (409 `CLOSED_DAY`).
+- Otros datos: 0 asignaciones con `end_date`; `start_date` desde el 15/07 (la migración) y 13 conductores + 14 equipos
+  con inicio posterior al 03/09, por eso la siembra del historial usa `-infinity`; falta `btree_gist`; el historial de
+  documentos vive en `audit_log` (`document_replace`); ninguna función de la base escribe asignaciones.
+
+**Entrega 0, en curso (sin comitear):**
+- `monitor-app/frontend/scripts/smoke/smoke.spec.ts`: matriz por rol (Supervisor de Certificación, Supervisor de
+  Operaciones, Operador) que visita cada enlace del menú y exige que no haya errores de página, ni 5xx o 403 de la API, ni
+  pantallas que se quedan "Cargando". Más la ficha de empresa del Directorio. Primera corrida: los 2 supervisores en verde
+  (6,8 min). El Propietario queda fuera porque exige MFA y la copia local no tiene TOTP. Falta volver a correrla con el
+  Operador.
+- `.superpowers/local-sim/start.sh` (fuera de git): levanta la base (OrbStack), la API :8100 y la web :3100.
+- **La barrera de vitest en CI no se puso todavía:** corrida sola, la suite da **20 fallos de 1.969, todos por el corte
+  de 5 s** (8 min). Como barrera bloquearía despliegues por ruido. Antes hay que subir `testTimeout` y revisar esos 20.
+  tsc está limpio (7 s).
+
+**Avance 14/10 tarde (el usuario dijo "procede"):**
+- vitest: `testTimeout: 20000` (`vitest.config.ts`) + `asyncUtilTimeout: 5000` (`vitest.setup.ts`): los 16 archivos que
+  fallaban por tiempo pasan (305 tests, 83 s). Suite completa: **1.969/1.969 en verde, 200 archivos, 6,5 min**.
+- `deploy-frontend.yml`: job `verify` (npm ci + tsc + vitest) y `build-and-deploy` con `needs: verify`. Sin comitear.
+- Migración `20261017090000_fleet_assignment_periods.sql` escrita: `app.fleet_assignment_periods` (EXCLUDE con
+  btree_gist), trigger `app.track_assignment_period()` en las 3 tablas, guarda `app.assert_day_not_closed` (lee
+  `app.closure_periods.status = 'CLOSED'`, porque un día puede reabrirse), siembra `(-inf, inf)` y `app.carrier_of(tipo, id,
+  fecha)` (la de 2 argumentos delega en ella). Probada en la copia local: A→B→A con `carrier_of` correcto por fecha, guarda
+  y EXCLUDE. Ensayada con ROLLBACK en la base real: 273 períodos (92 + 133 + 48), 0 diferencias contra las asignaciones
+  ACTIVE, ~2 s. **NO APLICADA: el clasificador de permisos bloqueó la escritura en producción; espera la autorización
+  del usuario.**
+
+**14/10 tarde — la migración del historial se aplicó a la base real (18:58 UTC, con autorización del usuario):**
+273 períodos (92 + 133 + 48), triggers en las 3 tablas. Después el usuario pidió **trabajar en local** ("el MCP está
+conectado a otro proyecto, te aviso cuando esté conectado al de webcarga"): desde ahí todo corre contra la copia local
+(`TEST_DB_LOCAL_PORT=55322`, ver `tests/conftest.py`). **Incidente mío:** una corrida de línea base desde un worktree de HEAD
+(conftest viejo + `.env` copiado) llevó 83 tests a la base real por 7 min; todos con ROLLBACK y con la guarda de huella, nada
+escrito, pero contra la instrucción. El worktree se borró.
+
+**Entrega A — HECHA EN LOCAL, sin comitear ni desplegar** (doc `docs/superpowers/plans/2026-10-14-entrega-a-d2-sin-clasificar.md`):
+- Migraciones nuevas, aplicadas SOLO en la copia local: `20261017100000_trip_fleet_resolution_by_day.sql` (la vista del
+  Monitor juzga conductor y tracto con la empresa del día del viaje) y `20261017110000_ingest_items_soft_discard.sql`.
+  (`20261017090000_fleet_assignment_periods.sql` ya está en la base real.)
+- Backend: `services/fleet_assignments.py` (asignar/transferir/terminar/reincorporar con fecha, clientes con vigencia,
+  impacto de la baja, reactivar eligiendo flota; 409 `CLOSED_DAY`); `carriers.py` sin `_transferir` ni la protección por
+  fila (Mage ya no escribe); endpoints `/shippers` POST/DELETE, `/deactivation-impact`, `/reactivate`. El pre-cierre ya no
+  escribe el directorio (P11 y P10: se borró `aplicar_correcciones`). El Cierre usa el roster del día
+  (`tractoreo_roster_cte(día)`, `tractoreo_roster_by_day_cte` para el reporte, `carrier_of(…, día)`); `in_scope_sql` sobre
+  `app.active_fleet` (M4); topes de la guarda de D1 bajados a 0 en el Cierre. Sin clasificar: dedupe por SHA-256 (una
+  consulta por lote, también dentro de la tanda), H1 (`carrier_of` del titular sugerido), tipo declarado por id o por
+  código+entidad, descarte lógico + `/restore` + `?status=discarded`, renovación solo si vence después (`vencido_predicate`).
+  Orden del Directorio con desempate por id.
+- Frontend: vista previa de la baja (`BajaReasonModal` con prop `impact`), `ReactivateCarrierModal`, `CarrierClientsModal`
+  ("Editar clientes" en la ficha), Sin clasificar solo con `documents.review` (menú y conteo), aviso de duplicados,
+  `DiscardedItems` con Restaurar, "Enviar a Sin clasificar" en el grupo Sin asignar del lote de Pendientes, M5 con
+  `hoyEnChile()`.
+- Tests: A1-A11 y S1-S6 escritos y en verde en la copia local; fixtures de asignación con `start_date` 2020 (con historial,
+  una asignación creada hoy no existía el 10/06). Suite completa del backend en la copia local: 1.665 verdes, 83 rojos que
+  **también fallan con el código de HEAD** en la misma copia (faltan catálogos: motivos de anulación, estados del TMS,
+  motivos de no asignación, firmas). Frontend: tsc limpio (fuera de `.next/`), vitest del área en verde.
+- Copia local al día: `align_ids.sql` (id de TRACTOREO igual al de producción) y las migraciones del 12/10 aplicadas.
+
+**14/10 noche — el MCP de Supabase quedó conectado a webcarga (`viclzoftiudkepqnhekv`, confirmado con list_projects):**
+- Ensayadas con ROLLBACK y APLICADAS (MCP `apply_migration`): `trip_fleet_resolution_by_day` (en 3.498 viajes, 0 cambios de
+  MISMATCH de conductor y 0 de tracto; la vista tarda 7 ms) e `ingest_items_soft_discard`.
+- **Hallazgo contra la base real:** la guarda de día cerrado rechaza (bien) una asignación ACTIVE con `start_date` anterior a
+  un día cerrado. Los fixtures de tests que "retrocedían" asignaciones fallaban en la base real (no en la copia local, que no
+  tiene días cerrados). Se resolvió con `asignacion_previa` / `insertar_asignacion` en `tests/conftest.py` (crea hoy y
+  extiende el período hacia atrás, igual que la siembra) en 17 archivos de tests.
+- **Revisión propia:** si se firma HOY, un cambio sin fecha quedaba bloqueado sin salida (la pantalla no pide fecha). El
+  servicio ahora usa el primer día abierto (hoy, o mañana si hoy ya se firmó). Test A2b.
+- Humo E2E en la copia local: 6/6 en verde.
+
+**Siguiente paso exacto:**
+1. ~~Suite completa del backend contra la base real~~ **HECHO: 1.751 verdes, 1 rojo** (`test_a_las_2230…`: fijaba hoy en un
+   día ya cerrado y creaba una ACTIVE; ahora usa INACTIVE para probar el default). 52 min. Commit y push a `dev` (14/10,
+   autorizado por el usuario).
+2. Recorrido en dev con sesión (Directorio: transferir, clientes, baja con vista previa, reactivar; Sin clasificar:
+   descartar/restaurar; Pendientes: Enviar a Sin clasificar), AGENTLOG, y documento de la Entrega B.
+- Tangentes anotadas: purga de blobs descartados (> 30 días); quitar de la UI del pre-cierre el grupo
+  `EMPRESA_NO_RECONOCIDA` (ya siempre vacío) y la rama `PATENTE_EMPRESA` de "resueltas"; duplicados contra registros
+  cargados por otros caminos (no guardan hash).
 
 1. ~~Mirar M2 en dev~~ **HECHO 12/10 noche:** chip gris "Dada de baja" y "La empresa no está activa", sin "se puede asignar".
    Ojo: abrir un viaje con divergencia TMS deja una nota "sistema" a nombre de quien lo abre (`_log_tms_divergence_once`,

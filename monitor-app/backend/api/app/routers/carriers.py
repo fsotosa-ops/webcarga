@@ -2,6 +2,7 @@
 router de Checkpoint A-E (transporters.py/transporters_legacy.py, borrados
 2026-07-16 junto con insurance.py viejo — ver AGENTLOG.md).
 """
+from datetime import date
 from typing import Annotated, Literal, Optional
 
 from uuid import UUID
@@ -11,11 +12,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from ..auth import get_current_user, get_supabase
 from ..authz import Permission, exigir, require, require_fields
 from ..db import get_pool
-from ..schemas.assignment import AssetAssignmentCreateBody, DriverAssignmentCreateBody
+from ..schemas.assignment import (
+    AssetAssignmentCreateBody, CarrierReactivateBody, CarrierShipperLinkBody, DriverAssignmentCreateBody,
+)
 from ..schemas.carrier import CARRIER_FIELD_PERMISSIONS, CarrierCreateBody, CarrierListResponse, CarrierPatchBody
 from ..schemas.common import PaginatedResponse
 from ..schemas.contact import ContactCreateBody
 from ..schemas.insurance import CarrierInsuranceOverviewResponse, InsurancePolicyCreateBody
+from ..services import fleet_assignments
 from ..services.audit import log_change, record_manual_edit
 from ..services.fleet_compliance import (
     CARRIER_SUMMARY_COLUMNS,
@@ -126,7 +130,10 @@ async def list_carriers(
         -- por nombre. Una empresa no activa no es No habilitada.
         ORDER BY
             ({ENABLEMENT_FILTERS["not_enabled"]}) DESC,
-            business_name ASC
+            business_name ASC,
+            -- Desempate estable: dos empresas con el mismo nombre no cambian de
+            -- página entre recargas (deuda de D1).
+            id
         LIMIT ${lp} OFFSET ${op}
         """,
         *filter_params, limit, offset,
@@ -764,79 +771,7 @@ async def list_carrier_drivers(carrier_id: str, pool=Depends(get_pool), _=Depend
     return filas
 
 
-# ── Transferir conductor o tracto de empresa ──────────────────────────────────
-# Una sola implementación para los dos sujetos. Hasta el 01/10 eran dos copias,
-# y el arreglo del 16/09 (la transferencia como decisión humana) llegó sólo a la
-# de conductores: el tracto BDLC92 se transfirió 6 veces en un mes porque el
-# loader del Centralizador revertía la otra copia.
-_TRANSFERIBLES = {
-    "DRIVER": ("driver_assignments", "driver_id", "drivers", "Conductor no encontrado",
-               "Ese conductor tiene una asignación protegida en otra empresa. "
-               "Quítale la protección antes de transferirlo."),
-    "ASSET": ("asset_assignments", "asset_id", "assets", "Activo no encontrado",
-              "Ese vehículo tiene una asignación protegida en otra empresa. "
-              "Quítale la protección antes de transferirlo."),
-}
-
-
-async def _transferir(conn, entity_type: str, sujeto_id: str, carrier_id: str, user: dict) -> None:
-    tabla, columna, maestro, no_existe, protegida_msg = _TRANSFERIBLES[entity_type]
-    if not await conn.fetchval("SELECT 1 FROM public.carriers WHERE id = $1", carrier_id):
-        raise HTTPException(404, "Empresa no encontrada")
-    if not await conn.fetchval(f"SELECT 1 FROM public.{maestro} WHERE id = $1", sujeto_id):
-        raise HTTPException(404, no_existe)
-
-    # La asignación previa protegida no se desactiva —es una decisión humana
-    # que la ingesta tampoco pisa—, y sin esta pregunta el INSERT de abajo
-    # dejaría dos filas ACTIVE que el índice único parcial rechaza con un
-    # 23505 crudo. Preguntarlo antes convierte un error de base en una frase.
-    protegida = await conn.fetchval(
-        f"""
-        SELECT carrier_id::text FROM public.{tabla}
-        WHERE {columna} = $1 AND carrier_id <> $2
-          AND status = 'ACTIVE' AND is_manual_override
-        LIMIT 1
-        """,
-        sujeto_id, carrier_id,
-    )
-    if protegida:
-        raise HTTPException(409, protegida_msg)
-
-    # Transferir decide DOS cosas —"está acá" y "ya no está allá"— y las dos
-    # quedan con is_manual_override: los loaders del Centralizador EETT (Mage,
-    # load_driver_assignments_06 y load_asset_asignments_07) pisan toda fila
-    # sin esa marca.
-    anteriores = await conn.fetch(
-        f"""
-        UPDATE public.{tabla}
-        SET status = 'INACTIVE'
-        WHERE {columna} = $1 AND carrier_id <> $2 AND status = 'ACTIVE'
-        RETURNING carrier_id::text
-        """,
-        sujeto_id, carrier_id,
-    )
-    for anterior in anteriores:
-        await record_manual_edit(
-            conn, table=tabla, where={columna: sujeto_id, "carrier_id": anterior["carrier_id"]},
-            actor=user["sub"], entity_type=entity_type, entity_id=sujeto_id,
-            action="unassign", field="carrier_id", old_value=anterior["carrier_id"],
-        )
-    # Sin `WHERE NOT is_manual_override` en el upsert: si la fila destino quedó
-    # protegida por un desvincular anterior, esta decisión es más nueva y le
-    # gana. Con el filtro respondía ok y el sujeto quedaba sin empresa (Deiby).
-    await conn.execute(
-        f"""
-        INSERT INTO public.{tabla} ({columna}, carrier_id, status)
-        VALUES ($1, $2, 'ACTIVE')
-        ON CONFLICT ({columna}, carrier_id) DO UPDATE SET status = 'ACTIVE'
-        """,
-        sujeto_id, carrier_id,
-    )
-    await record_manual_edit(
-        conn, table=tabla, where={columna: sujeto_id, "carrier_id": carrier_id},
-        actor=user["sub"], entity_type=entity_type, entity_id=sujeto_id,
-        action="assign", field="carrier_id", new_value=carrier_id,
-    )
+# ── Asignaciones con vigencia (D2): un solo servicio, services/fleet_assignments.py ──
 
 
 @router.post("/{carrier_id}/drivers", status_code=201)
@@ -845,7 +780,8 @@ async def assign_driver(
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
-            await _transferir(conn, "DRIVER", body.driver_id, carrier_id, user)
+            await fleet_assignments.assign(conn, fleet_assignments.DRIVER, body.driver_id, carrier_id,
+                                           actor=user["sub"], effective=body.effective_date)
     return {"ok": True}
 
 
@@ -854,22 +790,13 @@ async def unassign_driver(
     # Quitar del roster termina una asignación: es editar, igual que asignar
     # (POST de arriba). Hasta el 12/10 exigía directory.delete y el botón se
     # mostraba con directory.edit: 403 a los Supervisores de Operaciones (F-33).
-    carrier_id: str, driver_id: str, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
+    carrier_id: str, driver_id: str, end_date: Optional[date] = None, pool=Depends(get_pool),
+    user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
-            result = await conn.execute(
-                "UPDATE public.driver_assignments SET status = 'INACTIVE' "
-                "WHERE driver_id = $1 AND carrier_id = $2 AND status = 'ACTIVE'",
-                driver_id, carrier_id,
-            )
-            if result == "UPDATE 0":
-                raise HTTPException(404, "Asignación activa no encontrada")
-            await record_manual_edit(
-                conn, table="driver_assignments", where={"driver_id": driver_id, "carrier_id": carrier_id},
-                actor=user["sub"], entity_type="DRIVER", entity_id=driver_id,
-                action="unassign", field="status", old_value="ACTIVE", new_value="INACTIVE",
-            )
+            await fleet_assignments.end(conn, fleet_assignments.DRIVER, driver_id, carrier_id,
+                                        actor=user["sub"], effective=end_date)
     return {"ok": True}
 
 
@@ -922,7 +849,8 @@ async def assign_asset(
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
-            await _transferir(conn, "ASSET", body.asset_id, carrier_id, user)
+            await fleet_assignments.assign(conn, fleet_assignments.ASSET, body.asset_id, carrier_id,
+                                           actor=user["sub"], effective=body.effective_date)
     return {"ok": True}
 
 
@@ -931,22 +859,13 @@ async def unassign_asset(
     # Quitar del roster termina una asignación: es editar, igual que asignar
     # (POST de arriba). Hasta el 12/10 exigía directory.delete y el botón se
     # mostraba con directory.edit: 403 a los Supervisores de Operaciones (F-33).
-    carrier_id: str, asset_id: str, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT)),
+    carrier_id: str, asset_id: str, end_date: Optional[date] = None, pool=Depends(get_pool),
+    user=Depends(require(Permission.DIRECTORY_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
-            result = await conn.execute(
-                "UPDATE public.asset_assignments SET status = 'INACTIVE' "
-                "WHERE asset_id = $1 AND carrier_id = $2 AND status = 'ACTIVE'",
-                asset_id, carrier_id,
-            )
-            if result == "UPDATE 0":
-                raise HTTPException(404, "Asignación activa no encontrada")
-            await record_manual_edit(
-                conn, table="asset_assignments", where={"asset_id": asset_id, "carrier_id": carrier_id},
-                actor=user["sub"], entity_type="ASSET", entity_id=asset_id,
-                action="unassign", field="status", old_value="ACTIVE", new_value="INACTIVE",
-            )
+            await fleet_assignments.end(conn, fleet_assignments.ASSET, asset_id, carrier_id,
+                                        actor=user["sub"], effective=end_date)
     return {"ok": True}
 
 
@@ -1036,18 +955,53 @@ async def create_carrier_policy(
     return dict(row)
 
 
-# ── Generadores de carga (public.carrier_shippers M:N, solo lectura por ahora) ──
+# ── Clientes de la empresa (P10: se declaran; D2: con vigencia) ──
 
 @router.get("/{carrier_id}/shippers")
 async def list_carrier_shippers(carrier_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
-    rows = await pool.fetch(
-        """
-        SELECT s.id, s.name, cs.status, cs.start_date, cs.end_date
-        FROM public.carrier_shippers cs
-        JOIN public.shippers s ON s.id = cs.shipper_id
-        WHERE cs.carrier_id = $1
-        ORDER BY s.name
-        """,
-        carrier_id,
-    )
-    return [dict(r) for r in rows]
+    return await fleet_assignments.list_shippers(pool, carrier_id)
+
+
+@router.post("/{carrier_id}/shippers", status_code=201)
+async def add_carrier_shipper(
+    carrier_id: str, body: CarrierShipperLinkBody, pool=Depends(get_pool),
+    user=Depends(require(Permission.DIRECTORY_EDIT)),
+):
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await fleet_assignments.assign(conn, fleet_assignments.SHIPPER, body.shipper_id, carrier_id,
+                                           actor=user["sub"], effective=body.effective_date)
+    return {"ok": True}
+
+
+@router.delete("/{carrier_id}/shippers/{shipper_id}")
+async def end_carrier_shipper(
+    carrier_id: str, shipper_id: str, end_date: Optional[date] = None, pool=Depends(get_pool),
+    user=Depends(require(Permission.DIRECTORY_EDIT)),
+):
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await fleet_assignments.end(conn, fleet_assignments.SHIPPER, shipper_id, carrier_id,
+                                        actor=user["sub"], effective=end_date)
+    return {"ok": True}
+
+
+# ── Baja y reactivación (D2: P4 vista previa del impacto, P3 elegir la flota) ──
+
+@router.get("/{carrier_id}/deactivation-impact")
+async def carrier_deactivation_impact(
+    carrier_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ)),
+):
+    async with pool.acquire() as conn:
+        return await fleet_assignments.deactivation_impact(conn, carrier_id)
+
+
+@router.post("/{carrier_id}/reactivate")
+async def reactivate_carrier(
+    carrier_id: str, body: CarrierReactivateBody, pool=Depends(get_pool),
+    user=Depends(require(Permission.DIRECTORY_DELETE)),
+):
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            return await fleet_assignments.reactivate(
+                conn, carrier_id, driver_ids=body.driver_ids, asset_ids=body.asset_ids, actor=user["sub"])

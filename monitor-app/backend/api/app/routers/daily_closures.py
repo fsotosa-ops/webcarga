@@ -29,7 +29,7 @@ from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente
 from ..services.origen_del_viaje import origen_del_viaje
 from ..services.cierre_lineas import LINEAS_CONDUCTORES, ajustes_posteriores, frescura_del_dia, periodo, poner_motivo
 from ..services.pre_cierre import avisos_del_dia
-from ..services.driver_roster import TRACTOREO_ROSTER_CTE
+from ..services.driver_roster import tractoreo_roster_by_day_cte, tractoreo_roster_cte
 from .trips import _compliance_alert_lateral, _DRIVER_CRITICAL_DOC_CODES
 
 router = APIRouter(prefix="/daily-closures", tags=["daily-closures"])
@@ -47,7 +47,7 @@ def _parse_business_date(fecha: str) -> _date:
 # los tractos. Este router sólo lee y delega las escrituras.
 
 _DETAIL_SQL = f"""
-WITH {TRACTOREO_ROSTER_CTE}
+WITH {tractoreo_roster_cte('$1::date')}
 SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name AS carrier_name,
        dds.status, dds.category, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
        dds.valid_until, dds.comentario,
@@ -75,8 +75,7 @@ SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name
 FROM {LINEAS_CONDUCTORES} dds
 LEFT JOIN active_roster ar ON ar.driver_id = dds.driver_id
 JOIN public.drivers d ON d.id = dds.driver_id
-LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
-LEFT JOIN public.carriers c ON c.id = da.carrier_id
+LEFT JOIN public.carriers c ON c.id = app.carrier_of('DRIVER', d.id, dds.business_date)
 LEFT JOIN public.locations hcd ON hcd.id = dds.home_location_id
 LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
 -- Fase 1.5 (2026-07-21): cliente(s) que el conductor sirvió ese día — el
@@ -166,7 +165,7 @@ ORDER BY d.full_name
 # filtros/granularidad de fecha) se arma 100% en el cliente sobre este
 # dataset — evita ida y vuelta al backend por cada cambio de la tabla dinámica.
 _REPORT_SQL = f"""
-WITH {TRACTOREO_ROSTER_CTE}
+WITH {tractoreo_roster_by_day_cte('$1', '$2')}
 SELECT dds.driver_id, dds.business_date, d.full_name, d.tax_id, c.business_name AS carrier_name,
        dds.status, dds.category, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
        COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names,
@@ -175,10 +174,9 @@ SELECT dds.driver_id, dds.business_date, d.full_name, d.tax_id, c.business_name 
        hcd.name AS home_cd_name,
        (ar.driver_id IS NOT NULL) AS in_roster
 FROM {LINEAS_CONDUCTORES} dds
-LEFT JOIN active_roster ar ON ar.driver_id = dds.driver_id
+LEFT JOIN active_roster ar ON ar.driver_id = dds.driver_id AND ar.business_date = dds.business_date
 JOIN public.drivers d ON d.id = dds.driver_id
-LEFT JOIN public.driver_assignments da ON da.driver_id = d.id AND da.status = 'ACTIVE'
-LEFT JOIN public.carriers c ON c.id = da.carrier_id
+LEFT JOIN public.carriers c ON c.id = app.carrier_of('DRIVER', d.id, dds.business_date)
 LEFT JOIN public.locations hcd ON hcd.id = dds.home_location_id
 LEFT JOIN app.status_taxonomies ur ON ur.id = dds.unassigned_reason_id
 LEFT JOIN LATERAL (

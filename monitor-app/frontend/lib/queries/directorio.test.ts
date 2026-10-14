@@ -148,7 +148,8 @@ const NO_DEPENDEN_DEL_DIRECTORIO = new Set([
   'compliance-pending-drawer',                                         // invalidada en CondicionPanel, ninguna consulta la lee
   'driver-contacts',                                                   // la invalida su propio panel
   'carrier-policies', 'policy-detail',                                 // Seguros: no cambia con el maestro
-  'carrier-shippers',                                                  // solo la escribe el pre-cierre (P10, D3)
+  'carrier-shippers',                                                  // la escribe solo su modal de clientes, que la invalida (D2)
+  'carrier-deactivation-impact',                                       // se pide fresca al abrir la baja (staleTime 0, D2)
   'tarifario-all', 'tarifario-pending',                                // Comercial
   'closure-signatures', 'daily-closures-report',                       // la firma es inmutable; el reporte se pide al abrir
   'ingest-preview',                                                    // la URL firmada de un archivo, no el maestro

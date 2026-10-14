@@ -1,5 +1,5 @@
-"""El pre-cierre contra Postgres de verdad: las correcciones escriben lo mismo
-que antes y en lote, y los avisos no escriben nada."""
+"""El pre-cierre contra Postgres de verdad: desde D2 (14/10) el recálculo no
+escribe el directorio, y los avisos no escriben nada."""
 from __future__ import annotations
 
 import json
@@ -8,11 +8,18 @@ from datetime import date
 
 import pytest
 
-from app.services import pre_cierre
+from app.services import cierre_lineas, pre_cierre
+from tests.conftest import asignacion_previa
 
 pytestmark = pytest.mark.integracion
 D = date.fromisoformat("2026-06-11")
 P = "ZZ-TEST-PRECIERRE"
+
+
+async def _dia_abierto(conn):
+    """recalcular_en escribe líneas del día: el período tiene que existir."""
+    await conn.execute(
+        "INSERT INTO app.closure_periods (business_date, status) VALUES ($1, 'OPEN') ON CONFLICT DO NOTHING", D)
 
 
 async def _empresa(conn, nombre):
@@ -29,27 +36,28 @@ async def _viaje(conn, *, plate=None, transporter=None, rut=None, driver_name=No
         uuid.uuid4(), D, client, f"{P}-{uuid.uuid4().hex[:6]}", json.dumps(fleet))
 
 
-async def test_reasigna_la_patente_y_audita_en_lote(conexion_revertida):
+async def test_a6_el_recalculo_no_cambia_la_empresa_del_tracto_ni_agrega_clientes(conexion_revertida):
+    """P11 y P10 (14/10): la empresa del TMS se ignora y los clientes se declaran."""
     vieja = await _empresa(conexion_revertida, f"{P} Vieja")
-    nueva = await _empresa(conexion_revertida, f"{P} Nueva")
+    await _empresa(conexion_revertida, f"{P} Nueva")
     plate = f"ZZ{uuid.uuid4().hex[:4].upper()}"
     asset = await conexion_revertida.fetchval(
         "INSERT INTO public.assets (license_plate, asset_type, operational_status) VALUES ($1, 'TRACTOCAMION', 'ACTIVE') RETURNING id", plate)
-    await conexion_revertida.execute(
-        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')", asset, vieja)
-    await _viaje(conexion_revertida, plate=plate, transporter=f"{P} Nueva")
+    await asignacion_previa(conexion_revertida, 'ASSET', asset, vieja)
+    cliente = await conexion_revertida.fetchval(
+        "INSERT INTO public.shippers (name, status) VALUES ($1, 'ACTIVE') RETURNING id", f"{P} Cliente {uuid.uuid4().hex[:6]}")
+    nombre_cliente = await conexion_revertida.fetchval("SELECT name FROM public.shippers WHERE id = $1", cliente)
+    await _viaje(conexion_revertida, plate=plate, transporter=f"{P} Nueva", client=nombre_cliente)
 
-    await pre_cierre.aplicar_correcciones(conexion_revertida, D)
+    await _dia_abierto(conexion_revertida)
+    await cierre_lineas.recalcular_en(conexion_revertida, D)
 
-    activa = await conexion_revertida.fetchval(
-        "SELECT carrier_id FROM public.asset_assignments WHERE asset_id = $1 AND status = 'ACTIVE'", asset)
-    assert activa == nueva
-    fila = await conexion_revertida.fetchrow(
-        "SELECT action, field, old_value, new_value, source, actor FROM public.audit_log "
-        "WHERE entity_id = $1 ORDER BY id DESC LIMIT 1", asset)
-    assert (fila["action"], fila["field"], fila["source"], fila["actor"]) == (
-        "pre_cierre_reasignar_empresa", "carrier_id", "pre_cierre_auto", None)
-    assert fila["old_value"] == f'"{P} Vieja"' and fila["new_value"] == f'"{P} Nueva"'
+    assert await conexion_revertida.fetchval(
+        "SELECT carrier_id FROM public.asset_assignments WHERE asset_id = $1 AND status = 'ACTIVE'", asset) == vieja
+    assert not await conexion_revertida.fetchval(
+        "SELECT 1 FROM public.carrier_shippers WHERE carrier_id = $1", vieja)
+    assert not await conexion_revertida.fetchval(
+        "SELECT 1 FROM public.audit_log WHERE entity_id = ANY($1::uuid[]) AND source = 'pre_cierre_auto'", [asset, vieja])
 
 
 def _rut_con_puntos(numero: int) -> str:
@@ -81,7 +89,8 @@ async def test_un_nombre_distinto_en_el_tms_no_renombra_al_conductor(conexion_re
         "INSERT INTO public.drivers (full_name, tax_id, operational_status) VALUES ('Ana', $1, 'ACTIVE') RETURNING id", canon)
     await _viaje(conexion_revertida, rut=rut, driver_name="Ana Paz")
 
-    await pre_cierre.aplicar_correcciones(conexion_revertida, D)
+    await _dia_abierto(conexion_revertida)
+    await cierre_lineas.recalcular_en(conexion_revertida, D)
 
     assert await conexion_revertida.fetchval("SELECT full_name FROM public.drivers WHERE id = $1", conductor) == "Ana"
     assert not await conexion_revertida.fetchval(
@@ -102,56 +111,6 @@ async def test_los_avisos_no_escriben_nada(conexion_revertida):
     assert avisos["escalations"]["PATENTE_NO_REGISTRADA"], "la patente inventada tiene que avisarse"
 
 
-async def test_un_override_en_la_empresa_nueva_no_deja_al_tracto_sin_empresa_ni_audita(conexion_revertida):
-    """Hallazgo 4 de la revisión final: la auditoría sale de lo que se escribió,
-    no de lo que se clasificó. Si la fila (tracto, empresa nueva) está fijada a
-    mano como inactiva, la reasignación no ocurre: el tracto conserva su empresa
-    y no queda ninguna fila de auditoría que diga lo contrario."""
-    vieja = await _empresa(conexion_revertida, f"{P} Vieja")
-    nueva = await _empresa(conexion_revertida, f"{P} Nueva")
-    plate = f"ZZ{uuid.uuid4().hex[:4].upper()}"
-    asset = await conexion_revertida.fetchval(
-        "INSERT INTO public.assets (license_plate, asset_type, operational_status) VALUES ($1, 'TRACTOCAMION', 'ACTIVE') RETURNING id", plate)
-    await conexion_revertida.execute(
-        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')", asset, vieja)
-    await conexion_revertida.execute(
-        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status, is_manual_override) "
-        "VALUES ($1, $2, 'INACTIVE', true)", asset, nueva)
-    await _viaje(conexion_revertida, plate=plate, transporter=f"{P} Nueva")
-
-    await pre_cierre.aplicar_correcciones(conexion_revertida, D)
-
-    assert await conexion_revertida.fetchval(
-        "SELECT carrier_id FROM public.asset_assignments WHERE asset_id = $1 AND status = 'ACTIVE'", asset) == vieja
-    assert await conexion_revertida.fetchval(
-        "SELECT count(*) FROM public.audit_log WHERE entity_id = $1 AND source = 'pre_cierre_auto'", asset) == 0
-
-
-async def test_un_vinculo_fijado_a_mano_no_se_audita(conexion_revertida):
-    """Mismo hallazgo para empresa ↔ cliente: un vínculo inactivo con override
-    manual no se reactiva, y entonces no se audita."""
-    empresa = await _empresa(conexion_revertida, f"{P} Empresa")
-    cliente = await conexion_revertida.fetchval(
-        "INSERT INTO public.shippers (name, status) VALUES ($1, 'ACTIVE') RETURNING id", f"{P} Cliente {uuid.uuid4().hex[:6]}")
-    nombre_cliente = await conexion_revertida.fetchval("SELECT name FROM public.shippers WHERE id = $1", cliente)
-    plate = f"ZZ{uuid.uuid4().hex[:4].upper()}"
-    asset = await conexion_revertida.fetchval(
-        "INSERT INTO public.assets (license_plate, asset_type, operational_status) VALUES ($1, 'TRACTOCAMION', 'ACTIVE') RETURNING id", plate)
-    await conexion_revertida.execute(
-        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')", asset, empresa)
-    await conexion_revertida.execute(
-        "INSERT INTO public.carrier_shippers (carrier_id, shipper_id, status, is_manual_override) "
-        "VALUES ($1, $2, 'INACTIVE', true)", empresa, cliente)
-    await _viaje(conexion_revertida, plate=plate, transporter="WEBCARGA", client=nombre_cliente)
-
-    await pre_cierre.aplicar_correcciones(conexion_revertida, D)
-
-    assert await conexion_revertida.fetchval(
-        "SELECT status FROM public.carrier_shippers WHERE carrier_id = $1 AND shipper_id = $2", empresa, cliente) == "INACTIVE"
-    assert await conexion_revertida.fetchval(
-        "SELECT count(*) FROM public.audit_log WHERE entity_id = $1 AND source = 'pre_cierre_auto'", empresa) == 0
-
-
 async def test_la_empresa_en_onboarding_trae_su_estado(conexion_revertida):
     """Bloque 0 del Directorio, 0.3: "Activar empresa" se ofrece con
     directory.edit solo para las filas en ONBOARDING; las demás (dar de baja,
@@ -166,9 +125,7 @@ async def test_la_empresa_en_onboarding_trae_su_estado(conexion_revertida):
         asset = await conexion_revertida.fetchval(
             "INSERT INTO public.assets (license_plate, asset_type, operational_status) "
             "VALUES ($1, 'TRACTOCAMION', 'ACTIVE') RETURNING id", plate)
-        await conexion_revertida.execute(
-            "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')",
-            asset, empresa)
+        await asignacion_previa(conexion_revertida, 'ASSET', asset, empresa)
         await _viaje(conexion_revertida, plate=plate)
         await _viaje(conexion_revertida, plate=plate)   # dos viajes, una sola fila (DISTINCT)
         estados[str(empresa)] = estado

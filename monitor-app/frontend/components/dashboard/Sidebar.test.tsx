@@ -26,7 +26,7 @@ import type { Acceso } from '@/lib/authz/acceso'
 
 function setup(
   fullName: string | null = null,
-  permissions: Acceso['permissions'] = ['users.manage', 'operations.read'],
+  permissions: Acceso['permissions'] = ['users.manage', 'operations.read', 'documents.review'],
 ) {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -48,6 +48,15 @@ beforeEach(() => {
 describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () => {
   beforeEach(() => {
     vi.mocked(documentIngestApi.listQueue).mockReset()
+  })
+
+  it('sin documents.review no muestra Sin clasificar ni pide su conteo (S6, 14/10)', async () => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 5, rows: [] })
+    nav.ruta = '/dashboard/compliance'
+    setup(null, ['operations.read'])
+    expect(await screen.findAllByText('Empresas')).not.toHaveLength(0)
+    expect(screen.queryByText('Sin clasificar')).not.toBeInTheDocument()
+    expect(documentIngestApi.listQueue).not.toHaveBeenCalled()
   })
 
   it('muestra el contador de trabajo pendiente', async () => {

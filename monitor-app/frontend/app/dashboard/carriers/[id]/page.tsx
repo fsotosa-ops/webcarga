@@ -28,6 +28,8 @@ import { VehicleDetailPanel } from '@/components/dashboard/VehicleDetailPanel'
 import { TransferModal } from '@/components/dashboard/TransferModal'
 import { AltaDeFlota } from '@/components/dashboard/AltaDeFlota'
 import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
+import { ReactivateCarrierModal } from '@/components/dashboard/ReactivateCarrierModal'
+import { CarrierClientsModal } from '@/components/dashboard/CarrierClientsModal'
 import { DeleteCarrierModal } from '@/components/dashboard/DeleteCarrierModal'
 import { InsurancePolicyModal, PolicyCreateForm, type PolicyFormState } from '@/components/dashboard/InsurancePolicyModal'
 import { CompletionRing } from '@/components/dashboard/CompletionRing'
@@ -190,6 +192,8 @@ function EmpresaDetailPageInner() {
 
   const [transferTarget, setTransferTarget] = useState<{ kind: 'driver' | 'asset'; id: string; label: string } | null>(null)
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
+  const [reactivateOpen, setReactivateOpen] = useState(false)
+  const [clientsOpen, setClientsOpen] = useState(false)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [selectedPolicyId, setSelectedPolicyId] = useState<string | null>(null)
 
@@ -205,6 +209,14 @@ function EmpresaDetailPageInner() {
   const assetsQuery  = useQuery({ queryKey: directoryKeys.carrierAssets(id), queryFn: () => carriersApi.listAssets(id) })
   const policiesQuery = useQuery({ queryKey: ['carrier-policies', id], queryFn: () => carriersApi.listPolicies(id) })
   const shippersQuery = useQuery({ queryKey: ['carrier-shippers', id], queryFn: () => carriersApi.listShippers(id) })
+  const activeShippers = (shippersQuery.data ?? []).filter(s => s.status === 'ACTIVE')
+  // D2 (P4): lo que toca la baja, recién al abrir la confirmación y siempre fresco.
+  const impactQuery = useQuery({
+    queryKey: ['carrier-deactivation-impact', id],
+    queryFn: () => carriersApi.deactivationImpact(id),
+    enabled: bajaModalOpen,
+    staleTime: 0,
+  })
 
   const selectedDriverQuery = useQuery({
     queryKey: directoryKeys.driverDetail(selectedDriverId),
@@ -244,9 +256,23 @@ function EmpresaDetailPageInner() {
     await carriersApi.patch(id, { operational_status: 'INACTIVE' })
     await afterChange({ entity: 'carrier', id, type: 'update' })
   }
-  async function handleReactivateCarrier() {
+  /** Activar una empresa en onboarding: no tiene flota que elegir. */
+  async function handleActivateCarrier() {
     await carriersApi.patch(id, { operational_status: 'ACTIVE' })
     await afterChange({ entity: 'carrier', id, type: 'update' })
+  }
+  /** Reactivar una dada de baja eligiendo qué flota vuelve (D2, P3). */
+  async function handleReactivateCarrier(body: { driver_ids: string[]; asset_ids: string[] }) {
+    await carriersApi.reactivate(id, body)
+    await afterChange({ entity: 'carrier', id, type: 'assignment' })
+  }
+  async function handleAddClient(shipperId: string) {
+    await carriersApi.addShipper(id, shipperId)
+    await queryClient.invalidateQueries({ queryKey: ['carrier-shippers', id] })
+  }
+  async function handleEndClient(shipperId: string) {
+    await carriersApi.endShipper(id, shipperId)
+    await queryClient.invalidateQueries({ queryKey: ['carrier-shippers', id] })
   }
   async function handleDeleteCarrier() {
     await carriersApi.delete(id)
@@ -458,13 +484,18 @@ function EmpresaDetailPageInner() {
                 )}
               </div>
               <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                {shippersQuery.data?.map(s => (
+                {activeShippers.map(s => (
                   <span key={s.id} className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                     {s.name}
                   </span>
                 ))}
-                {shippersQuery.data?.length === 0 && (
+                {shippersQuery.data && activeShippers.length === 0 && (
                   <span className="text-[10px] text-gray-300 italic">Sin generador de carga vinculado</span>
+                )}
+                {canEdit && shippersQuery.data && (
+                  <button onClick={() => setClientsOpen(true)} className="text-etiqueta font-semibold text-accion hover:underline">
+                    Editar clientes
+                  </button>
                 )}
               </div>
             </div>
@@ -472,7 +503,8 @@ function EmpresaDetailPageInner() {
             <div className="flex items-center gap-2 shrink-0">
               {canChangeCarrierStatus && (
                 <button
-                  onClick={() => carrier.operational_status !== 'ACTIVE' ? handleReactivateCarrier() : setBajaModalOpen(true)}
+                  onClick={() => carrier.operational_status === 'ACTIVE' ? setBajaModalOpen(true)
+                    : carrier.operational_status === 'ONBOARDING' ? handleActivateCarrier() : setReactivateOpen(true)}
                   className={`px-4 py-2 rounded-lg text-sm font-bold transition border shadow-sm shrink-0 ${
                     carrier.operational_status !== 'ACTIVE'
                       ? 'bg-white hover:bg-gray-50 text-gray-700 border-border'
@@ -922,6 +954,27 @@ function EmpresaDetailPageInner() {
           label={carrier.business_name || 'esta empresa'}
           onClose={() => setBajaModalOpen(false)}
           onConfirm={handleDeactivateCarrier}
+          impact={impactQuery.data ?? null}
+        />
+      )}
+
+      {reactivateOpen && (
+        <ReactivateCarrierModal
+          label={carrier.business_name || 'esta empresa'}
+          drivers={drivers.map(d => ({ id: d.id, label: d.full_name }))}
+          assets={assets.map(a => ({ id: a.id, label: a.license_plate }))}
+          onClose={() => setReactivateOpen(false)}
+          onConfirm={handleReactivateCarrier}
+        />
+      )}
+
+      {clientsOpen && (
+        <CarrierClientsModal
+          label={carrier.business_name || 'esta empresa'}
+          clients={shippersQuery.data ?? []}
+          onClose={() => setClientsOpen(false)}
+          onAdd={handleAddClient}
+          onEnd={handleEndClient}
         />
       )}
 

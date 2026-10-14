@@ -540,7 +540,7 @@ describe('TriageWorkbench — descartar en lote', () => {
 
     await descartarLosDos()
 
-    expect(await screen.findByText(/^2 descartados$/i)).toBeInTheDocument()
+    expect(await screen.findByText(/^2 descartados\. Puedes restaurarlos en Descartados\.$/i)).toBeInTheDocument()
   })
 
   it('H2: si la cola falla lo dice como error, nunca como "0 sin clasificar"', async () => {

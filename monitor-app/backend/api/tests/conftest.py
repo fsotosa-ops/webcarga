@@ -125,7 +125,22 @@ def credenciales_integracion() -> dict | None:
     La contraseña se pasa como parámetro, nunca embebida en una URL: así no
     hay que escaparla y no termina impresa en el traceback de un DSN mal
     formado. Se lee del entorno primero y de `monitor-app/backend/.env`
-    después, con `dotenv` — nunca de la línea de comandos."""
+    después, con `dotenv` — nunca de la línea de comandos.
+
+    `TEST_DB_LOCAL_PORT` (14/10) apunta la suite a la copia local
+    (`.superpowers/local-sim`, Postgres en localhost, datos ficticios) en vez
+    de la base real: `TEST_DB_LOCAL_PORT=55322 venv/bin/pytest ...`."""
+    puerto_local = os.environ.get("TEST_DB_LOCAL_PORT")
+    if puerto_local:
+        return {
+            "host": "127.0.0.1",
+            "port": int(puerto_local),
+            "user": "postgres",
+            "password": os.environ.get("TEST_DB_LOCAL_PASSWORD", "postgres"),
+            "database": "postgres",
+            "statement_cache_size": 0,
+            "timeout": 15,
+        }
     clave = os.environ.get("SUPABASE_DB_PASSWORD")
     if not clave and RUTA_ENV_BACKEND.is_file():
         try:
@@ -365,3 +380,46 @@ async def cliente_de_prueba(conn) -> str:
     nombre = f"TEST-{uuid.uuid4().hex[:8]}"
     await conn.execute("INSERT INTO public.shippers (name, status) VALUES ($1, 'ACTIVE')", nombre)
     return nombre
+
+
+async def asignacion_previa(conn, kind: str, subject_id, carrier_id, desde=None) -> None:
+    """Una asignación que YA existía antes de los días que mira el test (D2, 14/10).
+
+    Igual que la siembra de 20261017090000: sin `desde`, el período no tiene
+    límite inferior; con `desde`, empieza ese día.
+    Se crea hoy (la guarda de día cerrado lo permite) y se extiende hacia atrás
+    directo en el historial. Insertarla con un start_date viejo no sirve contra la
+    base real: cubriría días ya cerrados del Cierre y la guarda la rechaza."""
+    tabla, col, relation = {
+        "DRIVER": ("driver_assignments", "driver_id", "DRIVER_CARRIER"),
+        "ASSET": ("asset_assignments", "asset_id", "ASSET_CARRIER"),
+    }[kind]
+    await conn.execute(
+        f"INSERT INTO public.{tabla} ({col}, carrier_id, status) VALUES ($1, $2, 'ACTIVE')", subject_id, carrier_id)
+    if desde is not None:
+        # La antigüedad ("ingresó hace N días") se lee del start_date de la fila;
+        # tocar solo esa columna no dispara el trigger (es AFTER UPDATE OF status).
+        await conn.execute(
+            f"UPDATE public.{tabla} SET start_date = $3::date WHERE {col} = $1 AND carrier_id = $2",
+            subject_id, carrier_id, desde)
+    await conn.execute(
+        "UPDATE app.fleet_assignment_periods SET valid_during = daterange($4::date, NULL) "
+        "WHERE relation = $1 AND subject_id = $2 AND counterpart_id = $3 AND upper_inf(valid_during)",
+        relation, subject_id, carrier_id, desde)
+
+
+async def insertar_asignacion(conn, kind: str, subject_id, carrier_id, *, status: str = "ACTIVE",
+                              desde=None) -> None:
+    """Inserta una asignación de prueba con su fecha de inicio (D2, 14/10).
+
+    ACTIVE con fecha pasada = asignación previa (ver `asignacion_previa`): con la
+    guarda de día cerrado, un INSERT con start_date viejo no entra en la base real.
+    Sin fecha, empieza hoy. Una INACTIVE no abre período y entra tal cual."""
+    tabla, col = {"DRIVER": ("driver_assignments", "driver_id"), "ASSET": ("asset_assignments", "asset_id")}[kind]
+    if status == "ACTIVE" and desde is not None:
+        await asignacion_previa(conn, kind, subject_id, carrier_id, desde)
+        return
+    await conn.execute(
+        f"INSERT INTO public.{tabla} ({col}, carrier_id, status, start_date) "
+        "VALUES ($1, $2, $3, COALESCE($4::date, public.hoy_chile()))",
+        subject_id, carrier_id, status, desde)

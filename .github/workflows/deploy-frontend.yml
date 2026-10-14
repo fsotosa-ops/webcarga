@@ -17,7 +17,29 @@ env:
   ENV_SUFFIX: ${{ github.ref_name == 'main' && 'prod' || 'dev' }}
 
 jobs:
+  # Barrera (plan 2026-10-14): si tsc o vitest fallan, no se despliega.
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: monitor-app/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: monitor-app/frontend/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Unit tests
+        run: npx vitest run
+        env:
+          CI: true
+
   build-and-deploy:
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: read

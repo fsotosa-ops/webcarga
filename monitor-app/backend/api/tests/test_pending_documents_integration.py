@@ -12,6 +12,7 @@ from uuid import uuid4
 import pytest
 
 from app.services.vencimientos import document_state_sql, in_scope_sql
+from tests.conftest import insertar_asignacion
 
 pytestmark = pytest.mark.integracion
 
@@ -40,9 +41,7 @@ async def _conductor(conn, empresa: str | None, *, estado: str = "ACTIVE",
         "INSERT INTO public.drivers (full_name, operational_status) VALUES ($1, $2) RETURNING id",
         f"{PREFIJO} Conductor {_suf()}", estado))
     if empresa and asignacion:
-        await conn.execute(
-            "INSERT INTO public.driver_assignments (driver_id, carrier_id, status, start_date) "
-            "VALUES ($1, $2, $3, public.hoy_chile() - 400)", d, empresa, asignacion)
+        await insertar_asignacion(conn, "DRIVER", d, empresa, status=asignacion, desde=await conn.fetchval("SELECT public.hoy_chile() - 400"))
     return d
 
 

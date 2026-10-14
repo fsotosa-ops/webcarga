@@ -117,8 +117,9 @@ CEILINGS: dict[str, dict[str, int]] = {
         "routers/carriers.py": 2,
         "routers/status_report.py": 1,
         "routers/trips.py": 5,                       # el Monitor y su lateral compartida con el Cierre (F7)
-        "services/cierre_lineas.py": 1,              # Cierre, no se toca
-        "services/driver_roster.py": 1,              # Cierre, no se toca
+        # D2 (14/10): el Cierre lee app.fleet_assignment_periods por día.
+        "services/cierre_lineas.py": 0,
+        "services/driver_roster.py": 0,
         "services/fleet_driver_gap.py": 1,
         "services/plantilla_certificacion.py": 1,
         "services/pre_cierre.py": 2,                 # Cierre, no se toca
@@ -147,13 +148,13 @@ CEILINGS: dict[str, dict[str, int]] = {
         # Medido al cerrar la Task 9 (Task 10, 12/10). entity_summary.py ya está en 0 (T6).
         "routers/assets.py": 1,
         "routers/carriers.py": 2,
-        "routers/daily_closures.py": 2,   # diferido a D2: carrier_of recibe la fecha y lee el historial
+        "routers/daily_closures.py": 0,   # D2 (14/10): carrier_of(…, día)
         "routers/drivers.py": 1,
-        "routers/equipment_closures.py": 1,
+        "routers/equipment_closures.py": 0,
         "routers/status_report.py": 1,
         "routers/trips.py": 5,
-        "services/cierre_lineas.py": 2,              # Cierre, no se toca
-        "services/driver_roster.py": 1,              # Cierre, no se toca
+        "services/cierre_lineas.py": 0,              # D2: el Cierre juzga con la empresa del día
+        "services/driver_roster.py": 0,
         "services/plantilla_certificacion.py": 1,
         "services/pre_cierre.py": 2,                 # Cierre, no se toca
     },

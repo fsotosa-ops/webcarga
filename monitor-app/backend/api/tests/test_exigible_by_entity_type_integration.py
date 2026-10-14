@@ -18,6 +18,7 @@ from uuid import uuid4
 import pytest
 
 from app.services.vencimientos import document_state_sql, exigible_desde_sql
+from tests.conftest import insertar_asignacion
 
 pytestmark = pytest.mark.integracion
 
@@ -39,9 +40,8 @@ async def _equipo(conn, empresa: str, *, asignacion: str, desde: str = "public.h
         "INSERT INTO public.assets (license_plate, asset_type) VALUES ($1, 'TRACTOCAMION') RETURNING id",
         f"ZZ{_suf()[:4]}"))
     # `desde` es SQL fijo de este archivo (nunca entrada de usuario).
-    await conn.execute(
-        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status, start_date) "
-        f"VALUES ($1, $2, $3, {desde})", a, empresa, asignacion)
+    await insertar_asignacion(conn, "ASSET", a, empresa, status=asignacion,
+                              desde=await conn.fetchval(f"SELECT {desde}"))
     return a
 
 

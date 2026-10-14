@@ -29,6 +29,7 @@ from app.schemas.requirement import (
     VigenciaBody,
 )
 from tests.conftest import USER, PoolDeUnaConexion, _usuario_real
+from tests.conftest import asignacion_previa
 
 pytestmark = pytest.mark.integracion
 
@@ -314,9 +315,7 @@ async def test_la_vista_previa_no_cuenta_como_al_dia_lo_que_no_se_exige(conexion
         f"ZZ-TEST-VIGCONF {uuid4().hex[:8]}", f"ZZ-TEST-VIGCONF-{uuid4().hex[:8]}")
     conductor = await conexion_revertida.fetchval(
         "INSERT INTO public.drivers (full_name) VALUES ($1) RETURNING id", f"ZZ-TEST-VIGCONF {uuid4().hex[:8]}")
-    await conexion_revertida.execute(
-        "INSERT INTO public.driver_assignments (driver_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')",
-        conductor, empresa)
+    await asignacion_previa(conexion_revertida, 'DRIVER', conductor, empresa)
     await conexion_revertida.execute(
         "INSERT INTO public.compliance_records (entity_id, entity_type, requirement_id, status) "
         "VALUES ($1, 'DRIVER', $2, 'MISSING')", conductor, requisito)

@@ -30,8 +30,8 @@ from fastapi import HTTPException
 from .cliente_del_viaje import join_cliente, nombre_del_cliente
 from .audit import log_change
 from .cierre_viajes import SQL_VIAJES_DEL_DIA
-from .driver_roster import TRACTOREO_ROSTER_CTE
-from .pre_cierre import aplicar_correcciones, avisos_del_dia
+from .driver_roster import tractoreo_roster_cte
+from .pre_cierre import avisos_del_dia
 
 # ── Qué significa un motivo ──────────────────────────────────────────────────
 # Vive en el catálogo (status_taxonomies.group_id), no acá: migración
@@ -84,7 +84,7 @@ LINEAS_TRACTOS = f"""(
 # MISMATCH: algún viaje del conductor ese día sin empresa resuelta, o con una
 # empresa distinta a la suya — necesita regularización antes de cerrar limpio.
 SQL_ESTADO_CONDUCTORES = f"""
-WITH {TRACTOREO_ROSTER_CTE},
+WITH {tractoreo_roster_cte('$1::date')},
 day_trips AS (
     SELECT t.id AS trip_id,
            vfr.resolved_driver_id AS driver_id,
@@ -120,8 +120,10 @@ WITH active_roster AS (
            wot.code = 'TRACTOREO' AS is_tractoreo,
            wot.code = 'EQUIPO_COMPLETO' AS is_equipo_completo
     FROM public.assets a
-    JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
-    JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
+    -- D2: la empresa del tracto ESE día.
+    JOIN app.fleet_assignment_periods aa ON aa.relation = 'ASSET_CARRIER' AND aa.subject_id = a.id
+         AND aa.valid_during @> $1::date
+    JOIN public.carriers c ON c.id = aa.counterpart_id AND c.operational_status = 'ACTIVE'
     LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
     WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
 ),
@@ -431,12 +433,8 @@ async def ajustes_posteriores(pool, fecha: date) -> list[dict]:
 
 async def recalcular_en(conn, fecha: date) -> None:
     """Deriva las líneas del día. Quien llama ya tomó el período ABIERTO con
-    `bloquear_periodo`, dentro de una transacción.
-
-    Si el pre-cierre corrige el directorio, esa escritura marca los días abiertos
-    como cualquier otra: todos dependen del directorio. Converge sola, porque la
-    pasada siguiente no encuentra nada que corregir y no escribe."""
-    await aplicar_correcciones(conn, fecha)
+    `bloquear_periodo`, dentro de una transacción. Desde D2 no escribe el
+    directorio: solo deriva las líneas."""
     await conn.execute(_SQL_UPSERT_CONDUCTORES, fecha)
     await conn.execute(_SQL_UPSERT_TRACTOS, fecha)
     await conn.execute(_SQL_HEREDAR_VIGENCIA, fecha)
@@ -617,8 +615,7 @@ async def cerrar(pool, fecha: date, *, override: bool, override_note: str | None
                        c.id::text AS carrier_id, c.business_name AS carrier_name
                 FROM app.closure_lines l
                 JOIN public.assets a ON a.id = l.subject_id
-                LEFT JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
-                LEFT JOIN public.carriers c ON c.id = aa.carrier_id
+                LEFT JOIN public.carriers c ON c.id = app.carrier_of('ASSET', a.id, l.business_date)
                 WHERE l.business_date = $1 AND l.subject_type = 'ASSET' AND l.requires_reason
                   AND l.status = 'UNASSIGNED' AND l.reason_id IS NULL
                 ORDER BY a.license_plate

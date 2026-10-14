@@ -15,6 +15,7 @@ import pytest
 from app.routers.equipment_closures import _DETAIL_SQL as _DETAIL_TRACTOS_SQL
 from app.services import cierre_lineas
 from tests.conftest import PoolDeUnaConexion
+from tests.conftest import asignacion_previa
 
 pytestmark = pytest.mark.integracion
 
@@ -34,15 +35,11 @@ async def _escenario(conn):
         "INSERT INTO public.assets (license_plate, asset_type, operational_status, webcarga_operation_type_id) "
         "VALUES ($1, 'TRACTOCAMION', 'ACTIVE', $2) RETURNING id",
         f"ZZ{uuid.uuid4().hex[:4].upper()}", equipo_completo)
-    await conn.execute(
-        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')",
-        tractor, carrier)
+    await asignacion_previa(conn, 'ASSET', tractor, carrier)
     conductor = await conn.fetchval(
         "INSERT INTO public.drivers (full_name, operational_status) "
         "VALUES ($1, 'ACTIVE') RETURNING id", f"{PREFIJO} Conductor")
-    await conn.execute(
-        "INSERT INTO public.driver_assignments (driver_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')",
-        conductor, carrier)
+    await asignacion_previa(conn, 'DRIVER', conductor, carrier)
     viaje = uuid.uuid4()
     await conn.execute(
         "INSERT INTO app.trips (id, planning_date, client_name, source_system, source_system_trip_id, "

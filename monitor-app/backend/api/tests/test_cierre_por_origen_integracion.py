@@ -17,6 +17,7 @@ from app.routers.daily_closures import _DETAIL_SQL
 from app.routers.equipment_closures import _DETAIL_SQL as _DETAIL_TRACTOS_SQL
 from app.services import cierre_lineas
 from tests.conftest import PoolDeUnaConexion, _usuario_real, con_roles, ADMIN_EQUIVALENTE
+from tests.conftest import asignacion_previa
 
 pytestmark = pytest.mark.integracion
 
@@ -45,15 +46,11 @@ async def _escenario(conn, *, cd_id=None):
         "INSERT INTO public.assets (license_plate, asset_type, operational_status, webcarga_operation_type_id) "
         "VALUES ($1, 'TRACTOCAMION', 'ACTIVE', $2) RETURNING id",
         f"ZZ{uuid.uuid4().hex[:4].upper()}", uuid.UUID(TRACTOREO_ID))
-    await conn.execute(
-        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')",
-        tractor, carrier)
+    await asignacion_previa(conn, 'ASSET', tractor, carrier)
     conductor = await conn.fetchval(
         "INSERT INTO public.drivers (full_name, operational_status, home_location_id) "
         "VALUES ($1, 'ACTIVE', $2) RETURNING id", f"{PREFIJO} Conductor", cd_id)
-    await conn.execute(
-        "INSERT INTO public.driver_assignments (driver_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')",
-        conductor, carrier)
+    await asignacion_previa(conn, 'DRIVER', conductor, carrier)
     await conn.execute(
         "INSERT INTO public.vehicle_driver_assignments (asset_id, driver_id, status, source, is_manual_override) "
         "VALUES ($1, $2, 'ACTIVE', 'manual', true)", tractor, conductor)

@@ -13,6 +13,7 @@ from datetime import date, timedelta
 import pytest
 
 from app.routers.daily_closures import _DETAIL_SQL, _REPORT_SQL
+from tests.conftest import asignacion_previa
 
 pytestmark = pytest.mark.integracion
 
@@ -28,9 +29,9 @@ TRACTOREO_ID = "89822208-0189-463a-93a0-605fb570c71b"
 PREFIJO = "ZZ-TEST-DIRECTORIO"
 
 
-async def _conductor_en_roster(conn) -> dict:
-    """Empresa ACTIVE + tracto Tractoreo + conductor asignado: el mínimo para
-    entrar a TRACTOREO_ROSTER_CTE (mismo armado que test_cierre_por_origen)."""
+async def _conductor_en_roster(conn, desde: date | None = None) -> dict:
+    """Empresa ACTIVE + tracto Tractoreo + conductor asignado desde `desde`: el
+    mínimo para entrar a TRACTOREO_ROSTER_CTE (mismo armado que test_cierre_por_origen)."""
     carrier = await conn.fetchval(
         "INSERT INTO public.carriers (business_name, operational_status) VALUES ($1, 'ACTIVE') RETURNING id",
         f"{PREFIJO} Empresa {uuid.uuid4().hex[:6]}")
@@ -38,15 +39,11 @@ async def _conductor_en_roster(conn) -> dict:
         "INSERT INTO public.assets (license_plate, asset_type, operational_status, webcarga_operation_type_id) "
         "VALUES ($1, 'TRACTOCAMION', 'ACTIVE', $2) RETURNING id",
         f"ZZ{uuid.uuid4().hex[:4].upper()}", uuid.UUID(TRACTOREO_ID))
-    await conn.execute(
-        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')",
-        tractor, carrier)
+    await asignacion_previa(conn, 'ASSET', tractor, carrier)
     driver = await conn.fetchval(
         "INSERT INTO public.drivers (full_name, operational_status) VALUES ($1, 'ACTIVE') RETURNING id",
         f"{PREFIJO} Conductor {uuid.uuid4().hex[:6]}")
-    await conn.execute(
-        "INSERT INTO public.driver_assignments (driver_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')",
-        driver, carrier)
+    await asignacion_previa(conn, 'DRIVER', driver, carrier, desde)
     return {"carrier": carrier, "driver": driver}
 
 
@@ -78,11 +75,11 @@ async def test_antes_del_go_live_la_linea_de_quien_salio_sigue_oculta(conexion_r
     conn = conexion_revertida
     antes = await _go_live(conn) - timedelta(days=1)
     queda = await _conductor_en_roster(conn)
-    sale = await _conductor_en_roster(conn)
+    # D2: el roster es el de ESE día. Quien no estaba en él ese día es quien entró
+    # después (quien sale hoy sí estaba en el roster de un día pasado).
+    sale = await _conductor_en_roster(conn, desde=antes + timedelta(days=1))
     await _linea_sin_motivo(conn, queda["driver"], antes)
     await _linea_sin_motivo(conn, sale["driver"], antes)
-    await conn.execute(
-        "UPDATE public.driver_assignments SET status = 'INACTIVE' WHERE driver_id = $1", sale["driver"])
 
     # El día anterior al go-live puede tener líneas reales: solo se miran las del test.
     nuestros = {queda["driver"], sale["driver"]}

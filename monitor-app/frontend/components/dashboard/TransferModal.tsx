@@ -56,7 +56,7 @@ export function TransferModal({ open, title, currentCarrierId, onClose, onTransf
     // Mismo criterio que ConfirmarBaja: mientras el pedido viaja, ni el
     // fondo ni la X cierran — cerrarlo desmontaría el modal, el `catch` de
     // `handleConfirm` escribiría `setErr` sobre un componente muerto y el
-    // mensaje (por ejemplo el 409 de una asignación protegida) no se vería.
+    // mensaje (por ejemplo el 409 de un día ya cerrado en el Cierre) no se vería.
     if (submitting) return
     setQ(''); setSelected(null); setErr(null)
     onClose()

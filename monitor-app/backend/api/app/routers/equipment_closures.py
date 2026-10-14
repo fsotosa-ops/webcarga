@@ -105,8 +105,7 @@ SELECT
     hcd.name                   AS home_cd_name
 FROM {LINEAS_TRACTOS} eds
 JOIN public.assets a ON a.id = eds.asset_id
-LEFT JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
-LEFT JOIN public.carriers c ON c.id = aa.carrier_id
+LEFT JOIN public.carriers c ON c.id = app.carrier_of('ASSET', a.id, eds.business_date)
 LEFT JOIN public.locations hcd ON hcd.id = eds.home_location_id
 LEFT JOIN app.status_taxonomies st ON st.id = a.fleet_service_type_id
 LEFT JOIN app.status_taxonomies ur ON ur.id = eds.unassigned_reason_id

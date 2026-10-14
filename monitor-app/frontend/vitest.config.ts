@@ -9,6 +9,9 @@ export default defineConfig({
     setupFiles: ['./vitest.setup.ts'],
     globals: true,
     exclude: ['node_modules', 'scripts/**'],
+    // jsdom + user-event con la máquina cargada (o en CI) supera los 5 s por
+    // defecto: 20 tests caían por tiempo el 14/10 sin ningún error real.
+    testTimeout: 20000,
   },
   resolve: {
     alias: {

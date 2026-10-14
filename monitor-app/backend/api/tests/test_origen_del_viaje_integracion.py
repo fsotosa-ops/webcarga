@@ -16,6 +16,7 @@ from app.routers.equipment_closures import _DETAIL_SQL as _DETAIL_TRACTOS_SQL
 from app.routers.status_report import _TODAY_TRIPS_SQL
 from app.services import cierre_lineas
 from tests.conftest import PoolDeUnaConexion
+from tests.conftest import asignacion_previa
 
 pytestmark = pytest.mark.integracion
 
@@ -30,8 +31,7 @@ async def _viaje_con_dos_origenes(conn):
     tractor = await conn.fetchval(
         "INSERT INTO public.assets (license_plate, asset_type, operational_status, webcarga_operation_type_id) "
         "VALUES ($1, 'TRACTOCAMION', 'ACTIVE', $2) RETURNING id", f"ZZ{uuid.uuid4().hex[:4].upper()}", tipo)
-    await conn.execute(
-        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status) VALUES ($1, $2, 'ACTIVE')", tractor, carrier)
+    await asignacion_previa(conn, 'ASSET', tractor, carrier)
     viaje = uuid.uuid4()
     await conn.execute(
         "INSERT INTO app.trips (id, planning_date, client_name, source_system, source_system_trip_id, trip_status, "

@@ -13,6 +13,7 @@ from app.routers.assets import get_asset_summary
 from app.routers.carriers import get_carrier_summary
 from app.routers.drivers import get_driver_summary
 from tests.conftest import PoolDeUnaConexion
+from tests.conftest import insertar_asignacion
 
 pytestmark = pytest.mark.integracion
 
@@ -43,9 +44,8 @@ async def new_driver(conn, carrier_id: uuid.UUID | None) -> uuid.UUID:
         "INSERT INTO public.drivers (full_name, operational_status) VALUES ($1, 'ACTIVE') RETURNING id",
         f"TEST CONDUCTOR {uuid.uuid4().hex[:6]}")
     if carrier_id:
-        await conn.execute(
-            "INSERT INTO public.driver_assignments (driver_id, carrier_id, status, start_date) "
-            "VALUES ($1, $2, 'ACTIVE', current_date - 30)", driver_id, carrier_id)
+        await insertar_asignacion(conn, "DRIVER", driver_id, carrier_id,
+                                  desde=await conn.fetchval("SELECT current_date - 30"))
     return driver_id
 
 
@@ -53,9 +53,8 @@ async def new_asset(conn, carrier_id: uuid.UUID) -> uuid.UUID:
     asset_id = await conn.fetchval(
         "INSERT INTO public.assets (license_plate, asset_type, operational_status) "
         "VALUES ($1, 'TRACTOCAMION', 'ACTIVE') RETURNING id", f"TT{uuid.uuid4().hex[:4].upper()}")
-    await conn.execute(
-        "INSERT INTO public.asset_assignments (asset_id, carrier_id, status, start_date) "
-        "VALUES ($1, $2, 'ACTIVE', current_date - 30)", asset_id, carrier_id)
+    await insertar_asignacion(conn, "ASSET", asset_id, carrier_id,
+                              desde=await conn.fetchval("SELECT current_date - 30"))
     return asset_id
 
 

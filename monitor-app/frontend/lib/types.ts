@@ -1104,6 +1104,14 @@ export type CarrierShipper = {
   end_date:    string | null
 }
 
+/** Lo que toca dar de baja una empresa (GET /carriers/{id}/deactivation-impact). */
+export type CarrierDeactivationImpact = {
+  drivers:           number
+  assets:            number
+  trips_today:       number
+  open_closure_days: number
+}
+
 /** Conductor/vehículo como master data — independiente de a qué carrier
  *  esté asignado (GET/POST/PATCH /drivers, /assets). */
 export type Driver = {
@@ -1870,9 +1878,15 @@ export type QueueRow = {
    *  clasificar, y el ocupante de este casillero ya salió de la cola porque
    *  fue confirmado. */
   casillero_ocupado:          boolean
+  /** Solo en "Descartados" (borrado lógico, 14/10). */
+  discarded_at?:              string | null
+  discard_reason?:            string | null
 }
 
 export type TrayPage = { total: number; rows: QueueRow[] }
+
+/** Pendientes o descartados (borrado lógico, 14/10). */
+export type TrayStatus = 'pending' | 'discarded'
 
 export type CertificationGroup = 'carrier' | 'driver' | 'asset' | 'requirement'
 
@@ -1931,9 +1945,12 @@ export type CertificationStatus = {
 }
 
 export type IngestUploadResult = {
-  batch_id: string
-  items:    TrayItem[]
-  errors:   { file_name: string; error: string }[]
+  batch_id:    string
+  items:       TrayItem[]
+  errors:      { file_name: string; error: string }[]
+  /** Archivos idénticos (SHA-256) a uno que ya pasó por Sin clasificar: no
+   *  entraron otra vez (14/10). */
+  duplicates?: { file_name: string; existing_item_id: string; existing_status: IngestMatchStatus }[]
 }
 
 /** A cuántas entidades alcanza la condición de un requisito, sobre el
