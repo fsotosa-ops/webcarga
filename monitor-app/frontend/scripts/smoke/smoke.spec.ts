@@ -14,7 +14,8 @@ import { test, expect, type Page, type Response } from '@playwright/test'
  * contenido termina de cargar.
  */
 
-const PASSWORD = process.env.SIM_PASSWORD ?? 'Simulacion-2026'
+// La contraseña de los usuarios ficticios vive fuera del repo (.superpowers/local-sim/sim.env).
+const PASSWORD = process.env.SIM_PASSWORD ?? ''
 const ROLES = [
   { role: 'Supervisor de Certificación', email: 'cert@sim.local' },
   { role: 'Supervisor de Operaciones', email: 'ops@sim.local' },
@@ -27,6 +28,7 @@ test.skip(
   !(process.env.PLAYWRIGHT_BASE_URL ?? '').match(/localhost|127\.0\.0\.1/),
   'El humo escribe datos: solo corre contra la copia local',
 )
+test.skip(!PASSWORD, 'Falta SIM_PASSWORD: carga .superpowers/local-sim/sim.env')
 
 async function login(page: Page, email: string) {
   await page.goto('/login')

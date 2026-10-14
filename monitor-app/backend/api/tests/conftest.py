@@ -129,14 +129,15 @@ def credenciales_integracion() -> dict | None:
 
     `TEST_DB_LOCAL_PORT` (14/10) apunta la suite a la copia local
     (`.superpowers/local-sim`, Postgres en localhost, datos ficticios) en vez
-    de la base real: `TEST_DB_LOCAL_PORT=55322 venv/bin/pytest ...`."""
+    de la base real. Las dos variables están en `.superpowers/local-sim/sim.env`
+    (fuera del repo): `set -a; . .superpowers/local-sim/sim.env; set +a`."""
     puerto_local = os.environ.get("TEST_DB_LOCAL_PORT")
     if puerto_local:
         return {
             "host": "127.0.0.1",
             "port": int(puerto_local),
             "user": "postgres",
-            "password": os.environ.get("TEST_DB_LOCAL_PASSWORD", "postgres"),
+            "password": os.environ["TEST_DB_LOCAL_PASSWORD"],
             "database": "postgres",
             "statement_cache_size": 0,
             "timeout": 15,

@@ -329,7 +329,7 @@ Plan y hallazgos en `docs/superpowers/plans/2026-10-11-certification-audit.md` (
 **La copia local** vive en `.superpowers/local-sim/` (fuera de git):
 - Supabase local con el esquema de producción, solo estructura, en los puertos 5532x.
 - Datos 100 % ficticios. La API corre en :8100 y la web en :3100.
-- Usuarios: `cert@sim.local` / `ops@sim.local` / `owner@sim.local`, contraseña `Simulacion-2026`.
+- Usuarios: `cert@sim.local` / `ops@sim.local` / `owner@sim.local`; la contraseña está en `.superpowers/local-sim/sim.env` (fuera del repo).
 - Para levantarla: `supabase start` en esa carpeta. Después la API con `api.env` (llave service_role en formato JWT) y `next dev -p 3100` con las variables `NEXT_PUBLIC_*` y `FASTAPI_URL` locales.
 
 **Hecho:**
