@@ -237,8 +237,19 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
        y teléfono en `.playwright-mcp/e2-*.png`. **Desplegada** (Deploy Frontend verde) y recorrida en dev (Propietario,
        solo lectura): Empresas con columnas y las 36 activas, Por asignar con encabezado y "Todo asignado" (la cola de dev
        está vacía, así que la tabla nueva solo se vio en la copia local); 0 errores de consola.
-     **Siguiente:** que el usuario mire Entregas 1 y 2 en dev. Con eso la spec de fichas y navegación queda cerrada
-     (fuera: Cmd+K).
+     - **Listas del Directorio con el kit (15/10, `69c4f888`)**, a pedido del usuario ("me aparece una mezcla de modal
+       antiguo/nuevo"; eligió "las 2"): en Directorio › Empresas el clic en la fila abría `TransporterSlideOver`, un
+       tercer resumen de la empresa con diseño viejo (anillo, checklist, mayúsculas), que la Entrega 1 no retiró. Ahora la
+       fila y la tarjeta abren la ficha con `?next=` y el modal se borró. Ciclo de vida y habilitación con
+       `SegmentedControl` (las tarjetas de cifras `AlertStatTiles` salen de esta pantalla; siguen en Seguros), `CABECERA`,
+       "Nueva empresa" en el encabezado, `Estado` para cargando/vacío/error, sin conteos "0" en vuelo. Conductores y
+       Equipos: cabecera del kit y la fila entera abre la ficha. `ViewToggle` sobre `SegmentedControl` (también el
+       Monitor). Tests L1-L6 + ViewToggle (L6 y L1 de FleetList verificados con mutación). Área 1.419 (10 fallaron por
+       tiempo con la máquina cargada y pasaron solos, 330/330), tsc OK, humo 20/20 (2 logins lentos, pasaron solos),
+       trinquetes 1.142 / bajo 11 px 163. Desplegado (Deploy Frontend verde) y recorrido en dev (Propietario, solo
+       lectura): la fila de Hasa Spa abre su ficha con `?next=`, atrás vuelve a la lista; sin modal, 0 errores de dev.
+     **Siguiente:** que el usuario mire Entregas 1 y 2 y las listas del Directorio en dev. Con eso la spec de fichas y
+     navegación queda cerrada (fuera: Cmd+K).
   2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
      el 409 solo ocurre con la pantalla vieja). La salida del 409 en `AltaDeFlota` pasó a ser del anfitrión
