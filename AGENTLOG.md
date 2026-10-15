@@ -283,8 +283,12 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
        normal, submódulos Pólizas y Cuotas, ficha de póliza con ProfileLayout). Maqueta: companion
        `.superpowers/brainstorm/56411-1792100703/content/seguros.html`. El usuario aprobó la dirección ("estoy ok");
        D1 (plazo a Configuración) y D2 (2+ cuotas impagas es regla del negocio) van con mi recomendación, a confirmar.
-     **Siguiente:** el usuario revisa la spec y la maqueta de Seguros → plan (writing-plans) → ejecución. La migración
-       se ensaya en local y con ROLLBACK en la real, y se aplica solo con autorización. Con eso la spec de fichas y
+       Configuración: el usuario la ve "Frankenstein, desalineada con la industria" → proyecto aparte, DESPUÉS de
+       Seguros (auditoría + maqueta + spec + plan). Seguros no le agrega pantallas (D1 = dato en la base sin UI).
+       Plan en dos entregas (expandir y contraer): `docs/superpowers/plans/2026-10-16-seguros-e1-modelo-y-api.md` y
+       `…-e2-pantallas.md`.
+     **Siguiente:** el usuario revisa los dos planes → ejecutar E1 inline (migración: ensayo local + ROLLBACK real, se
+       aplica solo con autorización) → E2 → después Configuración. Con eso la spec de fichas y
      navegación queda cerrada (fuera: Cmd+K).
   2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
