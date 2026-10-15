@@ -14,7 +14,7 @@ import { CLOSURE_NOTICE, directoryKeys, invalidateDirectory, type DirectoryChang
 import { assetHref, driverHref, returnLink } from '@/lib/navegacion/directory'
 import { monitorSearchHref } from '@/lib/navegacion/viaje'
 import { blockingReason, fleetMemberStyle, isCarrierDeactivated, summaryStyle, type StateStyle } from '@/lib/states'
-import { diaMes } from '@/lib/pending'
+import { diaMes, isBlockingPending } from '@/lib/pending'
 import { useAssetTypes } from '@/hooks/useAssetTypes'
 import { Estado } from '@/components/ui/Estado'
 import { Tabs, type TabOption } from '@/components/ui/Tabs'
@@ -30,7 +30,7 @@ import { DetailShell } from './DetailShell'
 import { CorrectIdentityModal } from './CorrectIdentityModal'
 import { BajaReasonModal } from './BajaReasonModal'
 import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
-import { EntityDocuments } from '@/components/compliance/EntityDocuments'
+import { EntityDocuments, useEntityPendingRows } from '@/components/compliance/EntityDocuments'
 import type { AssignmentPeriod, EntityActivity } from '@/lib/types'
 
 export type FleetKind = 'driver' | 'asset'
@@ -87,15 +87,8 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
   const assetQuery = useQuery({
     queryKey: directoryKeys.assetDetail(id), queryFn: () => assetsApi.get(id), enabled: kind === 'asset', retry: false,
   })
-  // Los documentos, para nombrar en el encabezado lo que bloquea. Dos consultas
-  // explícitas, como el detalle: las claves son las que invalida el Directorio.
-  const driverRecordsQuery = useQuery({
-    queryKey: ['driver-compliance-records', id], queryFn: () => driversApi.listComplianceRecords(id), enabled: kind === 'driver',
-  })
-  const assetRecordsQuery = useQuery({
-    queryKey: ['asset-compliance-records', id], queryFn: () => assetsApi.listComplianceRecords(id), enabled: kind === 'asset',
-  })
-  const recordsQuery = kind === 'driver' ? driverRecordsQuery : assetRecordsQuery
+  // Lo que bloquea, para el encabezado: las mismas filas que la sección Documentos.
+  const pendingRowsQuery = useEntityPendingRows(id)
   const historyQuery = useQuery({
     queryKey: directoryKeys.assignments(kind, id),
     queryFn: () => (kind === 'driver' ? driversApi.assignments(id) : assetsApi.assignments(id)),
@@ -137,7 +130,10 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
        summaryStyle(summary.compliance_summary, active),
        ...(summary.carrier ? [] : [NO_CARRIER])]
     : null
-  const reason = summary ? blockingReason(recordsQuery.data, summary.compliance_summary, active) : null
+  const reason = summary
+    ? blockingReason(pendingRowsQuery.data?.rows.filter(isBlockingPending).map(r => ({ name: r.document_name, document_state: r.document_state })),
+        summary.compliance_summary, active)
+    : null
 
   async function afterChange(change: DirectoryChange, done?: string) {
     const { affectsClosure } = await invalidateDirectory(queryClient, change)
@@ -224,8 +220,7 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
             : <AssetEditForm asset={asset!} carrierId={carrierId} drivers={carrierDriversQuery.data ?? []} onSave={patch} onClose={close} />} />
       )}
       {tab === 'documentos' && (
-        <EntityDocuments entityType={kind === 'driver' ? 'DRIVER' : 'ASSET'} entityId={id} carrierId={carrierId}
-          requested={new Set((recordsQuery.data ?? []).filter(r => r.open_request_id).map(r => r.requirement_id))} />
+        <EntityDocuments entityType={kind === 'driver' ? 'DRIVER' : 'ASSET'} entityId={id} carrierId={carrierId} />
       )}
       {tab === 'contactos' && kind === 'driver' && <DriverContacts driverId={id} canEdit={canEdit} canDelete={canAdmin} />}
 

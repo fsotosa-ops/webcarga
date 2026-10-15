@@ -430,7 +430,7 @@ def _pending_row(**overrides):
         # saber si pedir la fecha ANTES de subir.
         "exigible_desde": None, "expiration_policy": "REQUIRED",
         "vence_el": None, "falta_dato_de_vigencia": False, "issue_date": None, "period_start": None,
-        "a_pedido": False, "document_state": "MISSING",
+        "a_pedido": False, "open_request_id": None, "document_state": "MISSING",
         "due_on": None, "missing_validity_data": False, "entered_on": None,
         # Si la fila tiene un archivo cargado. Sale de `file_url`, no de una
         # lectura de `status` — ver el test de mas abajo.

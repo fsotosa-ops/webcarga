@@ -24,10 +24,10 @@ function fila(over: Partial<PendingComplianceRow>): PendingComplianceRow {
   } as PendingComplianceRow
 }
 
-function montar(carrierId: string | null = 'c1', requested: ReadonlySet<string> = new Set()) {
+function montar(carrierId: string | null = 'c1') {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <EntityDocuments entityType="DRIVER" entityId="d1" carrierId={carrierId} requested={requested} />
+      <EntityDocuments entityType="DRIVER" entityId="d1" carrierId={carrierId} />
     </QueryClientProvider>,
   )
 }
@@ -60,7 +60,8 @@ describe('EntityDocuments (la sección Documentos de una ficha)', () => {
     vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 1, rows: [fila({ carrier_id: null as never })] } as never)
     montar(null)
     expect(await screen.findByText('Licencia de conducir')).toBeInTheDocument()
-    expect(complianceApi.listPending).toHaveBeenCalledWith(expect.objectContaining({ entityId: 'd1', carrierId: undefined, estado: 'todos' }))
+    // Por entidad, sin la empresa: así una empresa distinta en el registro no la vacía.
+    expect(vi.mocked(complianceApi.listPending).mock.calls[0][0]).toEqual({ entityId: 'd1', estado: 'todos', limit: 200 })
   })
 
   // La API exige documents.review para reasignar (POST …/reassign): con solo
@@ -89,9 +90,10 @@ describe('EntityDocuments (la sección Documentos de una ficha)', () => {
   it('Operaciones (sin documents.upload, con certification.request) pide el documento a Certificación', async () => {
     negados.set = new Set(['documents.upload'])
     vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 2, rows: [
-      fila({ id: 'p1', requirement_id: 'r1' }), fila({ id: 'p2', requirement_id: 'r2', document_name: 'Hoja de vida' }),
+      fila({ id: 'p1', requirement_id: 'r1' }),
+      fila({ id: 'p2', requirement_id: 'r2', document_name: 'Hoja de vida', open_request_id: 'q-abierto' }),
     ] } as never)
-    montar('c1', new Set(['r2']))
+    montar('c1')
     fireEvent.click(await screen.findByRole('button', { name: 'Pedir Licencia de conducir a Certificación' }))
     await waitFor(() => expect(certificationRequestsApi.create).toHaveBeenCalledWith({ entity_type: 'DRIVER', entity_id: 'd1', requirement_id: 'r1' }))
     // La que ya estaba pedida y la recién pedida.

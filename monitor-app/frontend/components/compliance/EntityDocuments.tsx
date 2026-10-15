@@ -25,12 +25,21 @@ const URGENCY: Exclude<Filter, 'all'>[] = ['OVERDUE', 'MISSING', 'EXPIRING']
  *  franja de subida en lote y las mismas filas (`SubjectDocumentRows`) que la
  *  ficha de empresa. Pide por entidad: sin empresa igual muestra sus
  *  documentos (RF1; la ficha existe sin empresa, C5). */
-export function EntityDocuments({ entityType, entityId, carrierId, requested }: {
+/** Las filas de /pending de una entidad (todas, por entidad). La comparten la
+ *  sección Documentos y el encabezado de la ficha (la razón y lo pedido), así una
+ *  subida o un pedido actualiza las dos (revisión final de la Entrega 1). */
+export function useEntityPendingRows(entityId: string) {
+  return useQuery({
+    queryKey: clavesCertificacion.pendientes(undefined, entityId, 'todos'),
+    queryFn: () => complianceApi.listPending({ entityId, estado: 'todos', limit: 200 }),
+  })
+}
+
+export function EntityDocuments({ entityType, entityId, carrierId }: {
   entityType: 'DRIVER' | 'ASSET'
   entityId: string
+  /** Para reasignar y para el contexto de la subida en lote; la consulta es por entidad. */
   carrierId: string | null
-  /** Los requisitos que Operaciones ya pidió a Certificación (`requirement_id`). */
-  requested?: ReadonlySet<string>
 }) {
   const canEdit = usePermiso('documents.upload')
   const puedeRevisar = usePermiso('documents.review')
@@ -40,10 +49,10 @@ export function EntityDocuments({ entityType, entityId, carrierId, requested }: 
   const preview = useDocumentPreview(canEdit)
   const [chosen, setChosen] = useState<Filter | null>(null)
 
-  const rowsQuery = useQuery({
-    queryKey: clavesCertificacion.pendientes(carrierId ?? undefined, entityId, 'todos'),
-    queryFn: () => complianceApi.listPending({ carrierId: carrierId ?? undefined, entityId, estado: 'todos', limit: 200 }),
-  })
+  // Por entidad, sin la empresa: si la empresa del registro difiere (una
+  // transferencia en curso) filtrar por ella dejaría la sección vacía. Es la
+  // misma consulta que usa la ficha para su encabezado: comparten caché.
+  const rowsQuery = useEntityPendingRows(entityId)
   const rows = rowsQuery.data?.rows ?? []
   const count = (s: DocumentState) => rows.filter(r => r.document_state === s).length
   const filter: Filter = chosen ?? URGENCY.find(s => count(s) > 0) ?? 'all'
@@ -77,11 +86,10 @@ export function EntityDocuments({ entityType, entityId, carrierId, requested }: 
                                preview={preview}
                                subir={(fila, archivo, datos) => subirDocumento(fila.id, archivo, datos)}
                                onFechaCorregida={() => { void invalidarCertificacion(queryClient) }}
-                               requested={requested}
                                onRequest={puedePedir ? async fila => {
                                  await certificationRequestsApi.create({ entity_type: entityType, entity_id: entityId, requirement_id: fila.requirement_id })
-                                 // La ficha lee de sus documentos qué está pedido.
-                                 await queryClient.invalidateQueries({ queryKey: [entityType === 'DRIVER' ? 'driver-compliance-records' : 'asset-compliance-records', entityId] })
+                                 // La fila dice qué está pedido: se vuelve a leer.
+                                 await invalidarCertificacion(queryClient)
                                } : undefined} />
         </Table>
       )}

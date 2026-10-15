@@ -888,6 +888,8 @@ export type PendingComplianceRow = {
   period_start?:              string | null
   /** Existe porque alguien lo solicitó ("solo cuando se solicita"). */
   a_pedido?:                  boolean
+  /** Pedido abierto de Operaciones a Certificación para este documento (Entrega B). */
+  open_request_id?:           string | null
 }
 
 export type PendingComplianceListResponse = {

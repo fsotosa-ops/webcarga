@@ -146,7 +146,7 @@ const NO_DEPENDEN_DEL_DIRECTORIO = new Set([
   'compliance-requirements', 'recalc-preview', 'vigencia-preview',     // configuración
   'planilla-vencimientos', 'config-inventario', 'config-busqueda', 'solicitables',
   'config-revisiones',                                                 // configuración (revision.tsx, clave en variable)
-  'compliance-record-file', 'driver-compliance-records', 'asset-compliance-records', // documentos de una ficha abierta
+  'compliance-record-file', // el archivo de un documento abierto
   'compliance-pending-drawer',                                         // invalidada en CondicionPanel, ninguna consulta la lee
   'driver-contacts',                                                   // la invalida su propio panel
   'carrier-policies', 'policy-detail',                                 // Seguros: no cambia con el maestro

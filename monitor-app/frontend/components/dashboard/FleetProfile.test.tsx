@@ -21,13 +21,14 @@ vi.mock('@/lib/api/assets', () => ({
 vi.mock('@/lib/api/entitySummary', async (orig) => ({ ...(await orig<object>()), fetchEntitySummary: vi.fn() }))
 vi.mock('@/lib/api/locations', () => ({ locationsApi: { list: vi.fn().mockResolvedValue({ data: [{ id: 'cd1', name: 'CD Quilicura' }] }) } }))
 vi.mock('@/lib/api/carriers', () => ({ carriersApi: { listDrivers: vi.fn().mockResolvedValue([]), unassignDriver: vi.fn().mockResolvedValue({}), unassignAsset: vi.fn(), assignDriver: vi.fn(), assignAsset: vi.fn(), list: vi.fn().mockResolvedValue({ data: [] }) } }))
-vi.mock('@/lib/api/compliance', () => ({ complianceApi: { listPending: vi.fn().mockResolvedValue({ total: 0, rows: [] }), get: vi.fn() } }))
+vi.mock('@/lib/api/compliance', () => ({ complianceApi: { listPending: vi.fn(), get: vi.fn() } }))
 vi.mock('@/lib/api/config', () => ({ taxonomiesApi: { list: vi.fn().mockResolvedValue([]) } }))
 vi.mock('@/hooks/useAssetTypes', () => ({ useAssetTypes: () => ({ types: [{ code: 'TRACTOCAMION', label: 'Tracto' }], labelOf: () => 'Tracto' }) }))
 
 import { driversApi } from '@/lib/api/drivers'
 import { assetsApi } from '@/lib/api/assets'
 import { fetchEntitySummary } from '@/lib/api/entitySummary'
+import { complianceApi } from '@/lib/api/compliance'
 import { complianceSummary } from '@/lib/states.fixtures'
 import { FleetProfile } from './FleetProfile'
 import { QuickViewContext } from './QuickViewProvider'
@@ -44,9 +45,11 @@ const RESUMEN_CONDUCTOR = {
   documents: { total: 3, up_to_date: 1, pending: 2 },
   compliance_summary: complianceSummary({ worst_state: 'OVERDUE', can_operate: false, blocking: { own: 2, fleet: null } }),
 }
-const REGISTROS = [
-  { id: 'r1', name: 'Licencia de conducir', requirement_level: 'LEGAL_MANDATORY', document_state: 'OVERDUE' },
-  { id: 'r2', name: 'Hoja de vida', requirement_level: 'LEGAL_MANDATORY', document_state: 'MISSING' },
+// Las filas de /pending de la persona: de ahí salen la razón y la sección Documentos.
+const FILAS = [
+  { id: 'r1', document_name: 'Licencia de conducir', certification_type: 'BASICA', document_state: 'OVERDUE', requirement_id: 'q1' },
+  { id: 'r2', document_name: 'Hoja de vida', certification_type: 'BASICA', document_state: 'MISSING', requirement_id: 'q2' },
+  { id: 'r3', document_name: 'Curso', certification_type: 'ADICIONAL', document_state: 'MISSING', requirement_id: 'q3' },
 ]
 const ASSET = {
   id: 'a1', license_plate: 'BBPV80', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', manufacture_year: 2019,
@@ -82,7 +85,8 @@ beforeEach(() => {
     { carrier_id: 'c0', carrier_name: 'Riquelme Hnos.', carrier_status: 'ACTIVE', valid_from: null, valid_until: '2026-09-19', current: false },
   ])
   vi.mocked(driversApi.activity).mockResolvedValue({ trips_30d: 18, last_trip_date: '2026-10-13', last_trip_client: 'Walmart' })
-  vi.mocked(driversApi.listComplianceRecords).mockResolvedValue(REGISTROS as never)
+  vi.mocked(complianceApi.listPending).mockReset().mockImplementation(async (params: { entityId?: string } = {}) =>
+    ({ total: 3, rows: params.entityId === 'd1' ? FILAS : [] }) as never)
   vi.mocked(driversApi.listContacts).mockResolvedValue([])
   vi.mocked(fetchEntitySummary).mockImplementation(async (kind: string) => (kind === 'driver' ? RESUMEN_CONDUCTOR : RESUMEN_EQUIPO) as never)
   vi.mocked(assetsApi.get).mockResolvedValue(ASSET as never)

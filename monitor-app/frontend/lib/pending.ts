@@ -1,6 +1,6 @@
 import type { StatusTone } from '@/components/ui/StatusChip'
 import { camposQuePide, expiryRelative, nombreDelPeriodo } from './compliance'
-import { documentStateStyle } from './states'
+import { BLOCKING_STATES, documentStateStyle } from './states'
 import { corta, periodoQueSeExige, vigenciaDe } from './vigencia'
 import { hoyEnChile } from './utils/datetime'
 import type { PendingComplianceRow, PendingFilter, PendingSummaryRow } from './types'
@@ -83,3 +83,11 @@ export function defaultPendingFilter(
   if (row.missing > 0) return 'missing'
   return 'overdue'
 }
+
+/** Lo que bloquea la habilitación, sobre una fila de /pending: un obligatorio
+ *  (`certification_type = 'BASICA'`, LEGAL_MANDATORY) vencido o faltante. Es la
+ *  misma regla que `blocking` en la API (F2). */
+export function isBlockingPending(fila: Pick<PendingComplianceRow, 'certification_type' | 'document_state'>): boolean {
+  return fila.certification_type === 'BASICA' && BLOCKING_STATES.includes(fila.document_state)
+}
+

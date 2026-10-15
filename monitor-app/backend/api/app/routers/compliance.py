@@ -524,11 +524,20 @@ SELECT
     COALESCE(r.vence_calculado = '-infinity', false) AS missing_validity_data,
     r.entered_on,
     r.issue_date, r.period_start, r.a_pedido,
+    rq.id::text AS open_request_id,
     c.id::text AS carrier_id, c.business_name AS carrier_name, c.tax_id AS carrier_tax_id,
     COALESCE(cot.operation_types, ARRAY[]::text[]) AS carrier_operation_types,
     count(*) OVER() AS total_count
 FROM resolved r
 LEFT JOIN public.carriers c ON c.id = r.resolved_carrier_id
+-- Si Operaciones ya lo pidió a Certificación (Entrega B): la ficha lo marca desde
+-- estas mismas filas (revisión final de la Entrega 1 de fichas).
+LEFT JOIN LATERAL (
+    SELECT q.id FROM app.certification_requests q
+    WHERE q.status = 'OPEN' AND q.entity_type = r.entity_type AND q.entity_id = r.entity_id
+      AND q.requirement_id = r.requirement_id
+    LIMIT 1
+) rq ON true
 LEFT JOIN carrier_operation_types cot ON cot.carrier_id = c.id
 -- $8 nulo = sin filtro de estado. NO es "traer todo por defecto": lo
 -- pasa nulo UNICAMENTE la consulta acotada a UNA empresa (ver
@@ -709,6 +718,7 @@ async def list_pending_compliance_records(
             "carrier_tax_id": r["carrier_tax_id"],
             "carrier_operation_types": list(r["carrier_operation_types"]),
             "certification_type": _certification_type(r["requirement_level"]),
+            "open_request_id": r["open_request_id"],
             "category": _CATEGORY_BY_ENTITY_TYPE[r["entity_type"]],
             "entity_type": r["entity_type"],
             "entity_id": r["entity_id"],
