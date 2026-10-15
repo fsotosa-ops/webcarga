@@ -11,6 +11,9 @@ import { dueRelative } from '@/lib/utils/installments'
 import { InsurancePolicyModal } from '@/components/dashboard/InsurancePolicyModal'
 import type { CarrierInsuranceOverviewItem, CarrierOperationalStatus, InsuranceOverviewFacets } from '@/lib/types'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { Estado } from '@/components/ui/Estado'
+import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
 import { EntityCell } from '@/components/dashboard/EntityCell'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { CARRIER_LIFECYCLE_GROUP_LABELS } from '@/lib/states'
@@ -102,10 +105,12 @@ function SegurosPageInner() {
   const fetching = query.isFetching
   const error = query.error ? (query.error instanceof Error ? query.error.message : 'Error cargando seguros') : null
 
-  const statusTabCounts: Record<StatusTab, number> = {
-    [statusTab]: facets.total,
-    [otherStatusTabId]: otherStatusQuery.data?.facets.total ?? 0,
-  } as Record<StatusTab, number>
+  // `undefined` mientras la consulta está en vuelo: un "0" ahí afirma algo falso.
+  const statusTabCounts: Record<StatusTab, number | undefined> = {
+    [statusTab]: query.data?.facets.total,
+    [otherStatusTabId]: otherStatusQuery.data?.facets.total,
+  } as Record<StatusTab, number | undefined>
+  const badge = (n: number | undefined) => n === undefined ? undefined : String(n)
 
   const emptyLabel = q ? 'Sin resultados' : `Sin empresas ${statusTab === 'active' ? 'activas' : 'inactivas'} en esta categoría`
 
@@ -114,68 +119,43 @@ function SegurosPageInner() {
       <div>
         <EncabezadoDePagina
           titulo="Seguros"
-          bajada={loading ? '…' : `${facets.total.toLocaleString('es-CL')} empresa${facets.total !== 1 ? 's' : ''} con seguimiento de pólizas`}
+          bajada={!query.data ? '…' : `${facets.total.toLocaleString('es-CL')} empresa${facets.total !== 1 ? 's' : ''} con seguimiento de pólizas`}
         />
       </div>
 
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">
-        {STATUS_TABS.map(t => {
-          const active = statusTab === t.id
-          return (
-            <button
-              key={t.id}
-              onClick={() => setStatusTab(t.id)}
-              aria-pressed={active}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {t.label} <span className="ml-1 text-gray-400">{statusTabCounts[t.id]}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">
-        {TABS.map(t => {
-          const active = tab === t.id
-          return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              aria-pressed={active}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {t.label} <span className="ml-1 text-gray-400">{facets[t.facetKey]}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="bg-white border border-border rounded-2xl px-3.5 py-2.5 flex items-center gap-2 flex-wrap">
+      {/* Con el control segmentado del kit (15/10): el ciclo de vida de la empresa
+          y el estado de sus pólizas, al lado del buscador. */}
+      <div className="bg-white border border-border rounded-2xl px-3.5 py-2.5 flex items-center gap-3 flex-wrap">
         <div className="relative shrink-0">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-informativo pointer-events-none" aria-hidden="true" />
           <input
             value={q}
             onChange={e => setQ(e.target.value)}
-            placeholder="Nombre o tax_id…"
-            className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-60 bg-white placeholder:text-gray-400 transition-all"
+            placeholder="Nombre o RUT…"
+            aria-label="Buscar empresa por nombre o RUT"
+            className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-60 max-w-full bg-white placeholder:text-informativo"
           />
         </div>
+        <SegmentedControl
+          label="Ciclo de vida"
+          options={STATUS_TABS.map(t => ({ id: t.id, label: t.label, badge: badge(statusTabCounts[t.id]) }))}
+          value={statusTab}
+          onChange={setStatusTab}
+        />
+        <SegmentedControl
+          label="Estado de las pólizas"
+          options={TABS.map(t => ({ id: t.id || 'all', label: t.label, badge: badge(query.data?.facets[t.facetKey]) }))}
+          value={tab || 'all'}
+          onChange={id => setTab(id === 'all' ? '' : id as HealthTab)}
+        />
       </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{error}</div>
-      )}
-
-      {loading ? (
-        <div className="flex items-center justify-center py-20 text-gray-400 gap-2 text-sm">
-          <Loader2 size={16} className="animate-spin" /> Cargando…
-        </div>
+      {error ? (
+        <Estado tipo="error" titulo="No se pudieron cargar los seguros" detalle={error} />
+      ) : loading ? (
+        <Estado tipo="cargando" />
       ) : items.length === 0 ? (
-        <p className="bg-white rounded-2xl border border-border px-4 py-14 text-center text-sm text-gray-400">{emptyLabel}</p>
+        <Estado tipo="vacio" titulo={emptyLabel} />
       ) : (
         <div className={`transition-opacity duration-150 ${fetching ? 'opacity-60' : ''}`}>
           {/* Mobile: cards (misma resolución que TransporterCard en Empresas — una tabla
@@ -199,7 +179,7 @@ function SegurosPageInner() {
                       <p className="font-semibold text-sm text-text-primary truncate leading-tight">
                         {item.business_name || <span className="italic text-gray-400">Sin nombre</span>}
                       </p>
-                      <p className="text-[11px] text-gray-400 mt-0.5 font-mono">{item.tax_id}</p>
+                      <p className="text-etiqueta text-informativo mt-0.5 font-identificador">{item.tax_id}</p>
                     </div>
                     <ChevronRight size={16} className="text-gray-300 shrink-0" />
                   </div>
@@ -228,13 +208,13 @@ function SegurosPageInner() {
           <div className="hidden md:block bg-white rounded-2xl border border-border overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50">
-                  <th className="px-3 py-3 text-left">Empresa</th>
-                  <th className="px-3 py-3 text-left w-32">Estado</th>
-                  <th className="px-3 py-3 text-center w-24">Pólizas</th>
-                  <th className="px-3 py-3 text-center w-28">Cuotas vencidas</th>
-                  <th className="px-3 py-3 text-left w-40">Próximo pago</th>
-                  <th className="px-3 py-3 w-8"></th>
+                <tr className="border-b border-border bg-bg-main">
+                  <th scope="col" className={CABECERA}>Empresa</th>
+                  <th scope="col" className={`${CABECERA} w-32`}>Estado</th>
+                  <th scope="col" className={`${CABECERA} w-24 !text-center`}>Pólizas</th>
+                  <th scope="col" className={`${CABECERA} w-28 !text-center`}>Cuotas vencidas</th>
+                  <th scope="col" className={`${CABECERA} w-40`}>Próximo pago</th>
+                  <th scope="col" className={`${CABECERA} w-8`}><span className="sr-only">Abrir</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -257,7 +237,7 @@ function SegurosPageInner() {
                             ? <EntityCell kind="carrier" id={item.carrier_id} label={item.business_name} />
                             : <span className="italic text-gray-400">Sin nombre</span>}
                         </p>
-                        <p className="text-[11px] text-gray-400 font-mono">{item.tax_id}</p>
+                        <p className="text-etiqueta text-informativo font-identificador">{item.tax_id}</p>
                       </td>
                       <td className="px-3 py-3">
                         {badge ? (

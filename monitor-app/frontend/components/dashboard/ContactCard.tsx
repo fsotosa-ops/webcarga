@@ -20,6 +20,14 @@ export type ContactAddBody = { contact_role: string; first_name?: string; last_n
  *  DriverDetailPanel (el usuario pidió poder registrar teléfono/email de
  *  conductores, aceptando más de uno). Múltiples teléfonos/emails se logran
  *  con varias filas de contacto, no con arrays en un solo contacto. */
+/** El nombre de cada rol. `contact_role` es texto abierto en la base (sin CHECK):
+ *  uno desconocido se muestra tal cual en vez de perderse. */
+const CONTACT_ROLE_LABELS: Record<string, string> = {
+  LEGAL_REP: 'Representante legal', OPERATIONS: 'Operacional', FINANCE: 'Finanzas', DOCUMENTS: 'Documentos',
+  PERSONAL: 'Personal', EMERGENCIA: 'Emergencia', OTRO: 'Otro',
+}
+export const contactRoleLabel = (role: string) => CONTACT_ROLE_LABELS[role] ?? role
+
 export function ContactCard({ contact, canEdit, canDelete, onSaved, onDeleted }: {
   contact: ContactLike
   canEdit: boolean
@@ -60,7 +68,7 @@ export function ContactCard({ contact, canEdit, canDelete, onSaved, onDeleted }:
   if (editing) {
     return (
       <div className="border border-accent/40 rounded-lg p-3 space-y-1.5">
-        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">{contact.contact_role}</p>
+        <p className="text-etiqueta font-semibold text-informativo mb-1">{contactRoleLabel(contact.contact_role)}</p>
         <input value={draft.name} onChange={e => setDraft(v => ({ ...v, name: e.target.value }))} placeholder="Nombre"
           className="w-full text-xs border border-border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30" />
         <input value={draft.phone} onChange={e => setDraft(v => ({ ...v, phone: e.target.value }))} placeholder="Teléfono"
@@ -80,7 +88,7 @@ export function ContactCard({ contact, canEdit, canDelete, onSaved, onDeleted }:
 
   return (
     <div className="border border-border/60 rounded-lg p-3 group relative">
-      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">{contact.contact_role}</p>
+      <p className="text-etiqueta font-semibold text-informativo mb-1.5">{contactRoleLabel(contact.contact_role)}</p>
       <p className="text-xs font-semibold text-text-primary truncate">{name || <span className="text-gray-300 italic">sin nombre</span>}</p>
       {contact.phone && <a href={`tel:${contact.phone}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent">{contact.phone}</a>}
       {contact.email && <a href={`mailto:${contact.email}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent truncate"><span className="truncate">{contact.email}</span></a>}
@@ -127,7 +135,7 @@ export function AddContactForm({ roleOptions, onAdd }: {
   return (
     <div className="border border-accent/40 rounded-lg p-3 space-y-1.5">
       <select value={role} onChange={e => setRole(e.target.value)} className="w-full text-xs border border-border rounded px-2 py-1">
-        {roleOptions.map(r => <option key={r} value={r}>{r}</option>)}
+        {roleOptions.map(r => <option key={r} value={r}>{contactRoleLabel(r)}</option>)}
       </select>
       <input value={name} onChange={e => setName(e.target.value)} placeholder="Nombre" className="w-full text-xs border border-border rounded px-2 py-1" />
       <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Teléfono" className="w-full text-xs border border-border rounded px-2 py-1" />

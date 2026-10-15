@@ -1,10 +1,10 @@
 'use client'
 
-import { Suspense, useEffect, useState, useMemo } from 'react'
+import { Suspense, useState, useMemo } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Loader2, Search, Upload } from 'lucide-react'
+import { ArrowLeft, Loader2, Upload } from 'lucide-react'
 import { carriersApi } from '@/lib/api/carriers'
 import type { AssetType } from '@/lib/api/assets'
 import { contactsApi } from '@/lib/api/contacts'
@@ -12,13 +12,14 @@ import { Tabs } from '@/components/ui/Tabs'
 import { ProfileHeader } from '@/components/directory/ProfileHeader'
 import { DetailsBlock } from '@/components/directory/DetailsBlock'
 import { CarrierEditForm, InsuranceLine } from '@/components/directory/CarrierDetails'
-import { SEVERITY_ORDER, documentStateStyle, enablementStyle, lifecycleStyle, carrierBlockingReason, type ComplianceSummary, type DocumentState } from '@/lib/states'
+import { SEVERITY_ORDER, enablementStyle, lifecycleStyle, carrierBlockingReason, type ComplianceSummary, type DocumentState } from '@/lib/states'
 import { canonicalPlate, canonicalRut, plateSearchKey, rutDigits, rutSearchKey } from '@/lib/identity'
-import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { ContactCard, AddContactForm } from '@/components/dashboard/ContactCard'
 import { CarrierDocumentsTab } from '@/components/dashboard/carriers/CarrierDocumentsTab'
-import { DriverRosterCard } from '@/components/dashboard/DriverRosterCard'
-import { VehicleRosterCard } from '@/components/dashboard/VehicleRosterCard'
+import { FleetRosterTable } from '@/components/directory/FleetRosterTable'
+import { AsidePanel, ProfileLayout } from '@/components/directory/ProfileLayout'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { Estado } from '@/components/ui/Estado'
 import { DirectoryNotice } from '@/components/dashboard/DirectoryNotice'
 import { FleetProfile } from '@/components/dashboard/FleetProfile'
 import { AltaDeFlota } from '@/components/dashboard/AltaDeFlota'
@@ -35,9 +36,8 @@ import { useAssetTypes } from '@/hooks/useAssetTypes'
 import { returnLink } from '@/lib/navegacion/directory'
 import { CLOSURE_NOTICE, directoryKeys, invalidateDirectory, type DirectoryChange } from '@/lib/queries/directorio'
 
-const ROSTER_PAGE_SIZE = 9
-
-type Tab = 'resumen' | 'documentos' | 'conductores' | 'equipos' | 'seguros' | 'contactos'
+type Tab = 'documentos' | 'conductores' | 'equipos' | 'seguros'
+const TABS: Tab[] = ['documentos', 'conductores', 'equipos', 'seguros']
 
 const CONTACT_ROLE_OPTIONS = ['LEGAL_REP', 'OPERATIONS', 'FINANCE', 'DOCUMENTS']
 
@@ -61,7 +61,9 @@ function EmpresaDetailPageInner() {
   const searchParams = useSearchParams()
   const handoffDriverName   = searchParams.get('driver_name')
   const handoffTractorPlate = searchParams.get('tractor_plate')
-  const requestedTab        = searchParams.get('tab') as Tab | null
+  // "Resumen" y "Contactos" dejaron de ser pestañas (15/10): un enlace guardado a
+  // ellas abre Documentos.
+  const requestedTab        = TABS.find(t => t === searchParams.get('tab')) ?? null
   // Deep-link desde Certificación: abre directo el panel de ese conductor o
   // vehículo, que es donde se carga su documentación.
   const requestedDriverId   = searchParams.get('driver')
@@ -77,7 +79,7 @@ function EmpresaDetailPageInner() {
   // SUS permisos, los mismos que exige la API (L5, 11/10).
   const canUploadDocuments = usePermiso('documents.upload')
   const [activeTab, setActiveTab] = useState<Tab>(
-    requestedTab ?? (handoffDriverName ? 'conductores' : handoffTractorPlate ? 'equipos' : 'resumen'),
+    requestedTab ?? (handoffDriverName ? 'conductores' : handoffTractorPlate ? 'equipos' : 'documentos'),
   )
   const [exportingDocs, setExportingDocs] = useState(false)
   const [exportErr, setExportErr]         = useState<string | null>(null)
@@ -86,12 +88,10 @@ function EmpresaDetailPageInner() {
   const [selectedAssetId,   setSelectedAssetId]   = useState<string | null>(requestedAssetId)
   const [driverQ,  setDriverQ]  = useState('')
   const [driverHealthFilter, setDriverHealthFilter] = useState<DocumentState | ''>('')
-  const [driverShowAll, setDriverShowAll] = useState(false)
   const [assetQ,   setAssetQ]   = useState('')
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetType | 'todos'>('todos')
   const { types: assetTypes, labelOf: assetTypeLabel } = useAssetTypes()
   const [assetHealthFilter, setAssetHealthFilter] = useState<DocumentState | ''>('')
-  const [assetShowAll, setAssetShowAll] = useState(false)
 
   const [addDriverOpen,  setAddDriverOpen]  = useState(!!handoffDriverName)
   const [addAssetOpen,   setAddAssetOpen]   = useState(!!handoffTractorPlate)
@@ -275,11 +275,6 @@ function EmpresaDetailPageInner() {
     return matchesQ && matchesType && matchesState
   }), [assets, assetQ, assetTypeFilter, assetHealthFilter])
 
-  useEffect(() => { setDriverShowAll(false) }, [driverQ, driverHealthFilter])
-  useEffect(() => { setAssetShowAll(false) }, [assetQ, assetTypeFilter, assetHealthFilter])
-
-  const visibleDrivers = driverShowAll ? filteredDrivers : filteredDrivers.slice(0, ROSTER_PAGE_SIZE)
-  const visibleAssets  = assetShowAll  ? filteredAssets  : filteredAssets.slice(0, ROSTER_PAGE_SIZE)
 
   // La ficha pinta lo que manda la API (D1 §6.2): la cifra de la empresa es
   // `compliance_summary`, y la lista de abajo son las filas que la bloquean.
@@ -303,6 +298,58 @@ function EmpresaDetailPageInner() {
   const life = lifecycleStyle('carrier', carrier.operational_status)
   const enabled = enablementStyle(carrier.compliance_summary, carrier.operational_status === 'ACTIVE')
   const canChangeCarrierStatus = carrier.operational_status === 'ONBOARDING' ? canEdit : canAdmin
+
+  // El panel lateral de la ficha (15/10): Detalles y Contactos, siempre a la vista.
+  const aside = (<>
+        <DetailsBlock
+      canEdit={canEdit}
+      rows={[
+        { label: 'RUT', value: <span className="font-identificador tabular-nums">{carrier.tax_id}</span> },
+        { label: 'Tipo de operación', value: (
+          <span className="flex flex-wrap items-center gap-2">
+            {summaryQuery.data
+              ? <span>{derivedOperation ?? 'Sin determinar'} <span className="text-informativo">(según su flota)</span></span>
+              : <span className="text-informativo">Cargando…</span>}
+            <GestionDeclarada
+              carrierId={id}
+              declarado={carrier.management_types}
+              derivado={derivedOperation}
+              canEdit={canEdit && carrier.operational_status === 'ACTIVE'}
+              onGuardado={() => afterChange({ entity: 'carrier', id, type: 'update' })}
+            />
+          </span>
+        ) },
+        { label: 'Clientes', value: shippersQuery.data
+          ? (activeShippers.length ? activeShippers.map(sh => sh.name).join(', ') : <span className="text-informativo">Sin clientes</span>)
+          : <span className="text-informativo">Cargando…</span> },
+        { label: 'Seguros', value: <InsuranceLine policies={policiesQuery.data} taxId={carrier.tax_id} /> },
+      ]}
+      renderForm={close => (
+        <CarrierEditForm
+          businessName={carrier.business_name}
+          legacyAdminId={carrier.legacy_admin_id}
+          onSave={async name => { await handleSaveBusinessName(name) }}
+          onClose={close}
+        />
+      )}
+    />
+    <AsidePanel title="Contactos">
+      <div className="grid grid-cols-1 gap-2">
+        {carrier.contacts.map(c => (
+          <ContactCard
+            key={c.id}
+            contact={c}
+            canEdit={canEdit}
+            canDelete={canAdmin}
+            onSaved={patch => handleSaveContact(c.id, patch)}
+            onDeleted={() => handleDeleteContact(c.id)}
+          />
+        ))}
+        {canEdit && <AddContactForm roleOptions={CONTACT_ROLE_OPTIONS} onAdd={handleAddContact} />}
+        {carrier.contacts.length === 0 && !canEdit && <p className="text-dato text-informativo">Sin contactos registrados.</p>}
+      </div>
+    </AsidePanel>
+  </>)
 
   return (
     <div className="p-4 md:p-6 space-y-5 relative">
@@ -353,52 +400,17 @@ function EmpresaDetailPageInner() {
         value={activeTab}
         onChange={setActiveTab}
         tabs={[
-          { id: 'resumen',     label: 'Resumen' },
           { id: 'documentos',  label: 'Documentos',  count: summary ? (summary.own.overdue + summary.own.missing) || null : null, urgent: true },
-          { id: 'conductores', label: 'Conductores', count: drivers.length },
-          { id: 'equipos',     label: 'Equipos',     count: assets.length },
-          { id: 'seguros',     label: 'Seguros',     count: policies.length },
-          { id: 'contactos',   label: 'Contactos',   count: carrier.contacts.length },
+          // Sin conteo mientras la lista está en vuelo: un "0" ahí afirma algo falso.
+          { id: 'conductores', label: 'Conductores', count: driversQuery.data ? drivers.length : null },
+          { id: 'equipos',     label: 'Equipos',     count: assetsQuery.data ? assets.length : null },
+          { id: 'seguros',     label: 'Seguros',     count: policiesQuery.data ? policies.length : null },
         ]}
       />
 
-      {/* ── Resumen: UN bloque de Detalles (Entrega 1 de fichas, 15/10). Los
-          pendientes viven en Documentos; la flota, en sus pestañas. ── */}
-      {activeTab === 'resumen' && (
-        <DetailsBlock
-          canEdit={canEdit}
-          rows={[
-            { label: 'RUT', value: <span className="font-identificador tabular-nums">{carrier.tax_id}</span> },
-            { label: 'Tipo de operación', value: (
-              <span className="flex flex-wrap items-center gap-2">
-                {summaryQuery.data
-                  ? <span>{derivedOperation ?? 'Sin determinar'} <span className="text-informativo">(según su flota)</span></span>
-                  : <span className="text-informativo">Cargando…</span>}
-                <GestionDeclarada
-                  carrierId={id}
-                  declarado={carrier.management_types}
-                  derivado={derivedOperation}
-                  canEdit={canEdit && carrier.operational_status === 'ACTIVE'}
-                  onGuardado={() => afterChange({ entity: 'carrier', id, type: 'update' })}
-                />
-              </span>
-            ) },
-            { label: 'Clientes', value: shippersQuery.data
-              ? (activeShippers.length ? activeShippers.map(sh => sh.name).join(', ') : <span className="text-informativo">Sin clientes</span>)
-              : <span className="text-informativo">Cargando…</span> },
-            { label: 'Seguros', value: <InsuranceLine policies={policiesQuery.data} taxId={carrier.tax_id} /> },
-          ]}
-          renderForm={close => (
-            <CarrierEditForm
-              businessName={carrier.business_name}
-              legacyAdminId={carrier.legacy_admin_id}
-              onSave={async name => { await handleSaveBusinessName(name) }}
-              onClose={close}
-            />
-          )}
-        />
-      )}
-
+      {/* Las pestañas van arriba de la grilla: la sección y el panel lateral
+          empiezan a la misma altura (15/10). */}
+      <ProfileLayout aside={aside}>
       {/* ── Documentos ── */}
       {activeTab === 'documentos' && (
         <CarrierDocumentsTab
@@ -410,78 +422,26 @@ function EmpresaDetailPageInner() {
         />
       )}
 
-      {/* ── Contactos ── */}
-      {activeTab === 'contactos' && (
-      <div className="bg-white rounded-xl border border-border p-4 md:p-5">
-        <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Contactos</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {carrier.contacts.map(c => (
-            <ContactCard
-              key={c.id}
-              contact={c}
-              canEdit={canEdit}
-              canDelete={canAdmin}
-              onSaved={patch => handleSaveContact(c.id, patch)}
-              onDeleted={() => handleDeleteContact(c.id)}
-            />
-          ))}
-          {canEdit && <AddContactForm roleOptions={CONTACT_ROLE_OPTIONS} onAdd={handleAddContact} />}
-          {carrier.contacts.length === 0 && !canEdit && (
-            <p className="text-xs text-gray-300 italic">Sin contactos registrados</p>
-          )}
-        </div>
-      </div>
-      )}
-
-      {/* ── Conductores ── */}
+      {/* ── Conductores: la tabla de Directorio › Conductores, de esta empresa (15/10) ── */}
       {activeTab === 'conductores' && (
-      <div className="bg-white rounded-xl border border-border p-4 md:p-5">
-        <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Conductores ({drivers.length})</h3>
-          {canEdit && (
-            <button
-              onClick={() => setAddDriverOpen(v => !v)}
-              className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition"
-            >
+        <FleetRosterTable
+          kind="driver"
+          rows={filteredDrivers.map(d => ({ id: d.id, name: d.full_name, detail: d.tax_id, operational_status: d.operational_status, compliance_summary: d.compliance_summary }))}
+          total={drivers.length}
+          facets={driverFacets}
+          health={driverHealthFilter}
+          onHealth={setDriverHealthFilter}
+          query={driverQ}
+          onQuery={setDriverQ}
+          carrierStatus={carrier.operational_status}
+          onOpen={setSelectedDriverId}
+          action={canEdit && (
+            <button type="button" onClick={() => setAddDriverOpen(v => !v)} className="text-dato font-semibold text-accion hover:underline">
               + Conductor
             </button>
           )}
-        </div>
-
-        <div className="mb-3 max-w-xl">
-          <AlertStatTiles
-            tiles={[
-              { id: '', label: 'Todos', value: driverFacets[''], tone: 'neutral' },
-              ...SEVERITY_ORDER.map(s => ({
-                id: s, label: documentStateStyle(s).label, value: driverFacets[s],
-                tone: s === 'OVERDUE' ? 'danger' as const : s === 'UP_TO_DATE' ? 'success' as const : 'neutral' as const,
-              })),
-            ]}
-            active={driverHealthFilter}
-            onSelect={id => setDriverHealthFilter(id as DocumentState | '')}
-          />
-        </div>
-
-        <div className="flex items-center gap-2 mb-3 flex-wrap">
-          <div className="relative">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-            <input
-              value={driverQ}
-              onChange={e => setDriverQ(e.target.value)}
-              placeholder="Filtrar por nombre o RUT…"
-              className="pl-8 pr-4 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/30 w-56 bg-white"
-            />
-          </div>
-        </div>
-
-        {/* El formulario ya no vive escrito acá: lo comparte con la ficha de
-            Certificación (`AltaDeFlota`), que es donde la minuta del 25/08 lo
-            pedía y donde no existía. Dos copias del mismo formulario es la
-            forma en que un arreglo así vuelve: se agrega un campo en una y la
-            otra se queda corta sin que nada avise. El botón "+ Conductor" de
-            la cabecera sigue siendo el disparador — modo controlado. */}
-        {addDriverOpen && (
-          <div className="mb-3">
+          form={addDriverOpen && (
+            // El alta compartida con el Cierre y Certificación (`AltaDeFlota`).
             <AltaDeFlota
               carrierId={id}
               tipo="conductor"
@@ -490,97 +450,38 @@ function EmpresaDetailPageInner() {
               onAbiertoChange={setAddDriverOpen}
               onCreado={() => afterChange({ entity: 'driver', type: 'create', carrierIds: [id] })}
             />
-          </div>
-        )}
-
-        {filteredDrivers.length === 0 ? (
-          <p className="py-10 text-center text-sm text-gray-300">
-            {driverQ ? 'Sin resultados' : 'Sin conductores registrados'}
-          </p>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-              {visibleDrivers.map(d => (
-                <DriverRosterCard key={d.id} driver={d} carrierStatus={carrier.operational_status} onOpen={() => setSelectedDriverId(d.id)} />
-              ))}
-            </div>
-            {!driverShowAll && filteredDrivers.length > ROSTER_PAGE_SIZE && (
-              <button
-                onClick={() => setDriverShowAll(true)}
-                className="mt-3 w-full text-xs font-semibold text-accent border border-dashed border-accent/40 hover:bg-accent/5 rounded-lg py-2.5 transition-colors"
-              >
-                Mostrar los {filteredDrivers.length - ROSTER_PAGE_SIZE} restantes
-              </button>
-            )}
-          </>
-        )}
-      </div>
+          )}
+        />
       )}
 
-      {/* ── Equipos ── */}
+      {/* ── Equipos: la tabla de Directorio › Equipos, de esta empresa (15/10) ── */}
       {activeTab === 'equipos' && (
-      <div className="bg-white rounded-xl border border-border p-4 md:p-5">
-        <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Equipos ({assets.length})</h3>
-          {canEdit && (
-            <button
-              onClick={() => setAddAssetOpen(v => !v)}
-              className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition"
-            >
+        <FleetRosterTable
+          kind="asset"
+          rows={filteredAssets.map(a => ({ id: a.id, name: a.license_plate, operational_status: a.operational_status, compliance_summary: a.compliance_summary,
+            detail: [assetTypeLabel(a.asset_type), a.fleet_service_type_label, a.webcarga_operation_type_label].filter(Boolean).join(' · ') }))}
+          total={assets.length}
+          facets={assetFacets}
+          health={assetHealthFilter}
+          onHealth={setAssetHealthFilter}
+          query={assetQ}
+          onQuery={setAssetQ}
+          carrierStatus={carrier.operational_status}
+          onOpen={setSelectedAssetId}
+          filters={
+            <SegmentedControl
+              label="Tipo de equipo"
+              options={[{ id: 'todos', label: 'Todos' }, ...assetTypes.map(t => ({ id: t.code, label: t.label }))]}
+              value={assetTypeFilter}
+              onChange={v => setAssetTypeFilter(v as AssetType | 'todos')}
+            />
+          }
+          action={canEdit && (
+            <button type="button" onClick={() => setAddAssetOpen(v => !v)} className="text-dato font-semibold text-accion hover:underline">
               + Equipo
             </button>
           )}
-        </div>
-
-        <div className="mb-3 max-w-xl">
-          <AlertStatTiles
-            tiles={[
-              { id: '', label: 'Todos', value: assetFacets[''], tone: 'neutral' },
-              ...SEVERITY_ORDER.map(s => ({
-                id: s, label: documentStateStyle(s).label, value: assetFacets[s],
-                tone: s === 'OVERDUE' ? 'danger' as const : s === 'UP_TO_DATE' ? 'success' as const : 'neutral' as const,
-              })),
-            ]}
-            active={assetHealthFilter}
-            onSelect={id => setAssetHealthFilter(id as DocumentState | '')}
-          />
-        </div>
-
-        <div className="flex items-center gap-2 mb-3 flex-wrap">
-          <div className="relative">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-            <input
-              value={assetQ}
-              onChange={e => setAssetQ(e.target.value)}
-              placeholder="Filtrar por patente…"
-              className="pl-8 pr-4 py-1.5 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/30 w-56 bg-white"
-            />
-          </div>
-          <button
-            onClick={() => setAssetTypeFilter('todos')}
-            aria-pressed={assetTypeFilter === 'todos'}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-              assetTypeFilter === 'todos' ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
-            }`}
-          >
-            Todos
-          </button>
-          {assetTypes.map(opt => (
-            <button
-              key={opt.code}
-              onClick={() => setAssetTypeFilter(opt.code)}
-              aria-pressed={assetTypeFilter === opt.code}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-                assetTypeFilter === opt.code ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-
-        {addAssetOpen && (
-          <div className="mb-3">
+          form={addAssetOpen && (
             <AltaDeFlota
               carrierId={id}
               tipo="equipo"
@@ -590,58 +491,29 @@ function EmpresaDetailPageInner() {
               onAbiertoChange={setAddAssetOpen}
               onCreado={() => afterChange({ entity: 'asset', type: 'create', carrierIds: [id] })}
             />
-          </div>
-        )}
-
-        {filteredAssets.length === 0 ? (
-          <p className="py-10 text-center text-sm text-gray-300">
-            {assetQ || assetTypeFilter !== 'todos' ? 'Sin resultados' : 'Sin equipos registrados'}
-          </p>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-              {visibleAssets.map(a => (
-                <VehicleRosterCard key={a.id} vehicle={a} typeLabel={assetTypeLabel(a.asset_type)} carrierStatus={carrier.operational_status} onOpen={() => setSelectedAssetId(a.id)} />
-              ))}
-            </div>
-            {!assetShowAll && filteredAssets.length > ROSTER_PAGE_SIZE && (
-              <button
-                onClick={() => setAssetShowAll(true)}
-                className="mt-3 w-full text-xs font-semibold text-accent border border-dashed border-accent/40 hover:bg-accent/5 rounded-lg py-2.5 transition-colors"
-              >
-                Mostrar los {filteredAssets.length - ROSTER_PAGE_SIZE} restantes
-              </button>
-            )}
-          </>
-        )}
-      </div>
+          )}
+        />
       )}
 
       {/* ── Pólizas de seguro ── */}
       {activeTab === 'seguros' && (
-      <div className="bg-white rounded-xl border border-border p-4 md:p-5">
-        <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Pólizas ({policies.length})</h3>
-          <div className="flex items-center gap-3">
-            <Link
-              href={`/dashboard/insurance?q=${encodeURIComponent(carrier.tax_id)}`}
-              className="text-xs font-semibold text-accent hover:underline"
-            >
-              Ver en Seguros →
-            </Link>
-            {canEditPolicies && (
-              <button
-                onClick={() => setAddPolicyOpen(v => !v)}
-                className="text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition"
-              >
-                + Póliza
-              </button>
-            )}
-          </div>
+      <div className="space-y-3 rounded-2xl border border-border bg-white p-4">
+        <div className="flex items-center justify-end gap-4">
+          <Link
+            href={`/dashboard/insurance?q=${encodeURIComponent(carrier.tax_id)}`}
+            className="text-dato font-semibold text-accion hover:underline"
+          >
+            Ver en Seguros →
+          </Link>
+          {canEditPolicies && (
+            <button type="button" onClick={() => setAddPolicyOpen(v => !v)} className="text-dato font-semibold text-accion hover:underline">
+              + Póliza
+            </button>
+          )}
         </div>
 
         {addPolicyOpen && (
-          <div className="mb-3 p-3 rounded-lg bg-gray-50/80 max-w-sm">
+          <div className="max-w-sm rounded-lg bg-bg-main p-3">
             <PolicyCreateForm
               form={policyForm}
               onChange={setPolicyForm}
@@ -654,7 +526,7 @@ function EmpresaDetailPageInner() {
         )}
 
         {policies.length === 0 ? (
-          <p className="py-10 text-center text-sm text-gray-300">Sin pólizas registradas</p>
+          <Estado tipo="vacio" titulo="Sin pólizas registradas" />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {policies.map(p => (
@@ -662,14 +534,14 @@ function EmpresaDetailPageInner() {
                 key={p.id}
                 type="button"
                 onClick={() => setSelectedPolicyId(p.id)}
-                className="flex items-center justify-between border border-border rounded-xl px-3 py-2.5 text-left hover:border-gray-300 hover:shadow-sm transition-all bg-white"
+                className="flex items-center justify-between rounded-xl border border-border bg-white px-3 py-2.5 text-left transition-all hover:border-accion/40"
               >
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-text-primary truncate">{p.insurance_company}</p>
-                  <p className="text-[10px] text-gray-400 truncate">Póliza {p.policy_number ?? '—'}</p>
+                  <p className="truncate text-dato font-semibold text-text-primary">{p.insurance_company}</p>
+                  <p className="truncate text-etiqueta text-informativo">Póliza {p.policy_number ?? '—'}</p>
                 </div>
                 {p.overdue_installments > 0 && (
-                  <span className="text-[10px] font-semibold text-red-600 shrink-0">{p.overdue_installments} vencida{p.overdue_installments > 1 ? 's' : ''}</span>
+                  <span className="shrink-0 text-etiqueta font-semibold text-status-incidente">{p.overdue_installments} vencida{p.overdue_installments > 1 ? 's' : ''}</span>
                 )}
               </button>
             ))}
@@ -677,6 +549,7 @@ function EmpresaDetailPageInner() {
         )}
       </div>
       )}
+      </ProfileLayout>
 
       {/* El conductor o el equipo, sobre la ficha de su empresa: ES su ficha propia,
           en modal (Entrega 1 de fichas, 15/10). Una sola implementación de Detalles. */}

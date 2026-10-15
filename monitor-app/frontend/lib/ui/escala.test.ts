@@ -79,7 +79,8 @@ describe('la escala tipografica', () => {
     // 182 -> 172 el 2026-10-15: se retiraron los paneles de conductor y equipo (kit de fichas, Tarea 6).
     // 172 -> 167 el 2026-10-15: Empresas y Por asignar sin 10px (Entrega 2 de fichas).
     // 167 -> 163 el 2026-10-15: las listas del Directorio con el kit; se retiró TransporterSlideOver.
-    const DEUDA = 163
+    // 163 -> 158 el 2026-10-15: fichas en dos columnas, flota de la empresa en tabla, Seguros y Requisito con el kit.
+    const DEUDA = 158
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

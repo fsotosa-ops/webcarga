@@ -14,6 +14,7 @@ import { Table, TableHeader } from '@/components/ui/tabla/Table'
 import { SolicitarDocumento } from './SolicitarDocumento'
 import { BulkUploadReview } from './pending/BulkUploadReview'
 import { SubjectDocumentRows, useDocumentPreview } from './SubjectDocumentRows'
+import { ROW_ACTIONS_WIDTH } from './RenglonPendiente'
 
 type Filter = 'OVERDUE' | 'MISSING' | 'EXPIRING' | 'all'
 /** El orden de los filtros es el de Pendientes; abre en el primero con algo en
@@ -81,7 +82,7 @@ export function EntityDocuments({ entityType, entityId, carrierId }: {
         <Estado tipo="vacio" titulo="No se le exige ningún documento" />
       )}
       {rowsQuery.isSuccess && visible.length > 0 && (
-        <Table header={<TableHeader><span className="flex-1">Documento</span><span className="w-52">Estado</span></TableHeader>}>
+        <Table header={<TableHeader><span className="flex-1">Documento</span><span className="w-52">Estado</span><span className={`shrink-0 ${ROW_ACTIONS_WIDTH}`} /></TableHeader>}>
           <SubjectDocumentRows filas={visible} carrierId={carrierId} canEdit={canEdit} puedeRevisar={puedeRevisar}
                                preview={preview}
                                subir={(fila, archivo, datos) => subirDocumento(fila.id, archivo, datos)}

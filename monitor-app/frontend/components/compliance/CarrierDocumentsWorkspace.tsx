@@ -215,7 +215,7 @@ function agruparPorTipo(sujetos: ComplianceSummarySubject[]): Grupo[] {
 
 const GRUPO = {
   DRIVER: { titulo: 'Conductores', uno: 'conductor', varios: 'conductores', icono: User },
-  ASSET:  { titulo: 'Vehículos',   uno: 'vehículo',  varios: 'vehículos',   icono: Truck },
+  ASSET:  { titulo: 'Equipos',     uno: 'equipo',    varios: 'equipos',     icono: Truck },
 } as const
 
 /** La cabecera de un grupo: cuántos sujetos, cuántos requisitos entre todos y

@@ -17,10 +17,11 @@ import { blockingReason, fleetMemberStyle, isCarrierDeactivated, summaryStyle, t
 import { diaMes, isBlockingPending } from '@/lib/pending'
 import { useAssetTypes } from '@/hooks/useAssetTypes'
 import { Estado } from '@/components/ui/Estado'
-import { Tabs, type TabOption } from '@/components/ui/Tabs'
 import type { ActionsMenuItem } from '@/components/ui/ActionsMenu'
 import { ProfileHeader } from '@/components/directory/ProfileHeader'
 import { DetailsBlock, type DetailRow } from '@/components/directory/DetailsBlock'
+import { AsidePanel, ProfileLayout } from '@/components/directory/ProfileLayout'
+import { BulkUploadReview } from '@/components/compliance/pending/BulkUploadReview'
 import { DriverEditForm } from '@/components/directory/DriverEditForm'
 import { AssetEditForm } from '@/components/directory/AssetEditForm'
 import { DriverContacts } from '@/components/directory/DriverContacts'
@@ -34,7 +35,6 @@ import { EntityDocuments, useEntityPendingRows } from '@/components/compliance/E
 import type { AssignmentPeriod, EntityActivity } from '@/lib/types'
 
 export type FleetKind = 'driver' | 'asset'
-type Section = 'resumen' | 'documentos' | 'contactos'
 
 const LIST = {
   driver: { href: '/dashboard/drivers', label: 'Conductores', noun: 'conductor' },
@@ -60,13 +60,6 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   const back = returnLink(searchParams.get('next'))
-  const sectionTabs: TabOption<Section>[] = [
-    { id: 'resumen', label: 'Resumen' },
-    { id: 'documentos', label: 'Documentos' },
-    ...(kind === 'driver' ? [{ id: 'contactos' as const, label: 'Contactos' }] : []),
-  ]
-  const requested = variant === 'page' ? searchParams.get('tab') : null
-  const [tab, setTab] = useState<Section>(sectionTabs.find(t => t.id === requested)?.id ?? 'resumen')
   const [modal, setModal] = useState<'transfer' | 'identity' | 'baja' | 'remove' | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   // Lo que se hace desde el ⋯ sin diálogo propio (Reactivar) dice si falló:
@@ -163,12 +156,9 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
     ...(canEdit && carrierId ? [{ id: 'remove', label: 'Quitar de la empresa', destructive: true, onSelect: () => setModal('remove') }] : []),
   ]
   // En Documentos la sección ya tiene su subida y sus pedidos: no se repite arriba.
-  const primaryAction = (canUploadDocuments || canRequestDocuments) && tab !== 'documentos' ? (
-    <button type="button" onClick={() => setTab('documentos')}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-dato font-semibold text-white hover:bg-accent/90">
-      <Upload size={14} aria-hidden="true" /> {canUploadDocuments ? 'Subir documentos' : 'Pedir a Certificación'}
-    </button>
-  ) : undefined
+  // La subida en lote, arriba a la derecha como en la maqueta; la franja de
+  // Documentos abre la misma revisión. Operaciones pide desde cada fila.
+  const primaryAction = canUploadDocuments ? <BulkUploadReview trigger="button" carrierId={carrierId} /> : undefined
 
   // ── Detalles ────────────────────────────────────────────────────────────────
   const empresa: ReactNode = summary?.carrier
@@ -190,15 +180,16 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
         { label: 'Empresa', value: empresa },
       ]
   const activity = activityQuery.data
-  const footer = (
-    <div className="flex flex-wrap items-center justify-between gap-2 text-dato">
-      <span>{activityLine(activity)}</span>
-      <Link href={monitorSearchHref(monitorQuery)} prefetch={false} className="font-medium text-accion hover:underline">
-        Ver en el Monitor <ArrowRight size={13} className="inline" aria-hidden="true" />
+  const activityPanel = (
+    <AsidePanel title="Actividad">
+      <p className="text-dato">{activityLine(activity)}</p>
+      <Link href={monitorSearchHref(monitorQuery)} prefetch={false} className="mt-2 inline-flex items-center gap-1 text-dato font-medium text-accion hover:underline">
+        Ver en el Monitor <ArrowRight size={13} aria-hidden="true" />
       </Link>
-    </div>
+    </AsidePanel>
   )
 
+  const documentsId = `documentos-${kind}-${id}`
   const fullHref = (kind === 'driver' ? driverHref : assetHref)(id, variant === 'dialog' ? currentUrl() : undefined)
   const content = (
     <div className="space-y-4 p-4 md:p-6">
@@ -214,23 +205,27 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
           <span aria-hidden>›</span> <span className="font-semibold text-text-primary">{title}</span>
         </nav>
       )}
-      <ProfileHeader title={title} chips={chips} reason={reason} onSeeDocuments={() => setTab('documentos')}
+      <ProfileHeader title={title} chips={chips} reason={reason}
+                     onSeeDocuments={() => document.getElementById(documentsId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                      primaryAction={primaryAction} menuItems={menuItems} />
       {notice && <p role="status" className="text-dato text-resuelto">{notice}</p>}
       {actionError && <p role="alert" className="text-dato text-status-incidente">{actionError}</p>}
 
-      <Tabs label={`Secciones del ${LIST[kind].noun}`} tabs={sectionTabs} value={tab} onChange={setTab} />
-
-      {tab === 'resumen' && (
-        <DetailsBlock rows={rows} canEdit={canEdit} footer={footer}
+      {/* Sin pestañas (15/10): lo que se trabaja al centro y los datos al costado. */}
+      <ProfileLayout aside={<>
+        <DetailsBlock rows={rows} canEdit={canEdit}
           renderForm={close => kind === 'driver'
             ? <DriverEditForm driver={driver!} onSave={patch} onClose={close} />
             : <AssetEditForm asset={asset!} carrierId={carrierId} drivers={carrierDriversQuery.data ?? []} onSave={patch} onClose={close} />} />
-      )}
-      {tab === 'documentos' && (
-        <EntityDocuments entityType={kind === 'driver' ? 'DRIVER' : 'ASSET'} entityId={id} carrierId={carrierId} />
-      )}
-      {tab === 'contactos' && kind === 'driver' && <DriverContacts driverId={id} canEdit={canEdit} canDelete={canAdmin} />}
+        {activityPanel}
+        {kind === 'driver' && (
+          <AsidePanel title="Contactos"><DriverContacts driverId={id} canEdit={canEdit} canDelete={canAdmin} /></AsidePanel>
+        )}
+      </>}>
+        <div id={documentsId}>
+          <EntityDocuments entityType={kind === 'driver' ? 'DRIVER' : 'ASSET'} entityId={id} carrierId={carrierId} />
+        </div>
+      </ProfileLayout>
 
       <TransferModal
         open={modal === 'transfer'}

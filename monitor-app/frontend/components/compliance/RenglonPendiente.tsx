@@ -86,6 +86,10 @@ function politicaDe(fila: PendingComplianceRow): PoliticaVencimiento {
  *  requisito exige. **Nada se sube hasta estar completo**: el camino viejo
  *  subía primero y clasificaba después, así que cada rechazo dejaba el
  *  archivo huérfano en la bandeja. */
+/** El ancho de las acciones de la fila. Las cabeceras de las tablas de estas
+ *  filas reservan el mismo lugar, así el título "Estado" queda sobre los chips. */
+export const ROW_ACTIONS_WIDTH = 'md:min-w-80'
+
 export function RenglonPendiente({
   fila, title, status, actionLabel, puedeEditar, puedeCorregirFecha = puedeEditar, onSubir, onDeshacer, onVer, viendo, avisoVer, onFechaCorregida, onQuitarSolicitud, acciones,
 }: Props) {
@@ -140,86 +144,93 @@ export function RenglonPendiente({
           )}
         </div>
 
-        {onFechaCorregida && estado.tipo === 'reposo' && (
-          <span className="shrink-0 tabular-nums">
-            <ExpirationDateCell
-              recordId={fila.id}
-              value={fila.expiration_date ?? null}
-              required={fila.expiration_policy === 'REQUIRED'}
-              canEdit={puedeCorregirFecha}
-              onSaved={onFechaCorregida}
-            />
-          </span>
-        )}
-
-        {onQuitarSolicitud && puedeEditar && estado.tipo === 'reposo' && (
-          <button
-            type="button"
-            onClick={onQuitarSolicitud}
-            className="shrink-0 text-etiqueta font-semibold text-informativo transition-opacity hover:opacity-70"
-          >
-            Quitar solicitud
-          </button>
-        )}
-
-        {acciones && estado.tipo === 'reposo' && acciones}
-
-        {onVer && estado.tipo === 'reposo' && (
-          <button
-            type="button"
-            onClick={onVer}
-            disabled={viendo}
-            className="shrink-0 inline-flex items-center gap-1.5 text-etiqueta font-semibold text-accion transition-opacity hover:opacity-70 disabled:opacity-50"
-          >
-            {viendo
-              ? <Loader2 size={12} className="motion-safe:animate-spin" aria-hidden="true" />
-              : <Eye size={12} aria-hidden="true" />}
-            Ver
-          </button>
-        )}
-
-        {estado.tipo === 'subiendo' && (
-          <span className="shrink-0 inline-flex items-center gap-1.5 text-etiqueta text-informativo">
-            <Loader2 size={12} className="motion-safe:animate-spin" aria-hidden="true" />
-            Subiendo…
-          </span>
-        )}
-
-        {estado.tipo === 'listo' && (
-          <>
-            <span className="shrink-0 inline-flex items-center gap-1.5 text-etiqueta text-resuelto">
-              <Check size={12} aria-hidden="true" />
-              Listo
+        {/* Todas las acciones en un bloque de ancho mínimo fijo, alineado a la
+            derecha: el estado queda en la misma columna en todas las filas, tengan
+            "Subir", "Pedir" o "Pedido a Certificación" (15/10). */}
+        <div data-testid="acciones-fila" className={`flex shrink-0 items-center justify-end gap-3 ${ROW_ACTIONS_WIDTH}`}>
+          {/* Ancho fijo desde md, haya o no "Agregar vencimiento": así el estado
+              queda en la misma columna en todas las filas (15/10). */}
+          {onFechaCorregida && estado.tipo === 'reposo' && (
+            <span data-testid="fecha-slot" className="shrink-0 tabular-nums md:w-44 md:text-right">
+              <ExpirationDateCell
+                recordId={fila.id}
+                value={fila.expiration_date ?? null}
+                required={fila.expiration_policy === 'REQUIRED'}
+                canEdit={puedeCorregirFecha}
+                onSaved={onFechaCorregida}
+              />
             </span>
-            {onDeshacer && (
-              <button
-                type="button"
-                onClick={onDeshacer}
-                className="shrink-0 text-etiqueta text-accion font-semibold cursor-pointer transition-opacity hover:opacity-70"
-              >
-                Deshacer
-              </button>
-            )}
-          </>
-        )}
+          )}
 
-        {puedeEditar && (estado.tipo === 'reposo' || estado.tipo === 'recibiendo') && (
-          <label
-            htmlFor={inputId}
-            className={`shrink-0 inline-flex items-center gap-1.5 text-etiqueta text-accion font-semibold cursor-pointer transition-opacity hover:opacity-70 ${
-              actionLabel ? 'justify-center rounded-md border border-dashed border-accion/45 px-2 py-0.5 md:min-w-28' : ''}`}
-          >
-            <Upload size={12} aria-hidden="true" />
-            {estado.tipo === 'recibiendo' ? 'Suelta para cargar aquí' : actionLabel ?? 'Arrastra aquí o elige un archivo'}
-            <input
-              id={inputId}
-              type="file"
-              className="sr-only"
-              data-testid={inputId}
-              {...propsDeInput()}
-            />
-          </label>
-        )}
+          {onQuitarSolicitud && puedeEditar && estado.tipo === 'reposo' && (
+            <button
+              type="button"
+              onClick={onQuitarSolicitud}
+              className="shrink-0 text-etiqueta font-semibold text-informativo transition-opacity hover:opacity-70"
+            >
+              Quitar solicitud
+            </button>
+          )}
+
+          {acciones && estado.tipo === 'reposo' && acciones}
+
+          {onVer && estado.tipo === 'reposo' && (
+            <button
+              type="button"
+              onClick={onVer}
+              disabled={viendo}
+              className="shrink-0 inline-flex items-center gap-1.5 text-etiqueta font-semibold text-accion transition-opacity hover:opacity-70 disabled:opacity-50"
+            >
+              {viendo
+                ? <Loader2 size={12} className="motion-safe:animate-spin" aria-hidden="true" />
+                : <Eye size={12} aria-hidden="true" />}
+              Ver
+            </button>
+          )}
+
+          {estado.tipo === 'subiendo' && (
+            <span className="shrink-0 inline-flex items-center gap-1.5 text-etiqueta text-informativo">
+              <Loader2 size={12} className="motion-safe:animate-spin" aria-hidden="true" />
+              Subiendo…
+            </span>
+          )}
+
+          {estado.tipo === 'listo' && (
+            <>
+              <span className="shrink-0 inline-flex items-center gap-1.5 text-etiqueta text-resuelto">
+                <Check size={12} aria-hidden="true" />
+                Listo
+              </span>
+              {onDeshacer && (
+                <button
+                  type="button"
+                  onClick={onDeshacer}
+                  className="shrink-0 text-etiqueta text-accion font-semibold cursor-pointer transition-opacity hover:opacity-70"
+                >
+                  Deshacer
+                </button>
+              )}
+            </>
+          )}
+
+          {puedeEditar && (estado.tipo === 'reposo' || estado.tipo === 'recibiendo') && (
+            <label
+              htmlFor={inputId}
+              className={`shrink-0 inline-flex items-center gap-1.5 text-etiqueta text-accion font-semibold cursor-pointer transition-opacity hover:opacity-70 ${
+                actionLabel ? 'justify-center rounded-md border border-dashed border-accion/45 px-2 py-0.5 md:min-w-28' : ''}`}
+            >
+              <Upload size={12} aria-hidden="true" />
+              {estado.tipo === 'recibiendo' ? 'Suelta para cargar aquí' : actionLabel ?? 'Arrastra aquí o elige un archivo'}
+              <input
+                id={inputId}
+                type="file"
+                className="sr-only"
+                data-testid={inputId}
+                {...propsDeInput()}
+              />
+            </label>
+          )}
+        </div>
       </div>
 
       <PedirDatoDelDocumento carga={carga} id={fechaId} className="pl-1" />

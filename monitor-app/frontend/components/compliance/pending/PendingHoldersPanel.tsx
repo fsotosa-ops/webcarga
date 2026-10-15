@@ -6,7 +6,7 @@ import { ArrowLeft } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
-import { RenglonPendiente } from '@/components/compliance/RenglonPendiente'
+import { RenglonPendiente, ROW_ACTIONS_WIDTH } from '@/components/compliance/RenglonPendiente'
 import { TriageUndoNotice } from '@/components/compliance/TriageUndoNotice'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { StatusChip } from '@/components/ui/StatusChip'
@@ -201,7 +201,7 @@ export function PendingHoldersPanel({ groupBy, selected, state, onStateChange, c
               ? <span className="grid flex-1 grid-cols-2 gap-3"><span>{sujeto}</span><span>Empresa</span></span>
               : <span className="flex-1">Empresa</span>}
             <span className="w-52">Estado</span>
-            {canUpload && <span className="min-w-28" />}
+            <span className={`shrink-0 ${ROW_ACTIONS_WIDTH}`} />
           </TableHeader>
         }>
           {filas.map(renglon)}

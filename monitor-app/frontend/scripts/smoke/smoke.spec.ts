@@ -146,15 +146,15 @@ test('Pedir a Certificación: Operaciones pide un documento y Certificación lo 
   for (const href of fichas.slice(0, 6)) {
     await ops.goto(href)
     await ops.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
-    await ops.getByRole('button', { name: /^Conductores/ }).click()
+    await ops.getByRole('group', { name: 'Secciones de la empresa' }).getByRole('button', { name: /^Conductores/ }).click()
     await ops.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
-    // Tarjetas del roster de conductores: un botón con el avatar de iniciales.
-    const cards = ops.locator('button:has(div.rounded-full.w-8)')
+    // La flota de la empresa es una tabla (15/10): cada fila abre la ficha en modal.
+    const cards = ops.locator('tbody tr')
     const total = await cards.count()
     for (let i = 0; i < Math.min(total, 4) && !pedido; i++) {
       await cards.nth(i).click()
-      // El modal es la ficha del conductor: sus documentos están en su sección.
-      await ops.getByRole('dialog').getByRole('button', { name: 'Documentos', exact: true }).click({ timeout: 15000 })
+      // El modal es la ficha del conductor: sus documentos están a la vista, sin pestañas.
+      await ops.getByRole('dialog').getByRole('region', { name: 'Documentos' }).waitFor({ timeout: 15000 })
       const pedir = ops.getByRole('button', { name: /^Pedir .* a Certificación$/ }).first()
       // isVisible no espera: waitFor sí.
       if (await pedir.waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false)) {
@@ -226,21 +226,18 @@ test('Certificación › Conductores con pendientes: la fila abre la ficha en la
   await page.goto('/dashboard/drivers?documents=pending')
   await page.locator('tbody a[href^="/dashboard/drivers/"]').first().click()
   await page.waitForURL(/\/dashboard\/drivers\/[0-9a-f-]{36}\?.*tab=documentos/)
-  await expect(page.getByRole('button', { name: 'Documentos', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByRole('region', { name: 'Documentos' })).toBeVisible({ timeout: 15000 })
   expect(problems).toEqual([])
 })
 
-test('La ficha de un equipo: Resumen y Documentos abren sin errores', async ({ page }) => {
+test('La ficha de un equipo: Documentos al centro y Detalles al costado, sin errores', async ({ page }) => {
   const problems = watch(page)
   await login(page, 'ops@sim.local')
   await page.goto('/dashboard/assets')
   await page.locator('tbody a[href^="/dashboard/assets/"]').first().click()
   await page.waitForURL(/\/dashboard\/assets\/[0-9a-f-]{36}/)
-  const tabs = page.getByRole('group', { name: 'Secciones del equipo' }).getByRole('button')
-  await expect(tabs).toHaveText(['Resumen', 'Documentos'])
+  // Sin pestañas (15/10): las dos cosas a la vista a la vez.
   await expect(page.getByRole('region', { name: 'Detalles' }).getByText('Tipo de operación')).toBeVisible({ timeout: 15000 })
-  await tabs.filter({ hasText: 'Documentos' }).click()
   await expect(page.getByRole('region', { name: 'Documentos' })).toBeVisible({ timeout: 15000 })
   expect(problems).toEqual([])
 })
@@ -341,8 +338,8 @@ test('Ficha de empresa: el modal de un conductor ofrece su ficha completa', asyn
   await page.locator('a[href^="/dashboard/carriers/"]').first().waitFor({ timeout: 30000 })
   const fichas = await page.locator('a[href^="/dashboard/carriers/"]')
     .evaluateAll(as => [...new Set(as.map(a => (a as HTMLAnchorElement).getAttribute('href')!.split('?')[0]))])
-  // La primera empresa con conductores.
-  const card = page.locator('button:has(div.rounded-full.w-8)').first()
+  // La primera empresa con conductores (la flota es una tabla desde el 15/10).
+  const card = page.locator('tbody tr').first()
   let conConductores = false
   for (const href of fichas.slice(0, 8)) {
     await page.goto(`${href}?tab=conductores`)

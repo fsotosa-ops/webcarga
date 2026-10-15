@@ -9,8 +9,7 @@ import { Estado } from '@/components/ui/Estado'
 
 const DRIVER_CONTACT_ROLE_OPTIONS = ['PERSONAL', 'EMERGENCIA', 'OTRO']
 
-/** La sección Contactos de la ficha de un conductor. Movida del panel de
- *  conductor (Entrega 1 de fichas, 15/10). */
+/** Los contactos de un conductor, en el panel lateral de su ficha (15/10). */
 export function DriverContacts({ driverId, canEdit, canDelete }: { driverId: string; canEdit: boolean; canDelete: boolean }) {
   const queryClient = useQueryClient()
   const contactsQuery = useQuery({
@@ -27,7 +26,7 @@ export function DriverContacts({ driverId, canEdit, canDelete }: { driverId: str
   if (contactsQuery.isPending) return <Estado tipo="cargando" />
   const contacts = contactsQuery.data ?? []
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-2">
       {contacts.map(c => (
         <ContactCard key={c.id} contact={c} canEdit={canEdit} canDelete={canDelete}
                      onSaved={async patch => { await contactsApi.patch(c.id, patch); await afterChange() }}

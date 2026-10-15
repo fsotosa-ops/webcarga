@@ -211,4 +211,27 @@ describe('RenglonPendiente — deshacer', () => {
     await screen.findByText(/listo/i)
     expect(screen.queryByRole('button', { name: /deshacer/i })).not.toBeInTheDocument()
   })
+
+  // 15/10: con "Agregar vencimiento" en unas filas y nada en otras, el chip de
+  // estado quedaba en zigzag. El lugar de la fecha mide lo mismo en todas.
+  it('el lugar de la fecha mide lo mismo con o sin "Agregar vencimiento"', () => {
+    render(<>
+      <RenglonPendiente fila={fila({ id: 'a', expiration_policy: 'REQUIRED' })} puedeEditar onSubir={vi.fn()} onFechaCorregida={vi.fn()} />
+      <RenglonPendiente fila={fila({ id: 'b', expiration_policy: 'NONE' })} puedeEditar onSubir={vi.fn()} onFechaCorregida={vi.fn()} />
+    </>)
+    const slots = screen.getAllByTestId('fecha-slot')
+    expect(slots).toHaveLength(2)
+    expect(slots[0].className).toMatch(/md:w-44/)
+    expect(slots[1].className).toBe(slots[0].className)
+  })
+
+  // Lo mismo con "Pedido a Certificación" en una fila y "Pedir" en otra: todas las
+  // acciones van en un bloque de ancho mínimo fijo, alineado a la derecha.
+  it('las acciones de la fila van en un bloque de ancho mínimo fijo', () => {
+    render(<RenglonPendiente fila={fila({ expiration_policy: 'NONE' })} puedeEditar={false} onSubir={vi.fn()} acciones={<span>Pedido a Certificación</span>} />)
+    const acciones = screen.getByTestId('acciones-fila')
+    expect(acciones).toContainElement(screen.getByText('Pedido a Certificación'))
+    expect(acciones.className).toMatch(/md:min-w-80/)
+    expect(acciones.className).toMatch(/justify-end/)
+  })
 })

@@ -301,8 +301,8 @@ describe('EmpresaDetailPage', () => {
   it('el roster filtra por el peor estado que manda la API', async () => {
     renderPage()
     await clickTab(/Conductores/)
-    // El nombre accesible del tile es "<cifra><etiqueta>" (AlertStatTiles pinta la cifra primero).
-    fireEvent.click(await screen.findByRole('button', { name: /^\d+\s*Vencido$/ }))
+    // El control segmentado del kit (15/10), en vez de las tarjetas de cifras.
+    fireEvent.click(within(await screen.findByRole('group', { name: 'Estado de sus documentos' })).getByRole('button', { name: /^Vencido/ }))
     expect(screen.getByText('Ana Rojas')).toBeInTheDocument()
     expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
   })
@@ -333,23 +333,18 @@ describe('EmpresaDetailPage', () => {
     await waitFor(() => expect(screen.queryByText('ABCD12')).not.toBeInTheDocument())
   })
 
-  it('shows only the first 9 drivers with a "Mostrar los N restantes" button for larger rosters', async () => {
+  // La tabla del kit muestra a todos: con filas de 40 px, 12 conductores caben
+  // sin el "Mostrar los N restantes" de la grilla de tarjetas (15/10).
+  it('la tabla muestra a todos los conductores, sin "Mostrar los N restantes"', async () => {
     const manyDrivers: CarrierDriverRosterItem[] = Array.from({ length: 12 }, (_, i) => ({
       id: `d${i}`, tax_id: `${i}-1`, full_name: `Conductor ${i}`,
       operational_status: 'ACTIVE', total_requirements: 5, last_document_update: null,
-  home_location_id: null, home_location_name: null,
-  home_location_shipper: null, suggested_home_location: null,
       compliance_summary: complianceSummary(),
     }))
     vi.mocked(carriersApi.listDrivers).mockResolvedValue(manyDrivers)
     renderPage()
     await clickTab(/Conductores/)
-    await screen.findByText('Conductor 0')
-    expect(screen.queryByText('Conductor 9')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Mostrar los 3 restantes' })).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Mostrar los 3 restantes' }))
-    expect(screen.getByText('Conductor 11')).toBeInTheDocument()
+    expect(await screen.findByText('Conductor 11')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Mostrar los/ })).not.toBeInTheDocument()
   })
 
@@ -359,10 +354,11 @@ describe('EmpresaDetailPage', () => {
       contacts: [{ id: 'ct1', contact_role: 'LEGAL_REP', first_name: 'Contacto', last_name: 'Original', job_title: null, phone: '111111111', email: 'orig@example.com', is_primary: true, is_active: true }],
     })
     renderPage()
-    await clickTab(/Contactos/)
-    await screen.findByText('Contacto Original')
+    // Los contactos viven en el panel lateral (15/10), junto a Detalles.
+    const contactos = await screen.findByRole('region', { name: 'Contactos' })
+    await within(contactos).findByText('Contacto Original')
 
-    fireEvent.click(screen.getByText('Editar'))
+    fireEvent.click(within(contactos).getByText('Editar'))
     const phoneInput = screen.getByPlaceholderText('Teléfono')
     expect(phoneInput).toHaveValue('111111111')
     fireEvent.change(phoneInput, { target: { value: '' } })
@@ -370,7 +366,7 @@ describe('EmpresaDetailPage', () => {
 
     expect(screen.getByText('111111111')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('Editar'))
+    fireEvent.click(within(contactos).getByText('Editar'))
     expect(screen.getByPlaceholderText('Teléfono')).toHaveValue('111111111')
     expect(screen.getByPlaceholderText('Nombre')).toHaveValue('Contacto Original')
     expect(screen.getByPlaceholderText('Email')).toHaveValue('orig@example.com')
@@ -409,12 +405,33 @@ describe('EmpresaDetailPage', () => {
 
 
 
-  it('abre en Resumen con un bloque de Detalles, no con la lista de alertas', async () => {
+  // P2 (forma a ancho real, 15/10): abre en Documentos, con Detalles y Contactos
+  // al costado. Resumen y Contactos dejan de ser pestañas.
+  it('P2: abre en Documentos, con Detalles y Contactos al costado; pestañas Documentos · Conductores · Equipos · Seguros', async () => {
     renderPage()
-    expect(await screen.findByRole('region', { name: 'Detalles' })).toBeInTheDocument()
-    expect(screen.queryByText('Documentos obligatorios pendientes o vencidos')).not.toBeInTheDocument()
+    const aside = await screen.findByRole('complementary')
+    expect(within(aside).getAllByRole('heading', { level: 2 }).map(h => h.textContent)).toEqual(['Detalles', 'Contactos'])
+    const tabs = within(screen.getByRole('group', { name: 'Secciones de la empresa' })).getAllByRole('button')
+    expect(tabs.map(t => t.textContent?.replace(/\d+$/, ''))).toEqual(['Documentos', 'Conductores', 'Equipos', 'Seguros'])
+    expect(screen.getByRole('button', { name: /^Documentos/ })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('un enlace guardado con ?tab=resumen o ?tab=contactos abre Documentos', async () => {
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('tab=contactos') as unknown as ReturnType<typeof useSearchParams>)
+    renderPage()
+    expect(await screen.findByRole('button', { name: /^Documentos/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  // R1: la flota de la empresa es la tabla del kit, como Directorio › Conductores.
+  it('R1: Conductores es la tabla del kit, sin tarjetas de cifras', async () => {
+    renderPage()
+    await clickTab(/Conductores/)
+    const encabezado = await screen.findByRole('columnheader', { name: 'Conductor' })
+    expect(encabezado.className).not.toMatch(/uppercase/)
+    expect(screen.getAllByRole('columnheader').map(h => h.textContent)).toEqual(['Conductor', 'RUT', 'Estado', 'Documentos'])
+    expect(screen.getByRole('group', { name: 'Estado de sus documentos' })).toBeInTheDocument()
+    expect(screen.queryByText(/^Conductores \(/)).not.toBeInTheDocument()
+  })
 
   // Ronda 43 (Hallazgo F): handoff desde el flujo guiado de "Sin identificar"
   // (TripSlideOver → landing de Empresas → acá) — llega con driver_name/
@@ -442,7 +459,17 @@ describe('EmpresaDetailPage', () => {
       new URLSearchParams({ tab: 'seguros' }) as unknown as ReturnType<typeof useSearchParams>,
     )
     renderPage()
-    expect(await screen.findByText(/Pólizas \(/)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^Seguros/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  // S1: sin el título en mayúsculas ("PÓLIZAS (0)"); el vacío es el `Estado` del kit.
+  it('S1: Seguros sin pólizas lo dice con el estado vacío del kit, sin título en mayúsculas', async () => {
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams({ tab: 'seguros' }) as unknown as ReturnType<typeof useSearchParams>)
+    renderPage()
+    // También lo dice la fila Seguros de Detalles, en el panel lateral: se mira la sección.
+    const seccion = (await screen.findByRole('complementary')).parentElement!.firstElementChild as HTMLElement
+    expect(await within(seccion).findByText('Sin pólizas registradas')).toBeInTheDocument()
+    expect(screen.queryByText(/Pólizas \(/)).not.toBeInTheDocument()
   })
 
   it('shows a pending-docs badge on the Documentos tab', async () => {
@@ -451,14 +478,11 @@ describe('EmpresaDetailPage', () => {
     expect(tab).toHaveTextContent('1')
   })
 
-  it('switches sections without navigating away from the page', async () => {
+  it('cambia de sección sin salir de la página, y Detalles sigue al costado', async () => {
     renderPage()
-    await clickTab(/Contactos/)
-    expect(await screen.findByText('+ Agregar contacto')).toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: 'Detalles' })).not.toBeInTheDocument()
-
-    await clickTab(/Resumen/)
-    expect(await screen.findByRole('region', { name: 'Detalles' })).toBeInTheDocument()
+    await clickTab(/Conductores/)
+    expect(await screen.findByRole('columnheader', { name: 'Conductor' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Detalles' })).toBeInTheDocument()
   })
 
 
@@ -620,7 +644,7 @@ describe('ficha de empresa liviana', () => {
     const dialogo = await screen.findByRole('dialog')
     expect(within(dialogo).getByRole('link', { name: /Abrir ficha completa/ }).getAttribute('href'))
       .toMatch(/^\/dashboard\/drivers\/d1\?next=/)
-    expect(within(dialogo).getByRole('group', { name: 'Secciones del conductor' })).toBeInTheDocument()
+    expect(within(dialogo).getByRole('complementary')).toBeInTheDocument()
   })
 
   // Revisión final de la Entrega 1: "Activar" llamaba a la API sin atrapar el
@@ -630,7 +654,8 @@ describe('ficha de empresa liviana', () => {
     vi.mocked(carriersApi.patch).mockRejectedValue(new Error('Para activarla falta su RUT.'))
     renderPage()
     await elegirDelMenu('Activar')
-    expect(await screen.findByRole('alert')).toHaveTextContent('Para activarla falta su RUT.')
+    // Abre en Documentos (15/10), que puede tener sus propios avisos: se busca el de Activar.
+    await waitFor(() => expect(screen.getAllByRole('alert').some(a => a.textContent?.includes('Para activarla falta su RUT.'))).toBe(true))
   })
 
   it('en Documentos no se repite "Subir documentos" en el encabezado', async () => {
@@ -639,5 +664,13 @@ describe('ficha de empresa liviana', () => {
     await screen.findByRole('button', { name: 'Más acciones' })
     expect(screen.queryAllByRole('button', { name: /^Subir documentos$/ }).length).toBeLessThanOrEqual(1)
   })
-})
 
+  // 15/10: la pestaña decía "Conductores 0" mientras la lista estaba en vuelo y
+  // después saltaba a 4. Un "0" sin el dato afirma algo falso.
+  it('mientras la flota carga, las pestañas no muestran un conteo', async () => {
+    vi.mocked(carriersApi.listDrivers).mockReturnValue(new Promise(() => {}))
+    renderPage()
+    const tab = await screen.findByRole('button', { name: /^Conductores/ })
+    expect(tab).toHaveTextContent(/^Conductores$/)
+  })
+})

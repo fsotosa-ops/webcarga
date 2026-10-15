@@ -73,7 +73,6 @@ function renderProfile(kind: 'driver' | 'asset' = 'driver') {
     </QueryClientProvider>,
   )
 }
-const sections = () => [...screen.getByRole('group', { name: /Secciones del/ }).querySelectorAll('button')].map(b => b.textContent)
 
 beforeEach(() => {
   search = ''
@@ -99,8 +98,10 @@ describe('FleetProfile (Entrega 1 de fichas)', () => {
   it('F1: el encabezado dice ciclo de vida, estado de sus documentos y la razón', async () => {
     renderProfile()
     expect(await screen.findByText('Licencia de conducir: vencido · Hoja de vida: falta')).toBeInTheDocument()
-    expect(screen.getByText('Activo')).toBeInTheDocument()
-    expect(screen.getByText('Vencido')).toBeInTheDocument()
+    // El encabezado (EncabezadoDePagina): Documentos también está a la vista desde el 15/10.
+    const encabezado = within(screen.getByRole('heading', { level: 1 }).parentElement!.parentElement!)
+    expect(encabezado.getByText('Activo')).toBeInTheDocument()
+    expect(encabezado.getByText('Vencido')).toBeInTheDocument()
   })
 
   it('RF3: dado de baja, sin razón', async () => {
@@ -134,16 +135,18 @@ describe('FleetProfile (Entrega 1 de fichas)', () => {
     expect(await screen.findByRole('link', { name: 'Ver conductor Vidal Soto, Pedro' })).toHaveAttribute('href', '/dashboard/drivers/d1')
   })
 
-  it('secciones: conductor Resumen · Documentos · Contactos; equipo sin Contactos; ?tab abre la pedida', async () => {
-    search = 'tab=documentos'
+  // Forma a ancho real (15/10): sin pestañas. Documentos al centro y, al costado,
+  // Detalles, Actividad y (el conductor) Contactos, todo a la vez.
+  it('P1: sin pestañas: Documentos al centro y Detalles, Actividad y Contactos al costado', async () => {
     const { unmount } = renderProfile()
-    await screen.findByRole('region', { name: /Detalle de|Documentos/ }).catch(() => null)
-    await waitFor(() => expect(sections()).toEqual(['Resumen', 'Documentos', 'Contactos']))
-    expect(screen.getByRole('button', { name: 'Documentos' })).toHaveAttribute('aria-pressed', 'true')
+    const aside = await screen.findByRole('complementary')
+    expect(screen.queryByRole('group', { name: /Secciones del/ })).not.toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'Documentos' })).toBeInTheDocument()
+    expect(within(aside).getAllByRole('heading', { level: 2 }).map(h => h.textContent)).toEqual(['Detalles', 'Actividad', 'Contactos'])
     unmount()
-    search = ''
     renderProfile('asset')
-    await waitFor(() => expect(sections()).toEqual(['Resumen', 'Documentos']))
+    const asideEquipo = await screen.findByRole('complementary')
+    expect(within(asideEquipo).getAllByRole('heading', { level: 2 }).map(h => h.textContent)).toEqual(['Detalles', 'Actividad'])
   })
 
   it('F7: sin directory.edit, identity ni fleet_status no hay menú "⋯"; con ellos, sus opciones', async () => {
