@@ -22,6 +22,11 @@ function renderPage() {
 
 /** Clickea el botón de la tab bar (no el stat-card de Resumen que también
  *  matchea el mismo nombre accesible) — la tab bar siempre renderiza primero. */
+/** Lo destructivo y el estado de la empresa viven en el ⋯ (Entrega 1 de fichas). */
+async function elegirDelMenu(name: string) {
+  fireEvent.click(await screen.findByRole('button', { name: 'Más acciones' }))
+  fireEvent.click(screen.getByRole('menuitem', { name }))
+}
 async function clickTab(name: RegExp) {
   const matches = await screen.findAllByRole('button', { name })
   fireEvent.click(matches[0])
@@ -70,7 +75,7 @@ const CARRIER: Carrier = {
   operational_status: 'ACTIVE', legacy_admin_id: null, erp_id: null, is_manual_override: false,
   overridden_by: null, overridden_at: null, created_at: null, updated_at: null,
   management_types: null,
-  compliance_summary: complianceSummary({ worst_state: 'MISSING', own: { overdue: 0, expiring: 0, missing: 1 }, fleet: { overdue: 2, expiring: 0, missing: 0 }, can_operate: false }),
+  compliance_summary: complianceSummary({ worst_state: 'MISSING', own: { overdue: 0, expiring: 0, missing: 1 }, fleet: { overdue: 2, expiring: 0, missing: 0 }, can_operate: false, blocking: { own: 1, fleet: 2 } }),
   contacts: [],
   compliance_records: [{
     id: 'cr1', requirement_id: 'req1', requirement_code: 'F30', name: 'F30 Multas',
@@ -134,44 +139,41 @@ describe('EmpresaDetailPage', () => {
     expect(screen.getByText('No habilitada')).toHaveClass('text-informativo')
   })
 
-  it('el resumen cuenta lo que manda la API, propio y de la flota activa', async () => {
+  it('el encabezado dice lo que bloquea según la API, propio y de la flota activa', async () => {
     renderPage()
-    expect(await screen.findByText('1 falta')).toBeInTheDocument()
-    expect(screen.getByText('Flota activa: 2 vencidos')).toBeInTheDocument()
-    expect(screen.getByText('0 de 1 al día')).toBeInTheDocument()
+    expect(await screen.findByText('1 obligatorio de la empresa y 2 de su flota')).toBeInTheDocument()
   })
 
-  it('sin directory.delete dice quién da de baja la empresa', async () => {
+
+  it('sin directory.delete el ⋯ de una empresa ACTIVE no ofrece cambiar su estado', async () => {
     permisos.darDeBaja = false
     renderPage()
-    expect(await screen.findByText('La baja de una empresa la hace Certificación.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^Dar de baja$/ })).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'Más acciones' }))
+    expect(screen.queryByRole('menuitem', { name: /^(Dar de baja|Reactivar|Activar)$/ })).not.toBeInTheDocument()
   })
 
-  it('sin directory.delete pero con directory.edit, una empresa en ONBOARDING se activa', async () => {
+
+  it('sin directory.delete pero con directory.edit, una empresa en ONBOARDING se activa desde el ⋯', async () => {
     permisos.darDeBaja = false
     vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'ONBOARDING' })
     vi.mocked(carriersApi.patch).mockResolvedValue(CARRIER)
     renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: /^Activar$/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Más acciones' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Activar' }))
     await waitFor(() => expect(carriersApi.patch).toHaveBeenCalledWith('t1', { operational_status: 'ACTIVE' }))
-    expect(screen.queryByText('La baja de una empresa la hace Certificación.')).not.toBeInTheDocument()
   })
 
-  it('una empresa en ONBOARDING sin directory.edit dice que la activación la hace un supervisor', async () => {
+
+  it('una empresa en ONBOARDING sin directory.edit no se puede activar desde la ficha', async () => {
     permisos.negados = new Set(['directory.edit'])
     vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'ONBOARDING' })
     renderPage()
-    expect(await screen.findByText('La activación de una empresa la hace un supervisor.')).toBeInTheDocument()
-    expect(screen.queryByText('La baja de una empresa la hace Certificación.')).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'Más acciones' }))
+    expect(screen.queryByRole('menuitem', { name: 'Activar' })).not.toBeInTheDocument()
   })
 
-  it('sin directory.delete una empresa ACTIVE no ofrece botón de estado', async () => {
-    permisos.darDeBaja = false
-    renderPage()
-    expect(await screen.findByText('La baja de una empresa la hace Certificación.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^(Dar de baja|Reactivar|Activar)$/ })).not.toBeInTheDocument()
-  })
+
+
 
   it('dar de baja a un conductor avisa que el Cierre se actualizará', async () => {
     vi.mocked(driversApi.get).mockResolvedValue({
@@ -363,11 +365,13 @@ describe('EmpresaDetailPage', () => {
     expect(contactsApi.patch).not.toHaveBeenCalled()
   })
 
-  it('shows the legacy admin id when present', async () => {
+  it('el ID de la administración anterior se ve al editar la empresa', async () => {
     vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, legacy_admin_id: '4567' })
     renderPage()
-    expect(await screen.findByText('4567')).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    expect(screen.getByText('4567')).toBeInTheDocument()
   })
+
 
   it('does not show a legacy admin id row when absent', async () => {
     renderPage()
@@ -375,28 +379,29 @@ describe('EmpresaDetailPage', () => {
     expect(screen.queryByText('ID legacy admin:')).not.toBeInTheDocument()
   })
 
-  it('shows the shippers the carrier operates with as chips', async () => {
+  it('los clientes de la empresa están en Detalles', async () => {
     vi.mocked(carriersApi.listShippers).mockResolvedValue([
       { id: 's1', name: 'Walmart', status: 'ACTIVE', start_date: null, end_date: null },
       { id: 's2', name: 'Colun', status: 'ACTIVE', start_date: null, end_date: null },
     ])
     renderPage()
-    expect(await screen.findByText('Walmart')).toBeInTheDocument()
-    expect(screen.getByText('Colun')).toBeInTheDocument()
-  })
-
-  it('shows a placeholder when the carrier has no shipper linked', async () => {
-    renderPage()
-    expect(await screen.findByText('Sin generador de carga vinculado')).toBeInTheDocument()
+    expect(await screen.findByText('Walmart, Colun')).toBeInTheDocument()
   })
 
 
-  it('lands on Resumen by default with a compact score, not the full itemized alert list', async () => {
+  it('sin clientes, Detalles lo dice', async () => {
     renderPage()
-    expect(await screen.findByText('0 de 1 al día')).toBeInTheDocument()
-    expect(screen.getByText('1 falta')).toBeInTheDocument()
+    expect(await screen.findByText('Sin clientes')).toBeInTheDocument()
+  })
+
+
+
+  it('abre en Resumen con un bloque de Detalles, no con la lista de alertas', async () => {
+    renderPage()
+    expect(await screen.findByRole('region', { name: 'Detalles' })).toBeInTheDocument()
     expect(screen.queryByText('Documentos obligatorios pendientes o vencidos')).not.toBeInTheDocument()
   })
+
 
   // Ronda 43 (Hallazgo F): handoff desde el flujo guiado de "Sin identificar"
   // (TripSlideOver → landing de Empresas → acá) — llega con driver_name/
@@ -437,17 +442,18 @@ describe('EmpresaDetailPage', () => {
     renderPage()
     await clickTab(/Contactos/)
     expect(await screen.findByText('+ Agregar contacto')).toBeInTheDocument()
-    expect(screen.queryByText('0 de 1 al día')).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Detalles' })).not.toBeInTheDocument()
 
     await clickTab(/Resumen/)
-    expect(await screen.findByText('0 de 1 al día')).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'Detalles' })).toBeInTheDocument()
   })
+
 
   it('deletes the carrier and redirects to the list on confirm', async () => {
     vi.mocked(carriersApi.delete).mockResolvedValue({ ok: true })
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar' }))
+    await elegirDelMenu('Eliminar')
     expect(screen.getByText(/Eliminar: Transportes Test/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar eliminación' }))
 
@@ -466,7 +472,7 @@ describe('EmpresaDetailPage', () => {
     vi.mocked(carriersApi.delete).mockResolvedValue({ ok: true })
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar' }))
+    await elegirDelMenu('Eliminar')
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar eliminación' }))
 
     await waitFor(() => expect(orden).toContain('remove'))
@@ -480,7 +486,7 @@ describe('EmpresaDetailPage', () => {
     )
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Eliminar' }))
+    await elegirDelMenu('Eliminar')
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar eliminación' }))
 
     expect(await screen.findByText(/tiene conductores asociados/)).toBeInTheDocument()
@@ -543,33 +549,64 @@ describe('EmpresaDetailPage', () => {
   it('sin directory.delete no ve "Dar de baja" de la empresa', async () => {
     permisos.darDeBaja = false
     renderPage()
-
-    // Algo del editor si tiene que aparecer, o el test no distingue "todavia
-    // no cargo" de "no le corresponde". El control positivo era el boton
-    // "Editar Empresa", que se retiro el 2026-09-07 por duplicar lo que ya
-    // hacian "Dar de baja"/"Reactivar"; el renombre quedo sobre el nombre.
-    expect(await screen.findByRole('button', { name: 'Editar razón social' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^Dar de baja$/ })).not.toBeInTheDocument()
+    // Control positivo: lo que sí puede hacer aparece, o el test no distingue
+    // "todavía no cargó" de "no le corresponde".
+    expect(await screen.findByRole('button', { name: 'Editar' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Más acciones' }))
+    expect(screen.queryByRole('menuitem', { name: 'Dar de baja' })).not.toBeInTheDocument()
   })
-  it('la razón social se renombra sobre el nombre, sin cajón aparte', async () => {
-    // El cajón "Editar Empresa" ofrecía dos cosas: renombrar y cambiar el
-    // estado operativo. Lo segundo lo hacían ya los botones de al lado — dos
-    // caminos para el mismo acto, con nombres distintos.
+
+  it('la razón social se renombra desde Editar, en Detalles', async () => {
     renderPage()
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Editar razón social' }))
-    const campo = screen.getByLabelText('Razón social')
-    fireEvent.change(campo, { target: { value: 'Transportes Nuevo Nombre' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar razón social' }))
-
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }))
+    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Transportes Nuevo Nombre' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
     await waitFor(() => {
       expect(carriersApi.patch).toHaveBeenCalledWith('t1', { business_name: 'Transportes Nuevo Nombre' })
     })
   })
 
+
   it('ya no hay botón "Editar Empresa"', async () => {
     renderPage()
-    await screen.findByRole('button', { name: 'Editar razón social' })
+    await screen.findByRole('button', { name: 'Editar' })
     expect(screen.queryByRole('button', { name: 'Editar Empresa' })).not.toBeInTheDocument()
   })
+
 })
+
+// ── Entrega 1 de fichas (15/10): la misma forma que conductor y equipo ──────
+describe('ficha de empresa liviana', () => {
+  it('F1-empresa: la razón del "No habilitada" separa lo de la empresa y lo de su flota', async () => {
+    vi.mocked(carriersApi.get).mockResolvedValue({
+      ...CARRIER, compliance_summary: complianceSummary({ worst_state: 'MISSING', can_operate: false, blocking: { own: 3, fleet: 5 } }),
+    })
+    renderPage()
+    expect(await screen.findByText('3 obligatorios de la empresa y 5 de su flota')).toBeInTheDocument()
+  })
+
+  it('RF2: una empresa en onboarding dice que no está activa', async () => {
+    vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'ONBOARDING' })
+    renderPage()
+    expect(await screen.findByText('La empresa no está activa')).toBeInTheDocument()
+  })
+
+  it('F7-empresa: sin directory.delete el ⋯ no ofrece Dar de baja ni Eliminar', async () => {
+    permisos.darDeBaja = false
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Más acciones' }))
+    const items = within(screen.getByRole('menu')).getAllByRole('menuitem').map(i => i.textContent)
+    expect(items).not.toContain('Dar de baja')
+    expect(items).not.toContain('Eliminar')
+    expect(items).toContain('Editar clientes')
+  })
+
+  it('el Resumen es un bloque de Detalles: RUT (no "Tax ID") y sin cifras sueltas de flota', async () => {
+    renderPage()
+    const detalles = await screen.findByRole('region', { name: 'Detalles' })
+    expect(within(detalles).getByText('RUT')).toBeInTheDocument()
+    expect(screen.queryByText(/Tax ID/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/documentos al día|al día$/)).not.toBeInTheDocument()
+  })
+})
+

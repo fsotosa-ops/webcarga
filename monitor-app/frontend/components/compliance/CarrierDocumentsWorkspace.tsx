@@ -17,27 +17,12 @@ import { SubjectDocumentRows, useDocumentPreview, type DocumentPreview } from '@
 import { FiltroDeEstado } from '@/components/compliance/FiltroDeEstado'
 import { TransferModal } from '@/components/dashboard/TransferModal'
 import { AltaDeFlota } from '@/components/dashboard/AltaDeFlota'
-import { Cifra } from '@/components/ui/Cifra'
 import { Estado } from '@/components/ui/Estado'
 import { isCarrierDeactivated } from '@/lib/states'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
 import { invalidateDirectory } from '@/lib/queries/directorio'
 import { claveDeSujeto, tituloDeSujeto } from '@/lib/utils/agruparPorSujeto'
 import type { Carrier, ComplianceSummarySubject, EstadoDocumental, PendingComplianceRow } from '@/lib/types'
-
-/** Las cuatro cifras, con el matiz de `<Cifra>` que le corresponde a cada
- *  una. Las cuatro salen del mismo resumen del servidor (`totales`), que
- *  particiona sobre TODA la empresa. A diferencia de `/pending`, el resumen
- *  SÍ puede venir truncado (`SUMMARY_LIMIT` entra como LIMIT de la CTE,
- *  antes del GROUP BY): `resumen.completo` es la señal, y mientras sea
- *  `false` la pantalla no muestra estas cuatro cifras — ver `conteos` más
- *  abajo (hallazgo 3 de la revisión final, perf/compresion-y-resumen). */
-const CIFRAS: { estado: EstadoDocumental; etiqueta: string; tono: 'normal' | 'atencion' | 'urgente' | 'resuelto' }[] = [
-  { estado: 'todos',      etiqueta: 'requisitos',  tono: 'normal' },
-  { estado: 'al_dia',     etiqueta: 'al día',      tono: 'resuelto' },
-  { estado: 'falta',      etiqueta: 'faltan',      tono: 'urgente' },
-  { estado: 'por_vencer', etiqueta: 'por vencer',  tono: 'atencion' },
-]
 
 /** Reparte las filas de UN sujeto (ya traídas con `estado='todos'`) según el
  *  mismo criterio EXCLUSIVO que usa el resumen del servidor
@@ -429,14 +414,10 @@ export function CarrierDocumentsWorkspace({ carrierId, carrier }: {
 
   const resumen = resumenQuery.data
   const todosLosSujetos = resumen?.sujetos ?? []
-  // Sin dato todavía → objeto vacío (`Cifra` decide "cargando" por su cuenta,
-  // vía la prop de más abajo). Con dato pero `completo: false` → también
-  // vacío: las cuatro cifras se calcularon sobre una CTE recortada
-  // (`SUMMARY_LIMIT`, hallazgo 3 de la revisión final) y mostrar un número
-  // ahí sería afirmar una cifra que puede estar mal — la regla del proyecto
-  // es que una cifra derivada no se muestra hasta tener el dato BUENO, no
-  // cualquier dato. `Cifra` con `valor=undefined` y `cargando=false` pinta
-  // "—", no un guion que prometa un cero que nunca llega.
+  // Los números del filtro. Sin dato todavía, o con `completo: false` (el
+  // resumen se calculó sobre una CTE recortada, `SUMMARY_LIMIT`), van vacíos:
+  // el filtro se dibuja sin número en vez de afirmar una cifra que puede
+  // estar mal. Una cifra derivada no se muestra hasta tener el dato BUENO.
   const conteos: Partial<Record<EstadoDocumental, number>> =
     resumen && resumen.completo ? resumen.totales : {}
 
@@ -562,26 +543,6 @@ export function CarrierDocumentsWorkspace({ carrierId, carrier }: {
           </div>
         </div>
       )}
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {CIFRAS.map(c => (
-          <div key={c.estado} className="border border-border rounded-xl bg-white px-4 py-3">
-            {/* `cargando` mientras el resumen todavía no llegó: sin esta
-                prop las cuatro cifras negarían de entrada un dato que venía
-                en camino. Y el resumen SÍ puede venir truncado —`conteos`
-                ya sale vacío cuando `resumen.completo` es `false` (hallazgo
-                3 de la revisión final)—, así que acá no hace falta un
-                segundo estado: `valor=undefined` con `cargando=false` ya
-                pinta "—" en vez de un número que podría estar mal. */}
-            <Cifra
-              valor={conteos[c.estado]}
-              etiqueta={c.etiqueta}
-              tono={c.tono}
-              cargando={resumenQuery.isPending}
-            />
-          </div>
-        ))}
-      </div>
 
       <FiltroDeEstado valor={estadoFiltro} onCambiar={setEstadoFiltro} conteos={conteos} />
 

@@ -177,6 +177,20 @@ export function blockingReason(
   return parts ? parts.charAt(0).toUpperCase() + parts.slice(1) : null
 }
 
+/** La razón del "No habilitada" de una empresa (Entrega 1 de fichas, 15/10):
+ *  cuántos obligatorios la bloquean, suyos y de su flota activa (`blocking`, la
+ *  misma regla que `can_operate`). Si no está activa, eso es lo que la frena. */
+export function carrierBlockingReason(summary: ComplianceSummary, operationalStatus: string): string | null {
+  if (operationalStatus !== 'ACTIVE') return 'La empresa no está activa'
+  if (summary.can_operate) return null
+  const own = summary.blocking.own
+  const fleet = summary.blocking.fleet ?? 0
+  const word = (n: number) => (n === 1 ? 'obligatorio' : 'obligatorios')
+  if (own > 0 && fleet > 0) return `${own} ${word(own)} de la empresa y ${fleet} de su flota`
+  if (own > 0) return `${own} ${word(own)} de la empresa`
+  return `${fleet} ${word(fleet)} de su flota`
+}
+
 // ── Resumen y habilitación (fleet_compliance.py) ──────────────────────────────
 
 /** El segundo chip de conductor y equipo (D-R8): el peor estado de lo suyo, en

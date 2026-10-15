@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   alertSeverityStyle, documentEvidenceStyle, documentStateCount, documentStateCounts, documentStateStyle,
   enablementStyle, enablementStyleFromFlag, FUNNEL_BUCKET_ORDER, funnelBucketStyle, fleetMemberStyle, isBlocking, lifecycleStyle, stateCountsLine, summaryStyle,
-  blockingReason,
+  blockingReason, carrierBlockingReason,
   type ComplianceSummary,
 } from './states'
 
@@ -123,6 +123,20 @@ describe('blockingReason', () => {
 
   it('mientras no llegan los documentos, cuenta con el resumen', () => {
     expect(blockingReason(undefined, bloqueado, true)).toBe('3 obligatorios vencidos o faltantes')
+  })
+})
+
+describe('carrierBlockingReason (la razón del "No habilitada" de una empresa)', () => {
+  it('F1-empresa: separa los obligatorios de la empresa y los de su flota', () => {
+    const s = summary({ can_operate: false, blocking: { own: 3, fleet: 5 } })
+    expect(carrierBlockingReason(s, 'ACTIVE')).toBe('3 obligatorios de la empresa y 5 de su flota')
+    expect(carrierBlockingReason(summary({ can_operate: false, blocking: { own: 1, fleet: 0 } }), 'ACTIVE')).toBe('1 obligatorio de la empresa')
+    expect(carrierBlockingReason(summary({ can_operate: false, blocking: { own: 0, fleet: 2 } }), 'ACTIVE')).toBe('2 obligatorios de su flota')
+  })
+
+  it('RF2: si no está activa lo dice, en vez de hablar de documentos; habilitada no dice nada', () => {
+    expect(carrierBlockingReason(summary({ can_operate: false, blocking: { own: 4, fleet: 0 } }), 'ONBOARDING')).toBe('La empresa no está activa')
+    expect(carrierBlockingReason(summary(), 'ACTIVE')).toBeNull()
   })
 })
 

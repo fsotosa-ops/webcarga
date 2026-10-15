@@ -111,7 +111,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 1333 -> 1329 el 2026-10-12: Alertas de vencimiento con tokens (D1, Task 14, Parte C).
     // 1329 -> 1288 el 2026-10-15: lo que bajaron las entregas A-D y el kit de fichas (Table, ComplianceCounts,
     //   CABECERA con tokens); el tope estaba por encima del número real.
-    const DEUDA = 1288
+    // 1288 -> 1255 el 2026-10-15: la ficha de empresa con ProfileHeader y DetailsBlock (kit de fichas, Tarea 5).
+    const DEUDA = 1255
 
     const total = usosDeColorCrudo()
     expect(
@@ -125,7 +126,8 @@ describe('el sistema visual se usa, no solo existe', () => {
   it('no crecen los encabezados de pagina escritos a mano', () => {
     // Medido el 2026-08-16: eran 15 <h1> con SIETE combinaciones distintas de
     // clases. Baja a medida que cada pagina usa <EncabezadoDePagina>.
-    const DEUDA = 9
+    // 9 -> 8 el 2026-10-15: el nombre editable de la ficha de empresa salió del <h1> (kit de fichas, Tarea 5).
+    const DEUDA = 8
 
     const hallazgos = h1FueraDelEncabezado()
     expect(

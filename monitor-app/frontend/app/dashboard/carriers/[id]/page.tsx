@@ -4,22 +4,20 @@ import { Suspense, useEffect, useState, useMemo } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  ArrowLeft, ChevronRight, PenLine, Check, X,
-  Loader2, Search, Users, Truck,
-} from 'lucide-react'
+import { ArrowLeft, Loader2, Search, Upload } from 'lucide-react'
 import { carriersApi } from '@/lib/api/carriers'
 import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
 import { contactsApi } from '@/lib/api/contacts'
-import { StatusChip } from '@/components/ui/StatusChip'
 import { Tabs } from '@/components/ui/Tabs'
-import { SEVERITY_ORDER, documentStateCounts, documentStateStyle, enablementStyle, isBlocking, lifecycleStyle, stateCountsLine, type ComplianceSummary, type DocumentState } from '@/lib/states'
+import { ProfileHeader } from '@/components/directory/ProfileHeader'
+import { DetailsBlock } from '@/components/directory/DetailsBlock'
+import { CarrierEditForm, InsuranceLine } from '@/components/directory/CarrierDetails'
+import { SEVERITY_ORDER, documentStateStyle, enablementStyle, lifecycleStyle, carrierBlockingReason, type ComplianceSummary, type DocumentState } from '@/lib/states'
 import { canonicalPlate, canonicalRut, plateSearchKey, rutDigits, rutSearchKey } from '@/lib/identity'
 import type { Driver, Asset, OperationalStatus } from '@/lib/types'
 import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { ContactCard, AddContactForm } from '@/components/dashboard/ContactCard'
-import { InsuranceSummaryCard } from '@/components/dashboard/InsuranceSummaryCard'
 import { CarrierDocumentsTab } from '@/components/dashboard/carriers/CarrierDocumentsTab'
 import { DriverRosterCard } from '@/components/dashboard/DriverRosterCard'
 import { VehicleRosterCard } from '@/components/dashboard/VehicleRosterCard'
@@ -33,8 +31,6 @@ import { ReactivateCarrierModal } from '@/components/dashboard/ReactivateCarrier
 import { CarrierClientsModal } from '@/components/dashboard/CarrierClientsModal'
 import { DeleteCarrierModal } from '@/components/dashboard/DeleteCarrierModal'
 import { InsurancePolicyModal, PolicyCreateForm, type PolicyFormState } from '@/components/dashboard/InsurancePolicyModal'
-import { CompletionRing } from '@/components/dashboard/CompletionRing'
-import { dueRelative, updatedRelative } from '@/lib/compliance'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { GestionDeclarada } from '@/components/compliance/GestionDeclarada'
 import { complianceApi } from '@/lib/api/compliance'
@@ -49,83 +45,6 @@ type Tab = 'resumen' | 'documentos' | 'conductores' | 'equipos' | 'seguros' | 'c
 
 const CONTACT_ROLE_OPTIONS = ['LEGAL_REP', 'OPERATIONS', 'FINANCE', 'DOCUMENTS']
 
-// ── Campo editable de la empresa (solo business_name/operational_status
-//    aceptan PATCH — ver schemas/carrier.py). Sin "revertir a valor del
-//    pipeline": el modelo nuevo no tiene un un-override explícito, solo
-//    is_manual_override a nivel de fila completa (H1.6). ──────────────
-function EditableField({
-  label, value, canEdit, onSave, options,
-}: {
-  label: string; value: string; canEdit: boolean
-  onSave: (val: string) => Promise<void>
-  options?: string[]
-}) {
-  const [editing, setEditing]   = useState(false)
-  const [draft, setDraft]       = useState(value)
-  const [saving, setSaving]     = useState(false)
-  const [fieldErr, setFieldErr] = useState<string | null>(null)
-
-  const handleSave = async () => {
-    if (draft === value) { setEditing(false); return }
-    setSaving(true); setFieldErr(null)
-    try { await onSave(draft); setEditing(false) }
-    catch (e) { setFieldErr(e instanceof Error ? e.message : 'Error') }
-    finally { setSaving(false) }
-  }
-
-  return (
-    <div className="py-3 border-b border-border/60 last:border-0">
-      <div className="flex items-center gap-3">
-        <span className="text-xs text-gray-400 w-32 shrink-0">{label}</span>
-        {editing ? (
-          <div className="flex items-center gap-2 flex-1">
-            {options ? (
-              <select
-                className="flex-1 text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
-                value={draft}
-                onChange={e => setDraft(e.target.value)}
-                autoFocus
-              >
-                {options.map(o => <option key={o}>{o}</option>)}
-              </select>
-            ) : (
-              <input
-                className="flex-1 text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
-                value={draft}
-                onChange={e => setDraft(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false) }}
-                autoFocus
-              />
-            )}
-            <button onClick={handleSave} disabled={saving}
-              className="p-1.5 rounded-lg bg-accent text-white hover:bg-accent/90 disabled:opacity-50">
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-            </button>
-            <button onClick={() => { setEditing(false); setFieldErr(null) }}
-              className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400">
-              <X size={14} />
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <span className="text-sm text-text-primary flex-1 truncate">
-              {value || <span className="text-gray-300 italic">sin datos</span>}
-            </span>
-            {canEdit && (
-              <button
-                onClick={() => { setDraft(value); setEditing(true) }}
-                className="p-1.5 rounded-lg border border-border/60 text-gray-400 hover:text-accent hover:border-accent hover:bg-accent/5 shrink-0"
-              >
-                <PenLine size={13} />
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-      {fieldErr && <p className="text-xs text-red-500 mt-1 pl-[9.5rem]">{fieldErr}</p>}
-    </div>
-  )
-}
 
 export default function EmpresaDetailPage() {
   return (
@@ -255,10 +174,6 @@ function EmpresaDetailPageInner() {
 
   async function handleSaveBusinessName(value: string) {
     await carriersApi.patch(id, { business_name: value })
-    await afterChange({ entity: 'carrier', id, type: 'update' })
-  }
-  async function handleChangeOperationalStatus(value: string) {
-    await carriersApi.patch(id, { operational_status: value as OperationalStatus })
     await afterChange({ entity: 'carrier', id, type: 'update' })
   }
   async function handleDeactivateCarrier() {
@@ -423,9 +338,6 @@ function EmpresaDetailPageInner() {
 
   // La ficha pinta lo que manda la API (D1 §6.2): la cifra de la empresa es
   // `compliance_summary`, y la lista de abajo son las filas que la bloquean.
-  const complianceRecords = carrier?.compliance_records ?? []
-  const docCounts = useMemo(() => documentStateCounts(complianceRecords), [complianceRecords])
-  const blocking = useMemo(() => complianceRecords.filter(isBlocking), [complianceRecords])
   const summary = carrier?.compliance_summary
 
   const selectedDriver: Driver | null = selectedDriverId ? selectedDriverQuery.data ?? null : null
@@ -457,106 +369,35 @@ function EmpresaDetailPageInner() {
           <ArrowLeft size={14} aria-hidden="true" />{backLink.label}
         </Link>
       )}
-      <nav className="flex items-center gap-1.5 text-sm text-gray-400">
-        <a href="/dashboard/carriers" className="hover:text-accent transition-colors shrink-0">Directorio</a>
-        <ChevronRight size={13} />
-        <span className="text-text-primary font-medium truncate">{carrier.business_name || id}</span>
+      <nav aria-label="Ruta" className="flex items-center gap-1.5 text-xs text-informativo">
+        <Link href="/dashboard/carriers" className="shrink-0 hover:text-accion">Directorio</Link>
+        <span aria-hidden>›</span>
+        <span className="truncate font-semibold text-text-primary">{carrier.business_name || id}</span>
       </nav>
 
-      <div className="bg-white rounded-xl border border-border p-4 md:p-5">
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              {/* La razón social se edita acá, sobre el nombre. Vivía dentro
-                  del cajón "Editar Empresa", que además ofrecía cambiar el
-                  estado operativo — lo mismo que los botones "Dar de baja" y
-                  "Reactivar" de al lado, con otras palabras y otro camino. Al
-                  sacar el botón (pedido del usuario, 07/09) lo único que no se
-                  duplicaba era renombrar, así que se quedó donde se lee. */}
-              <NombreEditable
-                nombre={carrier.business_name || '—'}
-                canEdit={canEdit}
-                onGuardar={handleSaveBusinessName}
-              />
-              <div className="flex items-center gap-3 mt-2 flex-wrap">
-                <p className="text-xs text-gray-500">
-                  Tax ID: <span className="font-mono text-gray-700 bg-gray-50 px-1.5 py-0.5 rounded border border-border/60">{carrier.tax_id}</span>
-                </p>
-                {carrier.legacy_admin_id && (
-                  <p className="text-xs text-gray-500">
-                    ID legacy admin: <span className="font-mono text-gray-700 bg-gray-50 px-1.5 py-0.5 rounded border border-border/60">{carrier.legacy_admin_id}</span>
-                  </p>
-                )}
-                <StatusChip tone={life.tone} icon={life.icon}>{life.label}</StatusChip>
-                <StatusChip tone={enabled.tone} icon={enabled.icon}>{enabled.label}</StatusChip>
-                {/* El tipo de operación DERIVADO de los tractos de la flota, y al lado lo
-                    DECLARADO (solo si difiere: un solo chip, Entrega B). Vivían en la ficha de
-                    Certificación, retirada en la Entrega C. Sin el resumen no se afirma nada. */}
-                {summaryQuery.data && (derivedOperation
-                  ? <span className="text-etiqueta font-semibold px-2 py-0.5 rounded-full bg-accent/10 text-accent"
-                          title="Derivado de los vehículos de la flota. Se edita en cada vehículo.">{derivedOperation}</span>
-                  : <span className="text-etiqueta font-medium px-2 py-0.5 rounded-full bg-accent/5 text-informativo">
-                      Tipo de operación sin determinar
-                    </span>)}
-                <GestionDeclarada
-                  carrierId={id}
-                  declarado={carrier.management_types}
-                  derivado={derivedOperation}
-                  canEdit={canEdit && carrier.operational_status === 'ACTIVE'}
-                  onGuardado={() => afterChange({ entity: 'carrier', id, type: 'update' })}
-                />
-                {carrier.is_manual_override && (
-                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-500">Editado manualmente</span>
-                )}
-              </div>
-              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                {activeShippers.map(s => (
-                  <span key={s.id} className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                    {s.name}
-                  </span>
-                ))}
-                {shippersQuery.data && activeShippers.length === 0 && (
-                  <span className="text-[10px] text-gray-300 italic">Sin generador de carga vinculado</span>
-                )}
-                {canEdit && shippersQuery.data && (
-                  <button onClick={() => setClientsOpen(true)} className="text-etiqueta font-semibold text-accion hover:underline">
-                    Editar clientes
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0">
-              {canChangeCarrierStatus && (
-                <button
-                  onClick={() => carrier.operational_status === 'ACTIVE' ? setBajaModalOpen(true)
-                    : carrier.operational_status === 'ONBOARDING' ? handleActivateCarrier() : setReactivateOpen(true)}
-                  className={`px-4 py-2 rounded-lg text-sm font-bold transition border shadow-sm shrink-0 ${
-                    carrier.operational_status !== 'ACTIVE'
-                      ? 'bg-white hover:bg-gray-50 text-gray-700 border-border'
-                      : 'bg-white hover:bg-red-50 text-red-500 border-red-200'
-                  }`}
-                >
-                  {carrier.operational_status === 'ACTIVE' ? 'Dar de baja' : carrier.operational_status === 'ONBOARDING' ? 'Activar' : 'Reactivar'}
-                </button>
-              )}
-              {canAdmin && (
-                <button
-                  onClick={() => setDeleteModalOpen(true)}
-                  className="bg-white hover:bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm font-bold transition border border-red-200 shadow-sm shrink-0"
-                >
-                  Eliminar
-                </button>
-              )}
-              {!canChangeCarrierStatus && (
-                <p className="text-etiqueta text-informativo">
-                  {carrier.operational_status === 'ONBOARDING'
-                    ? 'La activación de una empresa la hace un supervisor.'
-                    : 'La baja de una empresa la hace Certificación.'}
-                </p>
-              )}
-            </div>
-        </div>
-      </div>
+      {/* El encabezado de las tres fichas (Entrega 1 de fichas, 15/10): quién es,
+          cómo está y por qué no puede operar; lo demás, en Detalles y en el ⋯. */}
+      <ProfileHeader
+        title={carrier.business_name || '—'}
+        chips={[life, enabled]}
+        reason={carrierBlockingReason(carrier.compliance_summary, carrier.operational_status)}
+        onSeeDocuments={() => setActiveTab('documentos')}
+        primaryAction={canUploadDocuments ? (
+          <button type="button" onClick={() => setActiveTab('documentos')}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-dato font-semibold text-white hover:bg-accent/90">
+            <Upload size={14} aria-hidden="true" /> Subir documentos
+          </button>
+        ) : undefined}
+        menuItems={[
+          ...(canEdit && shippersQuery.data ? [{ id: 'clients', label: 'Editar clientes', onSelect: () => setClientsOpen(true) }] : []),
+          ...(canChangeCarrierStatus ? [carrier.operational_status === 'ACTIVE'
+            ? { id: 'baja', label: 'Dar de baja', destructive: true, onSelect: () => setBajaModalOpen(true) }
+            : carrier.operational_status === 'ONBOARDING'
+              ? { id: 'activate', label: 'Activar', onSelect: () => { void handleActivateCarrier() } }
+              : { id: 'reactivate', label: 'Reactivar', onSelect: () => setReactivateOpen(true) }] : []),
+          ...(canAdmin ? [{ id: 'delete', label: 'Eliminar', destructive: true, onSelect: () => setDeleteModalOpen(true) }] : []),
+        ]}
+      />
 
       {/* ── Tabs — una sección visible a la vez, cero scroll entre ellas ── */}
       <Tabs
@@ -573,64 +414,41 @@ function EmpresaDetailPageInner() {
         ]}
       />
 
-      {/* ── Resumen: vista compacta, sin la lista completa de alertas ── */}
+      {/* ── Resumen: UN bloque de Detalles (Entrega 1 de fichas, 15/10). Los
+          pendientes viven en Documentos; la flota, en sus pestañas. ── */}
       {activeTab === 'resumen' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-white rounded-xl border border-border p-4 md:p-5">
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Documentación</h3>
-            <div className="flex items-center gap-3">
-              <CompletionRing ok={docCounts.UP_TO_DATE} total={complianceRecords.length} />
-              <div>
-                <p className="text-sm font-semibold text-text-primary">
-                  {docCounts.UP_TO_DATE} de {complianceRecords.length} {documentStateStyle('UP_TO_DATE').label.toLowerCase()}
-                </p>
-                <p className="text-dato text-informativo">{summary ? stateCountsLine(summary.own) ?? 'Sin pendientes' : 'Sin pendientes'}</p>
-                {summary?.fleet && (
-                  <p className="text-dato text-informativo">Flota activa: {stateCountsLine(summary.fleet) ?? 'sin pendientes'}</p>
-                )}
-              </div>
-            </div>
-            {blocking.length > 0 && (
-              <ul className="mt-3 space-y-1">
-                {blocking.slice(0, 3).map(r => {
-                  const relative = dueRelative(r.days_to_expiry) ?? updatedRelative(r.updated_at)
-                  return (
-                    <li key={r.id} className="text-xs text-informativo truncate">
-                      • {r.name}{relative && <span> · {relative}</span>}
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-            <button onClick={() => setActiveTab('documentos')} className="mt-3 text-xs font-semibold text-accent hover:underline">
-              Ver documentos →
-            </button>
-          </div>
-
-          <InsuranceSummaryCard carrierId={carrier.id} taxId={carrier.tax_id} />
-
-          <button
-            onClick={() => setActiveTab('conductores')}
-            className="bg-white rounded-xl border border-border p-4 md:p-5 flex items-center justify-between text-left hover:border-gray-300 transition-colors"
-          >
-            <div>
-              <p className="text-2xl font-bold text-text-primary leading-none">{drivers.length}</p>
-              <p className="text-xs text-gray-400 mt-1">Conductores</p>
-            </div>
-            <Users size={22} className="text-gray-300" />
-          </button>
-
-          <button
-            onClick={() => setActiveTab('equipos')}
-            className="bg-white rounded-xl border border-border p-4 md:p-5 flex items-center justify-between text-left hover:border-gray-300 transition-colors"
-          >
-            <div>
-              <p className="text-2xl font-bold text-text-primary leading-none">{assets.length}</p>
-              <p className="text-xs text-gray-400 mt-1">Equipos</p>
-            </div>
-            <Truck size={22} className="text-gray-300" />
-          </button>
-        </div>
+        <DetailsBlock
+          canEdit={canEdit}
+          rows={[
+            { label: 'RUT', value: <span className="font-identificador tabular-nums">{carrier.tax_id}</span> },
+            { label: 'Tipo de operación', value: (
+              <span className="flex flex-wrap items-center gap-2">
+                {summaryQuery.data
+                  ? <span>{derivedOperation ?? 'Sin determinar'} <span className="text-informativo">(según su flota)</span></span>
+                  : <span className="text-informativo">Cargando…</span>}
+                <GestionDeclarada
+                  carrierId={id}
+                  declarado={carrier.management_types}
+                  derivado={derivedOperation}
+                  canEdit={canEdit && carrier.operational_status === 'ACTIVE'}
+                  onGuardado={() => afterChange({ entity: 'carrier', id, type: 'update' })}
+                />
+              </span>
+            ) },
+            { label: 'Clientes', value: shippersQuery.data
+              ? (activeShippers.length ? activeShippers.map(sh => sh.name).join(', ') : <span className="text-informativo">Sin clientes</span>)
+              : <span className="text-informativo">Cargando…</span> },
+            { label: 'Seguros', value: <InsuranceLine policies={policiesQuery.data} taxId={carrier.tax_id} /> },
+          ]}
+          renderForm={close => (
+            <CarrierEditForm
+              businessName={carrier.business_name}
+              legacyAdminId={carrier.legacy_admin_id}
+              onSave={async name => { await handleSaveBusinessName(name) }}
+              onClose={close}
+            />
+          )}
+        />
       )}
 
       {/* ── Documentos ── */}
@@ -1004,74 +822,3 @@ function EmpresaDetailPageInner() {
   )
 }
 
-/** El nombre de la empresa, editable donde se lee.
- *
- *  Vivía dentro del cajón "Editar Empresa", que ofrecía dos cosas: renombrar y
- *  cambiar el estado operativo. Lo segundo ya lo hacían los botones "Dar de
- *  baja"/"Reactivar" de al lado — dos caminos para el mismo acto, con nombres
- *  distintos, que es exactamente cómo dos superficies terminan diciendo cosas
- *  distintas del mismo dato. Al sacar el botón (pedido del usuario, 07/09) lo
- *  único que no se duplicaba era el renombre, así que se quedó acá. */
-function NombreEditable({
-  nombre, canEdit, onGuardar,
-}: {
-  nombre:    string
-  canEdit:   boolean
-  onGuardar: (valor: string) => Promise<void> | void
-}) {
-  const [editando, setEditando] = useState(false)
-  const [draft, setDraft] = useState(nombre)
-  const [guardando, setGuardando] = useState(false)
-
-  // El draft se resincroniza al ABRIR, no en el useState inicial: es la clase
-  // de bug que este frontend ya vio tres veces.
-  function abrir() { setDraft(nombre); setEditando(true) }
-
-  async function guardar() {
-    const limpio = draft.trim()
-    if (!limpio || limpio === nombre) { setEditando(false); return }
-    setGuardando(true)
-    try { await onGuardar(limpio); setEditando(false) } finally { setGuardando(false) }
-  }
-
-  if (!editando) {
-    return (
-      <div className="flex items-center gap-2">
-        <h1 className="font-mulish font-black text-xl md:text-2xl text-text-primary leading-tight">{nombre}</h1>
-        {canEdit && (
-          <button
-            type="button"
-            onClick={abrir}
-            aria-label="Editar razón social"
-            className="text-informativo hover:text-accent transition-colors shrink-0"
-          >
-            <PenLine size={14} />
-          </button>
-        )}
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <input
-        autoFocus
-        value={draft}
-        disabled={guardando}
-        aria-label="Razón social"
-        onChange={e => setDraft(e.target.value)}
-        onKeyDown={e => {
-          if (e.key === 'Enter') guardar()
-          if (e.key === 'Escape') setEditando(false)
-        }}
-        className="font-mulish font-black text-xl md:text-2xl text-text-primary leading-tight border-b-2 border-accent bg-transparent focus:outline-none w-full"
-      />
-      <button type="button" onClick={guardar} disabled={guardando} aria-label="Guardar razón social" className="text-accent shrink-0">
-        <Check size={16} />
-      </button>
-      <button type="button" onClick={() => setEditando(false)} aria-label="Cancelar" className="text-informativo shrink-0">
-        <X size={16} />
-      </button>
-    </div>
-  )
-}

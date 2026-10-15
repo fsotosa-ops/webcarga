@@ -75,7 +75,8 @@ describe('la escala tipografica', () => {
     // 199 -> 197 el 2026-10-12: Alertas de vencimiento dejó los 10px (D1, Task 14, Parte C).
     // 197 -> 185 el 2026-10-15: CABECERA sin 10px (kit de fichas) más lo que bajaron las entregas A-D;
     //   el tope estaba por encima del número real.
-    const DEUDA = 185
+    // 185 -> 182 el 2026-10-15: encabezado y Resumen de la ficha de empresa sin 10px (kit de fichas, Tarea 5).
+    const DEUDA = 182
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

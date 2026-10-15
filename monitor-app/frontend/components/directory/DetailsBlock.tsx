@@ -32,9 +32,10 @@ export function DetailsBlock({ rows, canEdit, renderForm, footer }: {
       {editing && renderForm ? renderForm(() => setEditing(false)) : (
         <dl className="grid grid-cols-1 gap-x-4 gap-y-3 text-dato sm:grid-cols-[150px_1fr]">
           {rows.map(r => (
-            <div key={r.label} className="contents">
-              <dt className="text-informativo">{r.label}</dt>
-              <dd className="min-w-0 text-text-primary">{r.value}</dd>
+            // En el teléfono cada etiqueta va pegada sobre su valor; desde sm, en dos columnas.
+            <div key={r.label} className="sm:contents">
+              <dt className="text-etiqueta text-informativo sm:text-dato">{r.label}</dt>
+              <dd className="mt-0.5 min-w-0 text-text-primary sm:mt-0">{r.value}</dd>
             </div>
           ))}
         </dl>

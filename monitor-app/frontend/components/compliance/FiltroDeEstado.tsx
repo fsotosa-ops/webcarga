@@ -1,5 +1,6 @@
 import type { EstadoDocumental } from '@/lib/types'
 import { documentStateStyle } from '@/lib/states'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 
 interface Props {
   valor:     EstadoDocumental
@@ -24,29 +25,17 @@ const OPCIONES: { id: EstadoDocumental; etiqueta: string }[] = [
 /** El filtro de estado documental: qué mostrar de la carga de una empresa —
  *  todo, lo que falta, lo que vence pronto o lo que ya está al día. Reemplaza
  *  el `estado` que `GET /compliance-records/pending` ya sabe recibir. */
+/** Con el control segmentado del kit (Entrega 1 de fichas, 15/10): el mismo de
+ *  Pendientes, con el número de cada estado. La partición es la del resumen. */
 export function FiltroDeEstado({ valor, onCambiar, conteos }: Props) {
   return (
-    <div role="group" className="inline-flex gap-1">
-      {OPCIONES.map(({ id, etiqueta }) => {
-        const activo = valor === id
-        const conteo = conteos?.[id]
-        return (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={activo}
-            onClick={() => onCambiar(id)}
-            className={`inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-etiqueta font-medium transition-colors ${
-              activo ? 'bg-accent text-white' : 'text-informativo hover:brightness-95'
-            }`}
-          >
-            {etiqueta}
-            {conteo != null && (
-              <span className="tabular-nums">{conteo}</span>
-            )}
-          </button>
-        )
-      })}
-    </div>
+    <SegmentedControl
+      label="Filtrar documentos"
+      value={valor}
+      onChange={onCambiar}
+      options={OPCIONES.map(({ id, etiqueta }) => ({
+        id, label: etiqueta, badge: conteos?.[id] != null ? String(conteos[id]) : undefined,
+      }))}
+    />
   )
 }
