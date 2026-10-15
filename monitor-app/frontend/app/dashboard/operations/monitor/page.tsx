@@ -35,9 +35,6 @@ import { BarraDeSeleccion } from '@/components/ui/BarraDeSeleccion'
 import { cuantos } from '@/lib/utils/cuantos'
 import { clientesDelFiltro } from '@/lib/monitor/clientesDelFiltro'
 import { AvisoFueraDeEnCurso } from '@/components/dashboard/AvisoFueraDeEnCurso'
-import { driversApi } from '@/lib/api/drivers'
-import { carriersApi } from '@/lib/api/carriers'
-import { invalidateDirectory } from '@/lib/queries/directorio'
 import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
@@ -767,24 +764,8 @@ function DiarioPageInner() {
               // mostrar el error, apagar el control y ofrecer la salida. Lo que
               // sí importa es que `setAsignando(null)` viene DESPUÉS del await:
               // si la API falla, el popover queda abierto con lo que se escribió.
-              onDarDeAlta={!puedeDarDeAlta ? undefined : async (nombre, rut, aTodos, carrierId) => {
-                const creado = await driversApi.create({ tax_id: rut, full_name: nombre })
-                // La empresa va antes de asignar el viaje: un conductor sin
-                // empresa no aparece en el cierre del día. Si esta llamada
-                // falla, el conductor ya existe y el reintento cae en el 409,
-                // que ofrece asignárselo — se puede salir del paso.
-                if (carrierId) await carriersApi.assignDriver(carrierId, creado.id)
-                const ids = aTodos
-                  ? candidatosQuery.data?.trip_ids_de_la_persona ?? [asignando.id]
-                  : [asignando.id]
-                const asignado = await tripsApi.assignDriver(creado.id, ids)
-                await queryClient.invalidateQueries({ queryKey: ['trips'] })
-                await invalidateDirectory(queryClient, {
-                  entity: 'driver', id: creado.id, type: 'create', carrierIds: [carrierId],
-                })
-                if (asignado.warnings?.length) return asignado.warnings
-                setAsignando(null)
-              }}
+              // El alta es la común (AltaDeFlota): crea y después llama a onAsignar.
+              puedeDarDeAlta={puedeDarDeAlta}
             />
           </div>
         </div>

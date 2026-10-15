@@ -272,6 +272,25 @@ test('El Monitor abre la vista rápida desde una fila (C10)', async ({ page }) =
   expect(problems).toEqual([])
 })
 
+test('Monitor › Asignar conductor: el alta es la común y un RUT existente ofrece asignarlo (D5)', async ({ page }) => {
+  const problems = watch(page)
+  await login(page, 'ops@sim.local')
+  await page.goto('/dashboard/operations/monitor?tab=historial')
+  // Necesita el viaje de `.superpowers/local-sim/seed_smoke.sql` (conductor del TMS sin registrar).
+  const celda = page.getByRole('button', { name: /Sin registrar/ }).first()
+  await celda.waitFor({ timeout: 30000 })
+  await celda.click()
+  await expect(page.getByText('El TMS reportó')).toBeVisible()
+  await page.getByRole('button', { name: /dar de alta/i }).click()
+  // El alta común trae el origen habitual, que el popover viejo no tenía.
+  await expect(page.getByLabel('Origen habitual')).toBeVisible()
+  // CARLA SOTO, de la siembra de la copia local.
+  await page.getByLabel('RUT').fill('14444444-2')
+  await page.getByRole('button', { name: 'Crear y asignar' }).click()
+  await expect(page.getByRole('button', { name: /^Asignar a / })).toBeVisible({ timeout: 15000 })
+  expect(problems).toEqual([])
+})
+
 // ── Entrega D (una forma de subir + Por asignar) ────────────────────────────
 
 test('Por asignar: subir sin contexto deja lo no resuelto en la bandeja, y se resuelve ahí (D)', async ({ page }) => {

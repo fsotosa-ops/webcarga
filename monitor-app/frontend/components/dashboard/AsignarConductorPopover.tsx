@@ -1,25 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { UserPlus, AlertCircle, Loader2, Building2, X } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { UserPlus, AlertCircle, Loader2 } from 'lucide-react'
 import type { AssignmentWarning, CandidatoConductor } from '@/lib/types'
 import { ApiError } from '@/lib/api/client'
+import { invalidateDirectory } from '@/lib/queries/directorio'
 import { TEXTO_APOYO, TEXTO_CUERPO } from '@/lib/ui/texto'
 import { nombreLegible } from '@/lib/utils/nombres'
-import { CarrierSearchPicker, type CarrierSearchResult } from './CarrierSearchPicker'
-
-/** Lo que devuelve el backend en un 409 al dar de alta un RUT que ya existe.
- *  Trae el id porque sin él el mensaje sería un callejón sin salida: la persona
- *  que ya existe es exactamente la que se quería asignar. */
-type ConductorYaExiste = { code: string; message: string; driver_id: string; full_name: string }
-
-function conductorYaExiste(e: unknown): ConductorYaExiste | null {
-  if (!(e instanceof ApiError) || e.status !== 409) return null
-  const d = e.detail as Partial<ConductorYaExiste> | null
-  return d && d.code === 'CONDUCTOR_YA_EXISTE' && d.driver_id
-    ? (d as ConductorYaExiste)
-    : null
-}
+import { AltaDeFlota } from './AltaDeFlota'
 
 type Props = {
   nombreTms: string
@@ -32,10 +21,9 @@ type Props = {
    *  que llama no cierra y el popover ofrece "Continuar". */
   onAsignar: (driverId: string, aTodosSusViajes: boolean) => void | AssignmentWarning[] | Promise<void | AssignmentWarning[]>
   /** Sin él no se ofrece el alta: crear al conductor y vincularlo a su empresa
-   *  pide `directory.edit`, además de `trips.edit_sensitive`. */
-  onDarDeAlta?: (
-    nombre: string, rut: string, aTodosSusViajes: boolean, carrierId: string | null,
-  ) => void | AssignmentWarning[] | Promise<void | AssignmentWarning[]>
+   *  pide `directory.edit`, además de `trips.edit_sensitive`. El alta es la
+   *  común (`AltaDeFlota`); después de crear, se asigna con `onAsignar`. */
+  puedeDarDeAlta?: boolean
   onCancelar: () => void
 }
 
@@ -80,41 +68,39 @@ export function AsignarConductorPopover({
   viajesDeLaPersona,
   cargando = false,
   onAsignar,
-  onDarDeAlta,
+  puedeDarDeAlta = false,
   onCancelar,
 }: Props) {
+  const queryClient = useQueryClient()
   const [elegido, setElegido] = useState<string | null>(null)
   const [aTodos, setATodos] = useState(true)
   const [verParecidos, setVerParecidos] = useState(false)
   const [dandoDeAlta, setDandoDeAlta] = useState(false)
-  const [nombreNuevo, setNombreNuevo] = useState(nombreLegible(nombreTms))
-  const [rutNuevo, setRutNuevo] = useState('')
-  const [empresa, setEmpresa] = useState<CarrierSearchResult | null>(null)
-  const [busquedaEmpresa, setBusquedaEmpresa] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [yaExiste, setYaExiste] = useState<ConductorYaExiste | null>(null)
   const [avisos, setAvisos] = useState<AssignmentWarning[]>([])
 
-  // Un solo lugar donde se espera a la API, se muestra el error y se apaga el
-  // botón. Antes cada `onClick` disparaba una promesa flotante: si rechazaba,
-  // la excepción moría sin dueño y la pantalla no se enteraba.
-  async function ejecutar(accion: () => void | AssignmentWarning[] | Promise<void | AssignmentWarning[]>) {
-    setError(null)
-    setYaExiste(null)
+  // Asignar es una sola cosa, venga de un candidato o del alta: llama a la
+  // API y guarda los avisos (empresa no habilitada, D1 §7.1). Si falla,
+  // rechaza; quién muestra el error depende de quién tiene el botón.
+  async function asignar(driverId: string) {
     setAvisos([])
+    const resultado = await onAsignar(driverId, aTodos)
+    if (Array.isArray(resultado) && resultado.length > 0) setAvisos(resultado)
+  }
+
+  // El botón del candidato: espera, muestra el error acá y se apaga. Antes cada
+  // `onClick` disparaba una promesa flotante: si rechazaba, la excepción moría
+  // sin dueño y la pantalla no se enteraba. Desde el alta, el error lo muestra
+  // el alta, que queda abierta (y el reintento cae en el 409 que ofrece al
+  // existente).
+  async function asignarElegido(driverId: string) {
+    setError(null)
     setGuardando(true)
     try {
-      const resultado = await accion()
-      if (Array.isArray(resultado) && resultado.length > 0) setAvisos(resultado)
+      await asignar(driverId)
     } catch (e) {
-      const existente = conductorYaExiste(e)
-      if (existente) {
-        setYaExiste(existente)
-        setError(existente.message)
-      } else {
-        setError(e instanceof ApiError ? e.message : 'No se pudo guardar. Vuelve a intentarlo.')
-      }
+      setError(e instanceof ApiError ? e.message : 'No se pudo guardar. Vuelve a intentarlo.')
     } finally {
       setGuardando(false)
     }
@@ -132,12 +118,14 @@ export function AsignarConductorPopover({
     }`
 
   return (
-    <div className="w-[340px] rounded-lg border border-border bg-white p-3 shadow-lg">
+    <div className="w-[400px] max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-white p-3 shadow-lg">
       <p className={`text-etiqueta uppercase tracking-wide ${TEXTO_APOYO}`}>El TMS reportó</p>
       <p className="font-identificador text-dato text-text-primary mt-0.5 break-words">
         {nombreTms}
       </p>
 
+      {/* Con avisos ya está asignado: se muestran solos, hasta "Continuar". */}
+      {avisos.length === 0 && (<>
       <div className="mt-3 space-y-1.5">
         {cargando && (
           <p className={`text-etiqueta py-2 ${TEXTO_APOYO}`}>Buscando candidatos…</p>
@@ -164,7 +152,7 @@ export function AsignarConductorPopover({
             <p className={`text-etiqueta py-1 ${TEXTO_CUERPO}`}>
               No encontramos a esta persona en el registro.
             </p>
-            {onDarDeAlta && (
+            {puedeDarDeAlta && (
               <button
                 type="button"
                 onClick={() => setDandoDeAlta(true)}
@@ -193,61 +181,25 @@ export function AsignarConductorPopover({
           </>
         )}
 
-        {/* Alta. El RUT es obligatorio y no es burocracia: es la clave con la
-            que el resolvedor identifica por RUT, la única regla que no depende
-            de cómo se escriba el nombre. Un conductor sin RUT no vuelve a
-            identificarse solo nunca. */}
-        {dandoDeAlta && (
-          <div className="space-y-2 pt-1">
-            <label className={`block text-etiqueta ${TEXTO_CUERPO}`}>
-              Nombre
-              <input value={nombreNuevo} onChange={e => setNombreNuevo(e.target.value)}
-                     className="mt-0.5 w-full rounded-md border border-border px-2 py-1.5 text-dato" />
-            </label>
-            <label className={`block text-etiqueta ${TEXTO_CUERPO}`}>
-              RUT
-              <input value={rutNuevo} onChange={e => setRutNuevo(e.target.value)}
-                     placeholder="16.428.339-1"
-                     className="mt-0.5 w-full rounded-md border border-border px-2 py-1.5 text-dato font-identificador" />
-              <span className={`block text-etiqueta mt-0.5 ${TEXTO_APOYO}`}>
-                Con puntos o sin puntos, da lo mismo.
-              </span>
-            </label>
-
-            {/* La empresa NO es opcional por comodidad: un conductor sin empresa
-                no aparece en el cierre del día. Se puede omitir porque a veces
-                de verdad no se sabe, pero entonces el aviso lo dice. */}
-            <div className={`text-etiqueta ${TEXTO_CUERPO}`}>
-              Empresa
-              {empresa ? (
-                <div className="mt-0.5 flex items-center gap-1.5 rounded-md border border-accent bg-accent/5 px-2 py-1.5">
-                  <Building2 size={13} className="text-accent shrink-0" />
-                  <span className="text-dato text-text-primary truncate">{empresa.business_name}</span>
-                  <button type="button" onClick={() => { setEmpresa(null); setBusquedaEmpresa('') }}
-                          aria-label="Quitar la empresa elegida"
-                          className={`ml-auto shrink-0 ${TEXTO_APOYO} hover:text-text-primary`}>
-                    <X size={13} />
-                  </button>
-                </div>
-              ) : (
-                <div className="mt-0.5">
-                  <CarrierSearchPicker
-                    query={busquedaEmpresa}
-                    onQueryChange={setBusquedaEmpresa}
-                    onPick={c => setEmpresa(c)}
-                    placeholder="Buscar empresa…"
-                    size="sm"
-                    maxHeightClass="max-h-28"
-                  />
-                  <span className={`block text-etiqueta mt-0.5 ${TEXTO_APOYO}`}>
-                    Sin empresa, esta persona no va a aparecer en el cierre del día.
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        {/* Alta: la misma de toda la app (D5, Entrega C). El RUT es
+            obligatorio y no es burocracia: es la clave con la que el resolvedor
+            identifica por RUT. La empresa se pregunta porque sin ella la
+            persona no aparece en el cierre del día. */}
+        <AltaDeFlota
+          tipo="conductor"
+          carrierId={null}
+          prefill={nombreLegible(nombreTms)}
+          etiquetaGuardar="Crear y asignar"
+          abierto={dandoDeAlta}
+          onAbiertoChange={setDandoDeAlta}
+          onCreado={async (carrierId, creado) => {
+            await invalidateDirectory(queryClient, { entity: 'driver', id: creado.id, type: 'create', carrierIds: [carrierId] })
+            await asignar(creado.id)
+          }}
+          onYaExiste={existente => asignar(existente.driver_id)}
+        />
       </div>
+      </>)}
 
       {error && (
         <div className="mt-2.5 rounded-md border border-status-incidente/25 bg-status-incidente/5 px-2.5 py-2 space-y-1.5">
@@ -255,18 +207,6 @@ export function AsignarConductorPopover({
             <AlertCircle size={13} className="mt-0.5 shrink-0" />
             <span>{error}</span>
           </p>
-          {/* La salida del callejón: si ya existe, asignárselo es justo lo que
-              se venía a hacer. */}
-          {yaExiste && (
-            <button
-              type="button"
-              disabled={guardando}
-              onClick={() => ejecutar(() => onAsignar(yaExiste.driver_id, aTodos))}
-              className="w-full rounded-md border border-status-incidente/35 bg-white px-2.5 py-1.5 text-etiqueta font-medium text-status-incidente hover:bg-status-incidente/10 disabled:opacity-50"
-            >
-              Asignar a {nombreLegible(yaExiste.full_name)}
-            </button>
-          )}
         </div>
       )}
 
@@ -283,6 +223,7 @@ export function AsignarConductorPopover({
         </div>
       )}
 
+      {avisos.length === 0 && (
       <div className="mt-3 pt-2.5 border-t border-border space-y-2.5">
         <label className={`flex items-start gap-2 text-etiqueta cursor-pointer ${TEXTO_CUERPO}`}>
           <input type="checkbox" checked={aTodos}
@@ -290,23 +231,11 @@ export function AsignarConductorPopover({
           <span>Aplicar a los {viajesDeLaPersona} viajes de esta persona</span>
         </label>
         <div className="flex gap-2">
-          {dandoDeAlta ? (
-            <button
-              type="button"
-              disabled={guardando || !rutNuevo.trim() || !nombreNuevo.trim()}
-              onClick={() => ejecutar(() => onDarDeAlta?.(
-                nombreNuevo.trim(), rutNuevo.trim(), aTodos, empresa?.id ?? null,
-              ))}
-              className="flex-1 flex items-center justify-center gap-1.5 rounded-md bg-accent px-2.5 py-1.5 text-dato text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {guardando && <Loader2 size={13} className="animate-spin" />}
-              {guardando ? 'Creando…' : 'Crear y asignar'}
-            </button>
-          ) : (
+          {!dandoDeAlta && (
             <button
               type="button"
               disabled={cargando || guardando || !elegido}
-              onClick={() => elegido && ejecutar(() => onAsignar(elegido, aTodos))}
+              onClick={() => elegido && asignarElegido(elegido)}
               className="flex-1 flex items-center justify-center gap-1.5 rounded-md bg-accent px-2.5 py-1.5 text-dato text-white font-medium disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {guardando && <Loader2 size={13} className="animate-spin" />}
@@ -319,6 +248,7 @@ export function AsignarConductorPopover({
           </button>
         </div>
       </div>
+      )}
     </div>
   )
 }
