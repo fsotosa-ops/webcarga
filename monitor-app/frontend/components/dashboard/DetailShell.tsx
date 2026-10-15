@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
+import { useLayer } from '@/lib/ui/layers'
 
 export type DetailVariant = 'dialog' | 'page'
 
@@ -19,12 +20,15 @@ export function DetailShell({ variant, label, onClose, children }: {
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const dialog = variant === 'dialog'
+  // Solo la capa de arriba atiende Escape y atrapa Tab (la vista rápida puede abrirse encima).
+  const isTop = useLayer(dialog)
 
   useEffect(() => {
     if (!dialog) return
     const previouslyFocused = document.activeElement as HTMLElement | null
     ref.current?.focus()
     const onKey = (e: KeyboardEvent) => {
+      if (!isTop()) return
       if (e.key === 'Escape') { onClose?.(); return }
       if (e.key === 'Tab' && ref.current) {
         const focusables = ref.current.querySelectorAll<HTMLElement>(

@@ -1,5 +1,6 @@
 'use client'
 
+import { useLayer } from '@/lib/ui/layers'
 import { useEffect, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -20,12 +21,15 @@ export default function TripDetailOverlay() {
   const metaQuery = useQuery({ queryKey: ['trips-meta'], queryFn: fetchTripsMeta, staleTime: 60 * 60 * 1000 })
 
   function dismiss() { router.back() }
+  const isTop = useLayer()
 
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null
     panelRef.current?.focus()
 
     const onKey = (e: KeyboardEvent) => {
+      // Solo la capa de arriba: la vista rápida puede abrirse sobre el viaje.
+      if (!isTop()) return
       if (e.key === 'Escape') { dismiss(); return }
       if (e.key === 'Tab' && panelRef.current) {
         const focusables = panelRef.current.querySelectorAll<HTMLElement>(

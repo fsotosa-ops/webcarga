@@ -36,6 +36,7 @@ describe('DocumentChecklist — Pedir a Certificación (Entrega B)', () => {
     fireEvent.click(boton)
     expect(onRequest).toHaveBeenCalledTimes(1)
     terminar()
-    await waitFor(() => expect(boton).not.toBeDisabled())
+    // Al terminar dice que quedó pedido, sin esperar a que se recarguen los datos.
+    expect(await screen.findByText('Pedido a Certificación')).toBeInTheDocument()
   })
 })

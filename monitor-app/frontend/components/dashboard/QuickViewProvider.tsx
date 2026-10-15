@@ -1,6 +1,7 @@
 'use client'
 
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
 import { EntityQuickView } from './EntityQuickView'
 import { useQuickView, type QuickViewTarget } from '@/lib/quickView'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
@@ -24,7 +25,11 @@ export function QuickViewProvider({ children }: { children: ReactNode }) {
   const canRead = usePermiso('directory.read')
   const canRequestDocuments = usePermiso('certification.request')
 
-  const { open: openTarget } = quickView
+  const { open: openTarget, close } = quickView
+  // Cambiar de pantalla ("Abrir ficha completa", atrás/adelante) cierra el
+  // panel: el proveedor vive en el layout y no se desmonta entre rutas.
+  const pathname = usePathname()
+  useEffect(() => { close() }, [pathname, close])
   const open = useCallback((target: QuickViewTarget) => {
     setReturnTo(`${window.location.pathname}${window.location.search}`)
     openTarget(target)

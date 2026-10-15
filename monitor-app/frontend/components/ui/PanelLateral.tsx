@@ -1,5 +1,6 @@
 'use client'
 
+import { useLayer } from '@/lib/ui/layers'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 
@@ -40,6 +41,7 @@ export function PanelLateral({
   ancho?: 'normal' | 'amplio'
 }) {
   const panel = useRef<HTMLDivElement>(null)
+  const isTop = useLayer()
   const anterior = useRef<HTMLElement | null>(null)
 
   // DOS efectos, no uno: tomar el foco ocurre UNA VEZ, al abrir; escuchar
@@ -56,10 +58,10 @@ export function PanelLateral({
   }, [])
 
   useEffect(() => {
-    const alTeclear = (e: KeyboardEvent) => { if (e.key === 'Escape') onCerrar() }
+    const alTeclear = (e: KeyboardEvent) => { if (e.key === 'Escape' && isTop()) onCerrar() }
     document.addEventListener('keydown', alTeclear)
     return () => document.removeEventListener('keydown', alTeclear)
-  }, [onCerrar])
+  }, [onCerrar, isTop])
 
   // Sin fondo no hay nada que reciba el clic de afuera: se escucha en el documento.
   useEffect(() => {
