@@ -5,15 +5,15 @@ import type { Trip } from '@/lib/types'
 
 /** HU-12 (Fase 2, 2026-07-22): alerta prominente en el Diario cuando el
  *  transportista resuelto de un viaje tiene póliza vencida o cuotas
- *  críticas impagas — pedido explícito de Pablo. Fuente: trip.insurance_alert
- *  (ver LATERAL join sobre app.carrier_insurance_status en trips.py). */
+ *  críticas impagas — pedido explícito de Pablo. Fuente: trip.insurance_alert,
+ *  de app.carrier_insurance_summary: la misma regla que Seguros (Seguros E1). */
 
 type InsuranceAlert = NonNullable<Trip['insurance_alert']>
 
 const LABEL: Record<InsuranceAlert, string> = {
   EXPIRED: 'Póliza vencida',
   OVERDUE_INSTALLMENTS: 'Cuotas impagas',
-  EXPIRING_SOON: 'Póliza por vencer',
+  EXPIRING: 'Póliza por vencer',
 }
 
 interface Props {

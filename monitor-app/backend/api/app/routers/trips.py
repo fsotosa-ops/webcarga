@@ -754,22 +754,10 @@ _TRIP_FROM = """
     -- empresa (regla explícita de Pablo: ambos deben estar bajo la misma
     -- empresa de transporte). Ver _FLEET_MATCH_CASE.
     LEFT JOIN public.carriers c_home ON c_home.id = vfr.resolved_driver_home_carrier_id
-    -- Fase 2 (HU-12, 2026-07-22): alerta de póliza crítica en el Diario —
-    -- pedido explícito de Pablo ("recibir una alerta prominente cuando un
-    -- equipo tenga póliza vencida o cuotas críticas impagas"). Una empresa
-    -- puede tener varias pólizas (app.carrier_insurance_status, 1 fila por
-    -- póliza) — se toma el peor caso (regla del eslabón más débil, mismo
-    -- criterio ya usado para calcular policy_health). "2+ cuotas impagas"
-    -- es el umbral que Pablo mencionó explícitamente en notes-meeting.md.
-    LEFT JOIN LATERAL (
-        SELECT CASE
-            WHEN bool_or(cis.policy_health = 'EXPIRED') THEN 'EXPIRED'
-            WHEN bool_or(cis.overdue_installments >= 2) THEN 'OVERDUE_INSTALLMENTS'
-            WHEN bool_or(cis.policy_health = 'EXPIRING_SOON') THEN 'EXPIRING_SOON'
-        END AS insurance_alert
-        FROM app.carrier_insurance_status cis
-        WHERE cis.carrier_id = vfr.resolved_carrier_id
-    ) ins ON true
+    -- Alerta de póliza de la empresa del viaje (HU-12; Seguros E1, 15/10): la
+    -- MISMA vista de empresa que leen Seguros y la ficha de empresa (EXPIRED,
+    -- OVERDUE_INSTALLMENTS = 2 o más cuotas vencidas en una póliza, EXPIRING).
+    LEFT JOIN app.carrier_insurance_summary ins ON ins.carrier_id = vfr.resolved_carrier_id
     -- Badge "necesita seguimiento en bitácora" (2026-07-28, ver spec
     -- docs/superpowers/specs/2026-07-28-diario-bitacora-followup-badge-design.md):
     -- nota humana más reciente del viaje, para cruzarla en el frontend
@@ -837,7 +825,7 @@ async def list_trips(
     origin_region: Annotated[str, Query()] = "",
     origin_city: Annotated[str, Query()] = "",
     fleet_match: Annotated[str, Query()] = "",  # unmatched | mismatch — HU-04 (Fase 0)
-    insurance_alert: Annotated[str, Query()] = "",  # EXPIRED | OVERDUE_INSTALLMENTS | EXPIRING_SOON — HU-12 (Fase 2)
+    insurance_alert: Annotated[str, Query()] = "",  # EXPIRED | OVERDUE_INSTALLMENTS | EXPIRING — HU-12; Seguros E1
     no_asignado_webcarga: Annotated[bool, Query()] = False,
     sort_by: Annotated[str, Query()] = "planning_date",
     sort_dir: Annotated[str, Query()] = "desc",
@@ -949,7 +937,7 @@ async def list_trips(
     # HU-12 (Fase 2): a diferencia de fleet_match_status, ins.insurance_alert
     # es un alias real de la LATERAL join (no un CASE repetido) — se puede
     # referenciar directo en el WHERE.
-    if insurance_alert in ("EXPIRED", "OVERDUE_INSTALLMENTS", "EXPIRING_SOON"):
+    if insurance_alert in ("EXPIRED", "OVERDUE_INSTALLMENTS", "EXPIRING"):
         add("ins.insurance_alert = ?", insurance_alert)
     if no_asignado_webcarga:
         # No mira is_active: el punto es el HISTORIAL de lo que nos

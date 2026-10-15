@@ -522,7 +522,7 @@ export type Trip = {
    *  para este viaje — regla del eslabón más débil sobre
    *  app.carrier_insurance_status (una empresa puede tener varias pólizas).
    *  null cuando no hay empresa resuelta o su cobertura está VALID. */
-  insurance_alert?: 'EXPIRED' | 'OVERDUE_INSTALLMENTS' | 'EXPIRING_SOON' | null
+  insurance_alert?: 'EXPIRED' | 'OVERDUE_INSTALLMENTS' | 'EXPIRING' | null
   /** Cierre del gap detectado 2026-07-22: el Diario solo mostraba alerta de
    *  Seguros — la documentación LEGAL_MANDATORY de conductor/tracto/empresa
    *  (HU-08/09) nunca llegaba acá (el summary endpoint viejo que la

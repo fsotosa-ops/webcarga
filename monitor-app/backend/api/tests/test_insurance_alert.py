@@ -36,9 +36,12 @@ def test_trip_select_exposes_insurance_alert():
     assert "insurance_alert" in _TRIP_SELECT
 
 
-def test_trip_from_joins_carrier_insurance_status_lateral():
-    assert "app.carrier_insurance_status" in _TRIP_FROM
-    assert "LEFT JOIN LATERAL" in _TRIP_FROM
+# S6 (Seguros E1): el Monitor lee la MISMA vista de empresa que Seguros y la
+# ficha de empresa; su LATERAL propio (una segunda versión de la regla) se borró.
+def test_S6_trip_from_lee_la_vista_de_empresa_de_seguros():
+    assert "LEFT JOIN app.carrier_insurance_summary ins ON ins.carrier_id = vfr.resolved_carrier_id" in _TRIP_FROM
+    assert "carrier_insurance_status" not in _TRIP_FROM
+    assert "bool_or(cis." not in _TRIP_FROM
 
 
 def test_list_trips_insurance_alert_expired_filters_by_joined_alias():

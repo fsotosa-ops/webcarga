@@ -204,3 +204,23 @@ async def test_generar_el_plan_crea_las_cuotas_mensuales_dentro_de_la_vigencia(c
     assert [c["installment_number"] for c in cuotas] == [1, 2, 3]
     assert {c["installments_total"] for c in cuotas} == {3}
     assert not any(c["outside_validity"] for c in cuotas)
+
+
+async def test_S6_dos_cuotas_vencidas_es_la_alerta_de_la_empresa_en_todas_partes(conexion_revertida):
+    """La regla D2 vive en app.carrier_insurance_summary: la misma fila la leen
+    /policies?group_by=carrier, /carriers/{id}/policies y /trips."""
+    from app.services import insurance
+
+    conn = conexion_revertida
+    today = await _today(conn)
+    carrier = await _carrier(conn)
+    policy = await _policy(conn, carrier, valid_from=today - timedelta(days=100), valid_to=today + timedelta(days=200))
+    for n in (1, 2):
+        await conn.execute(
+            "INSERT INTO public.insurance_installments (policy_id, installment_number, total_installments, amount_uf, due_date) "
+            "VALUES ($1, $2, 2, 1, $3)", policy, n, today - timedelta(days=10 * n))
+
+    alerta = await conn.fetchval("SELECT insurance_alert FROM app.carrier_insurance_summary WHERE carrier_id = $1", carrier)
+    assert alerta == "OVERDUE_INSTALLMENTS"
+    emp = await insurance.list_carriers(conn, q="76000000")
+    assert emp["data"][0]["insurance_alert"] == "OVERDUE_INSTALLMENTS" and emp["data"][0]["worst_state"] == "VALID"
