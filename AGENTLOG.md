@@ -248,7 +248,26 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
        tiempo con la máquina cargada y pasaron solos, 330/330), tsc OK, humo 20/20 (2 logins lentos, pasaron solos),
        trinquetes 1.142 / bajo 11 px 163. Desplegado (Deploy Frontend verde) y recorrido en dev (Propietario, solo
        lectura): la fila de Hasa Spa abre su ficha con `?next=`, atrás vuelve a la lista; sin modal, 0 errores de dev.
-     **Siguiente:** que el usuario mire Entregas 1 y 2 y las listas del Directorio en dev. Con eso la spec de fichas y
+     - **Forma a ancho real + Directorio/Certificación parejos (15/10, `9fa50274`)**. El usuario: "¿por qué quedan tantos
+       huecos vacíos?" y "revisa todo lo asociado a directorio y certificaciones". Auditoría de 19 pantallas a 1440 px.
+       Maqueta en el companion (`.superpowers/brainstorm/56411-1792100703/content/ficha-ancho-real-2.html`), aprobada con
+       una corrección: "todos los elementos completamente alineados" → las pestañas van arriba de la grilla.
+       - `components/directory/ProfileLayout` (+ `AsidePanel`): sección al centro y panel fijo de 340 px (Detalles,
+         Actividad, Contactos). Conductor y equipo SIN pestañas; empresa con Documentos · Conductores · Equipos ·
+         Seguros (Resumen y Contactos dejan de ser pestañas; `?tab=resumen|contactos` abre Documentos).
+       - `FleetRosterTable`: la flota de la empresa como tabla (borra DriverRosterCard/VehicleRosterCard).
+       - Seguros y Certificación › Requisito con el kit; buscador "Nombre o RUT".
+       - Errores: rol de contacto crudo ("LEGAL_REP" → `contactRoleLabel`); pestañas con "0" en vuelo; chip de estado en
+         zigzag (las acciones de la fila en un bloque `ROW_ACTIONS_WIDTH` que las cabeceras reservan: título "Estado" y
+         chips medidos en la misma x); "Vehículos" → "Equipos".
+       - Ruling: la ficha de conductor/equipo tiene "Subir documentos" arriba (`BulkUploadReview trigger="button"`) además
+         de la franja de Documentos, como en la maqueta aprobada. En Pendientes, un rol sin acciones ve la columna de
+         acciones vacía (es lo que alinea la cabecera).
+       - Verificación: vitest completo 1.825/1.825, tsc OK, humo 20/20 (3 recorridos ajustados a la forma nueva), trinquetes
+         1.084 / bajo 11 px 158, capturas locales a 1440 y 390. Desplegado (Deploy Frontend verde) y recorrido en dev
+         (Propietario, solo lectura): empresa, su pestaña Conductores, conductor, equipo, Seguros y Requisito; 0 errores de
+         consola; "Estado" y los chips medidos en la misma x (486 px).
+     **Siguiente:** que el usuario mire en dev las fichas nuevas, Seguros y Requisito. Con eso la spec de fichas y
      navegación queda cerrada (fuera: Cmd+K).
   2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
