@@ -188,17 +188,24 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
   "Todo asignado" con "Subir documentos"; la ficha de Huemul › Documentos tiene "Subir documentos" junto a "Exportar
   todo"; sin errores de API. No se subió nada en dev.
 - **Siguiente paso exacto:**
-  1. **Rediseño de las fichas del Directorio + navegación entre módulos** (brainstorming en curso, camino
-     arquitectónico: maqueta → spec → plan). Levantamiento del 15/10: las 3 fichas no siguen el estándar (Samsara,
-     Fleetio, Vanta) y vienen de la versión anterior (panel de conductor 18 colores crudos, 11 tamaños < 11 px; ficha de
-     empresa 55 crudos); Resumen es un formulario; acciones destructivas en el cuerpo; Documentos sin fechas. Navegación:
-     Pendientes, Por asignar, Pedidos, detalle del viaje y Seguros no enlazan a ninguna ficha (0 enlaces, confirmado en
-     dev); el modal de la ficha de empresa no abre la ficha propia; conductor ↔ tracto habitual sin enlace; "volver"
-     pierde los filtros. **Decidido por el usuario:** fichas y navegación en una sola maqueta; la búsqueda global
-     (Cmd+K) queda FUERA, como mejora para después. Próximo: ofrecer el visual companion y armar la maqueta contra
-     Samsara/Fleetio/Vanta (ui-ux-pro-max + frontend-design).
-  2. Ofrecido al usuario, sin respuesta: el alta del Cierre (`PreCierrePendingSection`, RUT fijo) podría pasar
-     `onYaExiste` para ofrecer "Asignar a X" ante un RUT existente (hoy solo muestra el mensaje).
+  1. **Rediseño de fichas + navegación + kit de Certificación: SPEC ESCRITA, esperando revisión del usuario.**
+     `docs/superpowers/specs/2026-10-15-fichas-directorio-y-navegacion-design.md` (`1ccfdfc4`), maquetas
+     `docs/superpowers/mockups/2026-10-15-fichas-*.html`. Decisiones del usuario en el companion (15/10): forma
+     "encabezado + contenido" para las 3 fichas; Documentos = tabla con filtro; clic en un nombre = vista rápida
+     (EntityCell como `<a href>`, Ctrl/Cmd + clic a la ficha); versión LIVIANA (cada dato una vez: encabezado con
+     la razón del "No habilitado", Resumen = un bloque Detalles); material visual = las piezas de Pendientes (barra
+     gris `Tabs`, `SegmentedControl`, chip estado+fecha de `pendingRowStatus`, `RenglonPendiente`), NO pestañas
+     subrayadas; alcance A: Entrega 1 = kit + fichas + navegación, Entrega 2 = Empresas y Por asignar alineados;
+     Cmd+K fuera. Verificado al escribirla: `/drivers|assets/{id}/summary` ya trae `can_operate`, empresa y
+     tracto/conductor habitual (sin endpoints nuevos para conductor/equipo); la habilitación de la empresa cuenta los
+     obligatorios de su flota activa, pero sus cifras incluyen opcionales → único cambio de backend:
+     `blocking_own`/`blocking_fleet` en `carrier_compliance`. Documentos de las 3 fichas = `CarrierDocumentsWorkspace`
+     generalizado a `DocumentsWorkspace`; `DocumentChecklist` queda solo en la vista rápida.
+     **Siguiente:** que el usuario revise la spec → `superpowers:writing-plans` (plan de la Entrega 1).
+  2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
+     "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
+     el 409 solo ocurre con la pantalla vieja). La salida del 409 en `AltaDeFlota` pasó a ser del anfitrión
+     (`yaExiste: { accion, usar }`). Test con mutación probada. No probado en dev (exige escribir).
   3. Decide el usuario si A+B+C+D pasan a `main`. Pendiente de probar con datos reales: una tanda mezclada subida sin
      contexto (Pablo/Carla). Siguen esperando: el Google Sheet del tipo de operación, la validación de Pablo de "Pedir a
      Certificación" y el dato del tracto GPRZ30.
