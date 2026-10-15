@@ -75,7 +75,7 @@ export function PendingSlotPicker({ rows, selected, onPick }: Props) {
                         onClick={() => onPick({
                           entity_type:    r.entity_type as 'CARRIER' | 'DRIVER' | 'ASSET',
                           entity_id:      r.entity_id,
-                          subject_label:  r.subject_name ?? r.carrier_name,
+                          subject_label:  r.subject_name ?? r.carrier_name ?? 'Sin empresa',
                           requirement_id: r.requirement_id,
                           record_id:      r.id,
                           document_name:  r.document_name,

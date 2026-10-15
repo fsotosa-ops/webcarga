@@ -2,30 +2,24 @@
 
 import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ban, Building2, ChevronDown, ChevronRight, Eye, Loader2, Truck, User } from 'lucide-react'
+import { Ban, Building2, ChevronDown, ChevronRight, Truck, User } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { tripsApi } from '@/lib/api/trips'
 import { carriersApi } from '@/lib/api/carriers'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
 import { useAssetTypes } from '@/hooks/useAssetTypes'
-import { camposQuePide, puedeCorregirVencimiento, type DatosDelDocumento } from '@/lib/compliance'
+import type { DatosDelDocumento } from '@/lib/compliance'
 import { SolicitarDocumento } from '@/components/compliance/SolicitarDocumento'
 import { AccionesDeSujeto } from '@/components/compliance/AccionesDeSujeto'
-import { AvisoDeFila } from '@/components/compliance/AvisoDeFila'
 import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
-import { RenglonPendiente } from '@/components/compliance/RenglonPendiente'
+import { SubjectDocumentRows, useDocumentPreview, type DocumentPreview } from '@/components/compliance/SubjectDocumentRows'
 import { FiltroDeEstado } from '@/components/compliance/FiltroDeEstado'
-import { DocumentVersions } from '@/components/compliance/DocumentVersions'
-import { ReassignDocument } from '@/components/compliance/ReassignDocument'
-import { ExpirationDateCell } from '@/components/dashboard/ExpirationDateCell'
-import { DocumentPreviewModal } from '@/components/dashboard/DocumentPreviewModal'
 import { TransferModal } from '@/components/dashboard/TransferModal'
 import { AltaDeFlota } from '@/components/dashboard/AltaDeFlota'
 import { Cifra } from '@/components/ui/Cifra'
 import { Estado } from '@/components/ui/Estado'
-import { StatusChip } from '@/components/ui/StatusChip'
-import { documentEvidenceStyle, isCarrierDeactivated } from '@/lib/states'
+import { isCarrierDeactivated } from '@/lib/states'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
 import { invalidateDirectory } from '@/lib/queries/directorio'
 import { claveDeSujeto, tituloDeSujeto } from '@/lib/utils/agruparPorSujeto'
@@ -268,65 +262,6 @@ function CabeceraDeGrupo({ grupo, abierto, onAlternar }: {
  *  conflicto 10). La contradicción que había —"Aprobado (manual)" sobre un
  *  documento vencido hace un año— se cerró en la partición y se cierra otra
  *  vez acá: ninguna de las dos lee `status`. */
-function FilaDocumento({ fila, viendo, avisoVer, onVer, puedeEditar, onFechaCorregida, acciones }: {
-  fila:     PendingComplianceRow
-  /** Versiones y reasignar, si hay archivo (ver `RenglonPendiente`). */
-  acciones?: ReactNode
-  viendo:   boolean
-  /** Por qué "Ver" no abrió nada, dicho en este renglón y con reintento. */
-  avisoVer: string | null
-  /** Corregir la fecha es lo único que todavía obligaba a salir a Empresas
-   *  (HU-26). El archivo está bien; lo que se escribió mal es un dato. */
-  puedeEditar: boolean
-  onFechaCorregida: () => void
-  /** Ausente cuando no hay archivo que abrir. Estar al día no implica tenerlo:
-   *  son 62 renglones repartidos en 37 de las 38 empresas activas —una
-   *  aprobación manual sin evidencia adjunta es al día y no tiene blob—, y con
-   *  un "Ver" incondicional cada uno abría un botón que sólo podía contestar
-   *  que no hay nada. Lo mismo hace `RenglonPendiente` en la otra mitad de
-   *  esta lista: el hecho lo dice `tiene_archivo`, no el estado. */
-  onVer?:   () => void
-}) {
-  // "Falta" significaba dos cosas: no saber nada del documento, y saber
-  // cuando vence pero no tener el papel. Son estados distintos para quien
-  // trabaja la cola — el segundo ya no hay que averiguarlo, hay que pedirlo.
-  const s = documentEvidenceStyle(fila.document_state, fila.expiration_date, fila.tiene_archivo)
-  return (
-    <div className="border-b border-border last:border-b-0 px-3 py-2 min-h-10">
-      <div className="flex items-center gap-3">
-        <span className="flex-1 min-w-0 truncate text-dato text-text-primary">{fila.document_name}</span>
-        {/* `ExpirationDateCell` ya existía y ya estaba probada: vivía sólo en
-            la pestaña Documentos del módulo Empresas, o sea que corregir una
-            fecha obligaba a salir de Certificación. Se monta, no se
-            reescribe. */}
-        <span className="shrink-0 tabular-nums">
-          <ExpirationDateCell
-            recordId={fila.id}
-            value={fila.expiration_date ?? null}
-            required={fila.expiration_policy === 'REQUIRED'}
-            canEdit={puedeEditar}
-            onSaved={onFechaCorregida}
-          />
-        </span>
-        <span className="shrink-0"><StatusChip tone={s.tone} icon={s.icon}>{s.label}</StatusChip></span>
-        {acciones}
-        {onVer && (
-          <button
-            type="button"
-            onClick={onVer}
-            disabled={viendo}
-            className="shrink-0 inline-flex items-center gap-1.5 text-etiqueta font-semibold text-accion transition-opacity hover:opacity-70 disabled:opacity-50"
-          >
-            {viendo ? <Loader2 size={12} className="motion-safe:animate-spin" aria-hidden="true" /> : <Eye size={12} aria-hidden="true" />}
-            Ver
-          </button>
-        )}
-      </div>
-      {avisoVer && <AvisoDeFila mensaje={avisoVer} onReintentar={onVer} />}
-    </div>
-  )
-}
-
 /** La tarjeta de un sujeto: su cabecera (del resumen, siempre disponible) y,
  *  si está desplegado, sus filas de detalle — pedidas EN ESE MOMENTO, no
  *  antes.
@@ -339,7 +274,7 @@ function FilaDocumento({ fila, viendo, avisoVer, onVer, puedeEditar, onFechaCorr
 function TarjetaDeSujeto({
   sujeto, carrierId, estadoFiltro, abierto, onAlternar, canEdit, puedeRevisar, puedeGestionarFlota, nombreEmpresa,
   onTransferir, onDarDeBaja, accionesDeshabilitadas,
-  viendoId, avisoVer, previewFetching, onVer, subir, onFechaCorregida,
+  preview, subir, onFechaCorregida,
 }: {
   sujeto:        ComplianceSummarySubject
   carrierId:     string
@@ -359,10 +294,7 @@ function TarjetaDeSujeto({
   onTransferir:  () => void
   onDarDeBaja:   () => void
   accionesDeshabilitadas?: boolean
-  viendoId:        string | null
-  avisoVer:        string | null
-  previewFetching: boolean
-  onVer:  (fila: PendingComplianceRow) => void
+  preview: DocumentPreview
   subir:  (fila: PendingComplianceRow, archivo: File, datos?: DatosDelDocumento) => Promise<void>
 }) {
   // `estado='todos'` FIJO, sin importar `estadoFiltro` (Task 1, ronda de
@@ -381,19 +313,6 @@ function TarjetaDeSujeto({
     enabled: abierto,
   })
   const filas = filasDelEstado(filasQuery.data?.rows ?? [], estadoFiltro)
-  const queryClient = useQueryClient()
-  async function quitarSolicitud(recordId: string) {
-    await complianceApi.quitarSolicitud(recordId)
-    await invalidarCertificacion(queryClient)
-  }
-  /** Con archivo: sus versiones y, para quien carga, reasignarlo a otro requisito (HU-03). */
-  const accionesDe = (f: PendingComplianceRow) => f.tiene_archivo ? (
-    <>
-      <DocumentVersions recordId={f.id} />
-      {canEdit && <ReassignDocument recordId={f.id} carrierId={carrierId} onDone={() => { void invalidarCertificacion(queryClient) }} />}
-    </>
-  ) : undefined
-
   return (
     <div className="border border-border rounded-xl bg-white overflow-hidden">
       <CabeceraDeSujeto
@@ -415,52 +334,13 @@ function TarjetaDeSujeto({
         />
       )}
       {/* La partición es el MISMO `document_state` que reparte el filtro de
-          arriba, no una segunda lectura por `status`. Con `status` la lista se
-          contradecía con el filtro que la contenía: los registros vencidos
-          por fecha del módulo están en `APPROVED_MANUAL`, así que aparecían
-          bajo "Falta" rotulados "Aprobado (manual)". Y al revés, un
-          `EXPIRED` —que TIENE archivo— iba al renglón de carga y su
-          documento quedaba invisible en la pantalla que existe para hacerlo
-          visible. Que hay archivo o no lo dice `tiene_archivo`, que es el
-          hecho; del status no se deduce. */}
-      {abierto && !filasQuery.isPending && !filasQuery.error && filas.map(f => (
-        f.document_state === 'UP_TO_DATE'
-          ? (
-            <FilaDocumento
-              key={f.id}
-              fila={f}
-              viendo={viendoId === f.id && previewFetching}
-              avisoVer={viendoId === f.id ? avisoVer : null}
-              onVer={f.tiene_archivo ? () => onVer(f) : undefined}
-              puedeEditar={puedeCorregirVencimiento(f.status, { puedeCargar: canEdit, puedeRevisar })}
-              onFechaCorregida={onFechaCorregida}
-              acciones={accionesDe(f)}
-            />
-          )
-          : (
-            /* `onFechaCorregida` se pasa según la POLÍTICA del requisito y no
-               según haya archivo: declarar un vencimiento sin tener el escaneo
-               es deliberado —así se sigue qué vence antes de subir los ~2.000
-               documentos— y ya estaba decidido cuando se escribió
-               `ExpirationDateCell`. `NONE` es el único que no la ofrece: el
-               Padrón no vence. */
-            <RenglonPendiente
-              key={f.id}
-              fila={f}
-              puedeEditar={canEdit}
-              puedeCorregirFecha={puedeCorregirVencimiento(f.status, { puedeCargar: canEdit, puedeRevisar })}
-              onSubir={subir}
-              onVer={f.tiene_archivo ? () => onVer(f) : undefined}
-              onFechaCorregida={camposQuePide(f.expiration_policy ?? 'OPTIONAL').fecha !== 'no'
-                ? onFechaCorregida : undefined}
-              onQuitarSolicitud={puedeRevisar && f.a_pedido && !f.tiene_archivo
-                ? () => { void quitarSolicitud(f.id) } : undefined}
-              viendo={viendoId === f.id && previewFetching}
-              avisoVer={viendoId === f.id ? avisoVer : null}
-              acciones={accionesDe(f)}
-            />
-          )
-      ))}
+          arriba, no una segunda lectura por `status`: con `status` la lista se
+          contradecía con el filtro que la contenía. Que hay archivo o no lo
+          dice `tiene_archivo`, que es el hecho. */}
+      {abierto && !filasQuery.isPending && !filasQuery.error && (
+        <SubjectDocumentRows filas={filas} carrierId={carrierId} canEdit={canEdit} puedeRevisar={puedeRevisar}
+                             preview={preview} subir={subir} onFechaCorregida={onFechaCorregida} />
+      )}
       {/* Pedir un documento "solo cuando se solicita" (HU-C1, entrega 2b):
           al pie de los documentos del sujeto, no en otra pantalla. */}
       {abierto && puedeRevisar && !filasQuery.isPending && (
@@ -526,14 +406,6 @@ export function CarrierDocumentsWorkspace({ carrierId, carrier }: {
   }
 
   const [estadoFiltro, setEstadoFiltro] = useState<EstadoDocumental>('todos')
-  /** El documento que se está mirando, sea cual sea su sujeto. Se guarda el
-   *  id y no la fila completa: `/pending` nunca trae `file_url` firmada —
-   *  firmarla ahí sería una llamada HTTP por archivo sobre una lista que
-   *  puede traer 200— así que hay que volver a pedir el registro, ahora sí
-   *  de a uno, cuando alguien elige "Ver". */
-  const [viendoId, setViendoId] = useState<string | null>(null)
-  const [viendoLabel, setViendoLabel] = useState('')
-
   const resumenQuery = useQuery({
     queryKey: clavesCertificacion.resumen(carrierId),
     queryFn: () => complianceApi.summary(carrierId),
@@ -617,34 +489,7 @@ export function CarrierDocumentsWorkspace({ carrierId, carrier }: {
     return siguiente
   })
 
-  const previewQuery = useQuery({
-    queryKey: ['compliance-record-file', viendoId],
-    queryFn: () => complianceApi.get(viendoId!),
-    enabled: !!viendoId,
-  })
-
-  /** Por qué "Ver" no abrió nada. Los dos caminos terminan igual —el modal no
-   *  se monta— y antes ninguno se decía: el spinner se apagaba y no pasaba
-   *  absolutamente nada. "Falló" es uno de los cuatro estados obligatorios de
-   *  pantalla y su regla es que no puede parecer que no pasó nada. */
-  const avisoVer =
-    !viendoId || previewQuery.isFetching     ? null
-    : previewQuery.error                     ? 'No se pudo abrir el documento. Vuelve a intentarlo.'
-    : previewQuery.data && !previewQuery.data.file_url
-                                             ? 'Este registro no tiene un archivo que abrir.'
-    : null
-
-  function verDocumento(fila: PendingComplianceRow) {
-    // Volver a tocar "Ver" sobre la MISMA fila no cambia el estado, así que
-    // sin este refetch el botón quedaba muerto hasta recargar la página:
-    // React Query no reintenta sola una consulta en error.
-    if (viendoId === fila.id) {
-      void previewQuery.refetch()
-      return
-    }
-    setViendoId(fila.id)
-    setViendoLabel(fila.document_name)
-  }
+  const preview = useDocumentPreview(canEdit)
 
   const subir = (fila: PendingComplianceRow, archivo: File, datos?: DatosDelDocumento) =>
     subirDocumento(fila.id, archivo, datos)
@@ -806,10 +651,7 @@ export function CarrierDocumentsWorkspace({ carrierId, carrier }: {
                 (!!confirmandoBaja && claveDeSujeto(confirmandoBaja) === claveDeSujeto(s)) ||
                 (!!transfiriendo && claveDeSujeto(transfiriendo) === claveDeSujeto(s))
               }
-              viendoId={viendoId}
-              avisoVer={avisoVer}
-              previewFetching={previewQuery.isFetching}
-              onVer={verDocumento}
+              preview={preview}
               subir={subir}
             />
           )
@@ -858,14 +700,7 @@ export function CarrierDocumentsWorkspace({ carrierId, carrier }: {
 
       </div>
 
-      {viendoId && previewQuery.data?.file_url && (
-        <DocumentPreviewModal
-          label={viendoLabel}
-          url={previewQuery.data.file_url}
-          canEdit={canEdit}
-          onClose={() => setViendoId(null)}
-        />
-      )}
+      {preview.modal}
 
       <ConfirmarBaja
         // Sin trampa de foco, el ⋮ de otro sujeto sigue disponible mientras

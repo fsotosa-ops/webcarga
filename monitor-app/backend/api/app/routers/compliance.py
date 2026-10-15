@@ -468,6 +468,13 @@ def _estado_de_empresa_a_mostrar(carrier_id: Optional[str]) -> Optional[str]:
     return None if carrier_id else ACTIVE_OPERATIONAL_STATUS
 
 
+def _estado_de_empresa_a_mostrar_para(carrier_id: Optional[str], entity_id: Optional[str]) -> Optional[str]:
+    """Lo mismo para una consulta que puede ser el expediente de UNA entidad
+    (`entity_id`): la ficha de un conductor o un equipo es su expediente, tenga
+    o no empresa (C5), y no la cola global (RF1, Entrega 1 de fichas 15/10)."""
+    return None if entity_id else _estado_de_empresa_a_mostrar(carrier_id)
+
+
 # Pendientes (spec 2026-10-11): qué estados trae cada valor de `state`.
 STATE_FILTERS: dict[str, tuple[str, ...] | None] = {
     **{estado.lower(): (estado,) for estado in PENDING_STATES},
@@ -521,7 +528,7 @@ SELECT
     COALESCE(cot.operation_types, ARRAY[]::text[]) AS carrier_operation_types,
     count(*) OVER() AS total_count
 FROM resolved r
-JOIN public.carriers c ON c.id = r.resolved_carrier_id
+LEFT JOIN public.carriers c ON c.id = r.resolved_carrier_id
 LEFT JOIN carrier_operation_types cot ON cot.carrier_id = c.id
 -- $8 nulo = sin filtro de estado. NO es "traer todo por defecto": lo
 -- pasa nulo UNICAMENTE la consulta acotada a UNA empresa (ver
@@ -690,7 +697,7 @@ async def list_pending_compliance_records(
     rows = await pool.fetch(
         _PENDING_ROWS_SQL,
         carrier_id, category, requirement_code, q or None, operation_type, limit, offset,
-        _estado_de_empresa_a_mostrar(carrier_id), entity_id, estado_efectivo,
+        _estado_de_empresa_a_mostrar_para(carrier_id, entity_id), entity_id, estado_efectivo,
         estados, state is not None,
     )
     total = rows[0]["total_count"] if rows else 0

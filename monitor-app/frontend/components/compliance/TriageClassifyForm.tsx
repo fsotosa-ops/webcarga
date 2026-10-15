@@ -73,7 +73,7 @@ export function TriageClassifyForm({
     if (casillero && suggestion.requirement_id) {
       setSlot({
         entity_type: casillero.entity_type as Slot['entity_type'], entity_id: casillero.entity_id,
-        subject_label: casillero.subject_name ?? casillero.carrier_name, requirement_id: casillero.requirement_id,
+        subject_label: casillero.subject_name ?? casillero.carrier_name ?? 'Sin empresa', requirement_id: casillero.requirement_id,
         record_id: casillero.id, document_name: casillero.document_name,
       })
       setSubjectKey(`${casillero.entity_type}:${casillero.entity_id}`)

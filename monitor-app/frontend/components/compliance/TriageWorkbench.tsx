@@ -84,7 +84,7 @@ export function TriageWorkbench() {
         seen.set(key, {
           entity_type: r.entity_type as 'CARRIER' | 'DRIVER' | 'ASSET',
           entity_id: r.entity_id,
-          label: r.subject_name ?? r.carrier_name,
+          label: r.subject_name ?? r.carrier_name ?? 'Sin empresa',
         })
       }
     }

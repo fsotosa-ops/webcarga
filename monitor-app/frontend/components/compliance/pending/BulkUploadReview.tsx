@@ -219,7 +219,7 @@ export function BulkUploadReview({ requirement, carrierId, done = false, trigger
   const anyDate = lote.rows.some(r => dateLabelOf(r))
 
   function pick(index: number, o: PendingComplianceRow) {
-    lote.choose(index, o.id, { label: o.subject_name ?? o.carrier_name, carrier: o.carrier_name, requirementId: o.requirement_id })
+    lote.choose(index, o.id, { label: o.subject_name ?? o.carrier_name ?? 'Sin empresa', carrier: o.carrier_name ?? 'Sin empresa', requirementId: o.requirement_id })
     setPicking(null)
   }
 

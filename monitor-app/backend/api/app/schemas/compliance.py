@@ -63,8 +63,8 @@ class PendingComplianceRow(BaseModel):
     """Módulo Documentos (sábana) — un compliance_record pendiente por fila,
     con la empresa/sujeto ya resueltos. Ver GET /compliance-records/pending."""
     id: str
-    carrier_id: str
-    carrier_name: str
+    carrier_id: str | None  # None: el expediente de un conductor o equipo sin empresa (RF1)
+    carrier_name: str | None
     # La columna admite NULL: una empresa dada de alta sin RUT (L2, 11/10).
     carrier_tax_id: Optional[str] = None
     carrier_operation_types: list[str]

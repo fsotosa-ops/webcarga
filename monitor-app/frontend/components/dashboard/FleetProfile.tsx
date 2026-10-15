@@ -29,8 +29,7 @@ import { TransferModal } from './TransferModal'
 import { CorrectIdentityModal } from './CorrectIdentityModal'
 import { BajaReasonModal } from './BajaReasonModal'
 import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
-import { DriverDetailPanel } from './DriverDetailPanel'
-import { VehicleDetailPanel } from './VehicleDetailPanel'
+import { EntityDocuments } from '@/components/compliance/EntityDocuments'
 import type { AssignmentPeriod, EntityActivity } from '@/lib/types'
 
 export type FleetKind = 'driver' | 'asset'
@@ -70,7 +69,6 @@ export function FleetProfile({ kind, id }: { kind: FleetKind; id: string }) {
   const canCorrectIdentity = usePermiso('directory.identity')
   const canChangeFleetStatus = usePermiso('directory.fleet_status')
   const canUploadDocuments = usePermiso('documents.upload')
-  const canReviewDocuments = usePermiso('documents.review')
 
   const summaryQuery = useQuery({
     queryKey: entitySummaryKey(kind, id), queryFn: () => fetchEntitySummary(kind, id), retry: false,
@@ -205,17 +203,9 @@ export function FleetProfile({ kind, id }: { kind: FleetKind; id: string }) {
             ? <DriverEditForm driver={driver!} onSave={patch} onClose={close} />
             : <AssetEditForm asset={asset!} carrierId={carrierId} drivers={carrierDriversQuery.data ?? []} onSave={patch} onClose={close} />} />
       )}
-      {tab === 'documentos' && (kind === 'driver' ? (
-        <DriverDetailPanel driver={driver!} carrierId={carrierId} variant="page" section="documentos"
-          canEdit={canEdit} canChangeFleetStatus={canChangeFleetStatus} canDeleteContacts={canAdmin}
-          canUploadDocuments={canUploadDocuments} canReviewDocuments={canReviewDocuments}
-          canRequestDocuments={canRequestDocuments} onPatch={async (_, body) => patch(body)} />
-      ) : (
-        <VehicleDetailPanel asset={asset!} carrierId={carrierId} variant="page" section="documentos"
-          canEdit={canEdit} canChangeFleetStatus={canChangeFleetStatus}
-          canUploadDocuments={canUploadDocuments} canReviewDocuments={canReviewDocuments}
-          canRequestDocuments={canRequestDocuments} onPatch={async (_, body) => patch(body)} />
-      ))}
+      {tab === 'documentos' && (
+        <EntityDocuments entityType={kind === 'driver' ? 'DRIVER' : 'ASSET'} entityId={id} carrierId={carrierId} />
+      )}
       {tab === 'contactos' && kind === 'driver' && <DriverContacts driverId={id} canEdit={canEdit} canDelete={canAdmin} />}
 
       <TransferModal

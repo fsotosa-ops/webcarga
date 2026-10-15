@@ -836,8 +836,10 @@ export type PendingMatchResponse = {
 
 export type PendingComplianceRow = {
   id:                      string
-  carrier_id:              string
-  carrier_name:            string
+  /** `null` solo en el expediente de un conductor o equipo sin empresa (ficha
+   *  propia, RF1); la cola de Pendientes siempre trae empresa. */
+  carrier_id:              string | null
+  carrier_name:            string | null
   carrier_tax_id:          string | null
   /** Tipo de Operación (Tractoreo/Equipo Completo) agregado desde los
    *  vehículos activos de la empresa — puede traer ambos si la flota es

@@ -20,6 +20,7 @@ vi.mock('@/lib/api/assets', () => ({
 }))
 vi.mock('@/lib/api/entitySummary', async (orig) => ({ ...(await orig<object>()), fetchEntitySummary: vi.fn() }))
 vi.mock('@/lib/api/locations', () => ({ locationsApi: { list: vi.fn().mockResolvedValue({ data: [{ id: 'cd1', name: 'CD Quilicura' }] }) } }))
+vi.mock('@/lib/api/compliance', () => ({ complianceApi: { listPending: vi.fn().mockResolvedValue({ total: 0, rows: [] }), get: vi.fn() } }))
 vi.mock('@/lib/api/config', () => ({ taxonomiesApi: { list: vi.fn().mockResolvedValue([]) } }))
 vi.mock('@/hooks/useAssetTypes', () => ({ useAssetTypes: () => ({ types: [{ code: 'TRACTOCAMION', label: 'Tracto' }], labelOf: () => 'Tracto' }) }))
 
