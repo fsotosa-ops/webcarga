@@ -201,7 +201,12 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
      obligatorios de su flota activa, pero sus cifras incluyen opcionales → único cambio de backend:
      `blocking_own`/`blocking_fleet` en `carrier_compliance`. Documentos de las 3 fichas = `CarrierDocumentsWorkspace`
      generalizado a `DocumentsWorkspace`; `DocumentChecklist` queda solo en la vista rápida.
-     **Siguiente:** que el usuario revise la spec → `superpowers:writing-plans` (plan de la Entrega 1).
+     Spec aprobada por el usuario ("estoy ok"). **Plan de la Entrega 1 escrito** (`3c049997`):
+     `docs/superpowers/plans/2026-10-15-entrega-1-fichas-y-navegacion.md`, 9 tareas (0 backend `blocking`; 1 kit;
+     2 proveedor de vista rápida + `EntityCell` como enlace; 3 ficha conductor/equipo; 4 `DocumentsWorkspace`; 5 ficha
+     empresa; 6 el modal ES la ficha propia → se retiran `DriverDetailPanel`/`VehicleDetailPanel`; 7 enlaces en
+     Pendientes, Pedidos, Por asignar, viaje y Seguros + volver con filtros; 8 verificación). Ejecución inline.
+     **Siguiente:** que el usuario revise el plan → ejecutar la Tarea 0.
   2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
      el 409 solo ocurre con la pantalla vieja). La salida del 409 en `AltaDeFlota` pasó a ser del anfitrión
