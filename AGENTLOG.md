@@ -162,53 +162,8 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
   `EMPRESA_NO_RECONOCIDA` (ya siempre vacío) y la rama `PATENTE_EMPRESA` de "resueltas"; duplicados contra registros
   cargados por otros caminos (no guardan hash).
 
-**14/10–15/10 — Entrega C EJECUTADA** (doc `docs/superpowers/plans/2026-10-14-entrega-c-fichas-y-limpieza.md`, maqueta
-`docs/superpowers/mockups/2026-10-14-entrega-c-directorio-vs-certificacion.html`; alcance completo aprobado):
-- **D4:** menú Directorio = grupo Empresas · Conductores · Equipos. Listas `FleetList` (una, con prop `kind`; filtros en la
-  URL: `q`, `flag`, `documents`, `page`) sobre `GET /drivers` y `GET /assets` (`services/directory_lists.py`); el buscador
-  pasó a `GET /drivers/search`. Fichas propias `/dashboard/drivers|assets/[id]` = `FleetProfile`: el mismo panel en
-  variante `page` (`DetailShell`, el armazón del modal extraído de los dos paneles) + "Dónde trabaja" (historial,
-  `…/assignments`) + "Actividad" (`…/activity`, "Ver viajes en el Monitor" → `?tab=historial&q=RUT|patente`). Existe
-  sin empresa (se borró `EntityRedirect`). El Monitor lee `?q`/`?tab` y su búsqueda también encuentra al conductor y al
-  tracto RESUELTOS (RUT y patente canónicos), para que coincida con lo que cuenta Actividad. Vista rápida en las filas del
-  Monitor (patente y empresa con `EntityCell`; conductor con un botón aparte, porque la celda es el control de asignar).
-- **Cert 2b:** una sola ficha de empresa. El cuerpo de `compliance/[carrierId]` se MOVIÓ a
-  `components/compliance/CarrierDocumentsWorkspace.tsx` (pestaña Documentos del Directorio), con versiones
-  (`DocumentVersions`) y reasignar en las filas; `GestionDeclarada` va al encabezado. La ruta vieja redirige a
-  `/dashboard/carriers/[id]?tab=documentos`. Certificación: "Conductor"/"Vehículo" abren las listas del Directorio con
-  `documents=pending` (y `?vista=conductores|vehiculos` redirige). Borrados: `CarrierDrawer`, `TransporterDocumentsPanel`,
-  `TransporterAlertBanner`, `EntityRedirect`, `useFilaAbierta`, `agruparPorSujeto()`, la bandeja incrustada en la ficha
-  (el lote va a Sin clasificar por `PuenteALaBandeja`). Bug corregido de paso: una empresa en onboarding leía "dada de baja".
-- **Cert 4:** L6 hecho (alcance "N de M activos" sobre `app.active_fleet`). L7 sin cambio (era de la copia local).
-- **D5:** fuera `fleet-daily-overview` (endpoint, cliente, tipos), `invalidate_trips_meta_cache`, `carriersApi.listContacts`;
-  una sola clave de taxonomías (`lib/queries/taxonomies.ts`, arregla que Configuración no refrescaba el alta de flota);
-  `AltaConductorDesdeCierre` → `AltaDeFlota` con `carrierId={null}` + `rutFijo` + `etiqueta`.
-- **Pedido del usuario a mitad de C: "no puede haber hardcode de tipos como TRACTOCAMION"** → catálogo
-  `public.asset_types` (código, etiqueta, `is_power_unit`, orden) con FK que reemplaza al CHECK, `public.is_power_unit()`
-  en las 6 consultas y en `carrier_management_types`, `GET /assets/types` + `useAssetTypes` en la pantalla (6 lugares, una
-  sola etiqueta "Tracto"); tipo desconocido = 422 por la FK. Migración `20261019090000_asset_types_catalog.sql`
-  **APLICADA en la base real** (2 tipos, 100 tractos como antes, 44 empresas con gestión derivada). También `AltaDeFlota`
-  dejó de buscar la gestión por etiqueta.
-- Tests: C1-C11 (+C2b catálogo) en verde; tsc limpio; vitest 1.849/1.849; humo 11/11 en la copia local (con la máquina
-  tranquila: con carga 280 todo da timeout, 8 GB no alcanzan para correr suites y humo a la vez).
-- Suite del backend contra la base real: 1.741 verdes + 4 que fijaban lo que cambió a propósito (corregidos: 2 topes
-  del trinquete de D1 bajan por `fleet-daily-overview`; el alcance L6 se prueba como "alcanzadas = aplicables de la vista
-  previa que están en alcance", porque la siembra sigue siendo para todos; el tipo desconocido lo rechaza la FK).
-  `test_padron_conductor.py` quedó fuera (Disk IO).
-- **DESPLEGADA en dev** (`60889a12`, los dos workflows en verde) + arreglo `7de43b66`.
-- **Recorrido en dev (15/10 madrugada, Propietario, solo lectura):** Conductores 102 / sin empresa 10 / de baja 9 / sin
-  origen 62 (igual a lo medido en la base); ficha de un conductor sin empresa (C5) con "Asignar a una empresa" y su
-  actividad; "Ver viajes en el Monitor" → Historial con 34 viajes (C11); vista rápida del tracto desde la fila (C10, dice
-  "Tracto" desde el catálogo); fila del embudo y URL vieja → ficha › Documentos (C6, 429 requisitos de Huemul).
-  **Dos bugs hallados y corregidos en `7de43b66`:** el chip del tipo DERIVADO de la flota no se movió al encabezado
-  (Huemul decía "Gestión sin declarar" teniendo 13 tractos de Equipo Completo), y el embudo precargaba cada ficha
-  (`<Link>` sin `prefetch={false}`) → 429 del límite de tasa.
-- `7de43b66` verificado en dev: Huemul muestra "Equipo Completo" (derivado) y "Gestión sin declarar" (declarado), y el
-  embudo ya no dispara 429.
-- **Siguiente paso exacto:** lo que decida el usuario: pasar A+B+C a `main` (nada de las tres está en producción), el
-  pendiente del popover del Monitor, o las pestañas de la ficha propia según la maqueta. Siguen esperando: el Google
-  Sheet del tipo de operación, la validación de Pablo de "Pedir a Certificación" y el dato del tracto GPRZ30.
-- Tangente: un conductor en la base real se llama "Cajas Leiva Iván Alejandro\N" (`\N` literal de una carga vieja).
+**14/10–15/10 — Entrega C CERRADA** (ejecución, pestañas de la ficha propia `535316c2` y alta única del popover
+`34b3fac9`; detalle archivado en `AGENTLOG_ARCHIVE.md`). Nada de A, B, C ni D está en `main`.
 
 **15/10 — Entrega D EJECUTADA** (doc `docs/superpowers/plans/2026-10-15-entrega-d-por-asignar.md`, maqueta
 `docs/superpowers/mockups/2026-10-15-sin-clasificar-bandeja.html`; el usuario aprobó el diseño y el nombre "Por asignar").
@@ -232,29 +187,23 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
 - **DESPLEGADA en dev** (`9f24a0cd`, los dos workflows en verde). Recorrido en dev (solo lectura): Por asignar dice
   "Todo asignado" con "Subir documentos"; la ficha de Huemul › Documentos tiene "Subir documentos" junto a "Exportar
   todo"; sin errores de API. No se subió nada en dev.
-- **15/10 — Pendiente 1 de C HECHO (el usuario: "vamos con el pendiente 1"):** pestañas en la ficha propia
-  (`535316c2`, push a `dev`). Resumen · Documentos · Dónde trabaja · Actividad · Contactos (el equipo sin Contactos), en
-  `?tab=`; las listas filtradas por documentos (colas de Certificación) abren en Documentos.
-  - Decisiones: la barra de pestañas se extrajo de la ficha de empresa a `components/ui/Tabs.tsx` y la usan las dos
-    fichas (`SegmentedControl` es para filtros, no para navegar). Los paneles reciben `section` en la variante página; el
-    modal no cambia. Se retiró la prop `extra`. El encabezado usa `EncabezadoDePagina` (lo exigió el trinquete de `<h1>`).
-    Sin chip de habilitación en el encabezado: el detalle de conductor/equipo no trae `can_operate`.
-  - Verificación: tsc limpio; vitest de las áreas tocadas + `lib` 1.206/1.206 (E1, E2, E3 nuevos; E3 probado con
-    mutación); humo 15/15 en la copia local (2 recorridos nuevos); capturas en escritorio y teléfono.
 - **Siguiente paso exacto:**
-  1. ~~Confirmar despliegue y recorrer dev~~ **HECHO 15/10:** Deploy Frontend de `535316c2` en verde (verify +
-     build-and-deploy). Recorrido en dev (Propietario, solo lectura): Conductores con pendientes → la fila enlaza
-     `?tab=documentos` y abre en Documentos (13 requisitos); las 5 pestañas muestran lo suyo (Dónde trabaja: Huemul
-     actual; Actividad: último viaje 11/10 · Walmart, 1 en 30 días); el equipo tiene 4 pestañas y abre en Resumen;
-     "Ver viajes en el Monitor" → `?tab=historial&q=<patente>`; la ficha de empresa sigue con sus 6 pestañas y conteos.
-     Todas las llamadas a la API en 200, 0 errores de consola.
-  2. **Pendiente 2 de C (diferido por el usuario):** alta del popover "Asignar conductor" del Monitor dentro de
-     `AltaDeFlota`. Diseño ya revisado (plan del 15/10): `onCreado(carrierId, creado)`, prop `onYaExiste` para el 409
-     `CONDUCTOR_YA_EXISTE`, `etiquetaGuardar`; el popover borra su formulario y crear+asignar pasa a ser "crear y después
-     `onAsignar`"; `onDarDeAlta` pasa a `puedeDarDeAlta: boolean` y el Monitor pierde su `driversApi.create` duplicado.
-  3. Luego decide el usuario si A+B+C+D pasan a `main` (nada está en producción). Pendiente de probar con datos reales:
-     una tanda mezclada subida sin contexto (Pablo/Carla).
-- Tangente: `FLEET_SERVICE_TYPE` tiene una fila "Tractocamión" sin `code` mezclada con carrocerías (10 tractos la usan).
+  1. **Rediseño de las fichas del Directorio + navegación entre módulos** (brainstorming en curso, camino
+     arquitectónico: maqueta → spec → plan). Levantamiento del 15/10: las 3 fichas no siguen el estándar (Samsara,
+     Fleetio, Vanta) y vienen de la versión anterior (panel de conductor 18 colores crudos, 11 tamaños < 11 px; ficha de
+     empresa 55 crudos); Resumen es un formulario; acciones destructivas en el cuerpo; Documentos sin fechas. Navegación:
+     Pendientes, Por asignar, Pedidos, detalle del viaje y Seguros no enlazan a ninguna ficha (0 enlaces, confirmado en
+     dev); el modal de la ficha de empresa no abre la ficha propia; conductor ↔ tracto habitual sin enlace; "volver"
+     pierde los filtros. **Decidido por el usuario:** fichas y navegación en una sola maqueta; la búsqueda global
+     (Cmd+K) queda FUERA, como mejora para después. Próximo: ofrecer el visual companion y armar la maqueta contra
+     Samsara/Fleetio/Vanta (ui-ux-pro-max + frontend-design).
+  2. Ofrecido al usuario, sin respuesta: el alta del Cierre (`PreCierrePendingSection`, RUT fijo) podría pasar
+     `onYaExiste` para ofrecer "Asignar a X" ante un RUT existente (hoy solo muestra el mensaje).
+  3. Decide el usuario si A+B+C+D pasan a `main`. Pendiente de probar con datos reales: una tanda mezclada subida sin
+     contexto (Pablo/Carla). Siguen esperando: el Google Sheet del tipo de operación, la validación de Pablo de "Pedir a
+     Certificación" y el dato del tracto GPRZ30.
+- Tangentes: `FLEET_SERVICE_TYPE` tiene una fila "Tractocamión" sin `code` mezclada con carrocerías (10 tractos la usan);
+  "Asignar a 1 viajes" (plural fijo en el popover); un conductor en la base real se llama "Cajas Leiva Iván Alejandro\N".
 
 1. ~~Mirar M2 en dev~~ **HECHO 12/10 noche:** chip gris "Dada de baja" y "La empresa no está activa", sin "se puede asignar".
    Ojo: abrir un viaje con divergencia TMS deja una nota "sistema" a nombre de quien lo abre (`_log_tms_divergence_once`,
