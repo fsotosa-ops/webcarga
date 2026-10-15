@@ -287,8 +287,20 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
        Seguros (auditoría + maqueta + spec + plan). Seguros no le agrega pantallas (D1 = dato en la base sin UI).
        Plan en dos entregas (expandir y contraer): `docs/superpowers/plans/2026-10-16-seguros-e1-modelo-y-api.md` y
        `…-e2-pantallas.md`.
-     **Siguiente:** el usuario revisa los dos planes → ejecutar E1 inline (migración: ensayo local + ROLLBACK real, se
-       aplica solo con autorización) → E2 → después Configuración. Con eso la spec de fichas y
+     - **Seguros E1 (modelo y API) APLICADA Y DESPLEGADA (15/10, `4b89eeb0..ed87a38d`).** Migración
+       `20261020090000_insurance_facts_and_status_views.sql` aplicada en la base real con autorización (solo agrega:
+       cancelled_at/reason, paid/paid_on/paid_by, umbral poliza_por_vencer, vistas app.insurance_status y
+       app.carrier_insurance_summary; la matview y sus triggers SIGUEN hasta E2). Re-corrida tras el deploy: 0 pagos en
+       la ventana. Cifras: 33 pólizas (9 vencidas, 1 sin fechas), 294 cuotas, 60 pagadas (54 sin fecha), 44 fuera de
+       vigencia, 23 empresas (21 con alerta). API: services/insurance.py (toda la lectura), GET /policies,
+       GET /installments, POST /installments/pay|unpay, POST /policies/{id}/cancel, generate rechaza fuera de vigencia,
+       auditoría INSURANCE_POLICY, /trips lee la vista de empresa, EXPIRING en vez de EXPIRING_SOON. Compatibilidad
+       `_legacy_*` para el frontend de hoy. Revisión final (opus): 6 importantes corregidos con test (R1-R6); 8 menores
+       llevados al plan E2. Verificación: backend 492 sin fallos nuevos, vitest 1.829/1.829, humo 20/20 (la 1.ª corrida
+       reprodujo el corte de la matview con la API local vieja), dev: Aguilera Vencida/3/19, 0 errores de API.
+     **Siguiente:** Seguros E2 (`docs/superpowers/plans/2026-10-16-seguros-e2-pantallas.md`): submódulos Pólizas y
+       Cuotas, ficha de póliza, glosario; al final la contracción (borra columnas viejas + matview, con copia en
+       audit_log; verificar Mage antes; autorización aparte). Después: Configuración. Con eso la spec de fichas y
      navegación queda cerrada (fuera: Cmd+K).
   2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
