@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { complianceApi } from '@/lib/api/compliance'
+import { certificationRequestsApi } from '@/lib/api/certificationRequests'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
@@ -24,13 +25,16 @@ const URGENCY: Exclude<Filter, 'all'>[] = ['OVERDUE', 'MISSING', 'EXPIRING']
  *  franja de subida en lote y las mismas filas (`SubjectDocumentRows`) que la
  *  ficha de empresa. Pide por entidad: sin empresa igual muestra sus
  *  documentos (RF1; la ficha existe sin empresa, C5). */
-export function EntityDocuments({ entityType, entityId, carrierId }: {
+export function EntityDocuments({ entityType, entityId, carrierId, requested }: {
   entityType: 'DRIVER' | 'ASSET'
   entityId: string
   carrierId: string | null
+  /** Los requisitos que Operaciones ya pidió a Certificación (`requirement_id`). */
+  requested?: ReadonlySet<string>
 }) {
   const canEdit = usePermiso('documents.upload')
   const puedeRevisar = usePermiso('documents.review')
+  const puedePedir = usePermiso('certification.request')
   const subirDocumento = useSubirDocumento()
   const queryClient = useQueryClient()
   const preview = useDocumentPreview(canEdit)
@@ -72,7 +76,13 @@ export function EntityDocuments({ entityType, entityId, carrierId }: {
           <SubjectDocumentRows filas={visible} carrierId={carrierId} canEdit={canEdit} puedeRevisar={puedeRevisar}
                                preview={preview}
                                subir={(fila, archivo, datos) => subirDocumento(fila.id, archivo, datos)}
-                               onFechaCorregida={() => { void invalidarCertificacion(queryClient) }} />
+                               onFechaCorregida={() => { void invalidarCertificacion(queryClient) }}
+                               requested={requested}
+                               onRequest={puedePedir ? async fila => {
+                                 await certificationRequestsApi.create({ entity_type: entityType, entity_id: entityId, requirement_id: fila.requirement_id })
+                                 // La ficha lee de sus documentos qué está pedido.
+                                 await queryClient.invalidateQueries({ queryKey: [entityType === 'DRIVER' ? 'driver-compliance-records' : 'asset-compliance-records', entityId] })
+                               } : undefined} />
         </Table>
       )}
       {puedeRevisar && rowsQuery.isSuccess && <SolicitarDocumento entityType={entityType} entityId={entityId} />}

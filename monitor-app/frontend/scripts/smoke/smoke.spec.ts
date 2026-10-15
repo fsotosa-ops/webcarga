@@ -154,7 +154,7 @@ test('Pedir a Certificación: Operaciones pide un documento y Certificación lo 
     for (let i = 0; i < Math.min(total, 4) && !pedido; i++) {
       await cards.nth(i).click()
       // El modal es la ficha del conductor: sus documentos están en su sección.
-      await ops.getByRole('dialog').getByRole('button', { name: 'Documentos' }).click({ timeout: 15000 })
+      await ops.getByRole('dialog').getByRole('button', { name: 'Documentos', exact: true }).click({ timeout: 15000 })
       const pedir = ops.getByRole('button', { name: /^Pedir .* a Certificación$/ }).first()
       // isVisible no espera: waitFor sí.
       if (await pedir.waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false)) {
@@ -225,8 +225,8 @@ test('Certificación › Conductores con pendientes: la fila abre la ficha en la
   await login(page, 'cert@sim.local')
   await page.goto('/dashboard/drivers?documents=pending')
   await page.locator('tbody a[href^="/dashboard/drivers/"]').first().click()
-  await page.waitForURL(/\/dashboard\/drivers\/[0-9a-f-]{36}\?tab=documentos/)
-  await expect(page.getByRole('button', { name: 'Documentos' }).first()).toHaveAttribute('aria-pressed', 'true')
+  await page.waitForURL(/\/dashboard\/drivers\/[0-9a-f-]{36}\?.*tab=documentos/)
+  await expect(page.getByRole('button', { name: 'Documentos', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByRole('region', { name: 'Documentos' })).toBeVisible({ timeout: 15000 })
   expect(problems).toEqual([])
 })
@@ -332,13 +332,21 @@ test('Lista filtrada → ficha → volver conserva el filtro', async ({ page }) 
 })
 
 test('Ficha de empresa: el modal de un conductor ofrece su ficha completa', async ({ page }) => {
+  test.setTimeout(90000)
   const problems = watch(page)
   await login(page, 'cert@sim.local')
   await page.goto('/dashboard/carriers')
-  const href = await page.locator('a[href^="/dashboard/carriers/"]').first().getAttribute('href', { timeout: 30000 })
-  await page.goto(`${href!.split('?')[0]}?tab=conductores`)
+  await page.locator('a[href^="/dashboard/carriers/"]').first().waitFor({ timeout: 30000 })
+  const fichas = await page.locator('a[href^="/dashboard/carriers/"]')
+    .evaluateAll(as => [...new Set(as.map(a => (a as HTMLAnchorElement).getAttribute('href')!.split('?')[0]))])
+  // La primera empresa con conductores.
   const card = page.locator('button:has(div.rounded-full.w-8)').first()
-  if (!(await card.waitFor({ timeout: 15000 }).then(() => true, () => false))) test.skip(true, 'la primera empresa no tiene conductores')
+  let conConductores = false
+  for (const href of fichas.slice(0, 8)) {
+    await page.goto(`${href}?tab=conductores`)
+    if (await card.waitFor({ timeout: 8000 }).then(() => true, () => false)) { conConductores = true; break }
+  }
+  expect(conConductores, 'ninguna de las primeras 8 empresas tiene conductores').toBe(true)
   await card.click()
   await page.getByRole('dialog').getByRole('link', { name: /Abrir ficha completa/ }).click({ timeout: 15000 })
   await page.waitForURL(/\/dashboard\/drivers\/[0-9a-f-]{36}\?next=/)

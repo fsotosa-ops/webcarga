@@ -224,7 +224,8 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
             : <AssetEditForm asset={asset!} carrierId={carrierId} drivers={carrierDriversQuery.data ?? []} onSave={patch} onClose={close} />} />
       )}
       {tab === 'documentos' && (
-        <EntityDocuments entityType={kind === 'driver' ? 'DRIVER' : 'ASSET'} entityId={id} carrierId={carrierId} />
+        <EntityDocuments entityType={kind === 'driver' ? 'DRIVER' : 'ASSET'} entityId={id} carrierId={carrierId}
+          requested={new Set((recordsQuery.data ?? []).filter(r => r.open_request_id).map(r => r.requirement_id))} />
       )}
       {tab === 'contactos' && kind === 'driver' && <DriverContacts driverId={id} canEdit={canEdit} canDelete={canAdmin} />}
 

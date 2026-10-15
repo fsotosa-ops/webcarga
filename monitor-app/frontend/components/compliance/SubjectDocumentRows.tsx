@@ -12,6 +12,7 @@ import { RenglonPendiente } from '@/components/compliance/RenglonPendiente'
 import { AvisoDeFila } from '@/components/compliance/AvisoDeFila'
 import { DocumentVersions } from '@/components/compliance/DocumentVersions'
 import { ReassignDocument } from '@/components/compliance/ReassignDocument'
+import { RequestToCertification } from '@/components/compliance/RequestToCertification'
 import { ExpirationDateCell } from '@/components/dashboard/ExpirationDateCell'
 import { DocumentPreviewModal } from '@/components/dashboard/DocumentPreviewModal'
 import { StatusChip } from '@/components/ui/StatusChip'
@@ -100,7 +101,7 @@ function FilaDocumento({ fila, viendo, avisoVer, onVer, puedeEditar, onFechaCorr
  *  por sujeto) y la de conductor o equipo (Entrega 1 de fichas, 15/10). Lo que
  *  falta, vence o venció se dice con las palabras de Pendientes
  *  (`pendingRowStatus`): un solo vocabulario en toda la app. */
-export function SubjectDocumentRows({ filas, carrierId, canEdit, puedeRevisar, preview, subir, onFechaCorregida }: {
+export function SubjectDocumentRows({ filas, carrierId, canEdit, puedeRevisar, preview, subir, onFechaCorregida, onRequest, requested }: {
   filas: PendingComplianceRow[]
   /** Reasignar a otro requisito busca dentro de la empresa; sin empresa no se ofrece. */
   carrierId: string | null
@@ -110,6 +111,10 @@ export function SubjectDocumentRows({ filas, carrierId, canEdit, puedeRevisar, p
   subir: (fila: PendingComplianceRow, archivo: File, datos?: DatosDelDocumento) => Promise<void>
   /** Una fecha nueva puede mover el documento de estado: quien lo aloja repide. */
   onFechaCorregida: () => void
+  /** Para quien no sube pero puede pedir (Operaciones, Entrega B): pedir el documento a Certificación. */
+  onRequest?: (fila: PendingComplianceRow) => Promise<void>
+  /** Los requisitos ya pedidos (`requirement_id`), que no se vuelven a pedir. */
+  requested?: ReadonlySet<string>
 }) {
   const queryClient = useQueryClient()
   async function quitarSolicitud(recordId: string) {
@@ -138,6 +143,9 @@ export function SubjectDocumentRows({ filas, carrierId, canEdit, puedeRevisar, p
       )
     }
     const estado = pendingRowStatus(f)
+    const pedir = !canEdit && onRequest
+      ? <RequestToCertification label={f.document_name} requested={!!requested?.has(f.requirement_id)} onRequest={() => onRequest(f)} />
+      : null
     return (
       <RenglonPendiente
         key={f.id}
@@ -157,7 +165,7 @@ export function SubjectDocumentRows({ filas, carrierId, canEdit, puedeRevisar, p
         onQuitarSolicitud={puedeRevisar && f.a_pedido && !f.tiene_archivo ? () => { void quitarSolicitud(f.id) } : undefined}
         viendo={viendo}
         avisoVer={avisoVer}
-        acciones={accionesDe(f)}
+        acciones={<>{accionesDe(f)}{pedir}</>}
       />
     )
   })}</>

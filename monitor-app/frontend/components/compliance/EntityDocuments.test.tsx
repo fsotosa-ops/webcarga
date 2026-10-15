@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { PendingComplianceRow } from '@/lib/types'
 
@@ -7,10 +7,12 @@ vi.mock('@/lib/api/compliance', () => ({ complianceApi: { listPending: vi.fn(), 
 const negados = vi.hoisted(() => ({ set: new Set<string>() }))
 vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: (p: string) => !negados.set.has(p) }))
 // La subida en lote tiene su propio test; acá solo importa que esté.
+vi.mock('@/lib/api/certificationRequests', () => ({ certificationRequestsApi: { create: vi.fn().mockResolvedValue({}) } }))
 vi.mock('./pending/BulkUploadReview', () => ({ BulkUploadReview: () => <div>Subida en lote</div> }))
 
 import { complianceApi } from '@/lib/api/compliance'
 import { EntityDocuments } from './EntityDocuments'
+import { certificationRequestsApi } from '@/lib/api/certificationRequests'
 
 function fila(over: Partial<PendingComplianceRow>): PendingComplianceRow {
   return {
@@ -22,10 +24,10 @@ function fila(over: Partial<PendingComplianceRow>): PendingComplianceRow {
   } as PendingComplianceRow
 }
 
-function montar(carrierId: string | null = 'c1') {
+function montar(carrierId: string | null = 'c1', requested: ReadonlySet<string> = new Set()) {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <EntityDocuments entityType="DRIVER" entityId="d1" carrierId={carrierId} />
+      <EntityDocuments entityType="DRIVER" entityId="d1" carrierId={carrierId} requested={requested} />
     </QueryClientProvider>,
   )
 }
@@ -80,6 +82,20 @@ describe('EntityDocuments (la sección Documentos de una ficha)', () => {
     expect(await screen.findByText('Licencia de conducir')).toBeInTheDocument()
     expect(screen.queryByText('Subir')).not.toBeInTheDocument()
     expect(screen.queryByText('Subida en lote')).not.toBeInTheDocument()
+  })
+
+  // Entrega B: Operaciones no sube, pide. Lo encontró el humo al pasar a las
+  // filas compartidas: la acción vivía en DocumentChecklist y se había perdido.
+  it('Operaciones (sin documents.upload, con certification.request) pide el documento a Certificación', async () => {
+    negados.set = new Set(['documents.upload'])
+    vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 2, rows: [
+      fila({ id: 'p1', requirement_id: 'r1' }), fila({ id: 'p2', requirement_id: 'r2', document_name: 'Hoja de vida' }),
+    ] } as never)
+    montar('c1', new Set(['r2']))
+    fireEvent.click(await screen.findByRole('button', { name: 'Pedir Licencia de conducir a Certificación' }))
+    await waitFor(() => expect(certificationRequestsApi.create).toHaveBeenCalledWith({ entity_type: 'DRIVER', entity_id: 'd1', requirement_id: 'r1' }))
+    // La que ya estaba pedida y la recién pedida.
+    expect(screen.getAllByText('Pedido a Certificación')).toHaveLength(2)
   })
 })
 

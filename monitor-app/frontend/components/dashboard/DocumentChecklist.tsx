@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertTriangle, Upload, Eye, Send, Loader2 } from 'lucide-react'
+import { AlertTriangle, Upload, Eye } from 'lucide-react'
 import { dueRelative, fileHistoryLabel, formatExpiry } from '@/lib/compliance'
 import { StatusChip } from '@/components/ui/StatusChip'
 import { useGestoDeCarga } from '@/hooks/useGestoDeCarga'
 import type { DatosDelDocumento } from '@/lib/compliance'
 import { PedirDatoDelDocumento } from '@/components/compliance/PedirDatoDelDocumento'
+import { RequestToCertification } from '@/components/compliance/RequestToCertification'
 import { ReassignDocument } from '@/components/compliance/ReassignDocument'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
 import type { ComplianceStatus, PoliticaVencimiento } from '@/lib/types'
@@ -88,17 +89,8 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
   onReassigned?: () => void
 }) {
   const [previewOpen, setPreviewOpen] = useState(false)
-  const [requesting, setRequesting] = useState(false)
-  const [requestError, setRequestError] = useState<string | null>(null)
   const state = documentStateStyle(item.document_state)
   const puedePedir = !canUpload && !!onRequest && PEDIBLE.has(item.document_state)
-  async function pedir() {
-    if (!onRequest) return
-    setRequesting(true); setRequestError(null)
-    try { await onRequest(item) } catch (e) {
-      setRequestError(e instanceof Error ? e.message : 'No se pudo pedir')
-    } finally { setRequesting(false) }
-  }
   /** EL MISMO gesto que Certificación, no una segunda versión: recibe el
    *  archivo, pide la fecha si el requisito la exige, y no sube nada hasta
    *  estar completo. Es un hook y no el componente `RenglonPendiente` porque
@@ -189,19 +181,9 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
           />
         </label>
       )}
-      {puedePedir && (item.open_request_id
-        ? <span className="text-etiqueta font-semibold text-informativo shrink-0">Pedido a Certificación</span>
-        : (
-          <button
-            type="button"
-            onClick={() => void pedir()}
-            disabled={requesting}
-            aria-label={`Pedir ${item.label} a Certificación`}
-            className="flex items-center gap-1 text-etiqueta font-semibold text-accion hover:underline disabled:opacity-50 shrink-0"
-          >
-            {requesting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Pedir a Certificación
-          </button>
-        ))}
+      {puedePedir && onRequest && (
+        <RequestToCertification label={item.label} requested={!!item.open_request_id} onRequest={() => onRequest(item)} />
+      )}
       {/* HU-03: el archivo está, pero puede estar en el lugar equivocado. */}
       {canReview && item.file_url && carrierId && (
         <ReassignDocument
@@ -252,7 +234,6 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
         originó este trabajo. */}
     <PedirDatoDelDocumento carga={carga} id={fechaId} />
 
-    {requestError && <p role="alert" className="text-etiqueta text-espera mt-1">{requestError}</p>}
 
     {carga.estado.tipo === 'error' && (
       <div role="alert" className="flex items-center gap-2 flex-wrap mt-2">
