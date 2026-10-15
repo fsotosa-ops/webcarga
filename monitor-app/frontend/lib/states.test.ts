@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   alertSeverityStyle, documentEvidenceStyle, documentStateCount, documentStateCounts, documentStateStyle,
   enablementStyle, enablementStyleFromFlag, FUNNEL_BUCKET_ORDER, funnelBucketStyle, fleetMemberStyle, isBlocking, lifecycleStyle, stateCountsLine, summaryStyle,
+  blockingReason,
   type ComplianceSummary,
 } from './states'
 
@@ -101,3 +102,27 @@ describe('glosario de estados (spec D1 §3)', () => {
     expect(funnelBucketStyle('up_to_date')).toMatchObject({ label: 'Al día', tone: 'resolved' })
   })
 })
+
+// Entrega 1 de fichas (15/10): la razón del "No habilitado" bajo los chips. Sale
+// de la misma regla que la API (`isBlocking` = `blocking_mandatory`).
+describe('blockingReason', () => {
+  const rec = (name: string, document_state: 'OVERDUE' | 'MISSING' | 'EXPIRING', requirement_level = 'LEGAL_MANDATORY') =>
+    ({ name, document_state, requirement_level }) as never
+  const bloqueado = summary({ can_operate: false, blocking: { own: 3, fleet: null } })
+
+  it('F1: nombra el obligatorio vencido y cuenta los que faltan; los opcionales no cuentan', () => {
+    const r = blockingReason([rec('Licencia de conducir', 'OVERDUE'), rec('Hoja de vida', 'MISSING'),
+      rec('Antecedentes', 'MISSING'), rec('Curso', 'MISSING', 'OPTIONAL')], bloqueado, true)
+    expect(r).toBe('Licencia de conducir: vencido · faltan 2 obligatorios')
+  })
+
+  it('RF3: sin razón si está habilitado o si no está activo', () => {
+    expect(blockingReason([], summary(), true)).toBeNull()
+    expect(blockingReason([rec('Licencia de conducir', 'OVERDUE')], bloqueado, false)).toBeNull()
+  })
+
+  it('mientras no llegan los documentos, cuenta con el resumen', () => {
+    expect(blockingReason(undefined, bloqueado, true)).toBe('3 obligatorios vencidos o faltantes')
+  })
+})
+

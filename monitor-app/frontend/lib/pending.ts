@@ -12,7 +12,7 @@ export type PendingRowStatus = { label: string; tone: StatusTone; action: string
 const aFecha = (d: string) => new Date(`${d.slice(0, 10)}T12:00:00`)
 /** "29/09", desde un `YYYY-MM-DD` (a mediodía, para no cruzar de día por el
  *  huso). Pendientes mira semanas, no años. */
-const diaMes = (d: string) => corta(aFecha(d))
+export const diaMes = (d: string) => corta(aFecha(d))
 
 function haceDias(desde: string, hoy: string): string {
   const n = Math.round((aFecha(hoy).getTime() - aFecha(desde).getTime()) / 86400000)

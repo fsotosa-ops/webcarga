@@ -152,6 +152,31 @@ export function isBlocking(r: { requirement_level: string; document_state: Docum
   return r.requirement_level === 'LEGAL_MANDATORY' && BLOCKING_STATES.includes(r.document_state)
 }
 
+/** La razón del "No habilitado" de un conductor o un equipo, en una línea bajo
+ *  sus chips (Entrega 1 de fichas, 15/10). Nombra el obligatorio vencido o el
+ *  que falta cuando es uno solo; si son varios, los cuenta. `null` si está
+ *  habilitado o no está activo (entonces el chip ya lo dice en gris). Mientras
+ *  no llegan los documentos, usa la cuenta del resumen (`blocking`). */
+export function blockingReason(
+  records: { name: string; requirement_level: string; document_state: DocumentState }[] | undefined,
+  summary: ComplianceSummary,
+  active: boolean,
+): string | null {
+  if (!active || summary.can_operate) return null
+  if (!records) {
+    const n = summary.blocking.own + (summary.blocking.fleet ?? 0)
+    return `${n} ${n === 1 ? 'obligatorio vencido o faltante' : 'obligatorios vencidos o faltantes'}`
+  }
+  const blocking = records.filter(isBlocking)
+  const overdue = blocking.filter(r => r.document_state === 'OVERDUE')
+  const missing = blocking.filter(r => r.document_state === 'MISSING')
+  const parts = [
+    overdue.length === 1 ? `${overdue[0].name}: vencido` : overdue.length > 1 ? `${overdue.length} obligatorios vencidos` : null,
+    missing.length === 1 ? `${missing[0].name}: falta` : missing.length > 1 ? `faltan ${missing.length} obligatorios` : null,
+  ].filter(Boolean).join(' · ')
+  return parts ? parts.charAt(0).toUpperCase() + parts.slice(1) : null
+}
+
 // ── Resumen y habilitación (fleet_compliance.py) ──────────────────────────────
 
 /** El segundo chip de conductor y equipo (D-R8): el peor estado de lo suyo, en
