@@ -224,7 +224,21 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
        no está activa"; Documentos sin columna "Actualizado" ni ⋯ por fila; `BulkUploadReview` con `carrier_name` nulo;
        `ActionsMenu` sin flechas ni foco al abrir; ícono de subir en "Pedir a Certificación"; el chip de un renglón se corre
        cuando tiene "Agregar vencimiento".
-     **Siguiente:** que el usuario mire la Entrega 1 en dev → Entrega 2 (Empresas y Por asignar con el kit, misma spec).
+     - **ENTREGA 2 HECHA (15/10, `7e80fd66`)**, plan `docs/superpowers/plans/2026-10-15-entrega-2-empresas-y-por-asignar.md`,
+       inline, solo pantalla. Empresas: "Agrupar por" = `SegmentedControl` (Conductor/Vehículo quedan como enlaces al
+       Directorio FUERA del control), encabezados de columna en el embudo (`COL` comparte anchos entre encabezado y fila;
+       en teléfono los anchos no rigen y la barra se oculta, porque si no el nombre desaparecía), "Nueva empresa" botón
+       lleno en `EncabezadoDePagina` junto a "Actualizar por planilla" (visibles en las dos agrupaciones). Por asignar:
+       `CABECERA`, nombre de archivo en `text-dato` sin mono, sugerencia en una línea truncada (requisito · `EntityCell`
+       del titular · % gris; ancho escalonado `w-36 sm:w-56 xl:w-72`, "Subido" oculto en teléfono), avisos con ícono
+       `text-warning` dentro de la celda del archivo (sin franja `bg-espera`), título sin total. Tests E2-1..E2-7 (uno por
+       criterio) + 2 tests viejos de "N viajes · 30 días" ajustados. Área 271/271, tsc OK, humo 20/20 (2 fallaron por
+       contención con vitest en paralelo y pasaron solos), trinquetes 1.194 / h1 7 / bajo 11 px 167. Capturas escritorio
+       y teléfono en `.playwright-mcp/e2-*.png`. **Desplegada** (Deploy Frontend verde) y recorrida en dev (Propietario,
+       solo lectura): Empresas con columnas y las 36 activas, Por asignar con encabezado y "Todo asignado" (la cola de dev
+       está vacía, así que la tabla nueva solo se vio en la copia local); 0 errores de consola.
+     **Siguiente:** que el usuario mire Entregas 1 y 2 en dev. Con eso la spec de fichas y navegación queda cerrada
+     (fuera: Cmd+K).
   2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
      el 409 solo ocurre con la pantalla vieja). La salida del 409 en `AltaDeFlota` pasó a ser del anfitrión
