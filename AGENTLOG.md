@@ -267,7 +267,14 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
          1.084 / bajo 11 px 158, capturas locales a 1440 y 390. Desplegado (Deploy Frontend verde) y recorrido en dev
          (Propietario, solo lectura): empresa, su pestaña Conductores, conductor, equipo, Seguros y Requisito; 0 errores de
          consola; "Estado" y los chips medidos en la misma x (486 px).
-     **Siguiente:** que el usuario mire en dev las fichas nuevas, Seguros y Requisito. Con eso la spec de fichas y
+     - **Monitor (15/10, `c7057639` + `bce90d88`, desplegado):** "Origen · Carga" ordenable (`sort_by=origin` usa la
+       definición única `services/origen_del_viaje.py` vía `_SORT_EXPRESSIONS`; la guarda
+       `test_origen_del_viaje_una_definicion` sigue verde) y columnas Estado · Fecha · TMS · ID Viaje · Patente ·
+       Conductor · Origen · Destinos · Temp · EETT. Verificado en dev: 200 asc/desc, orden alfabético, 0 errores.
+       El primer deploy falló por el trinquete de color crudo (copié `hover:bg-gray-50`); corregido con token.
+       **Ojo:** en la copia local fallan 8 tests de integración (anulados, cliente del viaje, firma inmutable, asignación,
+       trips del día) SIN mi cambio (verificado con stash): deriva de la copia local, pendiente de revisar aparte.
+     **Siguiente:** que el usuario mire en dev las fichas nuevas, Seguros, Requisito y el Monitor. Con eso la spec de fichas y
      navegación queda cerrada (fuera: Cmd+K).
   2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
