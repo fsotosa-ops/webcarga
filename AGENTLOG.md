@@ -243,7 +243,8 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
      el 409 solo ocurre con la pantalla vieja). La salida del 409 en `AltaDeFlota` pasó a ser del anfitrión
      (`yaExiste: { accion, usar }`). Test con mutación probada. No probado en dev (exige escribir).
-  3. Decide el usuario si A+B+C+D pasan a `main`. Pendiente de probar con datos reales: una tanda mezclada subida sin
+  3. **Nada pasa a `main` (decisión del usuario, 15/10):** A, B, C, D y las Entregas 1 y 2 de fichas se quedan solo en `dev`;
+     no volver a ofrecer el paso a producción hasta que el usuario lo pida. Pendiente de probar con datos reales: una tanda mezclada subida sin
      contexto (Pablo/Carla). Siguen esperando: el Google Sheet del tipo de operación, la validación de Pablo de "Pedir a
      Certificación" y el dato del tracto GPRZ30.
 - Tangentes: `FLEET_SERVICE_TYPE` tiene una fila "Tractocamión" sin `code` mezclada con carrocerías (10 tractos la usan);
