@@ -9,6 +9,7 @@ import type { CarrierOperationalStatus, FunnelBucket } from '@/lib/types'
 import {
   CARRIER_LIFECYCLE_GROUP_LABELS, FUNNEL_BUCKET_ORDER,
   funnelBucketStyle, lifecycleStyle, enablementStyleFromFlag,
+  totalCounts,
 } from '@/lib/states'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { StatusChip } from '@/components/ui/StatusChip'
@@ -219,7 +220,7 @@ function FilaEmpresa({ row }: { row: CertificationStatusRow }) {
         {row.satisfied_count} de {row.total_count}
       </span>
 
-      {row.compliance_summary && <ComplianceCounts summary={row.compliance_summary} muted={!activa} />}
+      {row.compliance_summary && <ComplianceCounts counts={totalCounts(row.compliance_summary)} muted={!activa} />}
 
       {!activa && (() => {
         const ciclo = lifecycleStyle('carrier', row.operational_status ?? '')

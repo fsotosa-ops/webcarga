@@ -73,7 +73,9 @@ describe('la escala tipografica', () => {
     // 205 -> 201 el 2026-10-12: tarjetas y tabla del Directorio dejaron los 10px (D1, Task 13).
     // 201 -> 199 el 2026-10-12: los avisos de TripBulkUpload usan text-etiqueta (D1, Task 14).
     // 199 -> 197 el 2026-10-12: Alertas de vencimiento dejó los 10px (D1, Task 14, Parte C).
-    const DEUDA = 197
+    // 197 -> 185 el 2026-10-15: CABECERA sin 10px (kit de fichas) más lo que bajaron las entregas A-D;
+    //   el tope estaba por encima del número real.
+    const DEUDA = 185
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

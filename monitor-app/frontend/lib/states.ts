@@ -35,6 +35,14 @@ export interface ComplianceSummary {
    *  Las cifras de arriba cuentan también los opcionales (fichas, 15/10). */
   blocking: BlockingCounts
 }
+/** Lo que se debe en total: lo propio más, en una empresa, lo de su flota activa. */
+export function totalCounts(summary: ComplianceSummary): StateCounts {
+  return {
+    overdue: summary.own.overdue + (summary.fleet?.overdue ?? 0),
+    expiring: summary.own.expiring + (summary.fleet?.expiring ?? 0),
+    missing: summary.own.missing + (summary.fleet?.missing ?? 0),
+  }
+}
 /** `fleet` solo en empresas (su flota activa). */
 export interface BlockingCounts { own: number; fleet: number | null }
 export interface StateStyle { label: string; tone: StatusTone; icon: LucideIcon }

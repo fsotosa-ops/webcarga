@@ -11,6 +11,7 @@ import { TriageUndoNotice } from '@/components/compliance/TriageUndoNotice'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { StatusChip } from '@/components/ui/StatusChip'
 import { Estado } from '@/components/ui/Estado'
+import { Table, TableHeader, TableSection } from '@/components/ui/tabla/Table'
 import { resumenDeVigencia, vigenciaDe } from '@/lib/vigencia'
 import { pendingPeriodLine, pendingRowStatus } from '@/lib/pending'
 import type { DatosDelDocumento } from '@/lib/compliance'
@@ -188,35 +189,31 @@ export function PendingHoldersPanel({ groupBy, selected, state, onStateChange, c
       )}
 
       {!done && lista.isSuccess && filas.length > 0 && groupBy === 'requirement' && (
-        <div className="overflow-hidden rounded-md border border-border">
-          <div aria-hidden="true"
-               className="hidden items-center gap-3 border-b border-border bg-bg-main px-3 py-1.5 text-etiqueta font-semibold text-informativo md:flex">
+        <Table header={
+          <TableHeader>
             {sujeto
               ? <span className="grid flex-1 grid-cols-2 gap-3"><span>{sujeto}</span><span>Empresa</span></span>
               : <span className="flex-1">Empresa</span>}
             <span className="w-52">Estado</span>
             {canUpload && <span className="min-w-28" />}
-          </div>
+          </TableHeader>
+        }>
           {filas.map(renglon)}
-        </div>
+        </Table>
       )}
 
       {!done && lista.isSuccess && filas.length > 0 && groupBy === 'carrier' && (
-        <div className="overflow-hidden rounded-md border border-border">
+        <Table>
           {SECCIONES.map(({ entity, titulo }) => {
             const deEsta = filas.filter(f => f.entity_type === entity)
             if (deEsta.length === 0) return null
-            const id = `pending-section-${entity}`
             return (
-              <section key={entity} aria-labelledby={id}>
-                <h3 id={id} className="border-b border-border bg-bg-main px-3 py-1.5 text-etiqueta font-semibold text-informativo">
-                  {titulo}
-                </h3>
+              <TableSection key={entity} id={`pending-section-${entity}`} title={titulo}>
                 {deEsta.map(renglon)}
-              </section>
+              </TableSection>
             )
           })}
-        </div>
+        </Table>
       )}
     </section>
   )

@@ -1,7 +1,7 @@
 'use client'
 
 import type { KeyboardEvent } from 'react'
-import { StatusChip } from '@/components/ui/StatusChip'
+import { ComplianceCounts } from '@/components/ui/ComplianceCounts'
 import { resumenDeVigencia, vigenciaDe } from '@/lib/vigencia'
 import type { PendingGroupBy, PendingSummaryRow } from '@/lib/types'
 
@@ -42,11 +42,8 @@ export function PendingSummaryList({ rows, groupBy, selectedKey, onSelect }: {
               <span className="block truncate text-dato text-text-primary">{r.label}</span>
               {regla && <span className="block truncate text-etiqueta text-informativo">{regla}</span>}
             </span>
-            <span className="flex shrink-0 gap-1 tabular-nums"
-                  aria-label={`${r.overdue} vencidos, ${r.expiring} por vencer, ${r.missing} faltan`}>
-              <StatusChip tone="urgent">{r.overdue}</StatusChip>
-              <StatusChip tone="warning">{r.expiring}</StatusChip>
-              <StatusChip tone="neutral">{r.missing}</StatusChip>
+            <span aria-label={`${r.overdue} vencidos, ${r.expiring} por vencer, ${r.missing} faltan`}>
+              <ComplianceCounts counts={r} />
             </span>
           </li>
         )

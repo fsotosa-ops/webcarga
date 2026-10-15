@@ -1,5 +1,6 @@
-import type { ComplianceSummary, DocumentState, StateCounts } from '@/lib/states'
+import type { DocumentState, StateCounts } from '@/lib/states'
 import { documentStateStyle } from '@/lib/states'
+import { StatusChip } from './StatusChip'
 
 const ORDEN: { key: keyof StateCounts; state: DocumentState }[] = [
   { key: 'overdue', state: 'OVERDUE' },
@@ -7,19 +8,21 @@ const ORDEN: { key: keyof StateCounts; state: DocumentState }[] = [
   { key: 'missing', state: 'MISSING' },
 ]
 
-/** Las cifras de quien debe los documentos: lo propio más su flota activa.
- *  Son las mismas que la fila de la empresa en Pendientes (spec §1); acá solo
- *  se suman las dos mitades, no se decide ningún estado. */
-export function ComplianceCounts({ summary, muted = false }: { summary: ComplianceSummary; muted?: boolean }) {
+/** Las tres cifras de lo que se debe —vencido, por vencer, falta— como las
+ *  pastillas teñidas de Pendientes: una sola forma de dibujarlas en toda la app
+ *  (kit de la Entrega 1 de fichas, 15/10). Acá no se decide ningún estado: para
+ *  una empresa, `totalCounts` suma lo propio y su flota. `muted`: en gris, para
+ *  quien no está activo. */
+export function ComplianceCounts({ counts, muted = false }: { counts: StateCounts; muted?: boolean }) {
   return (
-    <span className={`inline-flex items-center gap-2.5 text-etiqueta tabular-nums ${muted ? 'text-informativo' : 'text-text-primary'}`}>
+    <span className="inline-flex shrink-0 gap-1 tabular-nums">
       {ORDEN.map(({ key, state }) => {
-        const { label, icon: Icon } = documentStateStyle(state)
-        const n = summary.own[key] + (summary.fleet?.[key] ?? 0)
+        const { label, tone } = documentStateStyle(state)
         return (
-          <span key={key} data-testid={`counts-${key}`} title={label} className="inline-flex items-center gap-1">
-            <Icon size={12} aria-hidden="true" />
-            <span className="sr-only">{label}: </span>{n}
+          <span key={key} data-testid={`counts-${key}`} title={label} className="inline-flex">
+            <StatusChip tone={muted ? 'neutral' : tone}>
+              <span className="sr-only">{label}: </span>{counts[key]}
+            </StatusChip>
           </span>
         )
       })}
