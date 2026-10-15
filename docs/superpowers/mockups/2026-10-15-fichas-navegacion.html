@@ -1,0 +1,85 @@
+<style>
+  .wc{--accent:#1cb9ec;--accion:#0d7ea6;--inc:#b00020;--ok:#12a150;--warn:#b45309;--info:#6b7280;--tx:#131c2b;--bd:#e6e8ef;--bg:#f5f6f9;
+      font-family:Roboto,system-ui,sans-serif;color:var(--tx);font-size:13px;background:var(--bg);border-radius:10px;padding:14px;line-height:1.4;position:relative}
+  .wc *{box-sizing:border-box}
+  .wc .ent{color:var(--accion);font-weight:500;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}
+  .wc .chip{display:inline-flex;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;white-space:nowrap}
+  .wc .ok{background:#12a1501a;color:var(--ok)} .wc .bad{background:#b000201a;color:var(--inc)} .wc .neu{background:#6b72801a;color:var(--info)}
+  .wc .btn{border:1px solid var(--bd);background:#fff;border-radius:8px;padding:4px 9px;font-size:12px;font-weight:600;white-space:nowrap}
+  .wc .card{background:#fff;border:1px solid var(--bd);border-radius:12px;box-shadow:0 1px 2px #0000000a;overflow:hidden}
+  .wc table{width:100%;border-collapse:collapse;font-size:12px}
+  .wc th{text-align:left;font-size:11px;font-weight:600;color:var(--info);padding:8px 10px;border-bottom:1px solid var(--bd);background:#fafbfc}
+  .wc td{padding:8px 10px;border-bottom:1px solid var(--bd)}
+  .wc .sub{color:var(--info);font-size:11px}
+  .wc .mono{font-family:'Fira Code',ui-monospace,monospace}
+  .wc .qv{position:absolute;right:10px;top:46px;width:230px;background:#fff;border:1px solid var(--bd);border-radius:12px;box-shadow:0 8px 24px #0000001f;padding:12px;font-size:12px}
+  .wc .kv{display:grid;grid-template-columns:80px 1fr;row-gap:4px;margin:8px 0}
+  .wc .kv span:nth-child(odd){color:var(--info)}
+  .wc .title{font-family:Mulish,system-ui,sans-serif;font-weight:800;font-size:15px}
+  .wc .hint{position:absolute;font-size:11px;background:#131c2b;color:#fff;border-radius:6px;padding:3px 7px}
+</style>
+
+<h2>¿Qué hace un clic en un nombre?</h2>
+<p class="subtitle">En cualquier pantalla de trabajo (Pendientes, Por asignar, Pedidos, detalle del viaje, Seguros, la ficha de empresa), todo nombre de empresa, conductor o patente pasa a ser un enlace con el mismo aspecto. La pregunta es qué abre el clic normal. En los dos casos el enlace es un enlace de verdad: Ctrl/Cmd + clic o clic medio abre la ficha en otra pestaña.</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">A · Vista rápida y "Abrir ficha completa" (lo que ya hacen el Monitor y el Cierre)</div>
+    <div class="mockup-body"><div class="wc" style="min-height:290px">
+      <div style="font-weight:700;margin-bottom:8px">Certificación › Pendientes</div>
+      <div class="card" style="margin-right:250px"><table>
+        <tr><th>Documento</th><th>De quién</th><th>Estado</th></tr>
+        <tr><td>Licencia de conducir</td><td><span class="ent">Vidal Soto, Pedro</span><div class="sub"><span class="ent">Transportes Andes</span></div></td><td><span class="chip bad">Vencido</span></td></tr>
+        <tr><td>Revisión técnica</td><td><span class="ent mono">BBPV80</span><div class="sub"><span class="ent">Transportes Andes</span></div></td><td><span class="chip neu">Falta</span></td></tr>
+        <tr><td>Carpeta tributaria</td><td><span class="ent">Riquelme Hnos.</span></td><td><span class="chip neu">Falta</span></td></tr>
+      </table></div>
+      <div class="qv">
+        <div class="title">Vidal Soto, Pedro</div>
+        <div style="margin-top:4px"><span class="chip ok">Activo</span> <span class="chip bad">No habilitado</span></div>
+        <div class="kv"><span>RUT</span><span class="mono">12.345.678-5</span><span>Empresa</span><span class="ent">Transportes Andes</span><span>Tracto</span><span class="ent mono">BBPV80</span><span>Teléfono</span><span>+56 9 1234 5678</span></div>
+        <div class="sub" style="margin-bottom:8px">3 documentos pendientes · último viaje 13-10</div>
+        <span class="btn" style="color:var(--accion)">Abrir ficha completa →</span>
+      </div>
+      <p class="sub" style="margin-top:10px;margin-right:250px">Te quedas en la cola: miras, vuelves a la fila siguiente. 1 clic para ver, 2 para la ficha.</p>
+    </div></div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">B · Directo a la ficha (Samsara, Fleetio)</div>
+    <div class="mockup-body"><div class="wc" style="min-height:290px">
+      <div style="font-weight:700;margin-bottom:8px">Certificación › Pendientes</div>
+      <div class="card"><table>
+        <tr><th>Documento</th><th>De quién</th><th>Estado</th></tr>
+        <tr><td>Licencia de conducir</td><td><span class="ent">Vidal Soto, Pedro</span><div class="sub"><span class="ent">Transportes Andes</span></div></td><td><span class="chip bad">Vencido</span></td></tr>
+        <tr><td>Revisión técnica</td><td><span class="ent mono">BBPV80</span><div class="sub"><span class="ent">Transportes Andes</span></div></td><td><span class="chip neu">Falta</span></td></tr>
+        <tr><td>Carpeta tributaria</td><td><span class="ent">Riquelme Hnos.</span></td><td><span class="chip neu">Falta</span></td></tr>
+      </table></div>
+      <div style="margin-top:12px;font-size:12px">↓ clic en "Vidal Soto, Pedro"</div>
+      <div class="card" style="padding:10px;margin-top:6px">
+        <div class="sub">Certificación › <span class="ent">Pendientes</span> › Vidal Soto, Pedro</div>
+        <div class="title" style="margin-top:4px">Vidal Soto, Pedro</div>
+        <div class="sub">La ficha completa (forma A); "Pendientes" en la ruta vuelve a la cola con sus filtros.</div>
+      </div>
+      <p class="sub" style="margin-top:10px">1 clic a la ficha; para seguir con la cola hay que volver.</p>
+    </div></div>
+  </div>
+</div>
+
+<div class="pros-cons">
+  <div class="pros"><h4>A, la que recomiendo</h4><ul>
+    <li>Es lo que ya existe en el Monitor y el Cierre (EntityCell + EntityQuickView): se reusa, y la app se comporta igual en todas partes.</li>
+    <li>En una cola la persona viene a resolver filas, no a navegar: mirar sin perder el lugar ahorra ida y vuelta.</li>
+    <li>Con Ctrl/Cmd + clic igual llega directo a la ficha.</li>
+  </ul></div>
+  <div class="cons"><h4>B</h4><ul>
+    <li>Más simple de explicar: un nombre siempre lleva a su ficha.</li>
+    <li>Pero en las colas obliga a ir y volver, y el Monitor y el Cierre quedarían distintos (o habría que cambiarlos).</li>
+  </ul></div>
+</div>
+
+<p class="subtitle">Va en los dos casos, sin pregunta: el modal de conductor/equipo de la ficha de empresa gana "Abrir ficha completa"; las listas del Directorio (Empresas, Conductores, Equipos) siguen enlazando directo a la ficha, porque ahí sí se viene a abrirla; y la ruta de la ficha vuelve a la lista con los filtros que tenías.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)"><div class="letter">A</div><div class="content"><h3>Vista rápida</h3><p>Clic = vista rápida con "Abrir ficha completa"; Ctrl/Cmd + clic = ficha en otra pestaña.</p></div></div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)"><div class="letter">B</div><div class="content"><h3>Directo a la ficha</h3><p>Clic = ficha; la ruta vuelve a la cola con sus filtros.</p></div></div>
+</div>

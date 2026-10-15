@@ -1,0 +1,89 @@
+<style>
+  .wc{--accent:#1cb9ec;--accion:#0d7ea6;--inc:#b00020;--ok:#12a150;--warn:#b45309;--info:#6b7280;--tx:#131c2b;--bd:#e6e8ef;--bg:#f5f6f9;
+      font-family:Roboto,system-ui,sans-serif;color:var(--tx);font-size:13px;background:var(--bg);border-radius:10px;padding:18px;line-height:1.45}
+  .wc *{box-sizing:border-box}
+  .wc .crumb{font-size:12px;color:var(--info);margin-bottom:8px}
+  .wc h1{font-family:Mulish,system-ui,sans-serif;font-size:28px;font-weight:700;margin:0;line-height:1.15}
+  .wc a,.wc .lnk{color:var(--accion);text-decoration:none;font-weight:500}
+  .wc .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  /* chips: los de Pendientes (pill teñida, texto del estado) */
+  .wc .chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap}
+  .wc .ok{background:#12a15014;color:var(--ok)} .wc .bad{background:#b0002014;color:var(--inc)} .wc .warn{background:#b4530914;color:var(--warn)} .wc .neu{background:#6b728014;color:var(--info)}
+  /* botón principal: el de Por asignar */
+  .wc .btnp{display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:#fff;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:600}
+  .wc .btno{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--bd);background:#fff;border-radius:8px;padding:6px 10px;font-size:13px;font-weight:700;color:var(--info)}
+  /* barra de vistas: la de "Agrupar por" de Certificación */
+  .wc .bar{display:inline-flex;gap:2px;background:#e9ebf0;border-radius:10px;padding:3px}
+  .wc .bar span{padding:5px 12px;border-radius:8px;font-size:13px;font-weight:600;color:var(--info)}
+  .wc .bar .on{background:#fff;color:var(--tx);box-shadow:0 1px 2px #0000001a}
+  .wc .bar .c{color:var(--inc);font-weight:700;margin-left:5px}
+  /* control segmentado: el de Pendientes (Vencidos · Por vencer · Faltan · Todos) */
+  .wc .seg{display:inline-flex;border:1px solid var(--bd);border-radius:7px;overflow:hidden;background:#fff}
+  .wc .seg span{padding:5px 11px;font-size:12px;color:var(--info);border-right:1px solid var(--bd)}
+  .wc .seg span:last-child{border-right:0}
+  .wc .seg .on{background:#0d7ea614;color:var(--accion);font-weight:600}
+  .wc .seg b{font-weight:600;margin-left:4px;font-variant-numeric:tabular-nums}
+  .wc .panel{background:#fff;border:1px solid var(--bd);border-radius:14px;padding:16px}
+  .wc .drop{display:flex;justify-content:space-between;align-items:center;background:#f5f6f9;border:1px solid var(--bd);border-radius:10px;padding:9px 12px;font-size:12px;color:var(--info);margin:12px 0}
+  .wc table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;border:1px solid var(--bd);border-radius:10px;overflow:hidden}
+  .wc th{text-align:left;font-size:12px;font-weight:500;color:var(--info);padding:10px 12px;background:#f5f6f9;border-bottom:1px solid var(--bd)}
+  .wc td{padding:10px 12px;border-bottom:1px solid var(--bd)}
+  .wc tr:last-child td{border-bottom:0}
+  .wc .sub{color:var(--info)}
+  .wc .up{display:inline-flex;align-items:center;justify-content:center;gap:5px;width:104px;border:1px dashed #1cb9ec99;border-radius:7px;padding:4px 0;color:var(--accion);font-size:12px;font-weight:600}
+  .wc .kv{display:grid;grid-template-columns:150px 1fr;row-gap:12px;font-size:13px}
+  .wc .kv>span:nth-child(odd){color:var(--info)}
+  .wc .mono{font-family:'Fira Code',ui-monospace,monospace;font-size:12.5px}
+  .wc h3{font-size:15px;font-weight:700;margin:0}
+  .wc .ico{width:13px;height:13px;display:inline-block;border:1.6px solid currentColor;border-radius:3px;opacity:.8}
+</style>
+
+<h2>Ficha del conductor con las piezas de Certificación</h2>
+<p class="subtitle">Misma estructura liviana que aprobaste. Lo que cambia es el material: título y bajada como cualquier página, la barra gris de "Agrupar por" para las secciones, el control segmentado y la tabla de Pendientes para los documentos, el chip que junta estado y fecha ("Venció el 02/10") y el "Subir" punteado.</p>
+
+<div class="mockup"><div class="mockup-header">Resumen</div><div class="mockup-body"><div class="wc">
+  <div class="crumb">Directorio › <a>Conductores</a> › Vidal Soto, Pedro</div>
+  <div class="row" style="justify-content:space-between;align-items:flex-start">
+    <div>
+      <h1>Vidal Soto, Pedro</h1>
+      <div class="row" style="margin-top:8px"><span class="chip ok">Activo</span><span class="chip bad">No habilitado</span>
+        <span class="sub">Licencia vencida y 2 documentos faltan · <a>Ver documentos</a></span></div>
+    </div>
+    <div class="row"><span class="btnp"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Subir documentos</span><span class="btno">⋯</span></div>
+  </div>
+  <div style="margin:16px 0 12px"><div class="bar"><span class="on">Resumen</span><span>Documentos<span class="c">3</span></span><span>Contactos</span></div></div>
+  <div class="panel" style="max-width:620px">
+    <div class="row" style="justify-content:space-between;margin-bottom:12px"><h3>Detalles</h3><a style="font-size:13px">Editar</a></div>
+    <div class="kv">
+      <span>RUT</span><span class="mono">12.345.678-5</span>
+      <span>Empresa</span><span><a>Transportes Andes</a> <span class="sub">desde 20/09 · antes Riquelme Hnos.</span></span>
+      <span>Tracto habitual</span><a class="mono">BBPV80</a>
+      <span>Origen habitual</span><span>CD Quilicura</span>
+    </div>
+    <div style="border-top:1px solid var(--bd);margin:14px 0 12px"></div>
+    <div class="row" style="justify-content:space-between"><span><span class="sub">Último viaje</span> 13/10 · Walmart · <b style="font-variant-numeric:tabular-nums">18</b> <span class="sub">en 30 días</span></span><a style="font-size:13px">Ver en el Monitor</a></div>
+  </div>
+</div></div></div>
+
+<div class="mockup" style="margin-top:14px"><div class="mockup-header">Documentos</div><div class="mockup-body"><div class="wc">
+  <div style="margin:0 0 12px"><div class="bar"><span>Resumen</span><span class="on">Documentos<span class="c">3</span></span><span>Contactos</span></div></div>
+  <div class="panel">
+    <div class="row" style="justify-content:space-between">
+      <h3>Documentos de Vidal Soto, Pedro</h3>
+      <div class="seg"><span class="on">Vencidos<b>1</b></span><span>Por vencer<b>1</b></span><span>Faltan<b>2</b></span><span>Todos<b>13</b></span></div>
+    </div>
+    <div class="drop"><span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Arrastra aquí los documentos de esta persona para ver a cuál requisito corresponde cada uno antes de guardar.</span><a>Elegir archivos</a></div>
+    <table>
+      <tr><th>Documento</th><th>Estado</th><th>Actualizado</th><th></th></tr>
+      <tr><td>Licencia de conducir</td><td><span class="chip bad">Venció el 02/10</span></td><td class="sub">14/03</td><td style="text-align:right"><span class="up"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Reemplazar</span> <span class="btno" style="padding:3px 8px">⋯</span></td></tr>
+    </table>
+    <p class="sub" style="font-size:12px;margin:10px 0 0">Con "Faltan": <span class="chip neu">Falta</span> y <span class="up" style="width:auto;padding:2px 8px">Subir</span>. Con "Por vencer": <span class="chip warn">Vence el 28/10</span>. Con "Todos", los al día: <span class="chip ok">Al día · vence el 14/03/2027</span>. Operaciones ve "Pedir" donde Certificación ve "Subir".</p>
+  </div>
+</div></div></div>
+
+<p class="subtitle" style="margin-top:14px">La empresa usa exactamente lo mismo; su tabla de Documentos agrega la columna "De quién" (la empresa, un conductor o un equipo, cada uno con su vista rápida), como la de Pendientes agrega "Empresa". Fechas cortas (02/10) como en Pendientes; el año solo cuando no es el actual.</p>
+
+<div class="options">
+  <div class="option" data-choice="ok" onclick="toggleSelect(this)"><div class="letter">A</div><div class="content"><h3>Así está alineado</h3><p>Paso a la spec.</p></div></div>
+  <div class="option" data-choice="cambios" onclick="toggleSelect(this)"><div class="letter">B</div><div class="content"><h3>Todavía no</h3><p>Dime qué no calza.</p></div></div>
+</div>

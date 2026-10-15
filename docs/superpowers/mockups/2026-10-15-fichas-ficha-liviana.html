@@ -1,0 +1,108 @@
+<style>
+  .wc{--accent:#1cb9ec;--accion:#0d7ea6;--inc:#b00020;--ok:#12a150;--warn:#b45309;--info:#6b7280;--tx:#131c2b;--bd:#e6e8ef;--bg:#f5f6f9;
+      font-family:Roboto,system-ui,sans-serif;color:var(--tx);font-size:13px;background:var(--bg);border-radius:10px;padding:14px;line-height:1.45}
+  .wc *{box-sizing:border-box}
+  .wc .crumb{font-size:11px;color:var(--info);margin-bottom:6px}
+  .wc h1{font-family:Mulish,system-ui,sans-serif;font-size:22px;font-weight:800;margin:0}
+  .wc a,.wc .lnk{color:var(--accion);text-decoration:none;font-weight:500}
+  .wc .chip{display:inline-flex;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:600;white-space:nowrap}
+  .wc .ok{background:#12a1501a;color:var(--ok)} .wc .bad{background:#b000201a;color:var(--inc)} .wc .warn{background:#b453091a;color:var(--warn)} .wc .neu{background:#6b72801a;color:var(--info)} .wc .act{background:#0d7ea61a;color:var(--accion)}
+  .wc .btn{border:1px solid var(--bd);background:#fff;border-radius:8px;padding:5px 10px;font-size:12px;font-weight:600;white-space:nowrap}
+  .wc .btnp{background:var(--accent);border-color:var(--accent);color:#fff}
+  .wc .mono{font-family:'Fira Code',ui-monospace,monospace;font-size:12px}
+  .wc .tabs{display:flex;gap:18px;border-bottom:1px solid var(--bd);margin:12px 0}
+  .wc .tabs span{padding:6px 0;font-size:12px;font-weight:600;color:var(--info)}
+  .wc .tabs .on{color:var(--tx);border-bottom:2px solid var(--accent)}
+  .wc .card{background:#fff;border:1px solid var(--bd);border-radius:12px;padding:14px;box-shadow:0 1px 2px #0000000a}
+  .wc .ttl{font-size:13px;font-weight:700;margin:0}
+  .wc .kv{display:grid;grid-template-columns:140px 1fr;row-gap:9px;font-size:13px;margin-top:10px}
+  .wc .kv>span:nth-child(odd){color:var(--info)}
+  .wc .sub{color:var(--info);font-size:12px}
+  .wc .sep{border-top:1px solid var(--bd);margin:14px 0}
+  .wc .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .wc .cnt{font-variant-numeric:tabular-nums}
+  .wc .ann{font-size:11px;color:var(--inc);font-weight:600}
+</style>
+
+<h2>Antes (saturada) y después (liviana)</h2>
+<p class="subtitle">La regla de la liviana: cada dato aparece una sola vez. El encabezado dice quién es, si puede operar y por qué no; el Resumen es UN bloque de detalles (con dónde trabaja adentro) y una línea de actividad. Los pendientes viven en la pestaña Documentos (su número en la pestaña, nada más).</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Antes · lo de la pantalla anterior</div>
+    <div class="mockup-body"><div class="wc">
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div><h1>Vidal Soto, Pedro</h1>
+          <div class="row" style="margin-top:6px"><span class="chip ok">Activo</span><span class="chip bad">No habilitado</span><span class="chip warn">3 documentos pendientes</span> <span class="ann">← 1.ª vez "3"</span></div>
+          <div class="sub" style="margin-top:4px">RUT <span class="mono">12.345.678-5</span> · Empresa <a>Transportes Andes</a> · Tracto <a class="mono">BBPV80</a> · Origen CD Quilicura <span class="ann">← datos</span></div></div>
+        <div class="row"><span class="btn btnp">Subir documento</span><span class="btn">⋯</span></div>
+      </div>
+      <div class="tabs"><span class="on">Resumen</span><span>Documentos <span style="color:var(--inc)">3</span> <span class="ann">← 2.ª</span></span><span>Contactos 1</span></div>
+      <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:8px">
+        <div style="display:grid;gap:8px">
+          <div class="card"><p class="ttl">Datos <span class="ann">← los mismos datos otra vez</span></p><div class="sub">Nombre, RUT, origen, tracto, desde…</div></div>
+          <div class="card"><p class="ttl">Documentos <span class="ann">← 3.ª vez</span></p><div class="sub">Barra + 3 pendientes</div></div>
+        </div>
+        <div style="display:grid;gap:8px;align-content:start">
+          <div class="card"><p class="ttl">Dónde trabaja</p><div class="sub">Andes desde 20-09…</div></div>
+          <div class="card"><p class="ttl">Actividad</p><div class="sub">13-10 · 18 viajes…</div></div>
+        </div>
+      </div>
+      <p class="sub" style="margin-top:8px">4 chips/estados + 4 datos + 3 pestañas + 4 tarjetas ≈ 15 piezas.</p>
+    </div></div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Después · liviana (Stripe, Linear, Vanta)</div>
+    <div class="mockup-body"><div class="wc">
+      <div class="crumb">Directorio › <a>Conductores</a> › Vidal Soto, Pedro</div>
+      <div class="row" style="justify-content:space-between;align-items:flex-start">
+        <div><h1>Vidal Soto, Pedro</h1>
+          <div class="row" style="margin-top:6px"><span class="chip ok">Activo</span><span class="chip bad">No habilitado</span>
+            <span class="sub">Licencia vencida y 2 documentos faltan · <a>Ver documentos</a></span></div></div>
+        <div class="row"><span class="btn btnp">Subir documento</span><span class="btn">⋯</span></div>
+      </div>
+      <div class="tabs"><span class="on">Resumen</span><span>Documentos <span style="color:var(--inc)">3</span></span><span>Contactos</span></div>
+      <div class="card" style="max-width:560px">
+        <div class="row" style="justify-content:space-between"><p class="ttl">Detalles</p><span class="lnk" style="font-size:12px">Editar</span></div>
+        <div class="kv">
+          <span>RUT</span><span class="mono">12.345.678-5</span>
+          <span>Empresa</span><span><a>Transportes Andes</a> <span class="sub">desde 20-09 · antes Riquelme Hnos.</span></span>
+          <span>Tracto habitual</span><a class="mono">BBPV80</a>
+          <span>Origen habitual</span><span>CD Quilicura</span>
+        </div>
+        <div class="sep"></div>
+        <div class="row" style="justify-content:space-between"><span><span class="sub">Último viaje</span> 13-10 · Walmart · <span class="cnt">18</span> en 30 días</span><a style="font-size:12px">Ver en el Monitor →</a></div>
+      </div>
+      <p class="sub" style="margin-top:8px">2 estados + 1 razón + 3 pestañas + 1 bloque ≈ 7 piezas. La razón del "No habilitado" es lo único nuevo, y responde la pregunta que el chip abre.</p>
+    </div></div>
+  </div>
+</div>
+
+<h3 style="margin-top:18px">La misma regla en la empresa</h3>
+<div class="mockup"><div class="mockup-header">Empresa · liviana</div><div class="mockup-body"><div class="wc">
+  <div class="row" style="justify-content:space-between;align-items:flex-start">
+    <div><h1>Transportes Andes</h1>
+      <div class="row" style="margin-top:6px"><span class="chip ok">Activa</span><span class="chip bad">No habilitada</span>
+        <span class="sub">11 documentos de la empresa y 40 de su flota · <a>Ver documentos</a></span></div></div>
+    <div class="row"><span class="btn btnp">Subir documentos</span><span class="btn">⋯</span></div>
+  </div>
+  <div class="tabs"><span class="on">Resumen</span><span>Documentos <span style="color:var(--inc)">11</span></span><span>Conductores 2</span><span>Equipos 3</span><span>Seguros</span><span>Contactos</span></div>
+  <div class="card" style="max-width:560px">
+    <div class="row" style="justify-content:space-between"><p class="ttl">Detalles</p><span class="lnk" style="font-size:12px">Editar</span></div>
+    <div class="kv">
+      <span>RUT</span><span class="mono">76.555.555-8</span>
+      <span>Tipo de operación</span><span>Tractoreo <span class="sub">(según su flota) · gestión declarada: sin declarar</span></span>
+      <span>Clientes</span><span>Walmart, Colun</span>
+      <span>Seguros</span><span><span class="chip bad">1 cuota vencida</span></span>
+    </div>
+  </div>
+  <p class="sub" style="margin-top:8px">Sale del Resumen: el anillo de %, las cifras sueltas "2 conductores / 2 equipos" (ya están en las pestañas) y la tarjeta de Seguros vacía. "ID legacy admin" pasa a "Editar".</p>
+</div></div></div>
+
+<p class="subtitle" style="margin-top:14px"><b>Pestañas:</b> subrayadas en todas partes, como ya las tiene el Monitor (En Curso / Historial). La primitiva <code>Tabs</code> cambia una vez y las fichas la heredan; no queda una tercera forma.</p>
+
+<div class="options">
+  <div class="option" data-choice="liviana" onclick="toggleSelect(this)"><div class="letter">A</div><div class="content"><h3>Liviana</h3><p>Un dato, un lugar. Detalles + una línea de actividad; la razón del "No habilitado" bajo los chips.</p></div></div>
+  <div class="option" data-choice="saturada" onclick="toggleSelect(this)"><div class="letter">B</div><div class="content"><h3>La de tarjetas</h3><p>La anterior, con todo a la vista.</p></div></div>
+</div>
