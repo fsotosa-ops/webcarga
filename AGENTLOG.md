@@ -209,6 +209,32 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
   pendiente del popover del Monitor, o las pestañas de la ficha propia según la maqueta. Siguen esperando: el Google
   Sheet del tipo de operación, la validación de Pablo de "Pedir a Certificación" y el dato del tracto GPRZ30.
 - Tangente: un conductor en la base real se llama "Cajas Leiva Iván Alejandro\N" (`\N` literal de una carga vieja).
+
+**15/10 — Entrega D EJECUTADA** (doc `docs/superpowers/plans/2026-10-15-entrega-d-por-asignar.md`, maqueta
+`docs/superpowers/mockups/2026-10-15-sin-clasificar-bandeja.html`; el usuario aprobó el diseño y el nombre "Por asignar").
+- Por qué: Sin clasificar era una tercera forma de subir, con su propio modelo. Estándar (Ramp, Dext, Vanta): una forma
+  de subir con el contexto que haya + bandeja solo de excepciones agrupada por qué falta.
+- **Reconocedor único** (corrección del usuario a mitad de camino: "¿eso no es un parche?"): `match_document` con el
+  contexto como acotación (`declared_requirement`, universo por empresa); se retiraron `match_owner`, `PendingOwner`,
+  `OwnerCandidate`, `classify_owner_match` y `_dedup_candidates`. Servicio `services/upload_match.py`; `/pending/match`
+  con `requirement_id` y `carrier_id` opcionales. Ronda de mutación acotada al reconocedor: 8/8 (dos tests agregados).
+- **Una revisión de lote** (`BulkUploadReview` + `useBulkUpload`, prop de contexto y de disparador) en Pendientes, la
+  ficha de empresa y Por asignar; lo no resuelto va a Por asignar al guardar (lotes de 50; respeta los errores por
+  archivo de la subida). `PanelLateral` ganó `ancho="amplio"`.
+- **Por asignar** = el banco de trabajo sin su carga: grupos Listos / Falta el titular / Falta el tipo / Sin pista,
+  propuesta ya elegida, empresa en el detalle, Asignar/Descartar, Enter. Retirados `TriageDropzone`,
+  `useEmpresaDeTrabajo`, `PuenteALaBandeja`. Test de nombres: "Sin clasificar" como módulo queda prohibido.
+- Verificación: backend real 1.753/1.753; vitest 1.806/1.806; tsc limpio; humo 13/13. El humo encontró un bug real (la
+  subida respondía 201 con el archivo en `errors` y la pantalla decía "En Por asignar"); corregido con test.
+- **Copia local:** se le sumó el contenedor de almacenamiento (`supabase start -x studio,imgproxy,edge-runtime,
+  logflare,vector,inbucket,realtime,postgres-meta,supavisor` desde `.superpowers/local-sim`); antes no tenía y ningún
+  humo subía archivos.
+- **DESPLEGADA en dev** (`9f24a0cd`, los dos workflows en verde). Recorrido en dev (solo lectura): Por asignar dice
+  "Todo asignado" con "Subir documentos"; la ficha de Huemul › Documentos tiene "Subir documentos" junto a "Exportar
+  todo"; sin errores de API. No se subió nada en dev.
+- **Siguiente paso exacto:** lo que decida el usuario: pasar A+B+C+D a `main` (nada está en producción), el popover del
+  Monitor (tercera alta de conductor), o las pestañas de la ficha propia según la maqueta. Pendiente de probar con datos
+  reales: una tanda mezclada subida sin contexto (Pablo/Carla).
 - Pendiente con motivo: el alta dentro del popover "Asignar conductor" del Monitor sigue aparte (no es solo un alta: si el
   RUT existe ofrece asignar al existente, avisos, "a todos sus viajes"); unificarla exige que `AltaDeFlota` absorba ese flujo.
 - Tangentes nuevas: `FLEET_SERVICE_TYPE` tiene una fila "Tractocamión" sin `code` mezclada con carrocerías (10 tractos la
