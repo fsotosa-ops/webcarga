@@ -622,5 +622,15 @@ describe('ficha de empresa liviana', () => {
       .toMatch(/^\/dashboard\/drivers\/d1\?next=/)
     expect(within(dialogo).getByRole('group', { name: 'Secciones del conductor' })).toBeInTheDocument()
   })
+
+  // Revisión final de la Entrega 1: "Activar" llamaba a la API sin atrapar el
+  // error; si fallaba, no pasaba nada visible y parecía hecho.
+  it('si Activar falla, la ficha lo dice', async () => {
+    vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'ONBOARDING' })
+    vi.mocked(carriersApi.patch).mockRejectedValue(new Error('Para activarla falta su RUT.'))
+    renderPage()
+    await elegirDelMenu('Activar')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Para activarla falta su RUT.')
+  })
 })
 

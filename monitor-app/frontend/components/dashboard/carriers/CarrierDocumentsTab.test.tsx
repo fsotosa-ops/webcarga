@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi } from 'vitest'
 import { CarrierDocumentsTab } from './CarrierDocumentsTab'
+import { QuickViewContext } from '@/components/dashboard/QuickViewProvider'
 
 const { SUBJECT_COUNTS, NOT_ASSET } = vi.hoisted(() => ({
   SUBJECT_COUNTS: { todos: 1, al_dia: 1, por_vencer: 0, falta: 0 },
@@ -35,10 +36,12 @@ vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
 function setup() {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <CarrierDocumentsTab
-        carrierId="c1" carrier={{ business_name: 'ACME', operational_status: 'ACTIVE', management_types: null }}
-        onExport={vi.fn()} exporting={false}
-      />
+      <QuickViewContext.Provider value={vi.fn()}>
+        <CarrierDocumentsTab
+          carrierId="c1" carrier={{ business_name: 'ACME', operational_status: 'ACTIVE', management_types: null }}
+          onExport={vi.fn()} exporting={false}
+        />
+      </QuickViewContext.Provider>
     </QueryClientProvider>,
   )
 }
@@ -57,4 +60,12 @@ describe('CarrierDocumentsTab (C7, ficha única)', () => {
     expect(screen.getByRole('button', { name: /Versiones/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Editar vencimiento' })).toBeInTheDocument()
   })
+
+  // Revisión final de la Entrega 1 (spec: "De quién", cada uno con su vista rápida).
+  it('el nombre de un conductor en Documentos de la empresa lleva a su ficha', async () => {
+    setup()
+    fireEvent.click(await screen.findByRole('button', { name: /Conductores/ }))
+    expect(await screen.findByRole('link', { name: 'Ver conductor Vidal Soto, Pedro' })).toHaveAttribute('href', '/dashboard/drivers/d1')
+  })
 })
+

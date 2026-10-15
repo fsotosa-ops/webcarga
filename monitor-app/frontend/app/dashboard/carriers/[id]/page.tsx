@@ -144,6 +144,8 @@ function EmpresaDetailPageInner() {
 
   function invalidatePolicies(){ queryClient.invalidateQueries({ queryKey: ['carrier-policies', id] }) }
   const [notice, setNotice] = useState<string | null>(null)
+  // "Activar" no tiene diálogo propio: si falla, se dice (revisión final de la Entrega 1).
+  const [activateError, setActivateError] = useState<string | null>(null)
   /** Todo cambio pasa por acá: una sola lista de qué queda obsoleto, y el aviso
    *  cuando el cambio llega al Cierre (que se recalcula en el servidor). */
   async function afterChange(change: DirectoryChange, done?: string) {
@@ -334,11 +336,15 @@ function EmpresaDetailPageInner() {
           ...(canChangeCarrierStatus ? [carrier.operational_status === 'ACTIVE'
             ? { id: 'baja', label: 'Dar de baja', destructive: true, onSelect: () => setBajaModalOpen(true) }
             : carrier.operational_status === 'ONBOARDING'
-              ? { id: 'activate', label: 'Activar', onSelect: () => { void handleActivateCarrier() } }
+              ? { id: 'activate', label: 'Activar', onSelect: () => {
+                  setActivateError(null)
+                  handleActivateCarrier().catch(e => setActivateError(e instanceof Error ? e.message : 'No se pudo activar.'))
+                } }
               : { id: 'reactivate', label: 'Reactivar', onSelect: () => setReactivateOpen(true) }] : []),
           ...(canAdmin ? [{ id: 'delete', label: 'Eliminar', destructive: true, onSelect: () => setDeleteModalOpen(true) }] : []),
         ]}
       />
+      {activateError && <p role="alert" className="text-dato text-status-incidente">{activateError}</p>}
 
       {/* ── Tabs — una sección visible a la vez, cero scroll entre ellas ── */}
       <Tabs

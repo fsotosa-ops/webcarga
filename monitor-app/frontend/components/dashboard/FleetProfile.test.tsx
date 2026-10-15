@@ -217,5 +217,15 @@ describe('FleetProfile (Entrega 1 de fichas)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Quitar del roster' }))
     await waitFor(() => expect(carriersApi.unassignDriver).toHaveBeenCalledWith('c1', 'd1'))
   })
+
+  it('si Reactivar falla, la ficha lo dice', async () => {
+    vi.mocked(fetchEntitySummary).mockResolvedValue({ ...RESUMEN_CONDUCTOR, operational_status: 'INACTIVE' } as never)
+    vi.mocked(driversApi.get).mockResolvedValue({ ...DRIVER, operational_status: 'INACTIVE' } as never)
+    vi.mocked(driversApi.patch).mockRejectedValue(new Error('La empresa está dada de baja.'))
+    renderProfile()
+    fireEvent.click(await screen.findByRole('button', { name: 'Más acciones' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reactivar' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('La empresa está dada de baja.')
+  })
 })
 

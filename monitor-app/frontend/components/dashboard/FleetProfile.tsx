@@ -69,6 +69,9 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
   const [tab, setTab] = useState<Section>(sectionTabs.find(t => t.id === requested)?.id ?? 'resumen')
   const [modal, setModal] = useState<'transfer' | 'identity' | 'baja' | 'remove' | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // Lo que se hace desde el ⋯ sin diálogo propio (Reactivar) dice si falló:
+  // en silencio parecía hecho (revisión final de la Entrega 1).
+  const [actionError, setActionError] = useState<string | null>(null)
   const { labelOf } = useAssetTypes()
 
   const canEdit = usePermiso('directory.edit')
@@ -151,7 +154,10 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
     ...(canCorrectIdentity ? [{ id: 'identity', label: kind === 'driver' ? 'Corregir RUT' : 'Corregir patente', onSelect: () => setModal('identity') }] : []),
     ...(canChangeFleetStatus
       ? [status === 'INACTIVE'
-          ? { id: 'reactivate', label: 'Reactivar', onSelect: () => { void patch({ operational_status: 'ACTIVE' }) } }
+          ? { id: 'reactivate', label: 'Reactivar', onSelect: () => {
+              setActionError(null)
+              patch({ operational_status: 'ACTIVE' }).catch(e => setActionError(e instanceof Error ? e.message : 'No se pudo reactivar.'))
+            } }
           : { id: 'baja', label: 'Dar de baja', destructive: true, onSelect: () => setModal('baja') }]
       : []),
     ...(canEdit && carrierId ? [{ id: 'remove', label: 'Quitar de la empresa', destructive: true, onSelect: () => setModal('remove') }] : []),
@@ -210,6 +216,7 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
       <ProfileHeader title={title} chips={chips} reason={reason} onSeeDocuments={() => setTab('documentos')}
                      primaryAction={primaryAction} menuItems={menuItems} />
       {notice && <p role="status" className="text-dato text-resuelto">{notice}</p>}
+      {actionError && <p role="alert" className="text-dato text-status-incidente">{actionError}</p>}
 
       <Tabs label={`Secciones del ${LIST[kind].noun}`} tabs={sectionTabs} value={tab} onChange={setTab} />
 

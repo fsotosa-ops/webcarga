@@ -1,5 +1,6 @@
 'use client'
 
+import { EntityCell } from '@/components/dashboard/EntityCell'
 import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Ban, Building2, ChevronDown, ChevronRight, Truck, User } from 'lucide-react'
@@ -134,27 +135,48 @@ function CabeceraDeSujeto({ sujeto, abierto, onAlternar, canEdit, nombreEmpresa,
   // La empresa no se da de baja de sí misma: el menú es sólo para conductor
   // y vehículo, y sólo si se puede escribir.
   const puedeAccionar = canEdit && (sujeto.entity_type === 'DRIVER' || sujeto.entity_type === 'ASSET')
+  const enlazable = sujeto.entity_type === 'DRIVER' || sujeto.entity_type === 'ASSET'
   return (
     <div className="w-full flex items-center gap-2 px-3 py-2 bg-accent/5 border-b border-border">
       {/* Contenedor, no botón: `AccionesDeSujeto` trae su propio <button> y un
        *  botón dentro de otro botón es HTML inválido — el clic se lo lleva el
        *  de afuera. Por eso el botón que pliega y el menú son hermanos. */}
+      {/* El nombre de un conductor o equipo lleva a su vista rápida (revisión
+          final de la Entrega 1): va FUERA del botón que pliega, porque un enlace
+          dentro de un botón es HTML inválido. La empresa no enlaza: es esta. */}
+      {enlazable && (
+        <button type="button" onClick={onAlternar} aria-expanded={abierto}
+                aria-label={`${abierto ? 'Plegar' : 'Desplegar'} ${tituloDeSujeto(sujeto)}`}
+                className="shrink-0 hover:opacity-80 transition-opacity">
+          {abierto
+            ? <ChevronDown size={14} className="text-informativo" aria-hidden="true" />
+            : <ChevronRight size={14} className="text-informativo" aria-hidden="true" />}
+        </button>
+      )}
+      {enlazable && (
+        <span className="shrink-0 text-dato font-semibold">
+          <EntityCell kind={sujeto.entity_type === 'ASSET' ? 'asset' : 'driver'} id={sujeto.entity_id} label={tituloDeSujeto(sujeto)} />
+        </span>
+      )}
       <button
         type="button"
         onClick={onAlternar}
         aria-expanded={abierto}
+        // Con el nombre afuera, el resto de la fila sigue plegando con el mouse;
+        // para el teclado y el lector de pantalla ya está el botón de arriba.
+        {...(enlazable ? { tabIndex: -1, 'aria-hidden': true } : {})}
         className="flex-1 min-w-0 flex items-center gap-2 text-left hover:opacity-80 transition-opacity"
       >
-        {abierto
+        {!enlazable && (abierto
           ? <ChevronDown size={14} className="shrink-0 text-informativo" aria-hidden="true" />
-          : <ChevronRight size={14} className="shrink-0 text-informativo" aria-hidden="true" />}
+          : <ChevronRight size={14} className="shrink-0 text-informativo" aria-hidden="true" />)}
         <Icono size={14} className="shrink-0 text-informativo" aria-hidden="true" />
         {/* `shrink-0`, NO `truncate`. La patente es la IDENTIDAD del vehiculo y
             era lo primero que el flexbox sacrificaba: en 390px medía 0px —
             desaparecía entera— porque todo lo demás de la fila es `shrink-0`.
             Las insignias terminaban empujando fuera justo lo que venían a
             anotar. Cabe de sobra: una patente chilena son 6 caracteres. */}
-        <span className="shrink-0 text-dato font-semibold text-text-primary">{tituloDeSujeto(sujeto)}</span>
+        {!enlazable && <span className="shrink-0 text-dato font-semibold text-text-primary">{tituloDeSujeto(sujeto)}</span>}
         <InsigniasDeVehiculo sujeto={sujeto} />
         <span className="shrink-0 text-etiqueta text-informativo">
           {clase ? `${clase} · ${cuenta}` : cuenta}

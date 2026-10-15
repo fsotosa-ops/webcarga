@@ -317,6 +317,8 @@ test('Pendientes: el titular abre su vista rápida (clic y Enter) y de ahí su f
   expect(page.url()).toContain('/compliance/pending')
   await abrir.click()
   await page.waitForURL(/\/dashboard\/(drivers|assets|carriers)\/[0-9a-f-]{36}/, { timeout: 15000 })
+  // La vista rápida no queda encima de la ficha (revisión final de la Entrega 1).
+  await expect(abrir).not.toBeVisible()
   expect(problems).toEqual([])
 })
 
