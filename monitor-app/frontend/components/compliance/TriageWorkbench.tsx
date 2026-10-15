@@ -357,6 +357,7 @@ export function TriageWorkbench() {
               targetIds={canEdit ? targetIds : []}
               subjects={subjects}
               carrierLabel={carrierLabel}
+              carrierId={subjectCarrierId}
               pendingRows={pendingQuery.data?.rows ?? []}
               pendingState={!subjectCarrierId ? 'ready' : pendingQuery.isPending ? 'loading' : pendingQuery.isError ? 'error' : 'ready'}
               onRetryPending={() => { void pendingQuery.refetch() }}

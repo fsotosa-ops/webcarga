@@ -36,6 +36,8 @@ export function EntityCell({ kind, id, label, onOpen, unresolved = false, empty 
   if (!label) return <span className="text-informativo">{empty}</span>
   if (id && open) {
     const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
+      // En una fila clicable, el nombre no selecciona además la fila.
+      e.stopPropagation()
       if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
       e.preventDefault()
       open({ kind, id, label })

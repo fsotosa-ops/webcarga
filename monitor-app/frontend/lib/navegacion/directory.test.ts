@@ -29,4 +29,12 @@ describe('returnLink', () => {
     expect(returnLink('https://phishing.example')).toBeNull()
     expect(returnLink(null)).toBeNull()
   })
+
+  it('volver a una lista del Directorio la nombra', () => {
+    expect(returnLink('/dashboard/drivers?documents=pending')?.label).toBe('Volver a Conductores')
+    expect(returnLink('/dashboard/assets')?.label).toBe('Volver a Equipos')
+    expect(returnLink('/dashboard/carriers?q=andes')?.label).toBe('Volver al Directorio')
+    expect(returnLink('/dashboard/carriers/t1?tab=conductores')?.label).toBe('Volver a la empresa')
+  })
 })
+

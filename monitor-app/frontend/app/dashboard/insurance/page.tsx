@@ -11,6 +11,7 @@ import { dueRelative } from '@/lib/utils/installments'
 import { InsurancePolicyModal } from '@/components/dashboard/InsurancePolicyModal'
 import type { CarrierInsuranceOverviewItem, CarrierOperationalStatus, InsuranceOverviewFacets } from '@/lib/types'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
+import { EntityCell } from '@/components/dashboard/EntityCell'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { CARRIER_LIFECYCLE_GROUP_LABELS } from '@/lib/states'
 
@@ -250,8 +251,11 @@ function SegurosPageInner() {
                       }`}
                     >
                       <td className="px-3 py-3">
+                        {/* La empresa lleva a su vista rápida (N2, Entrega 1 de fichas); la fila, a sus pólizas. */}
                         <p className="font-semibold text-text-primary truncate leading-tight">
-                          {item.business_name || <span className="italic text-gray-400">Sin nombre</span>}
+                          {item.business_name
+                            ? <EntityCell kind="carrier" id={item.carrier_id} label={item.business_name} />
+                            : <span className="italic text-gray-400">Sin nombre</span>}
                         </p>
                         <p className="text-[11px] text-gray-400 font-mono">{item.tax_id}</p>
                       </td>

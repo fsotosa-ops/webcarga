@@ -20,6 +20,7 @@ import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
 import { PendingDocsBadge } from '@/components/ui/PendingDocsBadge'
 import { StatusChip } from '@/components/ui/StatusChip'
 import { alertSeverityStyle, enablementStyleFromFlag, lifecycleStyle } from '@/lib/states'
+import { EntityCell } from './EntityCell'
 import { Section } from '@/components/ui/Section'
 import { KeyValueList } from '@/components/ui/KeyValueList'
 
@@ -348,7 +349,9 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
             <div className="space-y-2">
               <div className="flex items-center justify-between rounded-md border border-border bg-white px-3 py-2.5">
                 <div className="min-w-0 flex items-center gap-2 flex-wrap">
-                  <p className="text-dato font-semibold text-text-primary truncate">{trip.carrier_name ?? '—'}</p>
+                  <p className="text-dato font-semibold text-text-primary truncate">
+                    <EntityCell kind="carrier" id={trip.carrier_id} label={trip.carrier_name} />
+                  </p>
                   <InsuranceAlertBadge alert={trip.insurance_alert} />
                   <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_has_critical_alert} label="Empresa" />
                   <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_has_critical_alert} label="Conductor" />

@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { TriageClassifyForm } from './TriageClassifyForm'
+import { QuickViewContext } from '@/components/dashboard/QuickViewProvider'
 
 vi.mock('@/lib/api/documentIngest', () => ({
   documentIngestApi: { classifyBatch: vi.fn(), moveItems: vi.fn() },
@@ -317,4 +318,17 @@ describe('TriageClassifyForm — muestra qué le falta a la empresa', () => {
     expect(onRetry).toHaveBeenCalled()
     expect(screen.queryByText(/no tiene requisitos pendientes/)).not.toBeInTheDocument()
   })
+
+  // N2 (Entrega 1 de fichas): la empresa sobre la que se actúa lleva a su vista rápida.
+  it('N2: la empresa del encabezado es un enlace a su ficha', () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <QuickViewContext.Provider value={vi.fn()}>
+          <TriageClassifyForm targetIds={['i1']} subjects={[]} onApplied={vi.fn()} carrierLabel="Transportes Andes" carrierId="c1" />
+        </QuickViewContext.Provider>
+      </QueryClientProvider>,
+    )
+    expect(screen.getByRole('link', { name: 'Ver empresa Transportes Andes' })).toHaveAttribute('href', '/dashboard/carriers/c1')
+  })
 })
+

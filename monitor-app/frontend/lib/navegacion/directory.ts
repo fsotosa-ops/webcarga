@@ -33,6 +33,13 @@ export function carrierPanelHref(
 export function returnLink(next: string | null | undefined): { href: string; label: string } | null {
   const href = destinoSeguro(next, '')
   if (!href) return null
-  const label = href.startsWith(CIERRE) ? 'Volver al Cierre' : href.startsWith(MONITOR) ? 'Volver al Monitor' : 'Volver'
+  const label = href.startsWith(CIERRE) ? 'Volver al Cierre'
+    : href.startsWith(MONITOR) ? 'Volver al Monitor'
+    // Las listas del Directorio, con sus filtros (N3, Entrega 1 de fichas).
+    : href.startsWith(DRIVERS) ? 'Volver a Conductores'
+    : href.startsWith(ASSETS) ? 'Volver a Equipos'
+    : href.startsWith(`${CARRIERS}/`) ? 'Volver a la empresa'
+    : href.startsWith(CARRIERS) ? 'Volver al Directorio'
+    : 'Volver'
   return { href, label }
 }

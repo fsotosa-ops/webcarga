@@ -49,4 +49,15 @@ describe('EntityCell', () => {
     render(<EntityCell kind="asset" id={null} label={null} empty="Sin tracto habitual" />)
     expect(screen.getByText('Sin tracto habitual')).toBeInTheDocument()
   })
+
+  // En una fila clicable (Seguros, Monitor) el clic en el nombre no puede además
+  // seleccionar la fila: con o sin teclas modificadoras.
+  it('el clic en el nombre no llega a la fila que lo contiene', () => {
+    const fila = vi.fn()
+    render(<div onClick={fila}><EntityCell kind="carrier" id="c1" label="Hueraman" onOpen={vi.fn()} /></div>)
+    fireEvent.click(screen.getByRole('link', { name: 'Ver empresa Hueraman' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Ver empresa Hueraman' }), { metaKey: true })
+    expect(fila).not.toHaveBeenCalled()
+  })
 })
+

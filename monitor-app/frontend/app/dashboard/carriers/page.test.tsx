@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { complianceSummary } from '@/lib/states.fixtures'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
 import EmpresasTransportePage from './page'
@@ -194,4 +195,20 @@ describe('EmpresasTransportePage', () => {
     await waitFor(() => expect(carriersApi.list).toHaveBeenCalled())
     expect(carriersApi.buscar).not.toHaveBeenCalled()
   })
+
+  // N3 (Entrega 1 de fichas): la ficha de la empresa vuelve a la lista con sus filtros.
+  it('N3: el enlace a la ficha lleva la URL de la lista para volver', async () => {
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('q=andes') as unknown as ReturnType<typeof useSearchParams>)
+    vi.mocked(carriersApi.list).mockResolvedValue({
+      ...emptyResponse(), count: 1, facets: { total: 1, enabled: 0, not_enabled: 1 },
+      data: [{ id: 'c1', tax_id: '76555555-8', country_code: 'CL', business_name: 'Transportes Andes', operational_status: 'ACTIVE',
+        total_requirements: 3, last_document_update: null, compliance_summary: complianceSummary() }],
+    })
+    renderPage()
+    const enlaces = await screen.findAllByTitle('Ver ficha completa')
+    for (const a of enlaces) {
+      expect(new URL(a.getAttribute('href')!, 'http://x').searchParams.get('next')).toBe('/dashboard/carriers?q=andes')
+    }
+  })
 })
+

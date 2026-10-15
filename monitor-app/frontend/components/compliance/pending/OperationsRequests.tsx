@@ -6,10 +6,12 @@ import { Check, Inbox, Loader2 } from 'lucide-react'
 import { certificationRequestsApi } from '@/lib/api/certificationRequests'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { formatExpiry } from '@/lib/compliance'
+import { EntityCell } from '@/components/dashboard/EntityCell'
 
 export const OPERATIONS_REQUESTS_KEY = ['certification-requests', 'open'] as const
 
 const ENTITY_NOUN = { CARRIER: 'Empresa', DRIVER: 'Conductor', ASSET: 'Equipo' } as const
+const ENTITY_KIND = { CARRIER: 'carrier', DRIVER: 'driver', ASSET: 'asset' } as const
 
 /** "Pedidos de Operaciones" arriba de Pendientes (Entrega B, 14/10): lo que
  *  Operaciones pidió desde el Cierre o el Directorio. Un pedido cuyo documento ya
@@ -39,8 +41,12 @@ export function OperationsRequests() {
           <li key={r.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-dato">
             <div className="min-w-0 flex-1">
               <p className="font-semibold text-text-primary">
-                {r.requirement_name ?? 'Documento sin especificar'} · {ENTITY_NOUN[r.entity_type]} {r.entity_name ?? ''}
-                {r.carrier_name && r.entity_type !== 'CARRIER' ? ` (${r.carrier_name})` : ''}
+                {/* A quién se le pide y su empresa llevan a su vista rápida (N2, Entrega 1 de fichas). */}
+                {r.requirement_name ?? 'Documento sin especificar'} · {ENTITY_NOUN[r.entity_type]}{' '}
+                <EntityCell kind={ENTITY_KIND[r.entity_type]} id={r.entity_id} label={r.entity_name} empty="" />
+                {r.carrier_name && r.entity_type !== 'CARRIER' && (
+                  <> (<EntityCell kind="carrier" id={r.carrier_id} label={r.carrier_name} />)</>
+                )}
               </p>
               <p className="text-etiqueta text-informativo">
                 Pedido por {r.created_by_name ?? 'Operaciones'} el {formatExpiry(r.created_at.slice(0, 10))}

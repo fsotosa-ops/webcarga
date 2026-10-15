@@ -1,5 +1,6 @@
 'use client'
 
+import { EntityCell } from './EntityCell'
 import { useState, useEffect, useRef } from 'react'
 import { X, Copy, Check, Truck, User, Phone, Hash, Ban, ArrowLeft } from 'lucide-react'
 import type { Trip, TripsMeta } from '@/lib/types'
@@ -142,8 +143,11 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
 
         <span className="flex items-center gap-1.5 shrink-0">
           <Truck size={14} className="text-informativo" aria-hidden="true" />
+          {/* El tracto y el conductor llevan a su vista rápida (N2, Entrega 1 de fichas). */}
           <span className="font-identificador text-dato font-bold tabular-nums text-text-primary">
-            {trip.tractor_plate ?? trip.trailer_plate ?? 'Sin patente'}
+            {trip.tractor_plate
+              ? <EntityCell kind="asset" id={trip.tractor_asset_id} label={trip.tractor_plate} mono />
+              : trip.trailer_plate ?? 'Sin patente'}
           </span>
           {trip.tractor_plate && trip.trailer_plate && (
             <span className="font-identificador text-etiqueta tabular-nums text-informativo">/ {trip.trailer_plate}</span>
@@ -152,7 +156,9 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
 
         <span className="flex items-center gap-1.5 min-w-0">
           <User size={12} className="text-informativo shrink-0" aria-hidden="true" />
-          <span className="text-dato text-text-primary truncate">{trip.driver_name ?? '—'}</span>
+          <span className="text-dato text-text-primary truncate">
+            <EntityCell kind="driver" id={trip.driver_id} label={trip.driver_name} />
+          </span>
         </span>
 
         {trip.driver_phone && (

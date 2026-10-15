@@ -12,6 +12,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { StatusChip } from '@/components/ui/StatusChip'
 import { Estado } from '@/components/ui/Estado'
 import { Table, TableHeader, TableSection } from '@/components/ui/tabla/Table'
+import { EntityCell } from '@/components/dashboard/EntityCell'
 import { resumenDeVigencia, vigenciaDe } from '@/lib/vigencia'
 import { pendingPeriodLine, pendingRowStatus } from '@/lib/pending'
 import type { DatosDelDocumento } from '@/lib/compliance'
@@ -91,15 +92,20 @@ export function PendingHoldersPanel({ groupBy, selected, state, onStateChange, c
 
   function renglon(f: PendingComplianceRow) {
     const estado = pendingRowStatus(f)
+    // Quien lo debe y su empresa llevan a su vista rápida (N2, Entrega 1 de fichas).
+    const sujeto = f.subject_name
+      ? <EntityCell kind={f.entity_type === 'ASSET' ? 'asset' : 'driver'} id={f.entity_id} label={f.subject_name} />
+      : null
+    const empresa = <EntityCell kind="carrier" id={f.carrier_id} label={f.carrier_name} />
     const titulo: ReactNode = groupBy === 'carrier'
-      ? <>{f.document_name}{f.subject_name && <span className="text-informativo"> · {f.subject_name}</span>}</>
-      : f.subject_name
+      ? <>{f.document_name}{sujeto && <span className="text-informativo"> · {sujeto}</span>}</>
+      : sujeto
         // Dos columnas desde md; en el teléfono, en la misma línea.
         ? <span className="flex min-w-0 md:grid md:grid-cols-2 md:gap-3">
-            <span className="truncate">{f.subject_name}</span>
-            <span className="truncate text-informativo"><span className="md:hidden">{' · '}</span>{f.carrier_name}</span>
+            <span className="truncate">{sujeto}</span>
+            <span className="truncate text-informativo"><span className="md:hidden">{' · '}</span>{empresa}</span>
           </span>
-        : <>{f.carrier_name}{f.carrier_operation_types.length > 0 &&
+        : <>{empresa}{f.carrier_operation_types.length > 0 &&
             <span className="text-informativo"> · {f.carrier_operation_types.join(' · ')}</span>}</>
     return (
       <RenglonPendiente

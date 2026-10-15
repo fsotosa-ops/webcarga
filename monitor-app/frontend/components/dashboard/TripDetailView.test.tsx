@@ -6,6 +6,7 @@ import { tripsApi } from '@/lib/api/trips'
 import { driversApi } from '@/lib/api/drivers'
 import type { Trip, TripNote } from '@/lib/types'
 import { fmtDT } from '@/lib/utils/datetime'
+import { QuickViewContext } from './QuickViewProvider'
 
 vi.mock('@/lib/api/trips', () => ({
   tripsApi: {
@@ -59,7 +60,9 @@ function renderDetailView(trip: Trip, props: Partial<Parameters<typeof TripDetai
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <TripDetailView trip={trip} onDismiss={vi.fn()} onSaved={vi.fn()} meta={null} {...props} />
+      <QuickViewContext.Provider value={vi.fn()}>
+        <TripDetailView trip={trip} onDismiss={vi.fn()} onSaved={vi.fn()} meta={null} {...props} />
+      </QuickViewContext.Provider>
     </QueryClientProvider>,
   )
 }
@@ -857,6 +860,16 @@ describe('TripDetailView — anulado de solo lectura', () => {
   it('un viaje anulado no ofrece editar: se deshace la anulación primero', () => {
     renderDetailView({ ...baseTrip, source_system: 'manual', voided_at: '2026-10-10T20:00:00Z', void_reason_label: 'Duplicado' })
     expect(screen.getByRole('button', { name: /establecer estado operativo manual/i })).toBeDisabled()
+  })
+
+  // N2 (Entrega 1 de fichas): el tracto, el conductor y la empresa del viaje
+  // llevan a su vista rápida (y con Ctrl/Cmd + clic, a su ficha).
+  it('N2: el tracto, el conductor y la empresa del viaje son enlaces a su ficha', () => {
+    renderDetailView({ ...baseTrip, driver_id: 'd1', driver_name: 'Juan Perez', tractor_asset_id: 'a1', tractor_plate: 'ABCD12',
+      carrier_id: 'c1', carrier_name: 'Transportes Sur Spa' })
+    expect(screen.getByRole('link', { name: 'Ver equipo ABCD12' })).toHaveAttribute('href', '/dashboard/assets/a1')
+    expect(screen.getByRole('link', { name: 'Ver conductor Juan Perez' })).toHaveAttribute('href', '/dashboard/drivers/d1')
+    expect(screen.getByRole('link', { name: 'Ver empresa Transportes Sur Spa' })).toHaveAttribute('href', '/dashboard/carriers/c1')
   })
 })
 

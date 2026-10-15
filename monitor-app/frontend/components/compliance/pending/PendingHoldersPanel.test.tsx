@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { PendingHoldersPanel } from './PendingHoldersPanel'
+import { QuickViewContext } from '@/components/dashboard/QuickViewProvider'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 import type { PendingComplianceRow, PendingSummaryRow } from '@/lib/types'
 import { hoyEnChile } from '@/lib/utils/datetime'
@@ -25,7 +26,9 @@ function fila(over: Partial<PendingComplianceRow> = {}): PendingComplianceRow {
 function montar(props: Partial<Parameters<typeof PendingHoldersPanel>[0]> = {}, qc = nuevoQc()) {
   render(
     <QueryClientProvider client={qc}>
-      <PendingHoldersPanel groupBy="requirement" selected={F30} state="overdue" onStateChange={vi.fn()} canUpload {...props} />
+      <QuickViewContext.Provider value={vi.fn()}>
+        <PendingHoldersPanel groupBy="requirement" selected={F30} state="overdue" onStateChange={vi.fn()} canUpload {...props} />
+      </QuickViewContext.Provider>
     </QueryClientProvider>,
   )
   return qc
@@ -290,4 +293,17 @@ describe('PendingHoldersPanel', () => {
     // Por empresa no se ofrece el lote: el lote es de UN documento.
     expect(screen.queryByText(/Arrastra varios/)).not.toBeInTheDocument()
   })
+
+  // N2 (Entrega 1 de fichas): quien debe el documento y su empresa llevan a su
+  // vista rápida (y con Ctrl/Cmd + clic, a su ficha).
+  it('N2: el titular y la empresa de cada fila son enlaces a su ficha', async () => {
+    const LIC: PendingSummaryRow = { ...F30, key: 'req-lic', label: 'Licencia', requirement_code: 'LIC', target_entity: 'DRIVER' }
+    vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 1, rows: [
+      fila({ entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Vidal Soto, Pedro', requirement_code: 'LIC', document_name: 'Licencia' }),
+    ] } as never)
+    montar({ selected: LIC })
+    expect(await screen.findByRole('link', { name: 'Ver conductor Vidal Soto, Pedro' })).toHaveAttribute('href', '/dashboard/drivers/d1')
+    expect(screen.getByRole('link', { name: 'Ver empresa Transportes Cordillera SpA' })).toHaveAttribute('href', '/dashboard/carriers/c1')
+  })
 })
+

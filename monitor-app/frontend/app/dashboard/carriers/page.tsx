@@ -1,5 +1,6 @@
 'use client'
 
+import { carrierHref } from '@/lib/navegacion/directory'
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -81,6 +82,8 @@ function EmpresasTransportePageInner() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
+  // La lista con sus filtros: la ficha de cada empresa vuelve ahí (N3, Entrega 1 de fichas).
+  const returnTo = searchParams.toString() ? `/dashboard/carriers?${searchParams.toString()}` : '/dashboard/carriers'
   const [q, setQ]                 = useState('')
   const [tab, setTab]             = useState<TransporterTab>('active')
   const [enablementTab, setEnablementTab] = useState<EnablementTab>('')
@@ -264,14 +267,14 @@ function EmpresasTransportePageInner() {
       ) : viewMode === 'tablero' ? (
         <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 transition-opacity duration-150 ${fetching ? 'opacity-60' : ''}`}>
           {items.map(item => (
-            <TransporterCard key={item.id} item={item} onOpen={setSelected} selected={selected?.id === item.id} />
+            <TransporterCard returnTo={returnTo} key={item.id} item={item} onOpen={setSelected} selected={selected?.id === item.id} />
           ))}
         </div>
       ) : (
         <div className={`transition-opacity duration-150 ${fetching ? 'opacity-60' : ''}`}>
           <div className="md:hidden grid grid-cols-1 gap-3">
             {items.map(item => (
-              <TransporterCard key={item.id} item={item} onOpen={setSelected} selected={selected?.id === item.id} />
+              <TransporterCard returnTo={returnTo} key={item.id} item={item} onOpen={setSelected} selected={selected?.id === item.id} />
             ))}
           </div>
 
@@ -323,7 +326,7 @@ function EmpresasTransportePageInner() {
                       {/* prefetch=false: mismo motivo que TransporterCard — evita que Next.js
                          prefetchee las 100 filas visibles a la vez y agote el rate limit. */}
                       <Link
-                        href={`/dashboard/carriers/${item.id}`}
+                        href={carrierHref(item.id, returnTo)}
                         prefetch={false}
                         onClick={e => e.stopPropagation()}
                         title="Ver ficha completa"

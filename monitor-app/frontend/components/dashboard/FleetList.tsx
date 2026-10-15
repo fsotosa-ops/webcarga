@@ -77,6 +77,7 @@ export function FleetList({ kind }: { kind: FleetKind }) {
   }, [qDebounced])
 
   const listParams = { q: params.get('q') ?? '', flag, documents, offset: (page - 1) * PAGE_SIZE, pageSize: PAGE_SIZE }
+  const returnTo = params.toString() ? `${pathname}?${params.toString()}` : pathname
   const query = useQuery<FleetListResponse>({
     queryKey: directoryKeys.fleetList(kind, listParams),
     queryFn: () => kind === 'driver'
@@ -144,7 +145,7 @@ export function FleetList({ kind }: { kind: FleetKind }) {
               </tr>
             </thead>
             <tbody>
-              {data!.rows.map(row => <Row key={row.id} kind={kind} row={row} typeLabel={labelOf(row.asset_type)} toDocuments={!!documents} />)}
+              {data!.rows.map(row => <Row key={row.id} kind={kind} row={row} typeLabel={labelOf(row.asset_type)} toDocuments={!!documents} returnTo={returnTo} />)}
             </tbody>
           </table>
         </div>
@@ -173,11 +174,15 @@ export function FleetList({ kind }: { kind: FleetKind }) {
   )
 }
 
-function Row({ kind, row, typeLabel, toDocuments }: { kind: FleetKind; row: FleetListRow; typeLabel: string; toDocuments: boolean }) {
+function Row({ kind, row, typeLabel, toDocuments, returnTo }: {
+  kind: FleetKind; row: FleetListRow; typeLabel: string; toDocuments: boolean
+  /** La lista con sus filtros: la ficha vuelve ahí (N3, Entrega 1 de fichas). */
+  returnTo: string
+}) {
   // Filtrando por documentos (la cola de Certificación) se llega a la ficha en
   // su pestaña Documentos, que es lo que se vino a trabajar.
-  const profile = kind === 'driver' ? driverHref(row.id) : assetHref(row.id)
-  const href = toDocuments ? `${profile}?tab=documentos` : profile
+  const profile = kind === 'driver' ? driverHref(row.id, returnTo) : assetHref(row.id, returnTo)
+  const href = toDocuments ? `${profile}&tab=documentos` : profile
   const lifecycle = fleetMemberStyle(kind, row.operational_status, row.carrier?.operational_status)
   const docs = summaryStyle(row.compliance_summary, row.operational_status === 'ACTIVE')
   return (

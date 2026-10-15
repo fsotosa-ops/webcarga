@@ -40,6 +40,15 @@ describe('FleetList', () => {
     search = 'documents=pending'
     renderList()
     expect(await screen.findByRole('link', { name: 'Vidal Soto, Pedro' }))
-      .toHaveAttribute('href', '/dashboard/drivers/d1?tab=documentos')
+      .toHaveAttribute('href', `/dashboard/drivers/d1?next=${encodeURIComponent('/dashboard/drivers?documents=pending')}&tab=documentos`)
+  })
+
+  // N3 (Entrega 1 de fichas): la ficha vuelve a la lista con los filtros que tenía.
+  it('N3: la fila lleva la URL de la lista, con sus filtros, para volver', async () => {
+    search = 'flag=without_carrier&q=vidal'
+    renderList()
+    const href = (await screen.findByRole('link', { name: 'Vidal Soto, Pedro' })).getAttribute('href')!
+    expect(new URL(href, 'http://x').searchParams.get('next')).toBe('/dashboard/drivers?flag=without_carrier&q=vidal')
   })
 })
+

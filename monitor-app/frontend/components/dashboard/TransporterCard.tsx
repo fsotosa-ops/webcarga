@@ -1,5 +1,6 @@
 'use client'
 
+import { carrierHref } from '@/lib/navegacion/directory'
 import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
 import { StatusChip } from '@/components/ui/StatusChip'
@@ -10,6 +11,8 @@ interface Props {
   item:     CarrierListItem
   onOpen:   (item: CarrierListItem) => void
   selected?: boolean
+  /** La lista con sus filtros: la ficha vuelve ahí (N3, Entrega 1 de fichas). */
+  returnTo?: string
 }
 
 /** Tarjeta de empresa — vista Tarjetas del listado de Empresas y fallback
@@ -18,7 +21,7 @@ interface Props {
  *  ciclo de vida (lo decide una persona) y la habilitación (la calcula la API
  *  en `compliance_summary.can_operate`, D1 §6.2). Una empresa dada de baja
  *  muestra la habilitación en gris: no está en falta. */
-export function TransporterCard({ item, onOpen, selected = false }: Props) {
+export function TransporterCard({ item, onOpen, selected = false, returnTo }: Props) {
   const lifecycle = lifecycleStyle('carrier', item.operational_status)
   const enablement = enablementStyle(item.compliance_summary, item.operational_status === 'ACTIVE')
   return (
@@ -41,7 +44,7 @@ export function TransporterCard({ item, onOpen, selected = false }: Props) {
         {/* prefetch=false: con 30+ tarjetas visibles, Next.js prefetchea todos los links
            "Ver ficha" en viewport a la vez y agota el rate limit del proxy (429 real). */}
         <Link
-          href={`/dashboard/carriers/${item.id}`}
+          href={carrierHref(item.id, returnTo)}
           prefetch={false}
           onClick={e => e.stopPropagation()}
           title="Ver ficha completa"

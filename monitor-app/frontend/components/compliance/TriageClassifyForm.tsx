@@ -1,5 +1,6 @@
 'use client'
 
+import { EntityCell } from '@/components/dashboard/EntityCell'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
@@ -29,6 +30,8 @@ interface Props {
   /** Empresa de la selección — se muestra en el encabezado para que quede
    *  claro sobre quién se está actuando cuando hay varios marcados. */
   carrierLabel?: string | null
+  /** Con él, la empresa del encabezado lleva a su vista rápida (N2, Entrega 1 de fichas). */
+  carrierId?: string | null
   /** Lo que le falta a esa empresa. Es el dato que responde "¿qué tengo
    *  pendiente acá?" sin salir de la pantalla, y el atajo para clasificar. */
   pendingRows?: PendingComplianceRow[]
@@ -50,7 +53,7 @@ interface Props {
  *  El mismo formulario sirve para uno o para quince — la selección múltiple no
  *  necesita una pantalla propia. */
 export function TriageClassifyForm({
-  targetIds, subjects, onApplied, carrierLabel, pendingRows = [], pendingState = 'ready', onRetryPending,
+  targetIds, subjects, onApplied, carrierLabel, carrierId = null, pendingRows = [], pendingState = 'ready', onRetryPending,
   suggestion, onPickCarrier, onDiscard,
 }: Props) {
   const [subjectKey, setSubjectKey] = useState('')
@@ -174,7 +177,7 @@ export function TriageClassifyForm({
         <span className="font-semibold text-slate-700 tabular-nums">
           {targetIds.length === 1 ? '1 documento' : `${targetIds.length} documentos`}
         </span>
-        {carrierLabel && <span> · {carrierLabel}</span>}
+        {carrierLabel && <span> · <EntityCell kind="carrier" id={carrierId} label={carrierLabel} /></span>}
       </p>
 
       {/* Con varios marcados NO se muestra el formulario, y por eso no hay nada
