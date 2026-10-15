@@ -84,7 +84,7 @@ JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
 JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
 LEFT JOIN app.status_taxonomies st ON st.id = a.fleet_service_type_id
 LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
-WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
+WHERE a.operational_status = 'ACTIVE' AND public.is_power_unit(a.asset_type)
 """
 
 # "Con carga hoy" — app.trips_del_dia(), el mismo criterio del Cierre, para

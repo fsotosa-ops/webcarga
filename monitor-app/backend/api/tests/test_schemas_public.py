@@ -101,11 +101,6 @@ def test_asset_create_uppercases_plate():
     assert body.license_plate == "ABCD12"
 
 
-def test_asset_create_rejects_unknown_type():
-    with pytest.raises(ValidationError):
-        AssetCreateBody(license_plate="ABCD12", asset_type="BICICLETA")
-
-
 def test_contact_create_uppercases_role():
     body = ContactCreateBody(entity_id="c1", entity_type="CARRIER", contact_role="legal_rep")
 

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { assetsApi } from '@/lib/api/assets'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/api/entitySummary', async original => ({
@@ -110,13 +111,14 @@ describe('EntityQuickView', () => {
   })
 
   it('equipo y empresa traen lo suyo', async () => {
+    vi.spyOn(assetsApi, 'types').mockResolvedValue([{ code: 'TRACTOCAMION', label: 'Tracto', is_power_unit: true }])
     vi.mocked(fetchEntitySummary).mockResolvedValueOnce({
       id: 'a1', license_plate: 'HFVP14', asset_type: 'TRACTOCAMION', manufacture_year: 2019, operation_type: 'Tractoreo',
       operational_status: 'ACTIVE', carrier: { id: 'c1', name: 'Hueraman' }, usual_driver: { id: 'd1', name: 'Vidal' },
       documents: DOCS, compliance_summary: complianceSummary(),
     } as never)
     renderView({ kind: 'asset', id: 'a1', label: 'HFVP14' })
-    expect(await screen.findByText('Tractocamión · 2019')).toBeInTheDocument()
+    expect(await screen.findByText('Tracto · 2019')).toBeInTheDocument()
     expect(screen.getByText('Tractoreo')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Ver conductor Vidal' })).toBeInTheDocument()
   })
@@ -138,16 +140,6 @@ describe('EntityQuickView', () => {
     renderView({ kind: 'driver', id: 'd1', label: 'Vidal' })
     expect(await screen.findByRole('link', { name: 'Abrir ficha completa' })).toHaveAttribute(
       'href', `/dashboard/drivers/d1?next=${encodeURIComponent('/dashboard/operations/closures?date=2026-10-08')}`)
-  })
-
-  // Revisión final (11/10): la ficha de un conductor o equipo vive dentro de
-  // la de su empresa; sin empresa, el enlace llevaba a una página que solo
-  // decía "no está asignado a ninguna empresa".
-  it('un conductor sin empresa no ofrece una ficha completa que no existe', async () => {
-    vi.mocked(fetchEntitySummary).mockResolvedValue({ ...DRIVER, carrier: null } as never)
-    renderView({ kind: 'driver', id: 'd1', label: 'Vidal' })
-    expect(await screen.findByText('Sin empresa asignada: no tiene ficha propia.')).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Abrir ficha completa' })).not.toBeInTheDocument()
   })
 
   it('con algo atrás ofrece volver', () => {

@@ -32,7 +32,7 @@ from ..services.anular_viajes import (
 from ..services.cierre_lineas import frescura_del_dia, ultima_firma
 from ..services.cierre_viajes import SQL_CON_MOTIVO, SQL_GRUPOS_CIERRE
 from ..services.origen_del_viaje import origen_del_viaje
-from ..utils.identity import canonical_plate
+from ..utils.identity import canonical_plate, plate_matches_sql, rut_matches_sql
 
 
 def _parse_date(s: str) -> _date | None:
@@ -853,6 +853,11 @@ async def list_trips(
         "OR sh.name ILIKE '%'||$1||'%' "
         "OR t.client_name ILIKE '%'||$1||'%' "
         "OR t.source_system_trip_id ILIKE '%'||$1||'%' "
+        # El conductor y el tracto RESUELTOS (D4): "Ver viajes en el Monitor" de su
+        # ficha busca por su RUT o su patente, y tiene que encontrar los mismos
+        # viajes que cuenta su Actividad, no solo los que el TMS escribió igual.
+        f"OR {rut_matches_sql('d.tax_id', '$1')} "
+        f"OR {plate_matches_sql('ta.license_plate', '$1')} "
         # Nº de entrega (IANSA): Facturación y Operaciones arrancan desde el
         # número de entrega, no desde el viaje — buscarlo es el flujo de
         # entrada real, no un extra. Vive en app.trip_stops como text[] (una
@@ -1487,155 +1492,6 @@ async def available_assets(
         "total_active": total_active,
         "items": [dict(r) for r in rows],
         "busy": [dict(r) for r in busy_rows],
-    }
-
-
-@router.get("/fleet-daily-overview")
-async def fleet_daily_overview(
-    fecha: str = Query(""),
-    shipper_id: str = Query(""),
-    origin: str = Query(""),
-    pool=Depends(get_pool),
-    _=Depends(require(Permission.OPERATIONS_READ)),
-):
-    """HU-01 (Cierre del Día, "Vista de flota del día"): separa la flota
-    activa en TRACTOREO / EQUIPO_COMPLETO / SIN_CLASIFICAR según
-    `public.assets.webcarga_operation_type_id` (Ronda 85, corrige la Ronda
-    80 que usaba `fleet_service_type_id` — columna D, "Tipo Vehículo",
-    describe el SUBTIPO físico del vehículo, no el tipo de operación).
-    `webcarga_operation_type_id` viene de la columna E, "Tipo de Operación
-    WebCarga", dominio `WEBCARGA_OPERATION_TYPE` (solo 2 valores:
-    Tractoreo/Equipo Completo) — confirmado con datos reales que un tracto
-    puede ser físicamente "Tractoreo" (columna D) y aun así operar bajo un
-    arreglo "Equipo Completo" de WebCarga (columna E).
-
-    "Equipo" = tractocamión activo (`asset_type='TRACTOCAMION'`) de una
-    empresa ACTIVA, mismo criterio que `/available-assets`, excluyendo
-    ramplas (no son la unidad que un viaje resuelve/asigna). Tractos sin
-    `webcarga_operation_type_id` todavía asignado caen en SIN_CLASIFICAR en
-    vez de perderse silenciosamente — HU-02 ya contempla esto como
-    inconsistencia Tipo B ("falta tipo de operación").
-
-    "CON CARGA hoy" usa la misma definición que /available-drivers y
-    /available-assets: app.trips_del_dia(), que incluye el multi-día y excluye
-    cancelados y declarados — un equipo que YA CERRÓ su viaje de hoy sigue contando como
-    CON CARGA (criterio de aceptación #4 de la HU), porque no se exige
-    is_active, solo que exista el viaje de hoy. Vale para todos los TMS:
-    la flota del viaje sale de app.v_trip_fleet_resolution, también la que
-    Operaciones vincula a mano en un viaje de Sodimac.
-
-    Filtros: `client` (lista separada por coma, nombre de shipper) matchea
-    contra `public.carrier_shippers` — no contra el viaje de hoy — para que
-    un equipo SIN CARGA de una empresa habilitada para ese cliente se siga
-    contando (o contra el cliente real del viaje de hoy, si lo tiene).
-    `origin` (lista de nombres de CD) solo puede aplicar a equipos CON
-    CARGA — hoy no existe un "CD habitual" por equipo/empresa en el modelo,
-    así que un equipo SIN CARGA queda fuera de un filtro por origen.
-    """
-    day = _parse_date(fecha)
-    if day is None:
-        raise HTTPException(422, "fecha requerida (YYYY-MM-DD)")
-    # Por id del directorio (spec 2026-10-11); "unlinked" = sin cliente vinculado.
-    client_list, sin_vincular = leer_filtro_de_cliente(shipper_id)
-    origin_list = [o.strip().lower() for o in origin.split(',') if o.strip()]
-
-    rows = await pool.fetch(
-        f"""
-        WITH active_roster AS (
-            SELECT a.id AS asset_id, a.license_plate AS tractor_plate,
-                   c.id AS carrier_id, c.business_name AS carrier_name,
-                   wot.code = 'TRACTOREO' AS is_tractoreo,
-                   wot.code = 'EQUIPO_COMPLETO' AS is_equipo_completo
-            FROM public.assets a
-            JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
-            JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIVE'
-            LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
-            WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
-        ),
-        today_trips AS (
-            SELECT DISTINCT ON (vfr.resolved_tractor_asset_id)
-                vfr.resolved_tractor_asset_id AS asset_id,
-                t.id AS trip_id,
-                t.shipper_id::text AS shipper_id,
-                {nombre_del_cliente('t', 'sh')} AS client_name,
-                {origen_del_viaje('t')} AS origin_local
-            FROM app.trips t
-            JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-            {join_cliente('t', 'sh')}
-            WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
-              AND vfr.resolved_tractor_asset_id IS NOT NULL
-            ORDER BY vfr.resolved_tractor_asset_id, t.status_reported_at DESC NULLS LAST
-        )
-        SELECT
-            ar.asset_id, ar.tractor_plate, ar.carrier_id, ar.carrier_name,
-            COALESCE(ar.is_tractoreo, false)      AS is_tractoreo,
-            COALESCE(ar.is_equipo_completo, false) AS is_equipo_completo,
-            tt.trip_id, tt.shipper_id, tt.client_name, tt.origin_local
-        FROM active_roster ar
-        LEFT JOIN today_trips tt ON tt.asset_id = ar.asset_id
-        """,
-        day,
-    )
-
-    carriers_for_client: set[str] = set()
-    if client_list:
-        shipper_rows = await pool.fetch(
-            """
-            SELECT cs.carrier_id, cs.shipper_id::text AS shipper_id
-            FROM public.carrier_shippers cs
-            WHERE cs.status = 'ACTIVE'
-            """
-        )
-        carriers_for_client = {
-            r["carrier_id"] for r in shipper_rows if r["shipper_id"] in client_list
-        }
-
-    equipment = []
-    for r in rows:
-        if client_list or sin_vincular:
-            today_client_ok = r["shipper_id"] in client_list
-            carrier_client_ok = r["carrier_id"] in carriers_for_client
-            # Sin vincular: con viaje hoy, de un cliente del TMS sin vincular.
-            unlinked_ok = sin_vincular and bool(r["trip_id"]) and not r["shipper_id"]
-            if not (today_client_ok or carrier_client_ok or unlinked_ok):
-                continue
-        if origin_list:
-            if not r["trip_id"] or (r["origin_local"] or "").strip().lower() not in origin_list:
-                continue
-        categories = []
-        if r["is_tractoreo"]:
-            categories.append("TRACTOREO")
-        if r["is_equipo_completo"]:
-            categories.append("EQUIPO_COMPLETO")
-        if not categories:
-            categories.append("SIN_CLASIFICAR")
-        equipment.append({
-            "asset_id":      r["asset_id"],
-            "tractor_plate": r["tractor_plate"],
-            "carrier_id":    r["carrier_id"],
-            "carrier_name":  r["carrier_name"],
-            "categories":    categories,
-            "con_carga":     r["trip_id"] is not None,
-            "trip_id":       r["trip_id"],
-            "client_name":   r["client_name"],
-            "origin":        r["origin_local"],
-        })
-
-    def _summarize(category: str) -> dict:
-        items = [e for e in equipment if category in e["categories"]]
-        assigned = sum(1 for e in items if e["con_carga"])
-        total = len(items)
-        return {
-            "category":         category,
-            "assigned":         assigned,
-            "unassigned":       total - assigned,
-            "utilization_pct":  round(assigned / total * 100, 1) if total else 0.0,
-        }
-
-    return {
-        "fecha": fecha,
-        "categories": [_summarize(c) for c in ("TRACTOREO", "EQUIPO_COMPLETO", "SIN_CLASIFICAR")],
-        "equipment": equipment,
     }
 
 

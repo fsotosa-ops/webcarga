@@ -129,7 +129,7 @@ describe('CondicionesTabla', () => {
 
   it('dice a cuántas entidades alcanza', async () => {
     montar()
-    await waitFor(() => expect(screen.getByText('36 de 118')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('36 de 118 activos')).toBeInTheDocument())
   })
 
   // "Sólo 2 subtipos" cuando el catálogo tiene 3 SUBESTIMA la regla: se lee
@@ -337,7 +337,7 @@ describe('CondicionesTabla', () => {
     await waitFor(() => expect(screen.getByText('Seguro EETT')).toBeInTheDocument())
     expect(screen.queryByText('Todas las empresas')).not.toBeInTheDocument()
     expect(screen.getByText('No se exige')).toBeInTheDocument()
-    expect(screen.getByText('Alcanzaría a 248 de 248')).toBeInTheDocument()
+    expect(screen.getByText('Alcanzaría a 248 de 248 activos')).toBeInTheDocument()
   })
 
   // El chevron ya no es el ÚNICO camino a la edición —el nombre, el nivel y la

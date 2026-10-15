@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<style>
+  body{margin:0;background:#e9edf2;font-family:Inter,Arial,sans-serif;color:#0f172a}
+  h1{font-size:22px;margin:24px 32px 4px} .sub{margin:0 32px 18px;color:#475569;font-size:14px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:0 32px 28px}
+  .cap{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#475569;margin:0 0 6px}
+  .screen{display:flex;height:430px;border-radius:12px;overflow:hidden;box-shadow:0 6px 20px rgba(15,23,42,.15);background:#f4f6f9}
+  .side{width:150px;background:#0f1729;color:#94a3b8;font-size:12px;padding:12px 10px;flex-shrink:0}
+  .side .logo{color:#fff;font-weight:800;font-style:italic;margin-bottom:12px}
+  .side .g{color:#e2e8f0;margin:8px 0 3px;font-weight:600} .side .i{padding:4px 8px;border-radius:6px;margin:1px 0}
+  .side .on{background:#ffffff1f;color:#fff} .side .dim{opacity:.55}
+  .main{flex:1;padding:14px 16px;overflow:hidden}
+  .crumb{font-size:11px;color:#64748b;margin-bottom:6px} .t{font-size:17px;font-weight:800;margin:0 0 8px}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin-bottom:8px}
+  .chips span{display:inline-block;font-size:11px;padding:2px 8px;border-radius:12px;border:1px solid #cbd5e1;margin:0 4px 4px 0;background:#fff}
+  .chips .on{border-color:#0ea5e9;background:#e0f2fe;color:#0369a1;font-weight:600}
+  .ok{background:#dcfce7;color:#15803d} .bad{background:#fee2e2;color:#b91c1c} .warn{background:#fef3c7;color:#b45309} .gray{background:#f1f5f9;color:#475569}
+  .pill{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600;white-space:nowrap}
+  table{width:100%;border-collapse:collapse;font-size:12px} th{text-align:left;color:#64748b;font-size:10px;text-transform:uppercase;padding:5px 4px;border-bottom:1px solid #e2e8f0}
+  td{padding:6px 4px;border-bottom:1px solid #f1f5f9} tr.hl td{background:#f0f9ff}
+  .tabs span{font-size:12px;padding:5px 10px;border-radius:7px;color:#475569} .tabs .on{background:#fff;color:#0f172a;font-weight:700;box-shadow:0 1px 2px #0002}
+  .tabs{background:#e2e8f0;border-radius:9px;padding:3px;display:inline-flex;gap:2px;margin-bottom:8px}
+  .doc{display:flex;align-items:center;gap:6px;background:#f8fafc;border-radius:7px;padding:6px 8px;margin-bottom:4px;font-size:12px}
+  .doc b{flex:1} .act{font-size:11px;font-weight:700;color:#0284c7}
+  .arrow{display:flex;align-items:center;justify-content:center;font-size:13px;color:#0284c7;font-weight:700;margin:-14px 32px 14px}
+  .note{font-size:12px;color:#334155;margin:6px 0 0}
+  .callout{border:2px solid #0ea5e9;border-radius:10px}
+  .kpi{display:inline-block;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;margin-right:6px;font-size:11px;color:#475569}
+  .kpi b{display:block;font-size:16px;color:#0f172a}
+</style></head><body>
+
+<h1>Cómo quedan las dos vistas</h1>
+<p class="sub">Arriba, el <b>Directorio</b> (el registro: quién opera y con qué). Abajo, <b>Certificación</b> (las colas de documentos por resolver). Las flechas muestran adónde lleva cada clic.</p>
+
+<!-- DIRECTORIO -->
+<div class="row">
+  <div>
+    <p class="cap">Directorio › Conductores (lista nueva)</p>
+    <div class="screen">
+      <div class="side"><div class="logo">WebCarga</div>
+        <div class="g">Operaciones</div><div class="g">Directorio</div><div class="i">Empresas</div><div class="i on">Conductores</div><div class="i">Equipos</div>
+        <div class="g dim">Certificación</div><div class="g dim">Seguros</div></div>
+      <div class="main">
+        <p class="t">Conductores</p>
+        <div class="card" style="padding:6px 8px;font-size:12px;color:#94a3b8">Buscar por nombre, RUT o patente…</div>
+        <div class="chips"><span class="on">Todos 102</span><span>Sin empresa 10</span><span>Dados de baja 9</span><span>Sin origen 62</span><span>Documentos ▾</span></div>
+        <div class="card" style="padding:4px 8px">
+          <table><tr><th>Conductor</th><th>Empresa hoy</th><th>Estado</th><th>Habilitación</th></tr>
+            <tr class="hl"><td><b>Acuña Chávez, Gastón</b></td><td>Inversiones Huemul</td><td><span class="pill ok">Activo</span></td><td><span class="pill bad">No habilitado</span></td></tr>
+            <tr><td>Díaz Padilla, José</td><td style="color:#b91c1c">Sin empresa</td><td><span class="pill ok">Activo</span></td><td>—</td></tr>
+            <tr><td>Altamirano Ruiz, Felipe</td><td>Transportes Marcelo</td><td><span class="pill ok">Activo</span></td><td><span class="pill bad">No habilitado</span></td></tr>
+            <tr><td>Vera Castro, Miguel</td><td>Fletes del Sur</td><td><span class="pill gray">Dado de baja</span></td><td>—</td></tr>
+          </table></div>
+        <p class="note">Clic en una fila → su ficha (derecha).</p>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p class="cap">Directorio › Ficha del conductor (nueva)</p>
+    <div class="screen callout">
+      <div class="side"><div class="logo">WebCarga</div>
+        <div class="g">Operaciones</div><div class="g">Directorio</div><div class="i">Empresas</div><div class="i on">Conductores</div><div class="i">Equipos</div>
+        <div class="g dim">Certificación</div></div>
+      <div class="main">
+        <p class="crumb">Directorio › Conductores › Acuña Chávez</p>
+        <p class="t">Acuña Chávez, Gastón <span class="pill ok">Activo</span> <span class="pill bad">No habilitado</span></p>
+        <div class="tabs"><span>Resumen</span><span class="on">Documentos</span><span>Dónde trabaja</span><span>Actividad</span><span>Contactos</span></div>
+        <div class="doc"><b>Licencia de conducir</b><span class="pill bad">Vencido</span><span class="act">Subir</span></div>
+        <div class="doc"><b>Certificado de antecedentes</b><span class="pill gray">Falta</span><span class="act">Subir</span></div>
+        <div class="doc"><b>Cédula de identidad</b><span class="pill ok">Al día</span><span class="act" style="color:#64748b">Ver</span></div>
+        <div class="card" style="margin-top:8px;font-size:12px">
+          <b>Dónde trabaja:</b> Inversiones Huemul desde 20/10 · antes Riquelme Hermanos (15/07 – 19/10)<br>
+          <b>Actividad:</b> último viaje 13/10 · Walmart · 18 viajes en 30 días · <span class="act">Ver viajes en el Monitor →</span>
+        </div>
+        <p class="note">Certificación ve <b>Subir</b>. Operaciones ve <b>Pedir a Certificación</b> en el mismo lugar.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="arrow">▲ cada fila de una cola de Certificación abre esta misma ficha, en la pestaña Documentos ▲</div>
+
+<!-- CERTIFICACIÓN -->
+<div class="row">
+  <div>
+    <p class="cap">Certificación › Pendientes (se queda, ya existe)</p>
+    <div class="screen">
+      <div class="side"><div class="logo">WebCarga</div>
+        <div class="g dim">Directorio</div><div class="g">Certificación</div><div class="i">Empresas</div><div class="i on">Pendientes ●2</div><div class="i">Sin clasificar</div></div>
+      <div class="main">
+        <p class="t">Pendientes</p>
+        <div class="card" style="border-color:#0ea5e9;font-size:12px"><b>Pedidos de Operaciones (2)</b><br>
+          <div style="display:flex;justify-content:space-between;margin-top:3px"><span>Licencia de conducir · Acuña Chávez (Inversiones Huemul) · Cierre del 13/10</span><span class="act">Resolver</span></div>
+          <div style="display:flex;justify-content:space-between;margin-top:3px"><span>Revisión técnica · BBPV80 · viaje 2074688</span><span class="act">Resolver</span></div></div>
+        <div class="kpi"><b>32</b>Vencidos</div><div class="kpi"><b>18</b>Por vencer</div><div class="kpi"><b>1.101</b>Faltan</div>
+        <div class="card" style="margin-top:8px;padding:4px 8px">
+          <table><tr><th>Documento</th><th>Quién lo debe</th><th>Estado</th></tr>
+            <tr class="hl"><td>Licencia de conducir</td><td><b>Acuña Chávez</b> → ficha</td><td><span class="pill bad">Vencido</span></td></tr>
+            <tr><td>Licencia de conducir</td><td>Altamirano Ruiz</td><td><span class="pill warn">Por vencer</span></td></tr>
+          </table></div>
+        <p class="note">Subir en lote por documento se hace aquí; un caso puntual lleva a la ficha.</p>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p class="cap">Certificación › Empresas (el embudo, se queda)</p>
+    <div class="screen">
+      <div class="side"><div class="logo">WebCarga</div>
+        <div class="g dim">Directorio</div><div class="g">Certificación</div><div class="i on">Empresas</div><div class="i">Pendientes</div><div class="i">Sin clasificar</div></div>
+      <div class="main">
+        <p class="t">Certificación</p>
+        <div class="chips"><span class="on">Empresa</span><span>Conductor ↗</span><span>Vehículo ↗</span><span>Requisito</span></div>
+        <div class="card" style="padding:4px 8px">
+          <table><tr><th>Empresa</th><th>Habilitación</th><th>Documentos</th></tr>
+            <tr class="hl"><td><b>Riquelme Hermanos</b> → ficha</td><td><span class="pill bad">No habilitada</span></td><td>1 de 14 · flota: 30 faltan</td></tr>
+            <tr><td>Inversiones Huemul</td><td><span class="pill bad">No habilitada</span></td><td>0 de 12</td></tr>
+          </table></div>
+        <div class="card" style="font-size:12px;border-style:dashed;border-color:#b91c1c">
+          <b>Sale:</b> la ficha de empresa propia de Certificación y el despliegue por conductor.<br>
+          <b>"Conductor ↗" y "Vehículo ↗"</b> abren Directorio › Conductores / Equipos con el filtro <i>Documentos: pendientes</i> puesto.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>

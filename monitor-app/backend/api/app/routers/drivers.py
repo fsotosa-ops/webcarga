@@ -1,6 +1,7 @@
 """public.drivers — master data, independiente de a qué carrier esté asignado
 (H2.2). Alta/baja de la asignación vive en routers/carriers.py."""
 import re
+from typing import Literal, Optional
 
 from asyncpg.exceptions import CheckViolationError, ForeignKeyViolationError, UniqueViolationError
 from uuid import UUID
@@ -15,6 +16,8 @@ from ..schemas.driver import DRIVER_FIELD_PERMISSIONS, DriverCreateBody, DriverP
 from ..services.audit import log_change, record_manual_edit
 from ..services.entity_summary import driver_summary
 from ..services import identity_corrections
+from ..services.directory_lists import directory_list
+from ..services.entity_profile import activity, assignment_history
 from ..services.entity_documents import entity_document_rows, entity_documents
 from ..schemas.identity import IdentityCorrectionBody
 from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente
@@ -30,6 +33,20 @@ router = APIRouter(prefix="/drivers", tags=["drivers"])
 # "/{driver_id}" tienen distinta cantidad de segmentos.
 @router.get("")
 async def list_drivers(
+    q: str = Query(""),
+    flag: Optional[Literal["without_carrier", "inactive", "without_origin"]] = Query(None),
+    documents: Optional[Literal["pending", "overdue", "expiring", "missing"]] = Query(None),
+    offset: int = Query(0, ge=0),
+    page_size: int = Query(50, ge=1, le=200),
+    pool=Depends(get_pool),
+    _=Depends(require(Permission.DIRECTORY_READ)),
+):
+    """Directorio › Conductores (D4): todos, con filtros y paginado. Ver services/directory_lists.py."""
+    return await directory_list(pool, "DRIVER", q=q, flag=flag, documents=documents, limit=page_size, offset=offset)
+
+
+@router.get("/search")
+async def search_drivers(
     q: str = Query(""),
     limit: int = Query(10, ge=1, le=50),
     pool=Depends(get_pool),
@@ -394,6 +411,18 @@ async def correct_driver_identity(
         async with conn.transaction():
             value = await identity_corrections.correct_driver_rut(conn, driver_id, body.value, body.reason, actor=user["sub"])
     return {"tax_id": value}
+
+
+@router.get("/{driver_id}/assignments")
+async def get_driver_assignments(driver_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
+    """Dónde trabajó (D4): los períodos de empresa, el vigente primero."""
+    return await assignment_history(pool, "DRIVER", driver_id)
+
+
+@router.get("/{driver_id}/activity")
+async def get_driver_activity(driver_id: str, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
+    """La tarjeta "Actividad" de la ficha (D4)."""
+    return await activity(pool, "DRIVER", driver_id)
 
 
 @router.get("/{driver_id}/compliance-records")

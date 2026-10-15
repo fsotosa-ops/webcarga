@@ -14,6 +14,7 @@ import { SinFlotaList } from '@/components/dashboard/SinFlotaList'
 import { PendientesDelCierre, type ItemPendiente } from '@/components/dashboard/PendientesDelCierre'
 import { tripsApi } from '@/lib/api/trips'
 import { taxonomiesApi } from '@/lib/api/config'
+import { taxonomyKey } from '@/lib/queries/taxonomies'
 import { FlotaDelDiaSection } from '@/components/dashboard/sections/FlotaDelDiaSection'
 import { PreCierrePendingSection } from '@/components/dashboard/sections/PreCierrePendingSection'
 import { StatusReportSection } from '@/components/dashboard/sections/StatusReportSection'
@@ -205,7 +206,7 @@ function ClosuresCenterPageInner() {
     refetchInterval: refetchWhilePending,
   })
   const motivosViajesQuery = useQuery({
-    queryKey: ['taxonomies', 'TRIP_UNASSIGNED_REASON'],
+    queryKey: taxonomyKey('TRIP_UNASSIGNED_REASON'),
     queryFn: () => taxonomiesApi.list('TRIP_UNASSIGNED_REASON'),
     enabled: tab === 'trips',
     staleTime: 5 * 60_000,

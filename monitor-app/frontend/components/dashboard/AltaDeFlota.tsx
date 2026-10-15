@@ -8,19 +8,23 @@ import { assetsApi } from '@/lib/api/assets'
 import { carriersApi } from '@/lib/api/carriers'
 import { locationsApi } from '@/lib/api/locations'
 import { taxonomiesApi } from '@/lib/api/config'
+import { taxonomyKey } from '@/lib/queries/taxonomies'
 import { ApiError } from '@/lib/api/client'
+import { CarrierSearchPicker, type CarrierSearchResult } from './CarrierSearchPicker'
+import { useAssetTypes } from '@/hooks/useAssetTypes'
 import type { AssetType, ManagementType } from '@/lib/types'
-
-const ASSET_TYPE_OPTIONS: { value: AssetType; label: string }[] = [
-  { value: 'TRACTOCAMION', label: 'Tractocamión' },
-  { value: 'RAMPLA',       label: 'Rampla' },
-]
 
 const INPUT = 'text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30'
 
 interface Props {
-  /** La empresa a la que se va a asignar lo que se cree. */
-  carrierId: string
+  /** La empresa a la que se va a asignar lo que se cree. `null`: se pregunta en
+   *  el mismo formulario (el alta desde el Cierre, donde todavía no se sabe). */
+  carrierId: string | null
+  /** El RUT ya conocido, que no se edita: el que el TMS informó y por el que el
+   *  viaje está bloqueando el cierre (alta desde el Cierre, F-23). */
+  rutFijo?: string
+  /** El texto del disparador, si no es el de siempre. */
+  etiqueta?: string
   /** `conductor` pide RUT y nombre; `equipo` pide tipo, subtipo, gestión y
    *  patente. Es la misma alta con distinto formulario: una variante es una
    *  prop, no un componente hermano. */
@@ -41,7 +45,8 @@ interface Props {
    *  con otro disparador: una prop, no un componente hermano. */
   abierto?: boolean
   onAbiertoChange?: (abierto: boolean) => void
-  onCreado: () => Promise<void> | void
+  /** Recibe la empresa a la que quedó asignado (o `null`), para refrescar su roster. */
+  onCreado: (carrierId: string | null) => Promise<void> | void
 }
 
 /**
@@ -63,7 +68,7 @@ interface Props {
  * hay 37 tractocamiones cuya gestión es "Equipo Completo".
  */
 export function AltaDeFlota({
-  carrierId, tipo, gestionesDeclaradas, prefill, abiertoAlInicio,
+  carrierId, rutFijo, etiqueta, tipo, gestionesDeclaradas, prefill, abiertoAlInicio,
   abierto: abiertoProp, onAbiertoChange, onCreado,
 }: Props) {
   const controlado = abiertoProp !== undefined
@@ -78,22 +83,30 @@ export function AltaDeFlota({
 
   const [taxId, setTaxId] = useState('')
   const [nombre, setNombre] = useState(tipo === 'conductor' ? prefill ?? '' : '')
-  const [assetType, setAssetType] = useState<AssetType>('TRACTOCAMION')
+  const { types: assetTypes } = useAssetTypes()
+  // Sin elección, el primero del catálogo.
+  const [chosenAssetType, setAssetType] = useState<AssetType>('')
+  const assetType = chosenAssetType || assetTypes[0]?.code || ''
   const [patente, setPatente] = useState(tipo === 'equipo' ? prefill ?? '' : '')
   const [subtipoId, setSubtipoId] = useState('')
   const [gestionId, setGestionId] = useState('')
   const [cdBaseId, setCdBaseId] = useState('')
+  // Sin empresa de antemano, se elige acá. Sin empresa no entra al cierre.
+  const [empresa, setEmpresa] = useState<CarrierSearchResult | null>(null)
+  const [busquedaEmpresa, setBusquedaEmpresa] = useState('')
+  const empresaId = carrierId ?? empresa?.id ?? null
+  const rut = rutFijo ?? taxId.trim()
 
   const esEquipo = tipo === 'equipo'
 
   const subtiposQuery = useQuery({
-    queryKey: ['taxonomias', 'FLEET_SERVICE_TYPE'],
+    queryKey: taxonomyKey('FLEET_SERVICE_TYPE'),
     queryFn: () => taxonomiesApi.list('FLEET_SERVICE_TYPE'),
     enabled: abierto && esEquipo,
     staleTime: 5 * 60_000,
   })
   const gestionesQuery = useQuery({
-    queryKey: ['taxonomias', 'WEBCARGA_OPERATION_TYPE'],
+    queryKey: taxonomyKey('WEBCARGA_OPERATION_TYPE'),
     queryFn: () => taxonomiesApi.list('WEBCARGA_OPERATION_TYPE'),
     enabled: abierto && esEquipo,
     staleTime: 5 * 60_000,
@@ -113,12 +126,12 @@ export function AltaDeFlota({
   useEffect(() => {
     if (!abierto || !esEquipo) return
     if (gestionesDeclaradas?.length !== 1) return
-    const buscada = gestionesDeclaradas[0] === 'TRACTOREO' ? 'Tractoreo' : 'Equipo Completo'
-    const propuesta = (gestionesQuery.data ?? []).find(t => t.label === buscada)
+    // Por código, no por etiqueta: renombrarla en Configuración no rompe la propuesta.
+    const propuesta = (gestionesQuery.data ?? []).find(t => t.code === gestionesDeclaradas[0])
     if (propuesta) setGestionId(v => v || propuesta.id)
   }, [abierto, esEquipo, gestionesDeclaradas, gestionesQuery.data])
 
-  const completo = esEquipo ? !!patente.trim() : !!taxId.trim() && !!nombre.trim()
+  const completo = esEquipo ? !!patente.trim() : !!rut && !!nombre.trim()
 
   async function guardar() {
     if (!completo) return
@@ -134,18 +147,18 @@ export function AltaDeFlota({
           ...(subtipoId ? { fleet_service_type_id: subtipoId } : {}),
           ...(gestionId ? { webcarga_operation_type_id: gestionId } : {}),
         })
-        await carriersApi.assignAsset(carrierId, creado.id)
+        if (empresaId) await carriersApi.assignAsset(empresaId, creado.id)
         setPatente(''); setSubtipoId('')
       } else {
         const creado = await driversApi.create({
-          tax_id: taxId.trim(), full_name: nombre.trim(),
+          tax_id: rut, full_name: nombre.trim(),
           // Opcional: se puede enrolar a alguien antes de saber de qué CD sale.
           ...(cdBaseId ? { home_location_id: cdBaseId } : {}),
         })
-        await carriersApi.assignDriver(carrierId, creado.id)
+        if (empresaId) await carriersApi.assignDriver(empresaId, creado.id)
         setTaxId(''); setNombre(''); setCdBaseId('')
       }
-      await onCreado()
+      await onCreado(empresaId)
       setAbierto(false)
     } catch (e) {
       // El mensaje del backend ya nombra a la persona cuando el RUT existe;
@@ -166,7 +179,7 @@ export function AltaDeFlota({
         onClick={() => setAbierto(true)}
         className="inline-flex items-center gap-1 text-etiqueta font-semibold text-accent hover:underline"
       >
-        <Plus size={12} /> {esEquipo ? 'Agregar equipo' : 'Agregar conductor'}
+        <Plus size={12} /> {etiqueta ?? (esEquipo ? 'Agregar equipo' : 'Agregar conductor')}
       </button>
     )
   }
@@ -179,7 +192,7 @@ export function AltaDeFlota({
             <select aria-label="Tipo de vehículo" value={assetType}
                     onChange={e => setAssetType(e.target.value as AssetType)}
                     className={`${INPUT} w-36 bg-white`}>
-              {ASSET_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {assetTypes.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
             </select>
             <select aria-label="Subtipo" value={subtipoId}
                     onChange={e => setSubtipoId(e.target.value)}
@@ -199,9 +212,11 @@ export function AltaDeFlota({
           </>
         ) : (
           <>
-            <input aria-label="RUT" placeholder="RUT" value={taxId}
-                   onChange={e => setTaxId(e.target.value)}
-                   className={`${INPUT} w-36 font-mono`} />
+            {rutFijo
+              ? <span className={`${INPUT} w-36 font-mono bg-white`} aria-label="RUT">{rutFijo}</span>
+              : <input aria-label="RUT" placeholder="RUT" value={taxId}
+                       onChange={e => setTaxId(e.target.value)}
+                       className={`${INPUT} w-36 font-mono`} />}
             <input aria-label="Nombre completo" placeholder="Nombre completo" value={nombre}
                    onChange={e => setNombre(e.target.value)}
                    className={`${INPUT} flex-1 min-w-40`} />
@@ -226,6 +241,21 @@ export function AltaDeFlota({
         </button>
       </div>
 
+      {carrierId === null && (
+        empresa ? (
+          <p className="flex items-center gap-1.5 text-etiqueta text-text-primary">
+            Empresa: <span className="font-semibold">{empresa.business_name}</span>
+            <button type="button" onClick={() => { setEmpresa(null); setBusquedaEmpresa('') }}
+                    className="text-informativo underline hover:text-text-primary">cambiar</button>
+          </p>
+        ) : (
+          <div className="space-y-0.5">
+            <CarrierSearchPicker query={busquedaEmpresa} onQueryChange={setBusquedaEmpresa} onPick={setEmpresa}
+                                 placeholder="Buscar empresa…" size="sm" maxHeightClass="max-h-28" />
+            <p className="text-etiqueta text-informativo">Sin empresa no entra al cierre, y mañana vuelve a bloquear.</p>
+          </div>
+        )
+      )}
       {esEquipo && (
         <p className="text-etiqueta text-informativo">
           La gestión decide si el equipo entra al cierre de Tractoreo. Sin ella, sus

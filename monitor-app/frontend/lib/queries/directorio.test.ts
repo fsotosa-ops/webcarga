@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { entitySummaryKey } from '@/lib/api/entitySummary'
 import type { DirectoryEntity } from '@/lib/types'
 import { clavesCertificacion } from './certificacion'
+import { taxonomyKey } from './taxonomies'
 import { CLOSURE_ROOTS, directoryKeys, invalidateDirectory, type DirectoryChange } from './directorio'
 
 const RAIZ = join(__dirname, '..', '..')
@@ -139,7 +140,8 @@ describe('invalidateDirectory', () => {
 // invalidateDirectory hace fallar el test de abajo: hay que decidir.
 const NO_DEPENDEN_DEL_DIRECTORIO = new Set([
   'trips', 'trip', 'trip-notes', 'trips-meta', 'trips-activos',      // el viaje, no el maestro
-  'taxonomias', 'taxonomies', 'tms-statuses', 'origenes', 'shippers',  // catálogos
+  'fleet-activity',                                                    // la ficha (D4): cuenta viajes, no cambia con el maestro
+  'taxonomies', 'tms-statuses', 'origenes', 'shippers', 'asset-types', // catálogos
   'locations-picker', 'coverage-types',
   'compliance-requirements', 'recalc-preview', 'vigencia-preview',     // configuración
   'planilla-vencimientos', 'config-inventario', 'config-busqueda', 'solicitables',
@@ -177,6 +179,7 @@ function raicesLeidas(): Map<string, string> {
       anotar(String(f('x', 'x', 'x')[0]), ruta)
     }
     if (/\bentitySummaryKey\(/.test(texto)) anotar(entitySummaryKey('driver', 'x')[0], ruta)
+    if (/\btaxonomyKey\(/.test(texto)) anotar(taxonomyKey('x')[0], ruta)
     // Una clave guardada en una variable: `const clave = ['x', …]` … `queryKey: clave`.
     for (const m of texto.matchAll(/const\s+(\w+)\s*=\s*\[\s*'([^']+)'/g)) {
       if (new RegExp(`queryKey:\\s*${m[1]}\\b`).test(texto)) anotar(m[2], ruta)
@@ -253,7 +256,6 @@ describe('cobertura', () => {
     'components/dashboard/AltaDeFlota.tsx': 'onCreado',
     'components/compliance/GestionDeclarada.tsx': 'onGuardado',
     'components/dashboard/sections/VincularConductorPropuesto.tsx': 'onVinculado',
-    'components/dashboard/sections/AltaConductorDesdeCierre.tsx': 'onListo',
   }
   const MUTACION = /(carriersApi\.(patch|create|delete|assignDriver|assignAsset|unassignDriver|unassignAsset|createContact)|driversApi\.(create|patch|createContact)|assetsApi\.(create|patch|assignDriver|unassignDriver)|contactsApi\.(patch|delete))\(/
 

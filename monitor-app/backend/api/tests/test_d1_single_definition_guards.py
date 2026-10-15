@@ -116,7 +116,7 @@ CEILINGS: dict[str, dict[str, int]] = {
         # y el orden activos primero). No es un campo viejo de D1: se queda (F7).
         "routers/carriers.py": 2,
         "routers/status_report.py": 1,
-        "routers/trips.py": 5,                       # el Monitor y su lateral compartida con el Cierre (F7)
+        "routers/trips.py": 4,                       # el Monitor y su lateral compartida con el Cierre (F7)
         # D2 (14/10): el Cierre lee app.fleet_assignment_periods por día.
         "services/cierre_lineas.py": 0,
         "services/driver_roster.py": 0,
@@ -152,7 +152,7 @@ CEILINGS: dict[str, dict[str, int]] = {
         "routers/drivers.py": 1,
         "routers/equipment_closures.py": 0,
         "routers/status_report.py": 1,
-        "routers/trips.py": 5,
+        "routers/trips.py": 4,   # D5: sin fleet-daily-overview
         "services/cierre_lineas.py": 0,              # D2: el Cierre juzga con la empresa del día
         "services/driver_roster.py": 0,
         "services/plantilla_certificacion.py": 1,

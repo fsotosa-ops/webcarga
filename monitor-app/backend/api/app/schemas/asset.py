@@ -1,7 +1,7 @@
 """Pydantic schemas para public.assets (H2.2 — routers/assets.py). Sin
 tax_id/country_code — un vehículo/rampla no tributa, se identifica por
 patente (ver migración init_compliance_engine)."""
-from typing import Literal, Optional
+from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -9,13 +9,9 @@ from ..authz.permissions import Permission
 from .states import FleetLifecycle
 
 OperationalStatus = FleetLifecycle  # glosario (D1)
-# Los dos tipos que existen de verdad. CAMION, FURGON y OTRO eran
-# placeholders del commit 5955c5f (Empresas/Seguros), ANTERIORES a la taxonomía
-# real de vehículos (migraciones 20260802–20260804): nunca describieron el
-# negocio y cero de los 118 vehículos los usa. Se retiran antes de poner el
-# CHECK en la base — al revés, elegir "Camión" en un selector todavía vivo
-# habría dado un 500 en vez de un 422.
-AssetType = Literal["TRACTOCAMION", "RAMPLA"]
+# El código de public.asset_types (Entrega C, 14/10). La lista vive en la base,
+# no acá: un tipo desconocido lo rechaza la FK y la API responde 422.
+AssetType = str
 
 
 class AssetCreateBody(BaseModel):

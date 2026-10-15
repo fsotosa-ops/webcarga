@@ -235,18 +235,18 @@ def test_create_driver_contact_persists_multiple_phones_and_emails():
     assert res.json()["email"] == "juan@example.com"
 
 
-# ── GET /drivers — búsqueda por nombre/RUT (TripAssignDialog, Ronda 26) ──────
+# ── GET /drivers/search — búsqueda por nombre/RUT (TripAssignDialog, Ronda 26) ──────
 
-def test_list_drivers_requires_min_query_length():
+def test_search_drivers_requires_min_query_length():
     pool = AsyncMock()
     client = make_client(pool)
-    res = client.get("/api/v1/drivers?q=a")
+    res = client.get("/api/v1/drivers/search?q=a")
     assert res.status_code == 200
     assert res.json() == []
     pool.fetch.assert_not_called()
 
 
-def test_list_drivers_searches_active_roster_with_resolved_carrier_and_vehicle():
+def test_search_drivers_searches_active_roster_with_resolved_carrier_and_vehicle():
     pool = AsyncMock()
     pool.fetch.return_value = [{
         "driver_id": "d1", "driver_name": "Juan Pérez", "driver_rut": "12345678-9",
@@ -254,7 +254,7 @@ def test_list_drivers_searches_active_roster_with_resolved_carrier_and_vehicle()
         "tractor_asset_id": "a1", "tractor_plate": "ABCD12",
     }]
     client = make_client(pool)
-    res = client.get("/api/v1/drivers?q=Juan")
+    res = client.get("/api/v1/drivers/search?q=Juan")
     assert res.status_code == 200
     data = res.json()
     assert data[0]["driver_name"] == "Juan Pérez"

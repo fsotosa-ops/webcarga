@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import get_current_user
 from ..authz import Permission, require
-from ..cache import invalidate_trips_meta_cache
 from ..db import get_pool
 from ..schemas.status_taxonomy import GRUPOS_POR_DOMINIO, StatusTaxonomyBody, StatusTaxonomyPatch
 from ..services.reordenamiento import TAXONOMIAS, MovimientoBody, mover_una_posicion
@@ -77,7 +76,6 @@ async def create_taxonomy(body: StatusTaxonomyBody, pool=Depends(get_pool), usua
         body.domain, body.label, body.bg_color, body.text_color, body.sort_order, body.group_id,
     )
     await _registrar(pool, body.domain, row["id"], usuario)
-    await invalidate_trips_meta_cache()
     return dict(row)
 
 
@@ -105,7 +103,6 @@ async def patch_taxonomy(
     await pool.execute(f"UPDATE app.status_taxonomies SET {', '.join(sets)} WHERE id = $1", *vals)
     row = await pool.fetchrow(f"SELECT {_FIELDS} FROM app.status_taxonomies WHERE id = $1", taxonomy_id)
     await _registrar(pool, existing["domain"], taxonomy_id, usuario)
-    await invalidate_trips_meta_cache()
     return dict(row)
 
 
@@ -138,7 +135,6 @@ async def move_taxonomy(
     dominio = await pool.fetchval(
         "SELECT domain FROM app.status_taxonomies WHERE id = $1::uuid", taxonomy_id
     )
-    await invalidate_trips_meta_cache()
     return [dict(r) for r in await pool.fetch(_SQL_LISTA, dominio)]
 
 
@@ -149,7 +145,6 @@ async def deactivate_taxonomy(taxonomy_id: str, pool=Depends(get_pool), _=Depend
     )
     if result == "UPDATE 0":
         raise HTTPException(404, "No encontrado")
-    await invalidate_trips_meta_cache()
     # Cuántas condiciones de documento siguen apuntando a este valor. El
     # borrado es lógico, así que la regla NO se rompe — pero la casilla
     # desaparece de la pantalla y la condición se ve como "0 marcas" sin serlo.

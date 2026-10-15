@@ -29,6 +29,11 @@ export const directoryKeys = {
   driverDetail:    (id: string | null | undefined) => ['driver-detail', id] as const,
   assetDetail:     (id: string | null | undefined) => ['asset-detail', id] as const,
   assetDriverAssignment: (id: string | null | undefined) => ['asset-driver-assignment', id] as const,
+  /** Directorio › Conductores y Equipos (D4). */
+  fleetList:       (kind: 'driver' | 'asset', params: unknown) => ['fleet-list', kind, params] as const,
+  /** La ficha propia (D4): dónde trabajó y su actividad. */
+  assignments:     (kind: 'driver' | 'asset', id: string) => ['fleet-assignments', kind, id] as const,
+  activity:        (kind: 'driver' | 'asset', id: string) => ['fleet-activity', kind, id] as const,
 }
 
 /** Qué cambió. `carrierIds` son las empresas cuyo roster cambió: la de la
@@ -41,10 +46,12 @@ export type DirectoryChange = {
 }
 
 /** Listas y cifras que dependen de cualquier entidad del Directorio. Seguros
- *  lista empresas por estado (R11). */
+ *  lista empresas por estado (R11). El historial de la ficha propia (D4) muestra
+ *  el nombre y el estado de cada empresa. */
 const DIRECTORY_ROOTS: QueryKey[] = [
   ['carriers'], ['carriers-count'], ['directorio-buscar'], ['carriers-directorio'],
-  ['carriers-insurance-overview'], ['carriers-insurance-overview-count'],
+  ['carriers-insurance-overview'], ['carriers-insurance-overview-count'], ['fleet-list'],
+  ['fleet-assignments'],
 ]
 /** Quién está disponible para un viaje, y la búsqueda de conductores. */
 const MONITOR_ROOTS: QueryKey[] = [['available-drivers'], ['available-assets'], ['drivers'], ['driver-candidates']]

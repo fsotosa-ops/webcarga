@@ -54,6 +54,9 @@ interface Props {
   /** Retirar un documento "a pedido" que se solicitó y todavía no tiene
    *  archivo (HU-C1, entrega 2b). Sólo lo pasa quien sabe que es a pedido. */
   onQuitarSolicitud?: () => void
+  /** Lo que se hace con el archivo ya cargado: sus versiones y reasignarlo
+   *  (ficha única de empresa, Entrega C). Sólo lo pasa quien sabe que hay archivo. */
+  acciones?: ReactNode
 }
 
 /** Qué hacer con la fecha, cuando el catálogo todavía no lo dice.
@@ -84,7 +87,7 @@ function politicaDe(fila: PendingComplianceRow): PoliticaVencimiento {
  *  subía primero y clasificaba después, así que cada rechazo dejaba el
  *  archivo huérfano en la bandeja. */
 export function RenglonPendiente({
-  fila, title, status, actionLabel, puedeEditar, puedeCorregirFecha = puedeEditar, onSubir, onDeshacer, onVer, viendo, avisoVer, onFechaCorregida, onQuitarSolicitud,
+  fila, title, status, actionLabel, puedeEditar, puedeCorregirFecha = puedeEditar, onSubir, onDeshacer, onVer, viendo, avisoVer, onFechaCorregida, onQuitarSolicitud, acciones,
 }: Props) {
   const inputId = `archivo-${fila.id}`
   const fechaId = `vence-${fila.id}`
@@ -158,6 +161,8 @@ export function RenglonPendiente({
             Quitar solicitud
           </button>
         )}
+
+        {acciones && estado.tipo === 'reposo' && acciones}
 
         {onVer && estado.tipo === 'reposo' && (
           <button

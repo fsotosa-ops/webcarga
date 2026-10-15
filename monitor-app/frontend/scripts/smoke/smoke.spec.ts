@@ -179,3 +179,62 @@ test('Pedir a Certificación: Operaciones pide un documento y Certificación lo 
     { timeout: 15000 }).toBeLessThan(antes)
   expect(certProblems).toEqual([])
 })
+
+// ── Entrega C (D4 + Cert 2b) ────────────────────────────────────────────────
+
+test('Directorio › Conductores: filtrar "Sin empresa" y abrir su ficha propia (C5)', async ({ page }) => {
+  const problems = watch(page)
+  await login(page, 'cert@sim.local')
+  await page.goto('/dashboard/drivers')
+  await page.getByRole('button', { name: /^Sin empresa/ }).click()
+  await page.waitForURL(/flag=without_carrier/)
+  const ficha = page.locator('tbody a[href^="/dashboard/drivers/"]').first()
+  if (await ficha.waitFor({ timeout: 15000 }).then(() => true, () => false)) {
+    await ficha.click()
+    await page.waitForURL(/\/dashboard\/drivers\/[0-9a-f-]{36}/)
+    await expect(page.getByText('Dónde trabaja')).toBeVisible({ timeout: 15000 })
+  } else {
+    // La copia local puede no tener conductores sin empresa: abrir cualquiera.
+    await page.goto('/dashboard/drivers')
+    await page.locator('tbody a[href^="/dashboard/drivers/"]').first().click()
+    await expect(page.getByText('Dónde trabaja')).toBeVisible({ timeout: 15000 })
+  }
+  expect(problems).toEqual([])
+})
+
+test('La ficha de un equipo: Actividad → "Ver viajes en el Monitor" (C11)', async ({ page }) => {
+  const problems = watch(page)
+  await login(page, 'ops@sim.local')
+  await page.goto('/dashboard/assets')
+  await page.locator('tbody a[href^="/dashboard/assets/"]').first().click()
+  await page.waitForURL(/\/dashboard\/assets\/[0-9a-f-]{36}/)
+  await page.getByRole('link', { name: /Ver viajes en el Monitor/ }).click()
+  await page.waitForURL(/\/operations\/monitor\?tab=historial&q=/)
+  const q = new URL(page.url()).searchParams.get('q')!
+  await expect(page.locator(`input[value="${q}"]`)).toBeVisible({ timeout: 15000 })
+  expect(problems).toEqual([])
+})
+
+test('La URL vieja de la ficha de Certificación cae en la ficha única (C6)', async ({ page }) => {
+  const problems = watch(page)
+  await login(page, 'cert@sim.local')
+  await page.goto('/dashboard/carriers')
+  const href = await page.locator('a[href^="/dashboard/carriers/"]').first().getAttribute('href', { timeout: 30000 })
+  const id = href!.split('/').pop()!.split('?')[0]
+  await page.goto(`/dashboard/compliance/${id}`)
+  await page.waitForURL(new RegExp(`/dashboard/carriers/${id}\\?tab=documentos`), { timeout: 15000 })
+  await expect(page.getByText('De la empresa').first()).toBeVisible({ timeout: 20000 })
+  expect(problems).toEqual([])
+})
+
+test('El Monitor abre la vista rápida desde una fila (C10)', async ({ page }) => {
+  const problems = watch(page)
+  await login(page, 'ops@sim.local')
+  await page.goto('/dashboard/operations/monitor?tab=historial')
+  const trigger = page.getByRole('button', { name: /^Ver (conductor|equipo|empresa) / }).first()
+  await trigger.waitFor({ timeout: 30000 })
+  await trigger.click()
+  await expect(page.getByRole('link', { name: 'Abrir ficha completa' })).toBeVisible({ timeout: 15000 })
+  expect(page.url()).toContain('/operations/monitor')
+  expect(problems).toEqual([])
+})

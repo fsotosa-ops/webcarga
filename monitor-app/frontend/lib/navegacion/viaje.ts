@@ -11,6 +11,13 @@ export function urlDelViaje(tripId: string, volverA?: string): string {
   return volverA ? `${url}?next=${encodeURIComponent(volverA)}` : url
 }
 
+/** El Monitor filtrado por un texto (RUT o patente): "Ver viajes en el Monitor" de
+ *  la ficha de un conductor o un equipo (D4). Abre el historial, no solo lo que
+ *  está en curso: la ficha resume sus viajes de 30 días. */
+export function monitorSearchHref(q: string): string {
+  return `${MONITOR}?tab=historial&q=${encodeURIComponent(q)}`
+}
+
 export function volverDesdeElViaje(next: string | null | undefined): string {
   return destinoSeguro(next, MONITOR)
 }

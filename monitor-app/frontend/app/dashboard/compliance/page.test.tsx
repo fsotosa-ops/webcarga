@@ -105,7 +105,8 @@ describe('Certificación — una lista, dos vistas', () => {
   it('la fila del embudo navega a la ficha de la empresa, no abre un cajon inline', async () => {
     setup()
     const fila = (await screen.findByText('Test Empresa Webcarga')).closest('a')!
-    expect(fila).toHaveAttribute('href', '/dashboard/compliance/c1')
+    // Una sola ficha de empresa (Entrega C): la del Directorio, en Documentos.
+    expect(fila).toHaveAttribute('href', '/dashboard/carriers/c1?tab=documentos')
     expect(fila).not.toHaveAttribute('aria-expanded')
   })
 
@@ -126,16 +127,16 @@ describe('Certificación — una lista, dos vistas', () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard/compliance/inbox'))
   })
 
-  // Spec §4: las cuatro opciones miran los mismos pendientes agrupados
-  // distinto. La bandeja NO es una quinta: son archivos que todavia no
-  // pertenecen a nada, asi que vive detras de su propio boton.
-  it('el conmutador agrupa de cuatro maneras, y por requisito es una de ellas', async () => {
+  // Entrega C (14/10): Conductor y Vehículo son las listas del Directorio, con el
+  // filtro de documentos pendientes puesto. Una lista por objeto.
+  it('Empresa y Requisito agrupan aquí; Conductor y Vehículo abren el Directorio', async () => {
     setup()
     await screen.findByText('Test Empresa Webcarga')
 
     const agrupador = screen.getByRole('group', { name: /agrupar por/i })
-    const opciones = within(agrupador).getAllByRole('button').map(b => b.textContent)
-    expect(opciones).toEqual(['Empresa', 'Conductor', 'Vehículo', 'Requisito'])
+    expect(within(agrupador).getAllByRole('button').map(b => b.textContent)).toEqual(['Empresa', 'Requisito'])
+    expect(within(agrupador).getByRole('link', { name: /Conductor/ })).toHaveAttribute('href', '/dashboard/drivers?documents=pending')
+    expect(within(agrupador).getByRole('link', { name: /Vehículo/ })).toHaveAttribute('href', '/dashboard/assets?documents=pending')
   })
 
   // La bandeja ya no vive en esta pantalla (Task 5): no hay boton propio que
@@ -173,32 +174,10 @@ describe('Certificación — una lista, dos vistas', () => {
     }, { timeout: 2000 })
   })
 
-  it('agrupa por conductor y muestra la empresa de cada uno', async () => {
+  it('un enlace guardado a ?vista=conductores lleva a Directorio › Conductores', async () => {
     params = new URLSearchParams('vista=conductores')
-    vi.mocked(complianceApi.listStatus).mockResolvedValue({
-      total_pending: 3, total_unclassified: 0,
-      rows: [{ ...FILA, entity_id: 'd1', entity_name: 'Juan Pérez',
-               carrier_id: 'c9', carrier_name: 'Transportes Sur Spa' }],
-    })
     setup()
-
-    expect(await screen.findByText('Juan Pérez')).toBeInTheDocument()
-    // La empresa se muestra y se puede abrir, pero DENTRO de Certificacion:
-    // antes era un enlace a /dashboard/carriers y eso sacaba del modulo.
-    expect(screen.getByRole('button', { name: 'Transportes Sur Spa' })).toBeInTheDocument()
-    expect(complianceApi.listStatus).toHaveBeenCalledWith(
-      expect.objectContaining({ group: 'driver' }),
-    )
-  })
-
-  it('agrupa por vehículo', async () => {
-    params = new URLSearchParams('vista=vehiculos')
-    setup()
-    await waitFor(() => {
-      expect(complianceApi.listStatus).toHaveBeenCalledWith(
-        expect.objectContaining({ group: 'asset' }),
-      )
-    })
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard/drivers?documents=pending'))
   })
 
   // "no pide el estado cuando estás en la cola" vivía acá: con `?vista=
@@ -225,7 +204,7 @@ describe('Certificación — una lista, dos vistas', () => {
 // El cuarto y ultimo punto de fuga al Empresas legacy. Crear una empresa desde
 // Certificacion y aterrizar en otro modulo obligaba a rehacer el filtro para
 // volver a la cola de trabajo — justo lo que el modulo vino a evitar.
-describe('CertificationPage — crear una empresa no saca del modulo', () => {
+describe('CertificationPage — crear una empresa lleva a su ficha, en Documentos', () => {
   // Ronda de arreglo 1 (Task 5): cuando la vista Empresas abria el cajon en
   // la misma pantalla, `?abierta=c-nueva` bastaba para dejar la fila
   // recien creada abierta. Ahora que la fila navega a la ficha en vez de
@@ -238,17 +217,6 @@ describe('CertificationPage — crear una empresa no saca del modulo', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Nueva empresa/i }))
     fireEvent.click(await screen.findByTestId('crear-empresa-ok'))
 
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/dashboard/compliance/c-nueva'))
-  })
-
-  it('no navega al modulo de Empresas', async () => {
-    setup()
-    fireEvent.click(await screen.findByRole('button', { name: /Nueva empresa/i }))
-    fireEvent.click(await screen.findByTestId('crear-empresa-ok'))
-
-    await waitFor(() => expect(push).toHaveBeenCalled())
-    for (const llamada of push.mock.calls) {
-      expect(String(llamada[0])).not.toContain('/dashboard/carriers')
-    }
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/dashboard/carriers/c-nueva?tab=documentos'))
   })
 })

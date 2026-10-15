@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState, useMemo, useRef } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
+import { Suspense, useEffect, useState, useMemo, useRef } from 'react'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, X, ClipboardCheck, Truck, Ban } from 'lucide-react'
 import { filterGroupsApi, type FilterGroup } from '@/lib/api/filterGroups'
@@ -20,7 +20,7 @@ import { FleetCenterDialog } from '@/components/dashboard/FleetCenterDialog'
 import type { FleetAssignValue } from '@/components/dashboard/FleetAssignSection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTrips, type TripListParams } from '@/hooks/useTrips'
-import { useDiarioFilters, countActiveFilters } from '@/hooks/useDiarioFilters'
+import { useDiarioFilters, countActiveFilters, type DiarioFilters, type Tab } from '@/hooks/useDiarioFilters'
 import { formatRelativeTime } from '@/lib/utils/datetime'
 import { DEFAULT_ALERT_RULES } from '@/lib/utils/kpis'
 import {
@@ -41,6 +41,9 @@ import { invalidateDirectory } from '@/lib/queries/directorio'
 import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
+import { EntityQuickView } from '@/components/dashboard/EntityQuickView'
+import { useQuickView } from '@/lib/quickView'
+import { MONITOR } from '@/lib/navegacion/viaje'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
 
@@ -81,7 +84,20 @@ function LastUpdated({ updatedAt, fetching }: { updatedAt: number; fetching: boo
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function DiarioPage() {
-  const [f, dispatch] = useDiarioFilters()
+  return <Suspense fallback={null}><DiarioPageInner /></Suspense>
+}
+
+/** Lo que la URL puede abrir ya puesto: la pestaña y la búsqueda (D4). */
+function filtersFromUrl(params: URLSearchParams): Partial<Pick<DiarioFilters, 'tab' | 'q'>> {
+  const tab = params.get('tab')
+  return {
+    ...(params.get('q') ? { q: params.get('q')! } : {}),
+    ...(tab === 'historial' || tab === 'en_curso' ? { tab: tab as Tab } : {}),
+  }
+}
+
+function DiarioPageInner() {
+  const [f, dispatch] = useDiarioFilters(filtersFromUrl(useSearchParams()))
 
   const [tripsMeta,      setTripsMeta]      = useState<TripsMeta | null>(null)
   const [showCreate,      setShowCreate]      = useState(false)
@@ -211,6 +227,10 @@ export default function DiarioPage() {
   const puedeEditar = usePermiso('trips.edit_sensitive')
   // El alta crea el conductor y lo vincula a su empresa: eso pide directory.edit.
   const puedeDarDeAlta = usePermiso('directory.edit')
+  // Vista rápida del tracto, el conductor o la empresa de una fila, como en el Cierre (D4).
+  const puedeVerDirectorio = usePermiso('directory.read')
+  const puedePedirDocumentos = usePermiso('certification.request')
+  const quickView = useQuickView()
   const [asignando, setAsignando] = useState<Trip | null>(null)
   const [soloSinIdentificar, setSoloSinIdentificar] = useState(false)
 
@@ -674,6 +694,7 @@ export default function DiarioPage() {
                   sortDir={f.sortDir}
                   onSort={col => dispatch({ type: 'toggleSort', col })}
                   onAsignarConductor={puedeEditar ? setAsignando : undefined}
+                  onOpenQuickView={puedeVerDirectorio ? quickView.open : undefined}
                 />
                 </>
               )}
@@ -778,6 +799,18 @@ export default function DiarioPage() {
         onImportCsv={handleImportCsvFromFleet}
         onSelectTrip={handleSelectTrip}
       />
+      {quickView.current && (
+        <EntityQuickView
+          key={`${quickView.current.kind}:${quickView.current.id}`}
+          target={quickView.current}
+          canGoBack={quickView.canGoBack}
+          onNavigate={quickView.navigate}
+          onBack={quickView.back}
+          onClose={quickView.close}
+          returnTo={MONITOR}
+          canRequestDocuments={puedePedirDocumentos}
+        />
+      )}
     </div>
   )
 }

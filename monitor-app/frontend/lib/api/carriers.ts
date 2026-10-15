@@ -182,9 +182,6 @@ export const carriersApi = {
 
   // ── Contactos (alta anidada; PATCH/DELETE en lib/api/contacts.ts) ──────
 
-  listContacts: (id: string) =>
-    apiFetch<Contact[]>(`/api/v1/carriers/${id}/contacts`),
-
   createContact: (id: string, body: Omit<ContactCreateBody, 'entity_id' | 'entity_type'>) =>
     apiFetch<Contact>(`/api/v1/carriers/${id}/contacts`, {
       method: 'POST',

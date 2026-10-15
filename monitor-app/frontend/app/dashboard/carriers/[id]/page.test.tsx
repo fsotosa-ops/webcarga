@@ -39,7 +39,7 @@ vi.mock('@/lib/api/carriers', () => ({
     get: vi.fn(), patch: vi.fn(), delete: vi.fn(),
     listDrivers: vi.fn(), assignDriver: vi.fn(), unassignDriver: vi.fn(),
     listAssets: vi.fn(), assignAsset: vi.fn(), unassignAsset: vi.fn(),
-    listContacts: vi.fn(), createContact: vi.fn(),
+    createContact: vi.fn(),
     listPolicies: vi.fn(), createPolicy: vi.fn(),
     listShippers: vi.fn(), exportDocuments: vi.fn(),
     list: vi.fn().mockResolvedValue({ data: [{ id: 'c2', business_name: 'Otra Empresa', tax_id: '2-2' }] }),
@@ -52,7 +52,13 @@ vi.mock('@/lib/api/drivers', () => ({
   },
 }))
 vi.mock('@/lib/api/assets', () => ({
-  assetsApi: { get: vi.fn(), create: vi.fn(), patch: vi.fn(), listComplianceRecords: vi.fn() },
+  assetsApi: {
+    get: vi.fn(), create: vi.fn(), patch: vi.fn(), listComplianceRecords: vi.fn(),
+    types: vi.fn().mockResolvedValue([
+      { code: 'TRACTOCAMION', label: 'Tracto', is_power_unit: true },
+      { code: 'RAMPLA', label: 'Rampla', is_power_unit: false },
+    ]),
+  },
 }))
 vi.mock('@/lib/api/contacts', () => ({
   contactsApi: { patch: vi.fn(), delete: vi.fn() },
@@ -223,15 +229,6 @@ describe('EmpresaDetailPage', () => {
     expect(screen.queryByRole('link', { name: /^Volver/ })).toBeNull()
   })
 
-  it('shows the alert banner when there is a mandatory MISSING record', async () => {
-    renderPage()
-    await clickTab(/Documentos/)
-    expect(await screen.findByText('1 documento obligatorio con atención')).toBeInTheDocument()
-    expect(screen.getAllByText('F30 Multas').length).toBeGreaterThan(0)
-  })
-
-  // HU-08 (Fase 0): export en bloque de documentos — pedido de Fabián en la
-  // reunión del 20/07.
   it('exports all carrier documents as a zip on click', async () => {
     vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:mock'), revokeObjectURL: vi.fn() })
     vi.mocked(carriersApi.exportDocuments).mockResolvedValue(new Blob(['zip-content']))

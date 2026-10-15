@@ -106,7 +106,7 @@ def test_tractoreo_roster_cte_filters_by_operation_type_code():
     from app.services.driver_roster import TRACTOREO_ROSTER_CTE
     assert "app.status_taxonomies" in TRACTOREO_ROSTER_CTE
     assert "wot.code = 'TRACTOREO'" in TRACTOREO_ROSTER_CTE
-    assert "a.asset_type = 'TRACTOCAMION'" in TRACTOREO_ROSTER_CTE
+    assert "public.is_power_unit(a.asset_type)" in TRACTOREO_ROSTER_CTE
 
 
 def test_detail_sql_uses_shared_tractoreo_roster_cte():

@@ -1,5 +1,9 @@
-import type { Asset, AssetType, ComplianceRecord, OperationalStatus, VehicleDriverAssignment } from '@/lib/types'
+import type {
+  Asset, AssetType, AssetTypeRow, AssignmentPeriod, ComplianceRecord, EntityActivity, FleetListParams, FleetListResponse,
+  OperationalStatus, VehicleDriverAssignment,
+} from '@/lib/types'
 import { apiFetch } from './client'
+import { fleetListQuery } from './fleet-list-query'
 
 // La definición se mudó a `lib/types.ts` —el archivo de contrato, del que
 // este ya dependía— y se re-exporta acá para no tocar a quien la importaba
@@ -39,6 +43,14 @@ export type AssetCreateResult = {
 }
 
 export const assetsApi = {
+  /** Directorio › Equipos (D4): todos, con filtros y paginado. */
+  list: (p: FleetListParams<'without_carrier' | 'inactive' | 'without_type'> = {}) =>
+    apiFetch<FleetListResponse>(`/api/v1/assets?${fleetListQuery(p)}`),
+
+  /** El catálogo de tipos de equipo (public.asset_types). */
+  types: () =>
+    apiFetch<AssetTypeRow[]>('/api/v1/assets/types'),
+
   get: (id: string) =>
     apiFetch<Asset>(`/api/v1/assets/${id}`),
 
@@ -50,6 +62,13 @@ export const assetsApi = {
 
   listComplianceRecords: (id: string) =>
     apiFetch<ComplianceRecord[]>(`/api/v1/assets/${id}/compliance-records`),
+
+  /** Dónde trabajó (D4): los períodos de empresa, el vigente primero. */
+  assignments: (id: string) =>
+    apiFetch<AssignmentPeriod[]>(`/api/v1/assets/${id}/assignments`),
+
+  activity: (id: string) =>
+    apiFetch<EntityActivity>(`/api/v1/assets/${id}/activity`),
 
   /** Corregir la patente con motivo (D3): la anterior queda como alias del mismo equipo. */
   correctPlate: (id: string, value: string, reason: string) =>

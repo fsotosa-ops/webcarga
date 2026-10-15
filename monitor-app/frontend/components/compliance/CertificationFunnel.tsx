@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { carrierHref } from '@/lib/navegacion/directory'
 import { ChevronRight } from 'lucide-react'
 import type { CertificationStatusRow, ManagementType } from '@/lib/types'
 import type { CarrierOperationalStatus, FunnelBucket } from '@/lib/types'
@@ -173,7 +174,7 @@ function FilaEmpresa({ row }: { row: CertificationStatusRow }) {
 
   return (
     <Link
-      href={`/dashboard/compliance/${row.entity_id}`}
+      href={`${carrierHref(row.entity_id)}?tab=documentos`}
       className="flex items-center gap-2.5 px-4 py-2 border-b border-border transition-colors hover:bg-bg-main"
     >
       <ChevronRight size={12} className="text-informativo shrink-0" aria-hidden="true" />

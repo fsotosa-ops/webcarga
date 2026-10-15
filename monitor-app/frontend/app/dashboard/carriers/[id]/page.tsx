@@ -35,6 +35,10 @@ import { InsurancePolicyModal, PolicyCreateForm, type PolicyFormState } from '@/
 import { CompletionRing } from '@/components/dashboard/CompletionRing'
 import { dueRelative, updatedRelative } from '@/lib/compliance'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
+import { GestionDeclarada } from '@/components/compliance/GestionDeclarada'
+import { complianceApi } from '@/lib/api/compliance'
+import { clavesCertificacion } from '@/lib/queries/certificacion'
+import { useAssetTypes } from '@/hooks/useAssetTypes'
 import { returnLink } from '@/lib/navegacion/directory'
 import { CLOSURE_NOTICE, directoryKeys, invalidateDirectory, type DirectoryChange } from '@/lib/queries/directorio'
 
@@ -42,9 +46,6 @@ const ROSTER_PAGE_SIZE = 9
 
 type Tab = 'resumen' | 'documentos' | 'conductores' | 'equipos' | 'seguros' | 'contactos'
 
-const ASSET_TYPE_OPTIONS: { value: AssetType; label: string }[] = [
-  { value: 'TRACTOCAMION', label: 'Tracto' }, { value: 'RAMPLA', label: 'Rampla' },
-]
 const CONTACT_ROLE_OPTIONS = ['LEGAL_REP', 'OPERATIONS', 'FINANCE', 'DOCUMENTS']
 
 // ── Campo editable de la empresa (solo business_name/operational_status
@@ -176,6 +177,7 @@ function EmpresaDetailPageInner() {
   const [driverShowAll, setDriverShowAll] = useState(false)
   const [assetQ,   setAssetQ]   = useState('')
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetType | 'todos'>('todos')
+  const { types: assetTypes, labelOf: assetTypeLabel } = useAssetTypes()
   const [assetHealthFilter, setAssetHealthFilter] = useState<DocumentState | ''>('')
   const [assetShowAll, setAssetShowAll] = useState(false)
 
@@ -208,6 +210,9 @@ function EmpresaDetailPageInner() {
   // alta se comportan igual sin que nadie tenga que acordarse de las dos.
 
   const driversQuery = useQuery({ queryKey: directoryKeys.carrierDrivers(id), queryFn: () => carriersApi.listDrivers(id) })
+  // El tipo de operación derivado de la flota (el chip de GestionDeclarada): el
+  // mismo resumen que usa la pestaña Documentos, así que comparten caché.
+  const summaryQuery = useQuery({ queryKey: clavesCertificacion.resumen(id), queryFn: () => complianceApi.summary(id) })
   const assetsQuery  = useQuery({ queryKey: directoryKeys.carrierAssets(id), queryFn: () => carriersApi.listAssets(id) })
   const policiesQuery = useQuery({ queryKey: ['carrier-policies', id], queryFn: () => carriersApi.listPolicies(id) })
   const shippersQuery = useQuery({ queryKey: ['carrier-shippers', id], queryFn: () => carriersApi.listShippers(id) })
@@ -481,6 +486,15 @@ function EmpresaDetailPageInner() {
                 )}
                 <StatusChip tone={life.tone} icon={life.icon}>{life.label}</StatusChip>
                 <StatusChip tone={enabled.tone} icon={enabled.icon}>{enabled.label}</StatusChip>
+                {/* Lo declarado y lo derivado de la flota, en un solo chip (Entrega B).
+                    Vivía en la ficha de Certificación, retirada en la Entrega C. */}
+                <GestionDeclarada
+                  carrierId={id}
+                  declarado={carrier.management_types}
+                  derivado={summaryQuery.data ? summaryQuery.data.carrier_operation_types.join(' + ') || null : null}
+                  canEdit={canEdit && carrier.operational_status === 'ACTIVE'}
+                  onGuardado={() => afterChange({ entity: 'carrier', id, type: 'update' })}
+                />
                 {carrier.is_manual_override && (
                   <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-500">Editado manualmente</span>
                 )}
@@ -628,8 +642,7 @@ function EmpresaDetailPageInner() {
       {activeTab === 'documentos' && (
         <CarrierDocumentsTab
           carrierId={id}
-          carrierName={carrier.business_name}
-          records={carrier.compliance_records}
+          carrier={carrier}
           onExport={handleExportDocuments}
           exporting={exportingDocs}
           exportError={exportErr}
@@ -791,13 +804,13 @@ function EmpresaDetailPageInner() {
           >
             Todos
           </button>
-          {ASSET_TYPE_OPTIONS.map(opt => (
+          {assetTypes.map(opt => (
             <button
-              key={opt.value}
-              onClick={() => setAssetTypeFilter(opt.value)}
-              aria-pressed={assetTypeFilter === opt.value}
+              key={opt.code}
+              onClick={() => setAssetTypeFilter(opt.code)}
+              aria-pressed={assetTypeFilter === opt.code}
               className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-all ${
-                assetTypeFilter === opt.value ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
+                assetTypeFilter === opt.code ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
               }`}
             >
               {opt.label}
@@ -827,7 +840,7 @@ function EmpresaDetailPageInner() {
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
               {visibleAssets.map(a => (
-                <VehicleRosterCard key={a.id} vehicle={a} carrierStatus={carrier.operational_status} onOpen={() => setSelectedAssetId(a.id)} />
+                <VehicleRosterCard key={a.id} vehicle={a} typeLabel={assetTypeLabel(a.asset_type)} carrierStatus={carrier.operational_status} onOpen={() => setSelectedAssetId(a.id)} />
               ))}
             </div>
             {!assetShowAll && filteredAssets.length > ROSTER_PAGE_SIZE && (

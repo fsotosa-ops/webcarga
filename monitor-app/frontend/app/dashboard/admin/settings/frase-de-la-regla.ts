@@ -81,7 +81,8 @@ export function celdaSeExigeA(
     'applies_to_fleet_service_type_ids' | 'applies_to_management_types'>,
   vocabulario: Vocabulario,
 ): { regla: string; alcance: string } {
-  const cuenta = `${r.alcance.alcanzadas} de ${r.alcance.universo}`
+  // De los activos (L6): el universo es la flota activa de empresas activas.
+  const cuenta = `${r.alcance.alcanzadas} de ${r.alcance.universo} activos`
   if (!r.is_active) return { regla: 'No se exige', alcance: `Alcanzaría a ${cuenta}` }
   return { regla: fraseDeLaRegla(r, vocabulario), alcance: cuenta }
 }

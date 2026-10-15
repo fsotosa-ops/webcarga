@@ -104,51 +104,6 @@ def test_configuracion_y_meta_leen_las_mismas_columnas():
 # producción antes de agregar el fix (el pill de temperatura seguía "ok"
 # varios minutos después de crear el rango).
 
-def test_create_temperature_range_invalidates_meta_cache():
-    pool = AsyncMock()
-    pool.fetchrow.side_effect = [None, {"cargo_type": "FRIO", "label": "Frío", "min_c": 2, "max_c": 5}]
-    client = make_client(pool)
-    with patch("app.routers.config.invalidate_trips_meta_cache", new_callable=AsyncMock) as inv:
-        res = client.post("/api/v1/config/temperature-ranges", json={
-            "cargo_type": "FRIO", "label": "Frío", "min_c": 2, "max_c": 5,
-        })
-    assert res.status_code == 200
-    inv.assert_awaited_once()
-
-
-def test_patch_temperature_range_invalidates_meta_cache():
-    pool = AsyncMock()
-    existing = {"cargo_type": "FRIO", "label": "Frío", "min_c": 0, "max_c": 5}
-    pool.fetchrow.side_effect = [existing, {**existing, "min_c": 2}]
-    client = make_client(pool)
-    with patch("app.routers.config.invalidate_trips_meta_cache", new_callable=AsyncMock) as inv:
-        res = client.patch("/api/v1/config/temperature-ranges/FRIO", json={"min_c": 2})
-    assert res.status_code == 200
-    inv.assert_awaited_once()
-
-
-def test_delete_temperature_range_invalidates_meta_cache():
-    pool = AsyncMock()
-    pool.execute.return_value = "DELETE 1"
-    client = make_client(pool)
-    with patch("app.routers.config.invalidate_trips_meta_cache", new_callable=AsyncMock) as inv:
-        res = client.delete("/api/v1/config/temperature-ranges/FRIO")
-    assert res.status_code == 200
-    inv.assert_awaited_once()
-
-
-def test_patch_monitor_alert_rules_invalidates_meta_cache():
-    pool = AsyncMock()
-    pool.fetchrow.return_value = {**RULES_ROW, "dwell_hours": 3.5}
-    client = make_client(pool)
-    with patch("app.routers.config.invalidate_trips_meta_cache", new_callable=AsyncMock) as inv:
-        res = client.patch("/api/v1/config/monitor-alert-rules", json={"dwell_hours": 3.5})
-    assert res.status_code == 200
-    inv.assert_awaited_once()
-
-
-# ── /trips/available-drivers ──────────────────────────────────────────────────
-
 def test_available_drivers_requires_fecha():
     pool = AsyncMock()
     client = make_client(pool, router=trips_router)
@@ -353,8 +308,6 @@ def test_available_assets_busy_trip_counts_multi_day_active_trip():
     assert "app.trips_del_dia($1)" in busy_query
 
 
-# ── /trips/fleet-daily-overview (Fase 2, HU-01 Cierre del Día) ──────────────
-
 def _fleet_row(
     asset_id="a1", tractor_plate="ABCD12", carrier_id="c1", carrier_name="TransCargo",
     is_tractoreo=False, is_equipo_completo=False, trip_id=None, client_name=None, origin_local=None,
@@ -367,119 +320,6 @@ def _fleet_row(
         "trip_id": trip_id, "client_name": client_name, "origin_local": origin_local,
         "shipper_id": shipper_id,
     }
-
-
-def test_fleet_daily_overview_requires_fecha():
-    pool = AsyncMock()
-    client = make_client(pool, router=trips_router)
-    res = client.get("/api/v1/trips/fleet-daily-overview")
-    assert res.status_code == 422
-
-
-def test_fleet_daily_overview_query_scopes_to_active_tractocamiones():
-    pool = AsyncMock()
-    pool.fetch.return_value = []
-    client = make_client(pool, router=trips_router)
-    client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02")
-    query = pool.fetch.call_args_list[0].args[0]
-    assert "asset_type = 'TRACTOCAMION'" in query
-    # Desde el 16/09 el multi-día lo resuelve app.trips_del_dia() (tests/test_trips_del_dia.py).
-    assert "app.trips_del_dia($1)" in query
-
-
-def test_fleet_daily_overview_categorizes_tractoreo_con_carga():
-    pool = AsyncMock()
-    pool.fetch.return_value = [_fleet_row(is_tractoreo=True, trip_id="t1", client_name="Walmart")]
-    client = make_client(pool, router=trips_router)
-    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02")
-    body = res.json()
-    assert body["equipment"][0]["categories"] == ["TRACTOREO"]
-    assert body["equipment"][0]["con_carga"] is True
-    tractoreo = next(c for c in body["categories"] if c["category"] == "TRACTOREO")
-    assert tractoreo == {"category": "TRACTOREO", "assigned": 1, "unassigned": 0, "utilization_pct": 100.0}
-
-
-def test_fleet_daily_overview_sin_clasificar_when_no_fleet_service_type():
-    pool = AsyncMock()
-    pool.fetch.return_value = [_fleet_row()]
-    client = make_client(pool, router=trips_router)
-    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02")
-    body = res.json()
-    assert body["equipment"][0]["categories"] == ["SIN_CLASIFICAR"]
-    sin_clasificar = next(c for c in body["categories"] if c["category"] == "SIN_CLASIFICAR")
-    assert sin_clasificar["assigned"] == 0
-    assert sin_clasificar["unassigned"] == 1
-
-
-def test_fleet_daily_overview_dual_category_when_carrier_selects_both():
-    pool = AsyncMock()
-    pool.fetch.return_value = [_fleet_row(is_tractoreo=True, is_equipo_completo=True)]
-    client = make_client(pool, router=trips_router)
-    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02")
-    body = res.json()
-    assert set(body["equipment"][0]["categories"]) == {"TRACTOREO", "EQUIPO_COMPLETO"}
-
-
-def test_fleet_daily_overview_utilization_pct_rounds_and_handles_empty_category():
-    pool = AsyncMock()
-    pool.fetch.return_value = [
-        _fleet_row(asset_id="a1", is_equipo_completo=True, trip_id="t1"),
-        _fleet_row(asset_id="a2", is_equipo_completo=True),
-        _fleet_row(asset_id="a3", is_equipo_completo=True),
-    ]
-    client = make_client(pool, router=trips_router)
-    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02")
-    equipo_completo = next(c for c in res.json()["categories"] if c["category"] == "EQUIPO_COMPLETO")
-    assert equipo_completo == {
-        "category": "EQUIPO_COMPLETO", "assigned": 1, "unassigned": 2, "utilization_pct": 33.3,
-    }
-    tractoreo = next(c for c in res.json()["categories"] if c["category"] == "TRACTOREO")
-    assert tractoreo["utilization_pct"] == 0.0
-
-
-def test_fleet_daily_overview_client_filter_keeps_idle_equipment_of_enabled_carrier():
-    """Un equipo SIN CARGA de una empresa habilitada para el cliente filtrado
-    debe seguir contando — el filtro no depende de que el viaje de hoy
-    exista, sino de public.carrier_shippers."""
-    pool = AsyncMock()
-    pool.fetch.side_effect = [
-        [_fleet_row(carrier_id="c1")],
-        [{"carrier_id": "c1", "shipper_id": "00000000-0000-0000-0000-0000000000a1"}],
-    ]
-    client = make_client(pool, router=trips_router)
-    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&shipper_id=00000000-0000-0000-0000-0000000000a1")
-    assert len(res.json()["equipment"]) == 1
-    shipper_query = pool.fetch.call_args_list[1].args[0]
-    assert "public.carrier_shippers" in shipper_query
-
-
-def test_fleet_daily_overview_client_filter_excludes_unrelated_carrier():
-    pool = AsyncMock()
-    pool.fetch.side_effect = [
-        [_fleet_row(carrier_id="c1")],
-        [],
-    ]
-    client = make_client(pool, router=trips_router)
-    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&shipper_id=00000000-0000-0000-0000-0000000000a1")
-    assert res.json()["equipment"] == []
-
-
-def test_fleet_daily_overview_origin_filter_excludes_idle_equipment():
-    """Un equipo SIN CARGA no tiene CD de origen de hoy — un filtro por
-    origen lo excluye siempre, es una limitación de datos documentada."""
-    pool = AsyncMock()
-    pool.fetch.return_value = [_fleet_row(trip_id=None)]
-    client = make_client(pool, router=trips_router)
-    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&origin=CD Lo Aguirre")
-    assert res.json()["equipment"] == []
-
-
-def test_fleet_daily_overview_origin_filter_keeps_matching_con_carga_equipment():
-    pool = AsyncMock()
-    pool.fetch.return_value = [_fleet_row(trip_id="t1", origin_local="CD Lo Aguirre")]
-    client = make_client(pool, router=trips_router)
-    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&origin=CD Lo Aguirre")
-    assert len(res.json()["equipment"]) == 1
 
 
 # ── list_trips q amplía a cliente ─────────────────────────────────────────────
@@ -769,17 +609,4 @@ def test_un_id_de_cliente_mal_formado_en_el_filtro_es_422():
     pool = AsyncMock()
     client = make_client(pool, router=trips_router)
     assert client.get("/api/v1/trips/?view=historial&shipper_id=walmart").status_code == 422
-    assert client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&shipper_id=walmart").status_code == 422
 
-
-def test_fleet_daily_overview_filtra_los_sin_vincular():
-    """Revisión final, menor 2: el mismo `unlinked` que la lista del Monitor."""
-    pool = AsyncMock()
-    pool.fetch.side_effect = [
-        [_fleet_row(asset_id="a1", trip_id="t1", shipper_id=None, client_name="lider · sin vincular"),
-         _fleet_row(asset_id="a2", trip_id="t2", shipper_id="00000000-0000-0000-0000-000000000002")],
-        [],
-    ]
-    client = make_client(pool, router=trips_router)
-    res = client.get("/api/v1/trips/fleet-daily-overview?fecha=2026-08-02&shipper_id=unlinked")
-    assert [e["asset_id"] for e in res.json()["equipment"]] == ["a1"]

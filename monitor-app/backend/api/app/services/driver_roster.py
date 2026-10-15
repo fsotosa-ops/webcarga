@@ -1,6 +1,6 @@
 """Roster de conductores que caen en el cierre ACTIVO de Tractoreo (minuta
 2026-08-03): conductor con asignación activa a una empresa ACTIVE que
-opera al menos un tracto (TRACTOCAMION) clasificado como Tractoreo
+opera al menos un tracto (public.is_power_unit) clasificado como Tractoreo
 (assets.webcarga_operation_type_id). Equipo Completo queda explícitamente
 fuera de este cierre (sigue siendo pasivo por tracto, ver
 equipment_closures.py) — una empresa puede operar ambos tipos, por eso el
@@ -35,7 +35,7 @@ def tractoreo_roster_select(day: str = "public.hoy_chile()") -> str:
         JOIN public.carriers c ON c.id = da.counterpart_id AND c.operational_status = 'ACTIVE'
         JOIN app.fleet_assignment_periods aa ON aa.relation = 'ASSET_CARRIER' AND aa.counterpart_id = c.id
              AND aa.valid_during @> {day}
-        JOIN public.assets a ON a.id = aa.subject_id AND a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
+        JOIN public.assets a ON a.id = aa.subject_id AND a.operational_status = 'ACTIVE' AND public.is_power_unit(a.asset_type)
         JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id AND wot.code = 'TRACTOREO'
 """.format(day=day)
 

@@ -179,7 +179,9 @@ export function countPopoverFilters(f: DiarioFilters): number {
     + cuentaNoAsignadoWebcarga(f)
 }
 
-export function useDiarioFilters() {
+/** `initial`: lo que llega en la URL — "Ver viajes en el Monitor" de la ficha de
+ *  un conductor o un equipo abre `?tab=historial&q=<RUT o patente>` (D4). */
+export function useDiarioFilters(initial: Partial<Pick<DiarioFilters, 'tab' | 'q'>> = {}) {
   return useReducer(reducer, {
     tab: 'en_curso', q: '', fechaDesde: '', fechaHasta: '',
     activeGroup: null, activeSignals: [], fTms: [], fOperationType: [],
@@ -188,5 +190,6 @@ export function useDiarioFilters() {
     // viaje más recientemente reportado por el TMS primero), sortDir desc
     // acompaña ese default — "más reciente arriba", no "más viejo arriba".
     sortKey: null, sortDir: 'desc', page: 1,
+    ...initial,
   } satisfies DiarioFilters)
 }

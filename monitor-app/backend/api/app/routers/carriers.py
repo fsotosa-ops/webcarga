@@ -372,11 +372,11 @@ SELECT
   (SELECT count(DISTINCT f.entity_id) FROM app.active_fleet f
      JOIN public.carriers c ON c.id = f.carrier_id AND c.operational_status = 'ACTIVE'
      JOIN public.assets a ON a.id = f.entity_id
-    WHERE f.entity_type = 'ASSET' AND a.asset_type = 'TRACTOCAMION')              AS tractos,
+    WHERE f.entity_type = 'ASSET' AND public.is_power_unit(a.asset_type))              AS tractos,
   (SELECT count(DISTINCT f.entity_id) FROM app.active_fleet f
      JOIN public.carriers c ON c.id = f.carrier_id AND c.operational_status = 'ACTIVE'
      JOIN public.assets a ON a.id = f.entity_id
-    WHERE f.entity_type = 'ASSET' AND a.asset_type = 'RAMPLA')                    AS ramplas,
+    WHERE f.entity_type = 'ASSET' AND NOT public.is_power_unit(a.asset_type))             AS ramplas,
   (SELECT count(DISTINCT f.entity_id) FROM app.active_fleet f
      JOIN public.carriers c ON c.id = f.carrier_id AND c.operational_status = 'ACTIVE'
     WHERE f.entity_type = 'DRIVER')                                               AS conductores

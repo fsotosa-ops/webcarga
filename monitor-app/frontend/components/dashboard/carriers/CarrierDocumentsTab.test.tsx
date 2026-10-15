@@ -1,64 +1,60 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { CarrierDocumentsTab } from './CarrierDocumentsTab'
 
-vi.mock('@/lib/api/documentIngest', () => ({
-  documentIngestApi: {
-    listQueue: vi.fn().mockResolvedValue({ total: 0, rows: [] }),
-    previewUrl: vi.fn().mockResolvedValue({ preview_url: null }),
-    upload: vi.fn(), remove: vi.fn(), classifyBatch: vi.fn(), moveItems: vi.fn(),
-  },
+const { SUBJECT_COUNTS, NOT_ASSET } = vi.hoisted(() => ({
+  SUBJECT_COUNTS: { todos: 1, al_dia: 1, por_vencer: 0, falta: 0 },
+  NOT_ASSET: { asset_type: null, fleet_service_type_label: null, fleet_service_type_bg_color: null, fleet_service_type_text_color: null },
 }))
+
 vi.mock('@/lib/api/compliance', () => ({
   complianceApi: {
-    listPending: vi.fn().mockResolvedValue({ total: 0, rows: [] }),
-    listRequirements: vi.fn().mockResolvedValue([]),
+    summary: vi.fn().mockResolvedValue({
+      totales: { todos: 2, al_dia: 2, por_vencer: 0, falta: 0 },
+      completo: true,
+      carrier_operation_types: [],
+      sujetos: [
+        { entity_type: 'CARRIER', entity_id: 'c1', subject_name: null, ...SUBJECT_COUNTS, ...NOT_ASSET },
+        { entity_type: 'DRIVER', entity_id: 'd1', subject_name: 'Vidal Soto, Pedro', ...SUBJECT_COUNTS, ...NOT_ASSET },
+      ],
+    }),
+    listPending: vi.fn().mockResolvedValue({
+      total: 1,
+      rows: [{
+        id: 'r1', carrier_id: 'c1', entity_type: 'CARRIER', entity_id: 'c1', subject_name: null,
+        document_name: 'Escritura de constitución', status: 'APPROVED', expiration_date: '2027-01-01',
+        tiene_archivo: true, document_state: 'UP_TO_DATE', expiration_policy: 'OPTIONAL',
+      }],
+    }),
     listFiles: vi.fn().mockResolvedValue([]),
   },
 }))
-vi.mock('@/lib/api/carriers', () => ({
-  carriersApi: { list: vi.fn().mockResolvedValue({ data: [] }) },
-}))
 vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
 
-import { documentIngestApi } from '@/lib/api/documentIngest'
-
 function setup() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
-    <QueryClientProvider client={qc}>
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <CarrierDocumentsTab
-        carrierId="c1" carrierName="ACME" records={[]}
+        carrierId="c1" carrier={{ business_name: 'ACME', operational_status: 'ACTIVE', management_types: null }}
         onExport={vi.fn()} exporting={false}
       />
     </QueryClientProvider>,
   )
 }
 
-describe('CarrierDocumentsTab', () => {
-  beforeEach(() => vi.clearAllMocks())
-
-  it('permite cargar documentos sin salir de la ficha', async () => {
+describe('CarrierDocumentsTab (C7, ficha única)', () => {
+  it('muestra los documentos por sujeto, con filtro de estado, versiones y edición del vencimiento', async () => {
     setup()
-    expect(await screen.findByLabelText(/arrastra aquí los documentos de ACME/i)).toBeInTheDocument()
-  })
-
-  it('ya no manda a otro módulo para cargar', () => {
-    setup()
-    expect(screen.queryByText(/subir en certificación/i)).not.toBeInTheDocument()
-  })
-
-  it('usa la misma bandeja, acotada a esta empresa', async () => {
-    setup()
-    await screen.findByLabelText(/arrastra aquí/i)
-    expect(documentIngestApi.listQueue).toHaveBeenCalledWith(
-      expect.objectContaining({ carrierId: 'c1' }),
-    )
-  })
-
-  it('conserva la exportación', () => {
-    setup()
-    expect(screen.getByRole('button', { name: /exportar todo/i })).toBeInTheDocument()
+    // Por sujeto: la empresa y su flota, agrupada.
+    expect(await screen.findByText('De la empresa')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Conductores/ })).toBeInTheDocument()
+    // Filtro de estado.
+    expect(screen.getByRole('button', { name: /^Por vencer/ })).toBeInTheDocument()
+    // Al desplegar la empresa: su documento, con versiones y el vencimiento editable.
+    fireEvent.click(screen.getByText('De la empresa'))
+    expect(await screen.findByText('Escritura de constitución')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Versiones/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Editar vencimiento' })).toBeInTheDocument()
   })
 })

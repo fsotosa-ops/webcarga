@@ -162,6 +162,43 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
   `EMPRESA_NO_RECONOCIDA` (ya siempre vacío) y la rama `PATENTE_EMPRESA` de "resueltas"; duplicados contra registros
   cargados por otros caminos (no guardan hash).
 
+**14/10–15/10 — Entrega C EJECUTADA** (doc `docs/superpowers/plans/2026-10-14-entrega-c-fichas-y-limpieza.md`, maqueta
+`docs/superpowers/mockups/2026-10-14-entrega-c-directorio-vs-certificacion.html`; alcance completo aprobado):
+- **D4:** menú Directorio = grupo Empresas · Conductores · Equipos. Listas `FleetList` (una, con prop `kind`; filtros en la
+  URL: `q`, `flag`, `documents`, `page`) sobre `GET /drivers` y `GET /assets` (`services/directory_lists.py`); el buscador
+  pasó a `GET /drivers/search`. Fichas propias `/dashboard/drivers|assets/[id]` = `FleetProfile`: el mismo panel en
+  variante `page` (`DetailShell`, el armazón del modal extraído de los dos paneles) + "Dónde trabaja" (historial,
+  `…/assignments`) + "Actividad" (`…/activity`, "Ver viajes en el Monitor" → `?tab=historial&q=RUT|patente`). Existe
+  sin empresa (se borró `EntityRedirect`). El Monitor lee `?q`/`?tab` y su búsqueda también encuentra al conductor y al
+  tracto RESUELTOS (RUT y patente canónicos), para que coincida con lo que cuenta Actividad. Vista rápida en las filas del
+  Monitor (patente y empresa con `EntityCell`; conductor con un botón aparte, porque la celda es el control de asignar).
+- **Cert 2b:** una sola ficha de empresa. El cuerpo de `compliance/[carrierId]` se MOVIÓ a
+  `components/compliance/CarrierDocumentsWorkspace.tsx` (pestaña Documentos del Directorio), con versiones
+  (`DocumentVersions`) y reasignar en las filas; `GestionDeclarada` va al encabezado. La ruta vieja redirige a
+  `/dashboard/carriers/[id]?tab=documentos`. Certificación: "Conductor"/"Vehículo" abren las listas del Directorio con
+  `documents=pending` (y `?vista=conductores|vehiculos` redirige). Borrados: `CarrierDrawer`, `TransporterDocumentsPanel`,
+  `TransporterAlertBanner`, `EntityRedirect`, `useFilaAbierta`, `agruparPorSujeto()`, la bandeja incrustada en la ficha
+  (el lote va a Sin clasificar por `PuenteALaBandeja`). Bug corregido de paso: una empresa en onboarding leía "dada de baja".
+- **Cert 4:** L6 hecho (alcance "N de M activos" sobre `app.active_fleet`). L7 sin cambio (era de la copia local).
+- **D5:** fuera `fleet-daily-overview` (endpoint, cliente, tipos), `invalidate_trips_meta_cache`, `carriersApi.listContacts`;
+  una sola clave de taxonomías (`lib/queries/taxonomies.ts`, arregla que Configuración no refrescaba el alta de flota);
+  `AltaConductorDesdeCierre` → `AltaDeFlota` con `carrierId={null}` + `rutFijo` + `etiqueta`.
+- **Pedido del usuario a mitad de C: "no puede haber hardcode de tipos como TRACTOCAMION"** → catálogo
+  `public.asset_types` (código, etiqueta, `is_power_unit`, orden) con FK que reemplaza al CHECK, `public.is_power_unit()`
+  en las 6 consultas y en `carrier_management_types`, `GET /assets/types` + `useAssetTypes` en la pantalla (6 lugares, una
+  sola etiqueta "Tracto"); tipo desconocido = 422 por la FK. Migración `20261019090000_asset_types_catalog.sql`
+  **APLICADA en la base real** (2 tipos, 100 tractos como antes, 44 empresas con gestión derivada). También `AltaDeFlota`
+  dejó de buscar la gestión por etiqueta.
+- Tests: C1-C11 (+C2b catálogo) en verde; tsc limpio; vitest 1.849/1.849; humo 11/11 en la copia local (con la máquina
+  tranquila: con carga 280 todo da timeout, 8 GB no alcanzan para correr suites y humo a la vez).
+- **Siguiente paso exacto:** con la suite del backend contra la base real en verde → commit y push a `dev`; ver los
+  workflows; recorrido en dev con sesión (listas, ficha de conductor sin empresa, Actividad → Monitor, ficha de empresa
+  › Documentos, URL vieja, vista rápida del Monitor), solo lectura.
+- Pendiente con motivo: el alta dentro del popover "Asignar conductor" del Monitor sigue aparte (no es solo un alta: si el
+  RUT existe ofrece asignar al existente, avisos, "a todos sus viajes"); unificarla exige que `AltaDeFlota` absorba ese flujo.
+- Tangentes nuevas: `FLEET_SERVICE_TYPE` tiene una fila "Tractocamión" sin `code` mezclada con carrocerías (10 tractos la
+  usan); la ficha propia no tiene pestañas como la maqueta (Resumen · Documentos · …): hoy es el panel en una columna.
+
 1. ~~Mirar M2 en dev~~ **HECHO 12/10 noche:** chip gris "Dada de baja" y "La empresa no está activa", sin "se puede asignar".
    Ojo: abrir un viaje con divergencia TMS deja una nota "sistema" a nombre de quien lo abre (`_log_tms_divergence_once`,
    comportamiento de julio, una vez por valor): un recorrido "de solo lectura" no es 100 % de solo lectura en el Monitor.

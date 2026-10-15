@@ -84,21 +84,6 @@ def test_create_taxonomy():
 # /trips/meta, cacheado 5 min — sin invalidar acá el admin no ve su cambio
 # reflejado en el Diario hasta que expire el TTL (mismo bug que temperature-
 # ranges en config.py).
-def test_create_taxonomy_invalidates_meta_cache():
-    pool = AsyncMock()
-    pool.fetchrow.return_value = {
-        "id": "t1", "domain": "DRIVER_REASON", "label": "En Pana",
-        "bg_color": "#fef2f2", "text_color": "#b91c1c", "group": None, "sort_order": 3, "active": True,
-    }
-    client = make_client(pool)
-    with patch("app.routers.status_taxonomies.invalidate_trips_meta_cache", new_callable=AsyncMock) as inv:
-        res = client.post("/api/v1/config/taxonomies", json={
-            "domain": "DRIVER_REASON", "label": "En Pana", "bg_color": "#fef2f2", "text_color": "#b91c1c", "sort_order": 3,
-        })
-    assert res.status_code == 200
-    inv.assert_awaited_once()
-
-
 def test_patch_taxonomy_404_when_missing():
     pool = AsyncMock()
     pool.fetchrow.return_value = None

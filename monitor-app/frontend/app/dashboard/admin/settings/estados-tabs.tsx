@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2, Loader2, AlertTriangle } from 'lucide-react'
 import { taxonomiesApi, type Direccion, type TaxonomyRow, type TaxonomyDomain } from '@/lib/api/config'
+import { taxonomyKey } from '@/lib/queries/taxonomies'
 import {
   GRUPOS_POR_DOMINIO, INPUT, useConfigList, LoadState, useRowFeedback,
   SaveRowButton, SwatchPicker, SortArrows,
@@ -67,7 +68,7 @@ export function TaxonomyTab({ domain, hint, newLabel }: TaxonomyTabProps) {
   // Monitor, el de no asignación del Cierre): un cambio acá las refresca, en vez de
   // dejarlas ofreciendo por cinco minutos un valor que ya no existe.
   const queryClient = useQueryClient()
-  const avisarCambio = () => { void queryClient.invalidateQueries({ queryKey: ['taxonomies', domain] }) }
+  const avisarCambio = () => { void queryClient.invalidateQueries({ queryKey: taxonomyKey(domain) }) }
 
   const visibles = items.filter(s => s.active)
   const merged = (row: TaxonomyRow) => ({ ...row, ...drafts[row.id] })

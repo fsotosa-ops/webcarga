@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { ArrowLeft, ChevronDown, ChevronRight } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { DocumentChecklist } from '@/components/dashboard/DocumentChecklist'
+import { useAssetTypes } from '@/hooks/useAssetTypes'
 import { apiFetch } from '@/lib/api/client'
 import { certificationRequestsApi } from '@/lib/api/certificationRequests'
 import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceChecklist'
@@ -27,7 +28,6 @@ import { getInitials } from '@/lib/utils/avatar'
 
 const NOUN: Record<EntityKind, string> = { carrier: 'empresa', driver: 'conductor', asset: 'equipo' }
 const KIND_LABEL: Record<EntityKind, string> = { carrier: 'Empresa', driver: 'Conductor', asset: 'Equipo' }
-const ASSET_TYPE: Record<string, string> = { TRACTOCAMION: 'Tractocamión', RAMPLA: 'Rampla' }
 const FULL_PAGE: Record<EntityKind, (id: string, returnTo?: string) => string> = {
   carrier: carrierHref, driver: driverHref, asset: assetHref,
 }
@@ -69,24 +69,13 @@ export function EntityQuickView({ target, canGoBack, onNavigate, onBack, onClose
     </span>
   )
 
-  // La ficha de un conductor o equipo vive dentro de la de su empresa: sin
-  // empresa no hay ficha a la que ir. Mientras carga no se sabe, y no se ofrece.
-  const data = query.data
-  const fullPage = target.kind === 'carrier' ? 'available'
-    : !data ? 'unknown'
-      : (data as DriverSummary | AssetSummary).carrier ? 'available' : 'none'
-
   const footer = (
     <div className="flex items-center gap-3">
-      {fullPage === 'available' && (
-        <Link href={FULL_PAGE[target.kind](target.id, returnTo)}
-              className="rounded-md bg-accent px-3.5 py-2 text-dato font-semibold text-white hover:bg-accent/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
-          Abrir ficha completa
-        </Link>
-      )}
-      {fullPage === 'none' && (
-        <span className="text-dato text-informativo">Sin empresa asignada: no tiene ficha propia.</span>
-      )}
+      {/* Todos tienen ficha propia, también sin empresa (D4). */}
+      <Link href={FULL_PAGE[target.kind](target.id, returnTo)}
+            className="rounded-md bg-accent px-3.5 py-2 text-dato font-semibold text-white hover:bg-accent/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+        Abrir ficha completa
+      </Link>
       {/* En el teléfono no hay Esc: ahí se cierra con la ✕ de arriba. */}
       <span className="ml-auto hidden text-etiqueta text-informativo md:inline">Esc para cerrar</span>
     </div>
@@ -138,13 +127,14 @@ function isActive(status: string | undefined) {
 
 /** Quién es: se dibuja al instante con lo que trae la fila, y se completa al llegar los datos. */
 function Identity({ target, data }: { target: QuickViewTarget; data?: DriverSummary | AssetSummary | CarrierSummary }) {
+  const { labelOf } = useAssetTypes()
   const name = !data ? target.label
     : target.kind === 'driver' ? (data as DriverSummary).full_name
       : target.kind === 'asset' ? (data as AssetSummary).license_plate
         : (data as CarrierSummary).business_name
   const subtitle = !data ? null
     : target.kind === 'asset'
-      ? [ASSET_TYPE[(data as AssetSummary).asset_type] ?? (data as AssetSummary).asset_type,
+      ? [labelOf((data as AssetSummary).asset_type),
          (data as AssetSummary).manufacture_year].filter(Boolean).join(' · ')
       : (data as DriverSummary | CarrierSummary).tax_id ? `RUT ${(data as DriverSummary | CarrierSummary).tax_id}` : null
 

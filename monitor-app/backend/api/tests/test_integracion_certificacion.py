@@ -626,30 +626,36 @@ async def test_un_requisito_apagado_no_le_aplica_a_nadie(conexion_revertida):
 
 
 async def test_el_alcance_del_catalogo_cuenta_lo_mismo_que_la_vista_previa(conexion_revertida):
-    """Rama ASSET, que es la que hoy tiene condición de subtipo."""
+    """Rama ASSET, que es la que hoy tiene condición de subtipo.
+
+    Desde L6 (Entrega C, 14/10) el catálogo cuenta entre los que están EN ALCANCE
+    ("N de M activos"), mientras la vista previa siembra para todos (criterio del
+    11/10: quien se reactiva vuelve con sus pendientes). La regla es la misma: lo que
+    alcanza el catálogo son los aplicables de la vista previa que están en alcance."""
     conn = conexion_revertida
     tipo = await _taxonomia(conn, "FLEET_SERVICE_TYPE", f"{PREFIJO} subtipo")
-    await _vehiculo(conn, tipo_flota=tipo)
-    await _vehiculo(conn, tipo_flota=tipo)
-    fuera = await _vehiculo(conn)  # no lo alcanza, pero sí entra al universo
+    empresa = await _empresa(conn)
+    dentro = [await _vehiculo(conn, tipo_flota=tipo), await _vehiculo(conn, tipo_flota=tipo)]
+    for v in dentro:
+        await _asignar(conn, v, empresa)
+    sin_flota = await _vehiculo(conn, tipo_flota=tipo)  # cumple la regla, pero no es flota activa
+    fuera = await _vehiculo(conn)                        # no la cumple
 
     requisito = await _requisito(conn, entidad="ASSET", tipos_flota=[tipo])
 
     fila = await _alcance_del_catalogo(conn, requisito)
     aplican = await _aplican_segun_el_servicio(conn, "ASSET", requisito)
 
-    assert fila["alcanzadas"] == len(aplican) == 2, (
-        "el catalogo cuenta un conjunto distinto del que la vista previa "
-        "considera aplicable: la pantalla miente sobre a cuantos alcanza"
+    assert {str(v) for v in dentro} | {str(sin_flota)} <= aplican and str(fuera) not in aplican
+    assert fila["alcanzadas"] == len(aplican - {str(sin_flota)}), (
+        "el catalogo cuenta un conjunto distinto de los aplicables en alcance: "
+        "la pantalla miente sobre a cuantos alcanza"
     )
-    assert str(fuera) not in aplican
-    assert fila["universo"] == await conn.fetchval("SELECT count(*) FROM public.assets"), (
-        "el universo tiene que ser TODOS los vehiculos, no los alcanzados"
-    )
-    assert fila["universo"] > fila["alcanzadas"], (
-        "el universo de prueba quedo sin ningun vehiculo fuera de la regla: "
-        "asi el test pasaria aunque el alcance contara de mas"
-    )
+    en_alcance = await conn.fetchval(
+        "SELECT count(*) FROM app.active_fleet af JOIN public.carriers c ON c.id = af.carrier_id "
+        "AND c.operational_status = 'ACTIVE' WHERE af.entity_type = 'ASSET'")
+    assert fila["universo"] == en_alcance, "el universo son los vehiculos en alcance, no todos"
+    assert fila["universo"] > fila["alcanzadas"]
 
 
 async def test_el_alcance_de_un_requisito_de_un_cliente_no_cuenta_a_toda_empresa(
@@ -674,7 +680,9 @@ async def test_el_alcance_de_un_requisito_de_un_cliente_no_cuenta_a_toda_empresa
 
     assert fila["alcanzadas"] == len(aplican) == 1
     assert str(desvinculada) not in aplican
-    assert fila["universo"] == await conn.fetchval("SELECT count(*) FROM public.carriers")
+    # L6: el universo son las empresas activas (en alcance), no todas.
+    assert fila["universo"] == await conn.fetchval(
+        "SELECT count(*) FROM public.carriers WHERE operational_status = 'ACTIVE'")
     assert fila["universo"] > fila["alcanzadas"]
 
 

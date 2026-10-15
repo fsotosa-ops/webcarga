@@ -2,7 +2,10 @@
 (H2.2). Alta/baja de la asignación vive en routers/carriers.py."""
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Literal, Optional
+
+from asyncpg.exceptions import ForeignKeyViolationError
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require, require_fields
@@ -12,10 +15,40 @@ from ..services.assignment_guard import AssignmentSubjects, enforce_assignment
 from ..services.audit import log_change, record_manual_edit
 from ..services.entity_summary import asset_summary
 from ..services import identity_corrections
+from ..services.directory_lists import directory_list
+from ..services.entity_profile import activity, assignment_history
 from ..services.entity_documents import entity_document_rows, entity_documents
 from ..schemas.identity import IdentityCorrectionBody
 
 router = APIRouter(prefix="/assets", tags=["assets"])
+
+
+def _unknown_asset_type(exc: ForeignKeyViolationError) -> Exception:
+    """La FK de public.asset_types es la validación del tipo: un 422 legible, no un 500."""
+    if exc.constraint_name == "assets_asset_type_fkey":
+        return HTTPException(422, "Tipo de equipo desconocido")
+    return exc
+
+
+@router.get("/types")
+async def list_asset_types(pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
+    """El catálogo de tipos de equipo (public.asset_types), en su orden."""
+    rows = await pool.fetch("SELECT code, label, is_power_unit FROM public.asset_types ORDER BY sort_order")
+    return [dict(r) for r in rows]
+
+
+@router.get("")
+async def list_assets(
+    q: str = Query(""),
+    flag: Optional[Literal["without_carrier", "inactive", "without_type"]] = Query(None),
+    documents: Optional[Literal["pending", "overdue", "expiring", "missing"]] = Query(None),
+    offset: int = Query(0, ge=0),
+    page_size: int = Query(50, ge=1, le=200),
+    pool=Depends(get_pool),
+    _=Depends(require(Permission.DIRECTORY_READ)),
+):
+    """Directorio › Equipos (D4): todos, con filtros y paginado. Ver services/directory_lists.py."""
+    return await directory_list(pool, "ASSET", q=q, flag=flag, documents=documents, limit=page_size, offset=offset)
 
 
 @router.get("/{asset_id}/summary")
@@ -67,37 +100,40 @@ async def get_asset(asset_id: str, pool=Depends(get_pool), _=Depends(require(Per
 async def create_asset(body: AssetCreateBody, pool=Depends(get_pool), user=Depends(require(Permission.DIRECTORY_EDIT))):
     """Alta de vehículo/rampla como master data — trg_reconcile_new_asset
     siembra los compliance_records MISSING al insertar."""
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            existing = await conn.fetchval(
-                "SELECT id FROM public.assets WHERE license_plate = $1", body.license_plate,
-            )
-            if existing:
-                raise HTTPException(409, f"Ya existe un activo con patente {body.license_plate}")
-            # `is_manual_override` se marca SÓLO si una persona declaró la
-            # clasificación: es lo único que hay que proteger de la ingesta.
-            # Marcarlo siempre dejaría a Mage sin poder clasificar los
-            # vehículos que nadie clasificó, que son la mayoría.
-            row = await conn.fetchrow(
-                """
-                INSERT INTO public.assets
-                    (license_plate, asset_type, operational_status, manufacture_year,
-                     is_manual_override, overridden_by, overridden_at,
-                     fleet_service_type_id, webcarga_operation_type_id)
-                VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $5 THEN NOW() END, $7, $8)
-                RETURNING id, license_plate, asset_type, operational_status, manufacture_year,
-                          created_at, fleet_service_type_id, webcarga_operation_type_id,
-                          is_manual_override
-                """,
-                body.license_plate, body.asset_type, body.operational_status, body.manufacture_year,
-                body.declara_clasificacion(),
-                user["sub"] if body.declara_clasificacion() else None,
-                body.fleet_service_type_id, body.webcarga_operation_type_id,
-            )
-            await log_change(
-                conn, actor=user["sub"], entity_type="ASSET", entity_id=row["id"],
-                action="create", source="api",
-            )
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                existing = await conn.fetchval(
+                    "SELECT id FROM public.assets WHERE license_plate = $1", body.license_plate,
+                )
+                if existing:
+                    raise HTTPException(409, f"Ya existe un activo con patente {body.license_plate}")
+                # `is_manual_override` se marca SÓLO si una persona declaró la
+                # clasificación: es lo único que hay que proteger de la ingesta.
+                # Marcarlo siempre dejaría a Mage sin poder clasificar los
+                # vehículos que nadie clasificó, que son la mayoría.
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO public.assets
+                        (license_plate, asset_type, operational_status, manufacture_year,
+                         is_manual_override, overridden_by, overridden_at,
+                         fleet_service_type_id, webcarga_operation_type_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $5 THEN NOW() END, $7, $8)
+                    RETURNING id, license_plate, asset_type, operational_status, manufacture_year,
+                              created_at, fleet_service_type_id, webcarga_operation_type_id,
+                              is_manual_override
+                    """,
+                    body.license_plate, body.asset_type, body.operational_status, body.manufacture_year,
+                    body.declara_clasificacion(),
+                    user["sub"] if body.declara_clasificacion() else None,
+                    body.fleet_service_type_id, body.webcarga_operation_type_id,
+                )
+                await log_change(
+                    conn, actor=user["sub"], entity_type="ASSET", entity_id=row["id"],
+                    action="create", source="api",
+                )
+    except ForeignKeyViolationError as exc:
+        raise _unknown_asset_type(exc) from exc
     return dict(row)
 
 
@@ -111,45 +147,48 @@ async def patch_asset(
     clears_type = "webcarga_operation_type_id" in body.model_fields_set and body.webcarga_operation_type_id is None
     require_fields(user, {**body.model_dump(exclude_none=True),
                           **({"webcarga_operation_type_id": None} if clears_type else {})}, ASSET_FIELD_PERMISSIONS)
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            current = await conn.fetchrow(
-                "SELECT asset_type, operational_status, manufacture_year, "
-                "fleet_service_type_id, webcarga_operation_type_id "
-                "FROM public.assets WHERE id = $1", asset_id,
-            )
-            if not current:
-                raise HTTPException(404, "Activo no encontrado")
-
-            touched = [
-                f for f in (
-                    "asset_type", "operational_status", "manufacture_year",
-                    "fleet_service_type_id", "webcarga_operation_type_id",
-                ) if getattr(body, f) is not None
-            ] + (["webcarga_operation_type_id"] if clears_type else [])
-            if not touched:
-                raise HTTPException(422, "Ningún campo enviado")
-
-            await conn.execute(
-                """
-                UPDATE public.assets SET
-                    asset_type = COALESCE($2, asset_type),
-                    operational_status = COALESCE($3, operational_status),
-                    manufacture_year = COALESCE($4, manufacture_year),
-                    fleet_service_type_id = COALESCE($5::uuid, fleet_service_type_id),
-                    webcarga_operation_type_id = CASE WHEN $7 THEN NULL
-                        ELSE COALESCE($6::uuid, webcarga_operation_type_id) END
-                WHERE id = $1
-                """,
-                asset_id, body.asset_type, body.operational_status, body.manufacture_year,
-                body.fleet_service_type_id, body.webcarga_operation_type_id, clears_type,
-            )
-            for field in touched:
-                await record_manual_edit(
-                    conn, table="assets", where={"id": asset_id}, actor=user["sub"],
-                    entity_type="ASSET", entity_id=asset_id, action="update", field=field,
-                    old_value=current[field], new_value=getattr(body, field),
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                current = await conn.fetchrow(
+                    "SELECT asset_type, operational_status, manufacture_year, "
+                    "fleet_service_type_id, webcarga_operation_type_id "
+                    "FROM public.assets WHERE id = $1", asset_id,
                 )
+                if not current:
+                    raise HTTPException(404, "Activo no encontrado")
+
+                touched = [
+                    f for f in (
+                        "asset_type", "operational_status", "manufacture_year",
+                        "fleet_service_type_id", "webcarga_operation_type_id",
+                    ) if getattr(body, f) is not None
+                ] + (["webcarga_operation_type_id"] if clears_type else [])
+                if not touched:
+                    raise HTTPException(422, "Ningún campo enviado")
+
+                await conn.execute(
+                    """
+                    UPDATE public.assets SET
+                        asset_type = COALESCE($2, asset_type),
+                        operational_status = COALESCE($3, operational_status),
+                        manufacture_year = COALESCE($4, manufacture_year),
+                        fleet_service_type_id = COALESCE($5::uuid, fleet_service_type_id),
+                        webcarga_operation_type_id = CASE WHEN $7 THEN NULL
+                            ELSE COALESCE($6::uuid, webcarga_operation_type_id) END
+                    WHERE id = $1
+                    """,
+                    asset_id, body.asset_type, body.operational_status, body.manufacture_year,
+                    body.fleet_service_type_id, body.webcarga_operation_type_id, clears_type,
+                )
+                for field in touched:
+                    await record_manual_edit(
+                        conn, table="assets", where={"id": asset_id}, actor=user["sub"],
+                        entity_type="ASSET", entity_id=asset_id, action="update", field=field,
+                        old_value=current[field], new_value=getattr(body, field),
+                    )
+    except ForeignKeyViolationError as exc:
+        raise _unknown_asset_type(exc) from exc
     return await get_asset(asset_id, pool, user)
 
 
@@ -268,6 +307,18 @@ async def correct_asset_identity(
         async with conn.transaction():
             value = await identity_corrections.correct_asset_plate(conn, asset_id, body.value, body.reason, actor=user["sub"])
     return {"license_plate": value}
+
+
+@router.get("/{asset_id}/assignments")
+async def get_asset_assignments(asset_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
+    """Dónde trabajó (D4): los períodos de empresa, el vigente primero."""
+    return await assignment_history(pool, "ASSET", asset_id)
+
+
+@router.get("/{asset_id}/activity")
+async def get_asset_activity(asset_id: str, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
+    """La tarjeta "Actividad" de la ficha (D4)."""
+    return await activity(pool, "ASSET", asset_id)
 
 
 @router.get("/{asset_id}/compliance-records")

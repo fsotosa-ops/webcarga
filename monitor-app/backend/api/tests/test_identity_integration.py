@@ -12,7 +12,7 @@ import uuid
 import pytest
 
 from app.routers.carriers import buscar_en_el_directorio, list_carriers
-from app.routers.drivers import list_drivers
+from app.routers.drivers import search_drivers
 from app.services.document_matcher import EntityUniverse, PendingOwner, match_document, match_owner, Catalog, RequirementAlias
 from app.utils.identity import canonical_plate, canonical_rut
 from tests.conftest import PoolDeUnaConexion
@@ -79,7 +79,7 @@ async def test_rut_de_conductor_con_puntos_en_drivers(conexion_revertida):
     driver = str(await conn.fetchval(
         "INSERT INTO public.drivers (full_name, tax_id, operational_status) VALUES ($1, '10000004-0', 'ACTIVE') RETURNING id",
         f"ZZ-TEST-D1 Conductor {uuid.uuid4().hex[:6]}"))
-    filas = await list_drivers(q="10.000.004-0", limit=50, pool=PoolDeUnaConexion(conn), _=None)
+    filas = await search_drivers(q="10.000.004-0", limit=50, pool=PoolDeUnaConexion(conn), _=None)
     assert driver in {str(r["driver_id"]) for r in filas}
 
 

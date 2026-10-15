@@ -9,7 +9,7 @@ import pytest
 
 from app.routers.assets import get_asset_summary
 from app.routers.carriers import buscar_en_el_directorio
-from app.routers.drivers import get_driver_summary, list_drivers
+from app.routers.drivers import get_driver_summary, search_drivers
 from tests.conftest import PoolDeUnaConexion
 from tests.conftest import asignacion_previa
 
@@ -47,7 +47,7 @@ async def test_la_vista_rapida_dice_que_la_empresa_esta_de_baja(conexion_reverti
 async def test_la_busqueda_del_monitor_trae_la_empresa_y_su_estado(conexion_revertida):
     conn = conexion_revertida
     f = await _flota_de_empresa_de_baja(conn)
-    filas = await list_drivers(q=f"Conductor {f['sufijo']}", limit=10, pool=PoolDeUnaConexion(conn), _=None)
+    filas = await search_drivers(q=f"Conductor {f['sufijo']}", limit=10, pool=PoolDeUnaConexion(conn), _=None)
     assert [(r["carrier_id"], r["carrier_operational_status"]) for r in filas] == [(f["carrier"], "INACTIVE")]
 
 

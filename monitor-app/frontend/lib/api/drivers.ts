@@ -1,6 +1,10 @@
-import type { ComplianceRecord, Contact, Driver, DriverPickCandidate, DriverSearchResult, OperationalStatus } from '@/lib/types'
+import type {
+  AssignmentPeriod, ComplianceRecord, Contact, Driver, DriverPickCandidate, DriverSearchResult,
+  EntityActivity, FleetListParams, FleetListResponse, OperationalStatus,
+} from '@/lib/types'
 import type { ContactCreateBody } from './carriers'
 import { apiFetch } from './client'
+import { fleetListQuery } from './fleet-list-query'
 
 export type DriverCreateBody = {
   tax_id:              string
@@ -33,8 +37,12 @@ export type DriverCreateResult = {
 }
 
 export const driversApi = {
+  /** Directorio › Conductores (D4): todos, con filtros y paginado. */
+  list: (p: FleetListParams<'without_carrier' | 'inactive' | 'without_origin'> = {}) =>
+    apiFetch<FleetListResponse>(`/api/v1/drivers?${fleetListQuery(p)}`),
+
   search: (q: string, limit = 10) =>
-    apiFetch<DriverSearchResult[]>(`/api/v1/drivers?q=${encodeURIComponent(q)}&limit=${limit}`),
+    apiFetch<DriverSearchResult[]>(`/api/v1/drivers/search?q=${encodeURIComponent(q)}&limit=${limit}`),
 
   /** HU-06 (Fase 3): candidatos por similitud de texto contra un nombre
    *  crudo del TMS — usado cuando el viaje no cruza por nombre exacto. */
@@ -52,6 +60,13 @@ export const driversApi = {
 
   listComplianceRecords: (id: string) =>
     apiFetch<ComplianceRecord[]>(`/api/v1/drivers/${id}/compliance-records`),
+
+  /** Dónde trabajó (D4): los períodos de empresa, el vigente primero. */
+  assignments: (id: string) =>
+    apiFetch<AssignmentPeriod[]>(`/api/v1/drivers/${id}/assignments`),
+
+  activity: (id: string) =>
+    apiFetch<EntityActivity>(`/api/v1/drivers/${id}/activity`),
 
   /** Corregir el RUT con motivo (D3): queda en la auditoría. */
   correctRut: (id: string, value: string, reason: string) =>

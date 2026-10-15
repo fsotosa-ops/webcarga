@@ -3,28 +3,28 @@
 import { CorrectIdentityModal } from './CorrectIdentityModal'
 import { certificationRequestsApi } from '@/lib/api/certificationRequests'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
-import { useEffect, useRef, useState } from 'react'
+import { useAssetTypes } from '@/hooks/useAssetTypes'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
-import { Check, Loader2, X, ArrowRightLeft, Truck, Trash2, User, UserX, ExternalLink } from 'lucide-react'
+import { Check, Loader2, ArrowRightLeft, Truck, Trash2, User, UserX, ExternalLink } from 'lucide-react'
 import type { Asset } from '@/lib/types'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
 import { taxonomiesApi } from '@/lib/api/config'
+import { taxonomyKey } from '@/lib/queries/taxonomies'
 import { directoryKeys, invalidateDirectory } from '@/lib/queries/directorio'
 import { DocumentChecklist } from './DocumentChecklist'
+import { DetailShell, type DetailVariant } from './DetailShell'
 import { documentStateCounts } from '@/lib/states'
 import { CompletionRing } from './CompletionRing'
 import { BajaReasonModal } from './BajaReasonModal'
 import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
 import { complianceRecordsToChecklistItems } from '@/lib/utils/complianceChecklist'
 
-const ASSET_TYPE_OPTIONS: { value: AssetType; label: string }[] = [
-  { value: 'TRACTOCAMION', label: 'Tracto' }, { value: 'RAMPLA', label: 'Rampla' },
-]
-
 interface Props {
   asset:           Asset | null
-  carrierId:       string
+  /** Null en la ficha propia de alguien sin empresa (D4). */
+  carrierId:       string | null
   /** Para nombrar la empresa en la confirmación de "Quitar del roster". */
   carrierName?:    string
   canEdit:         boolean
@@ -39,10 +39,16 @@ interface Props {
   /** Dar de baja y reactivar (`directory.fleet_status`): Operaciones lo tiene
    *  aunque no edite la ficha (D-e, 12/10). */
   canChangeFleetStatus: boolean
-  onClose:         () => void
+  /** `dialog` sobre la ficha de su empresa; `page` en su ficha propia (D4). */
+  variant?:        DetailVariant
+  /** Lo que la ficha propia agrega a la derecha: dónde trabaja y su actividad. */
+  extra?:          ReactNode
+  /** Solo en el modal. */
+  onClose?:        () => void
   onPatch:         (id: string, body: AssetPatchBody) => Promise<void>
-  onRemove:        () => Promise<void>
-  onTransferClick: () => void
+  /** Sin empresa no hay roster del que quitar. */
+  onRemove?:       () => Promise<void>
+  onTransferClick?: () => void
   /** Roster de conductores de la misma empresa — para el picker de
    *  "conductor habitual" (Fase 1 del hardening del Diario, 2026-07-18).
    *  Forma mínima a propósito: acepta tanto Driver[] como
@@ -66,14 +72,13 @@ interface Props {
  *  exige motivo—, así que un equipo importado por la ingesta sin clasificar
  *  bloqueaba el cierre sin que hubiera dónde arreglarlo. Pablo, 04/09: *"no
  *  puedo definir qué tractoreo, entonces no me lo muestra aquí"*. */
-export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, canChangeFleetStatus, canUploadDocuments, canReviewDocuments, canRequestDocuments = false, canCorrectIdentity = false, onClose, onPatch, onRemove, onTransferClick, drivers = [] }: Props) {
+export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, canChangeFleetStatus, canUploadDocuments, canReviewDocuments, canRequestDocuments = false, canCorrectIdentity = false, variant = 'dialog', extra, onClose, onPatch, onRemove, onTransferClick, drivers = [] }: Props) {
   const open = !!asset
-  const panelRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
   const [confirmingRemove, setConfirmingRemove] = useState(false)
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
   const [draft, setDraft] = useState<{ asset_type: AssetType; manufacture_year: string; webcarga_operation_type_id: string }>(
-    { asset_type: 'TRACTOCAMION', manufacture_year: '', webcarga_operation_type_id: '' },
+    { asset_type: '', manufacture_year: '', webcarga_operation_type_id: '' },
   )
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -82,6 +87,7 @@ export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, can
   const [driverErr, setDriverErr] = useState<string | null>(null)
 
   const subirDocumento = useSubirDocumento()
+  const { types: assetTypes } = useAssetTypes()
   const [correcting, setCorrecting] = useState(false)
 
   const complianceQuery = useQuery({
@@ -91,7 +97,7 @@ export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, can
   })
 
   const gestionesQuery = useQuery({
-    queryKey: ['taxonomias', 'WEBCARGA_OPERATION_TYPE'],
+    queryKey: taxonomyKey('WEBCARGA_OPERATION_TYPE'),
     queryFn: () => taxonomiesApi.list('WEBCARGA_OPERATION_TYPE'),
     staleTime: 5 * 60_000,
   })
@@ -108,41 +114,13 @@ export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, can
     // en el useState inicial. Es la clase de bug que ya apareció tres veces en
     // este frontend (ContactCard, TransporterDocumentsPanel).
     setDraft({
-      asset_type: asset.asset_type as AssetType,
+      asset_type: asset.asset_type,
       manufacture_year: asset.manufacture_year ? String(asset.manufacture_year) : '',
       webcarga_operation_type_id: asset.webcarga_operation_type_id ?? '',
     })
     setErr(null)
     setDriverPick(''); setDriverErr(null)
   }, [asset])
-
-  useEffect(() => {
-    if (!open) return
-    const previouslyFocused = document.activeElement as HTMLElement | null
-    panelRef.current?.focus()
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { onClose(); return }
-      if (e.key === 'Tab' && panelRef.current) {
-        const focusables = panelRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        )
-        if (!focusables.length) return
-        const first = focusables[0]
-        const last  = focusables[focusables.length - 1]
-        const active = document.activeElement
-        if (e.shiftKey && (active === first || active === panelRef.current)) {
-          e.preventDefault(); last.focus()
-        } else if (!e.shiftKey && active === last) {
-          e.preventDefault(); first.focus()
-        }
-      }
-    }
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      previouslyFocused?.focus?.()
-    }
-  }, [open, onClose])
 
   // El valor actual siempre es una opción, aunque el catálogo todavía no haya
   // llegado o la fila se haya desactivado en Configuración: un <select> cuyo
@@ -217,260 +195,247 @@ export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, can
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={onClose} aria-hidden="true" />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div
-          ref={panelRef}
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Detalle de ${asset.license_plate}`}
-          tabIndex={-1}
-          className="relative bg-white rounded-2xl shadow-2xl w-[92vw] max-w-6xl h-[85vh] overflow-hidden flex flex-col sm:flex-row focus:outline-none animate-modal-in"
-        >
-          <button onClick={onClose} aria-label="Cerrar detalle" className="absolute top-4 right-4 z-10 text-gray-400 hover:text-gray-600">
-            <X size={18} />
-          </button>
-
-          <div className="sm:w-[320px] shrink-0 bg-gray-50 border-b sm:border-b-0 sm:border-r border-border overflow-y-auto p-5">
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-11 h-11 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center shrink-0">
-                <Truck size={18} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-text-primary font-mono truncate">{asset.license_plate}</p>
-                {canCorrectIdentity && (
-                  <button type="button" onClick={() => setCorrecting(true)}
-                          className="text-etiqueta font-semibold text-accion hover:underline">
-                    Corregir patente
-                  </button>
-                )}
-              </div>
+      <DetailShell variant={variant} label={`Detalle de ${asset.license_plate}`} onClose={onClose}>
+        <div className="sm:w-[320px] shrink-0 bg-gray-50 border-b sm:border-b-0 sm:border-r border-border overflow-y-auto p-5">
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-11 h-11 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center shrink-0">
+              <Truck size={18} />
             </div>
-
-            <div className="flex items-center gap-3 mb-5">
-              <CompletionRing ok={ok} total={total} />
-              <p className="text-[11px] text-gray-500">{ok} de {total}<br />documentos al día</p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 mb-2">
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-informativo uppercase tracking-wide">Tipo de equipo</label>
-                <select
-                  aria-label="Tipo de equipo"
-                  value={draft.asset_type}
-                  disabled={!canEdit}
-                  onChange={e => setDraft(d => ({ ...d, asset_type: e.target.value as AssetType }))}
-                  className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-bg-main"
-                >
-                  {ASSET_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-informativo uppercase tracking-wide">Año</label>
-                <input
-                  type="number"
-                  aria-label="Año del vehículo"
-                  min={1950}
-                  max={2100}
-                  placeholder="—"
-                  value={draft.manufacture_year}
-                  disabled={!canEdit}
-                  onChange={e => setDraft(d => ({ ...d, manufacture_year: e.target.value }))}
-                  className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-bg-main"
-                />
-              </div>
-              <div className="space-y-1 col-span-2">
-                <label className="text-[10px] font-bold text-informativo uppercase tracking-wide">Tipo Vehículo</label>
-                {asset.fleet_service_type_label ? (
-                  <span
-                    className="inline-block text-xs font-semibold px-2 py-1 rounded-full"
-                    style={{
-                      backgroundColor: asset.fleet_service_type_bg_color ?? undefined,
-                      color: asset.fleet_service_type_text_color ?? undefined,
-                    }}
-                  >
-                    {asset.fleet_service_type_label}
-                  </span>
-                ) : (
-                  <p className="text-xs text-gray-400 italic">Sin clasificar</p>
-                )}
-              </div>
-              <div className="space-y-1 col-span-2">
-                <label className="text-[10px] font-bold text-informativo uppercase tracking-wide" htmlFor="tipo-operacion">
-                  Tipo de operación
-                </label>
-                <select
-                  id="tipo-operacion"
-                  aria-label="Tipo de operación"
-                  value={draft.webcarga_operation_type_id}
-                  disabled={!canEdit}
-                  onChange={e => setDraft(d => ({ ...d, webcarga_operation_type_id: e.target.value }))}
-                  className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-bg-main"
-                >
-                  <option value="">Sin clasificar</option>
-                  {gestiones.map(g => (
-                    <option key={g.id} value={g.id}>{g.label}</option>
-                  ))}
-                </select>
-                {/* Sólo cuando ya sabemos que está sin clasificar. Mientras el
-                    catálogo viaja, el select tiene el valor pero todavía no la
-                    opción, y afirmar acá que bloquea el cierre sería mentir
-                    sobre un equipo que sí está clasificado. */}
-                {!draft.webcarga_operation_type_id && !gestionesQuery.isLoading && (
-                  <p className="text-etiqueta text-status-incidente">
-                    Sin esto el equipo cuenta como Tractoreo y bloquea el cierre del día hasta que alguien le ponga un motivo.
-                  </p>
-                )}
-              </div>
-            </div>
-            {canEdit && (
-              <button
-                type="button"
-                onClick={handleSaveDatos}
-                disabled={saving}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-50"
-              >
-                {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                Guardar
-              </button>
-            )}
-            {err && <p className="text-xs text-red-500 mt-1">{err}</p>}
-
-            {/* Conductor habitual — Fase 1 del hardening del Diario
-                (2026-07-18). El Diario resuelve driver_id automáticamente
-                para cualquier viaje nuevo que reporte esta patente, sin
-                depender del bootstrap histórico de raw_bd_ot — acá se
-                asigna UNA vez por vehículo, no viaje por viaje. */}
-            <div className="mt-5 pt-4 border-t border-border/60">
-              <label className="text-[10px] font-bold text-informativo uppercase tracking-wide">Conductor habitual</label>
-              {driverAssignmentQuery.isPending ? (
-                <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1.5">
-                  <Loader2 size={12} className="animate-spin" /> Cargando…
-                </p>
-              ) : driverAssignmentQuery.data ? (
-                <div className="flex items-center justify-between gap-2 mt-1.5">
-                  <span className="flex items-center gap-1.5 text-xs text-text-primary min-w-0">
-                    <User size={13} className="text-gray-400 shrink-0" />
-                    <span className="truncate">{driverAssignmentQuery.data.driver_name}</span>
-                  </span>
-                  {canEdit && (
-                    <button
-                      type="button"
-                      aria-label="Quitar conductor habitual"
-                      onClick={handleUnassignDriver}
-                      disabled={assigningDriver}
-                      className="text-gray-400 hover:text-red-500 shrink-0 disabled:opacity-50"
-                    >
-                      {assigningDriver ? <Loader2 size={13} className="animate-spin" /> : <UserX size={13} />}
-                    </button>
-                  )}
-                </div>
-              ) : canEdit ? (
-                <div className="flex items-center gap-1.5 mt-1.5">
-                  <select
-                    aria-label="Asignar conductor habitual"
-                    value={driverPick}
-                    onChange={e => setDriverPick(e.target.value)}
-                    className="flex-1 min-w-0 text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
-                  >
-                    <option value="">Sin asignar</option>
-                    {drivers.filter(d => d.operational_status === 'ACTIVE').map(d => <option key={d.id} value={d.id}>{d.full_name}</option>)}
-                  </select>
-                  <button
-                    type="button"
-                    aria-label="Confirmar conductor habitual"
-                    onClick={handleAssignDriver}
-                    disabled={!driverPick || assigningDriver}
-                    className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-40"
-                  >
-                    {assigningDriver ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-                  </button>
-                </div>
-              ) : (
-                <p className="text-xs text-gray-400 mt-1.5">Sin asignar</p>
-              )}
-              {driverErr && <p className="text-xs text-red-500 mt-1">{driverErr}</p>}
-            </div>
-
-            <div className="mt-5 space-y-2">
-              {canEdit && (
-                <button
-                  type="button"
-                  onClick={onTransferClick}
-                  className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-gray-600 border border-border hover:border-accent hover:text-accent rounded-lg px-4 py-2.5 transition-colors"
-                >
-                  <ArrowRightLeft size={14} /> Transferir a otra empresa
-                </button>
-              )}
-              {canChangeFleetStatus && (
-                asset.operational_status === 'INACTIVE' ? (
-                  <button
-                    type="button"
-                    onClick={handleReactivate}
-                    className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-gray-600 border border-border hover:border-accent hover:text-accent rounded-lg px-4 py-2.5 transition-colors"
-                  >
-                    Reactivar
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setBajaModalOpen(true)}
-                    className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-4 py-2.5 transition-colors"
-                  >
-                    Dar de baja
-                  </button>
-                )
-              )}
-              {canEdit && (
-                <button
-                  type="button"
-                  onClick={() => setConfirmingRemove(true)}
-                  className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-4 py-2.5 transition-colors"
-                >
-                  <Trash2 size={14} />
-                  Quitar del roster
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-text-primary font-mono truncate">{asset.license_plate}</p>
+              {canCorrectIdentity && (
+                <button type="button" onClick={() => setCorrecting(true)}
+                        className="text-etiqueta font-semibold text-accion hover:underline">
+                  Corregir patente
                 </button>
               )}
             </div>
           </div>
 
-          <div className="flex-1 min-w-0 overflow-y-auto p-6">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-[10px] font-bold text-informativo uppercase tracking-wide">Documentación</p>
+          <div className="flex items-center gap-3 mb-5">
+            <CompletionRing ok={ok} total={total} />
+            <p className="text-[11px] text-gray-500">{ok} de {total}<br />documentos al día</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-informativo uppercase tracking-wide">Tipo de equipo</label>
+              <select
+                aria-label="Tipo de equipo"
+                value={draft.asset_type}
+                disabled={!canEdit}
+                onChange={e => setDraft(d => ({ ...d, asset_type: e.target.value as AssetType }))}
+                className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-bg-main"
+              >
+                {assetTypes.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
+              </select>
             </div>
-            {complianceQuery.isPending ? (
-              <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>
-            ) : (
-              /* HU-04: la ficha vuelve a poder cargar. La capacidad ya estaba
-                 en DocumentChecklist — quedó apagada en la Ronda 88, cuando la
-                 carga se centralizó en Certificación. */
-              <DocumentChecklist
-                items={items}
-                canUpload={canUploadDocuments}
-                canReview={canReviewDocuments}
-                hideCounter
-                /* EL MISMO hook que Certificación. Antes esto llamaba a
-                   la puerta de la Bandeja, que sube ANTES de clasificar: cada
-                   rechazo por falta de fecha dejaba el archivo varado en la
-                   bandeja y el requisito vacío. Dos implementaciones de
-                   "subir un documento a un requisito" es como este módulo
-                   terminó con dos caminos que se estorbaban. */
-                onUpload={async (recordId, file, datos) => {
-                  await subirDocumento(recordId, file, datos)
-                  await complianceQuery.refetch()
-                }}
-                carrierId={carrierId}
-                onReassigned={() => complianceQuery.refetch()}
-                /* Operaciones no sube: pide (Entrega B). */
-                onRequest={canRequestDocuments ? async item => {
-                  await certificationRequestsApi.create({ entity_type: 'ASSET', entity_id: asset!.id, requirement_id: item.requirement_id })
-                  await complianceQuery.refetch()
-                } : undefined}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-informativo uppercase tracking-wide">Año</label>
+              <input
+                type="number"
+                aria-label="Año del vehículo"
+                min={1950}
+                max={2100}
+                placeholder="—"
+                value={draft.manufacture_year}
+                disabled={!canEdit}
+                onChange={e => setDraft(d => ({ ...d, manufacture_year: e.target.value }))}
+                className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-bg-main"
               />
+            </div>
+            <div className="space-y-1 col-span-2">
+              <label className="text-[10px] font-bold text-informativo uppercase tracking-wide">Tipo Vehículo</label>
+              {asset.fleet_service_type_label ? (
+                <span
+                  className="inline-block text-xs font-semibold px-2 py-1 rounded-full"
+                  style={{
+                    backgroundColor: asset.fleet_service_type_bg_color ?? undefined,
+                    color: asset.fleet_service_type_text_color ?? undefined,
+                  }}
+                >
+                  {asset.fleet_service_type_label}
+                </span>
+              ) : (
+                <p className="text-xs text-gray-400 italic">Sin clasificar</p>
+              )}
+            </div>
+            <div className="space-y-1 col-span-2">
+              <label className="text-[10px] font-bold text-informativo uppercase tracking-wide" htmlFor="tipo-operacion">
+                Tipo de operación
+              </label>
+              <select
+                id="tipo-operacion"
+                aria-label="Tipo de operación"
+                value={draft.webcarga_operation_type_id}
+                disabled={!canEdit}
+                onChange={e => setDraft(d => ({ ...d, webcarga_operation_type_id: e.target.value }))}
+                className="w-full text-xs border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white disabled:bg-bg-main"
+              >
+                <option value="">Sin clasificar</option>
+                {gestiones.map(g => (
+                  <option key={g.id} value={g.id}>{g.label}</option>
+                ))}
+              </select>
+              {/* Sólo cuando ya sabemos que está sin clasificar. Mientras el
+                  catálogo viaja, el select tiene el valor pero todavía no la
+                  opción, y afirmar acá que bloquea el cierre sería mentir
+                  sobre un equipo que sí está clasificado. */}
+              {!draft.webcarga_operation_type_id && !gestionesQuery.isLoading && (
+                <p className="text-etiqueta text-status-incidente">
+                  Sin esto el equipo cuenta como Tractoreo y bloquea el cierre del día hasta que alguien le ponga un motivo.
+                </p>
+              )}
+            </div>
+          </div>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={handleSaveDatos}
+              disabled={saving}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-50"
+            >
+              {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+              Guardar
+            </button>
+          )}
+          {err && <p className="text-xs text-red-500 mt-1">{err}</p>}
+
+          {/* Conductor habitual — Fase 1 del hardening del Diario
+              (2026-07-18). El Diario resuelve driver_id automáticamente
+              para cualquier viaje nuevo que reporte esta patente, sin
+              depender del bootstrap histórico de raw_bd_ot — acá se
+              asigna UNA vez por vehículo, no viaje por viaje. */}
+          <div className="mt-5 pt-4 border-t border-border/60">
+            <label className="text-[10px] font-bold text-informativo uppercase tracking-wide">Conductor habitual</label>
+            {driverAssignmentQuery.isPending ? (
+              <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1.5">
+                <Loader2 size={12} className="animate-spin" /> Cargando…
+              </p>
+            ) : driverAssignmentQuery.data ? (
+              <div className="flex items-center justify-between gap-2 mt-1.5">
+                <span className="flex items-center gap-1.5 text-xs text-text-primary min-w-0">
+                  <User size={13} className="text-gray-400 shrink-0" />
+                  <span className="truncate">{driverAssignmentQuery.data.driver_name}</span>
+                </span>
+                {canEdit && (
+                  <button
+                    type="button"
+                    aria-label="Quitar conductor habitual"
+                    onClick={handleUnassignDriver}
+                    disabled={assigningDriver}
+                    className="text-gray-400 hover:text-red-500 shrink-0 disabled:opacity-50"
+                  >
+                    {assigningDriver ? <Loader2 size={13} className="animate-spin" /> : <UserX size={13} />}
+                  </button>
+                )}
+              </div>
+            ) : canEdit ? (
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <select
+                  aria-label="Asignar conductor habitual"
+                  value={driverPick}
+                  onChange={e => setDriverPick(e.target.value)}
+                  className="flex-1 min-w-0 text-xs border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white"
+                >
+                  <option value="">Sin asignar</option>
+                  {drivers.filter(d => d.operational_status === 'ACTIVE').map(d => <option key={d.id} value={d.id}>{d.full_name}</option>)}
+                </select>
+                <button
+                  type="button"
+                  aria-label="Confirmar conductor habitual"
+                  onClick={handleAssignDriver}
+                  disabled={!driverPick || assigningDriver}
+                  className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-40"
+                >
+                  {assigningDriver ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400 mt-1.5">Sin asignar</p>
+            )}
+            {driverErr && <p className="text-xs text-red-500 mt-1">{driverErr}</p>}
+          </div>
+
+          <div className="mt-5 space-y-2">
+            {canEdit && onTransferClick && (
+              <button
+                type="button"
+                onClick={onTransferClick}
+                className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-gray-600 border border-border hover:border-accent hover:text-accent rounded-lg px-4 py-2.5 transition-colors"
+              >
+                <ArrowRightLeft size={14} /> {carrierId ? 'Transferir a otra empresa' : 'Asignar a una empresa'}
+              </button>
+            )}
+            {canChangeFleetStatus && (
+              asset.operational_status === 'INACTIVE' ? (
+                <button
+                  type="button"
+                  onClick={handleReactivate}
+                  className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-gray-600 border border-border hover:border-accent hover:text-accent rounded-lg px-4 py-2.5 transition-colors"
+                >
+                  Reactivar
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setBajaModalOpen(true)}
+                  className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-4 py-2.5 transition-colors"
+                >
+                  Dar de baja
+                </button>
+              )
+            )}
+            {canEdit && onRemove && (
+              <button
+                type="button"
+                onClick={() => setConfirmingRemove(true)}
+                className="flex items-center justify-center gap-1.5 w-full text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50 rounded-lg px-4 py-2.5 transition-colors"
+              >
+                <Trash2 size={14} />
+                Quitar del roster
+              </button>
             )}
           </div>
         </div>
-      </div>
+
+        <div className="flex-1 min-w-0 overflow-y-auto p-6">
+          {extra}
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[10px] font-bold text-informativo uppercase tracking-wide">Documentación</p>
+          </div>
+          {complianceQuery.isPending ? (
+            <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>
+          ) : (
+            /* HU-04: la ficha vuelve a poder cargar. La capacidad ya estaba
+               en DocumentChecklist — quedó apagada en la Ronda 88, cuando la
+               carga se centralizó en Certificación. */
+            <DocumentChecklist
+              items={items}
+              canUpload={canUploadDocuments}
+              canReview={canReviewDocuments}
+              hideCounter
+              /* EL MISMO hook que Certificación. Antes esto llamaba a
+                 la puerta de la Bandeja, que sube ANTES de clasificar: cada
+                 rechazo por falta de fecha dejaba el archivo varado en la
+                 bandeja y el requisito vacío. Dos implementaciones de
+                 "subir un documento a un requisito" es como este módulo
+                 terminó con dos caminos que se estorbaban. */
+              onUpload={async (recordId, file, datos) => {
+                await subirDocumento(recordId, file, datos)
+                await complianceQuery.refetch()
+              }}
+              carrierId={carrierId ?? undefined}
+              onReassigned={() => complianceQuery.refetch()}
+              /* Operaciones no sube: pide (Entrega B). */
+              onRequest={canRequestDocuments ? async item => {
+                await certificationRequestsApi.create({ entity_type: 'ASSET', entity_id: asset!.id, requirement_id: item.requirement_id })
+                await complianceQuery.refetch()
+              } : undefined}
+            />
+          )}
+        </div>
+      </DetailShell>
       {correcting && asset && (
         <CorrectIdentityModal
           field="patente"
@@ -497,7 +462,7 @@ export function VehicleDetailPanel({ asset, carrierId, carrierName, canEdit, can
         nombreSujeto={asset.license_plate}
         nombreEmpresa={carrierName ?? 'esta empresa'}
         onCancelar={() => setConfirmingRemove(false)}
-        onConfirmar={async () => { await onRemove(); setConfirmingRemove(false) }}
+        onConfirmar={async () => { await onRemove?.(); setConfirmingRemove(false) }}
       />
     </>
   )

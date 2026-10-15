@@ -59,7 +59,15 @@ def test_create_asset_uppercases_plate_and_succeeds():
 
 
 def test_create_asset_rejects_unknown_type():
+    # La lista de tipos vive en public.asset_types: la FK lo rechaza y la API responde 422, no 500.
+    from asyncpg.exceptions import ForeignKeyViolationError
     pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = None
+    fk = ForeignKeyViolationError("asset_type")
+    fk.constraint_name = "assets_asset_type_fkey"
+    conn.fetchrow.side_effect = fk
     client = make_client(pool)
 
     res = client.post("/api/v1/assets", json={"license_plate": "ABCD12", "asset_type": "BICICLETA"})
@@ -268,19 +276,6 @@ def test_patch_asset_can_reclassify():
     assert "webcarga_operation_type_id" in select_sql
     update_sql = conn.execute.call_args_list[0].args[0]
     assert "webcarga_operation_type_id" in update_sql
-
-
-def test_create_asset_rejects_the_retired_placeholder_types():
-    """CAMION/FURGON/OTRO se retiran del contrato ANTES de que la base los
-    prohiba. El orden importa: con el CHECK puesto y el Literal intacto, un
-    POST con CAMION pasaba Pydantic y reventaba contra Postgres con un 500.
-    Un 422 prueba que la validacion corta antes de llegar a la base."""
-    pool = AsyncMock()
-    client = make_client(pool)
-
-    for tipo in ("CAMION", "FURGON", "OTRO"):
-        res = client.post("/api/v1/assets", json={"license_plate": "ABCD12", "asset_type": tipo})
-        assert res.status_code == 422, f"{tipo} deberia dar 422 de Pydantic, no {res.status_code}"
 
 
 def test_patch_asset_audits_uuid_columns_without_blowing_up():

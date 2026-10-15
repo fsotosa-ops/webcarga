@@ -10,6 +10,7 @@ import type { AssignmentWarning, Trip, TripsMeta } from '@/lib/types'
 import { tripsApi, type TripPatch } from '@/lib/api/trips'
 import { driversApi } from '@/lib/api/drivers'
 import { taxonomiesApi } from '@/lib/api/config'
+import { taxonomyKey } from '@/lib/queries/taxonomies'
 import { fmtDT, fmtDate } from '@/lib/utils/datetime'
 import { IndicatorSwitches } from './IndicatorSwitches'
 import { FleetAssignSection, EMPTY_FLEET_ASSIGN_VALUE, type FleetAssignValue } from './FleetAssignSection'
@@ -61,7 +62,7 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
   // mismos que usa la pestana Viajes del Cierre: ahora las dos superficies
   // dicen lo mismo del mismo viaje.
   const motivosDeViaje = useQuery({
-    queryKey: ['taxonomies', 'TRIP_UNASSIGNED_REASON'],
+    queryKey: taxonomyKey('TRIP_UNASSIGNED_REASON'),
     queryFn: () => taxonomiesApi.list('TRIP_UNASSIGNED_REASON'),
     staleTime: 5 * 60_000,
   })

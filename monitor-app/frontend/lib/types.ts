@@ -219,35 +219,7 @@ export type AvailableAssetsResponse = {
   busy:         BusyAsset[]
 }
 
-/** HU-01 (Cierre del Día, Fase 2) — un equipo dentro de la "Vista de flota
- *  del día". `categories` puede traer más de un valor si la empresa tiene
- *  más de un tipo de operación seleccionado (multi-selector, ver Fase 1). */
-export type FleetOverviewEquipment = {
-  asset_id:       string
-  tractor_plate:  string
-  carrier_id:     string
-  carrier_name:   string
-  categories:     ('TRACTOREO' | 'EQUIPO_COMPLETO' | 'SIN_CLASIFICAR')[]
-  con_carga:      boolean
-  trip_id:        string | null
-  client_name:    string | null
-  origin:         string | null
-}
-
-export type FleetOverviewCategory = {
-  category:         'TRACTOREO' | 'EQUIPO_COMPLETO' | 'SIN_CLASIFICAR'
-  assigned:         number
-  unassigned:       number
-  utilization_pct:  number
-}
-
-export type FleetDailyOverviewResponse = {
-  fecha:      string
-  categories: FleetOverviewCategory[]
-  equipment:  FleetOverviewEquipment[]
-}
-
-/** Resultado de GET /drivers?q= — búsqueda general de conductores activos */
+/** Resultado de GET /drivers/search — búsqueda general de conductores activos */
 export type DriverSearchResult = DriverPickCandidate
 
 export type MonitorAlertRules = {
@@ -923,25 +895,16 @@ export type ComplianceSummaryCounts = {
   no_exigible?: number
 }
 
-/** Los dos tipos que existen de verdad. CAMION, FURGON y OTRO eran
- *  placeholders del commit 5955c5f (Empresas/Seguros), anteriores a la
- *  taxonomía real de vehículos —migraciones 20260802–20260804— y nunca
- *  describieron el negocio: cero de los 124 vehículos los usa. El subtipo
- *  fino vive en fleet_service_type_id, que es un catálogo de 10 valores.
+/** El código de un tipo de equipo (chasis). La lista, su etiqueta y si es
+ *  unidad motriz viven en la base (`public.asset_types`, Entrega C 14/10) y se
+ *  leen con `useAssetTypes`: ningún componente escribe los tipos a mano.
  *
  *  Vive acá y no en `lib/api/assets.ts` porque ese archivo ya importa de
- *  este: al revés sería un ciclo. `assets.ts` lo re-exporta, así que los
- *  llamadores que ya lo pedían de ahí siguen funcionando. */
-export type AssetType = 'TRACTOCAMION' | 'RAMPLA'
+ *  este: al revés sería un ciclo. `assets.ts` lo re-exporta. */
+export type AssetType = string
 
-/** Cómo se escribe cada chasis en pantalla. Una sola vez: la misma tabla
- *  estaba copiada en tres componentes, y una etiqueta que se corrige en uno
- *  y no en los otros no rompe nada — sólo hace que la misma flota se llame
- *  distinto según la pantalla. */
-export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
-  TRACTOCAMION: 'Tracto',
-  RAMPLA:       'Rampla',
-}
+/** Una fila del catálogo `public.asset_types`, en su orden. */
+export type AssetTypeRow = { code: AssetType; label: string; is_power_unit: boolean }
 
 /** Las tres entidades del Directorio. La única definición: `EntityKind` de la
  *  vista rápida (`lib/api/entitySummary.ts`) es un alias de esta. */
@@ -2167,3 +2130,40 @@ export type CertificationRequest = {
   created_at:        string
   created_by_name:   string | null
 }
+
+/** Directorio › Conductores y Equipos (Entrega C, 14/10): una lista por objeto. */
+export type DocumentsFilter = 'pending' | 'overdue' | 'expiring' | 'missing'
+
+export type FleetListRow = {
+  id: string
+  full_name: string | null
+  tax_id: string | null
+  license_plate: string | null
+  asset_type: string | null
+  operation_type: string | null
+  operational_status: string
+  carrier: { id: string; name: string; operational_status: string } | null
+  compliance_summary: ComplianceSummary
+}
+
+export type FleetListResponse = {
+  total: number
+  rows: FleetListRow[]
+  facets: { all: number; without_carrier: number; inactive: number; documents_pending: number;
+            without_origin?: number; without_type?: number }
+}
+
+export type FleetListParams<Flag extends string = string> = {
+  q?: string; flag?: Flag | null; documents?: DocumentsFilter | null; offset?: number; pageSize?: number
+}
+
+export type AssignmentPeriod = {
+  carrier_id: string
+  carrier_name: string
+  carrier_status: string
+  valid_from: string | null
+  valid_until: string | null
+  current: boolean
+}
+
+export type EntityActivity = { trips_30d: number; last_trip_date: string | null; last_trip_client: string | null }

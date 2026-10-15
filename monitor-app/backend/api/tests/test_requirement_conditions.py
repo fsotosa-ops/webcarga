@@ -164,7 +164,7 @@ FLOTA = "app.active_fleet"
 DEFINICION_ESPERADA = (
     "SELECT COALESCE( ( SELECT array_agg(DISTINCT t.code) FILTER (WHERE t.code IS NOT NULL) "
     "FROM app.active_fleet af "
-    "JOIN public.assets a ON a.id = af.entity_id AND a.asset_type = 'TRACTOCAMION' "
+    "JOIN public.assets a ON a.id = af.entity_id AND public.is_power_unit(a.asset_type) "
     "JOIN app.status_taxonomies t ON t.id = a.webcarga_operation_type_id "
     "WHERE af.carrier_id = p_carrier_id AND af.entity_type = 'ASSET' ), "
     "(SELECT c.management_types FROM public.carriers c WHERE c.id = p_carrier_id) );"

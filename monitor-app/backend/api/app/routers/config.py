@@ -5,7 +5,6 @@ from pydantic import BaseModel, field_validator, model_validator
 
 from ..auth import get_current_user
 from ..authz import Permission, require
-from ..cache import invalidate_trips_meta_cache
 from ..db import get_pool
 from ..services.reordenamiento import (
     ESTADOS_DEL_TABLERO, MovimientoBody, mover_una_posicion,
@@ -197,7 +196,6 @@ async def patch_status(
     # GUARDAR CUENTA COMO REVISAR: editar y guardar es tomar una decisión, y no
     # hace falta un segundo gesto para dejarla registrada.
     await registrar_revision(pool, "operations", "tms-statuses", status_id, usuario["sub"])
-    await invalidate_trips_meta_cache()
     return dict(row)
 
 
@@ -216,7 +214,6 @@ async def move_status(
     async with pool.acquire() as conn:
         async with conn.transaction():
             await mover_una_posicion(conn, ESTADOS_DEL_TABLERO, status_id, body.direction)
-    await invalidate_trips_meta_cache()
     return [dict(r) for r in await pool.fetch(_SQL_ESTADOS)]
 
 
@@ -319,7 +316,6 @@ async def create_temperature_range(
     # alguien lo mire, porque lo acaba de mirar quien lo creó.
     await registrar_revision(
         pool, "operations", "temperature-ranges", body.cargo_type, usuario["sub"])
-    await invalidate_trips_meta_cache()
     return dict(row)
 
 
@@ -360,7 +356,6 @@ async def patch_temperature_range(
     )
     await registrar_revision(
         pool, "operations", "temperature-ranges", cargo_type, usuario["sub"])
-    await invalidate_trips_meta_cache()
     return dict(row)
 
 
@@ -375,7 +370,6 @@ async def delete_temperature_range(
     )
     if result == "DELETE 0":
         raise HTTPException(404, "Rango de temperatura no encontrado")
-    await invalidate_trips_meta_cache()
     return {"ok": True}
 
 
@@ -419,7 +413,6 @@ async def patch_monitor_alert_rules(
     # formulario entero, y revisarlo es decir "estos siete números están bien".
     await registrar_revision(
         pool, "operations", "alert-thresholds", "reglas", usuario["sub"])
-    await invalidate_trips_meta_cache()
     return dict(row)
 
 

@@ -110,7 +110,7 @@ describe('celdaSeExigeA', () => {
     expect(celdaSeExigeA(requisito({
       applies_to_fleet_service_type_ids: ['t1'],
       alcance: { alcanzadas: 36, universo: 118 },
-    }), VOCABULARIO)).toEqual({ regla: 'Sólo Furgón Congelado', alcance: '36 de 118' })
+    }), VOCABULARIO)).toEqual({ regla: 'Sólo Furgón Congelado', alcance: '36 de 118 activos' })
   })
 
   // `alcance.alcanzadas` cuenta LA CONDICIÓN, no la vigencia: un requisito
@@ -130,7 +130,7 @@ describe('celdaSeExigeA', () => {
     const celda = celdaSeExigeA(requisito({
       target_entity: 'CARRIER', is_active: false, alcance: { alcanzadas: 248, universo: 248 },
     }), VOCABULARIO)
-    expect(celda.alcance).toBe('Alcanzaría a 248 de 248')
+    expect(celda.alcance).toBe('Alcanzaría a 248 de 248 activos')
   })
 
   // Apagar la vigencia no borra la condición guardada: al volver a encenderla
@@ -143,6 +143,6 @@ describe('celdaSeExigeA', () => {
       alcance: { alcanzadas: 36, universo: 118 },
     }), VOCABULARIO)
     expect(celda.regla).toBe('No se exige')
-    expect(celda.alcance).toBe('Alcanzaría a 36 de 118')
+    expect(celda.alcance).toBe('Alcanzaría a 36 de 118 activos')
   })
 })

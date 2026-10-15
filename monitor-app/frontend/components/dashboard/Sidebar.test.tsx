@@ -121,8 +121,10 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
     setup()
 
     const navMobile = await screen.findByRole('navigation', { name: /móvil/i })
-    expect(within(navMobile).getByRole('link', { name: /^empresas$/i }))
+    expect(within(navMobile).getByRole('link', { name: /^certificación$/i }))
       .toHaveAttribute('href', '/dashboard/compliance')
+    expect(within(navMobile).getByRole('link', { name: /^directorio$/i }))
+      .toHaveAttribute('href', '/dashboard/carriers')
     expect(within(navMobile).getByRole('link', { name: /sin clasificar/i }))
       .toHaveAttribute('href', '/dashboard/compliance/inbox')
     expect(within(navMobile).getByRole('link', { name: /^pendientes$/i }))
@@ -139,8 +141,11 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
     nav.ruta = '/dashboard/carriers'
     setup()
 
-    const enlaces = await screen.findAllByRole('link', { name: /directorio/i })
-    expect(enlaces[0]).toHaveAttribute('href', '/dashboard/carriers')
+    // Desde la Entrega C (14/10) es un grupo: Empresas · Conductores · Equipos.
+    expect(await screen.findByRole('button', { name: /directorio/i })).toHaveAttribute('aria-expanded', 'true')
+    const lateral = screen.getByRole('navigation', { name: /principal/i })
+    expect(within(lateral).getByRole('link', { name: /^conductores$/i })).toHaveAttribute('href', '/dashboard/drivers')
+    expect(within(lateral).getByRole('link', { name: /^equipos$/i })).toHaveAttribute('href', '/dashboard/assets')
     // Y estando parado en él, el grupo Certificación NO se abre: ya no es su
     // casa. Antes se abría solo, que era la señal de que estaba adentro.
     expect(await screen.findByRole('button', { name: /certificación/i }))

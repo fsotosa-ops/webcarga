@@ -4,10 +4,12 @@
 import { Truck } from 'lucide-react'
 import { StatusChip } from '@/components/ui/StatusChip'
 import { fleetMemberStyle, isCarrierDeactivated, summaryStyle } from '@/lib/states'
-import { ASSET_TYPE_LABELS, type AssetType, type CarrierAssetRosterItem, type CarrierOperationalStatus } from '@/lib/types'
+import type { CarrierAssetRosterItem, CarrierOperationalStatus } from '@/lib/types'
 
 interface Props {
   vehicle: CarrierAssetRosterItem
+  /** La etiqueta de su tipo, del catálogo (`useAssetTypes` en la página). */
+  typeLabel: string
   /** Estado de la empresa: si está dada de baja, la tarjeta lo dice (bloque 0, 0.9). */
   carrierStatus?: CarrierOperationalStatus
   onOpen:  () => void
@@ -26,7 +28,7 @@ interface Props {
  *  el cierre del día, y la ficha no lo mostraba. Pablo, 04/09: *"en el
  *  directorio debería mostrarte esto, este tractoreo… aquí no dice nada"*.
  *  Cuando falta se dice, porque faltar tiene consecuencia. */
-export function VehicleRosterCard({ vehicle, carrierStatus, onOpen }: Props) {
+export function VehicleRosterCard({ vehicle, typeLabel, carrierStatus, onOpen }: Props) {
   return (
     <button
       type="button"
@@ -40,7 +42,7 @@ export function VehicleRosterCard({ vehicle, carrierStatus, onOpen }: Props) {
         <div className="flex items-center gap-1.5">
           <p className="text-xs font-bold text-text-primary font-mono truncate">{vehicle.license_plate}</p>
           <span className="text-etiqueta font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 shrink-0">
-            {ASSET_TYPE_LABELS[vehicle.asset_type as AssetType] ?? vehicle.asset_type}
+            {typeLabel}
           </span>
           {vehicle.fleet_service_type_label && (
             <span

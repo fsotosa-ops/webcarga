@@ -478,3 +478,20 @@ describe('TripTable — selección para anular', () => {
     expect(screen.queryByText('Eliminado en el TMS')).toBeNull()
   })
 })
+
+describe('TripTable — vista rápida (D4, C10)', () => {
+  it('el conductor y la patente de una fila abren la vista rápida sin abrir el viaje', () => {
+    const onSelect = vi.fn()
+    const onOpenQuickView = vi.fn()
+    render(<TripTable
+      trips={[makeTrip('t1', { driver_id: 'd1', driver_name: 'Vidal Pedro', tractor_asset_id: 'a1', tractor_plate: 'HFVP14' })]}
+      selectedId={null} onSelect={onSelect} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()}
+      onOpenQuickView={onOpenQuickView} />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ver conductor Vidal Pedro' })[0])
+    expect(onOpenQuickView).toHaveBeenLastCalledWith({ kind: 'driver', id: 'd1', label: 'Vidal Pedro' })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ver equipo HFVP14' })[0])
+    expect(onOpenQuickView).toHaveBeenLastCalledWith({ kind: 'asset', id: 'a1', label: 'HFVP14' })
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+})

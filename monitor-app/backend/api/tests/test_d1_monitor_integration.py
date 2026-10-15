@@ -14,7 +14,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.routers.assets import assign_driver_to_asset
-from app.routers.drivers import fuzzy_match_drivers, list_drivers
+from app.routers.drivers import fuzzy_match_drivers, search_drivers
 from app.routers.trips import available_drivers, driver_candidates, get_trip, list_trips
 from tests import d1_subjects as s
 from tests.conftest import USER, PoolDeUnaConexion, cliente_de_prueba
@@ -132,7 +132,7 @@ async def test_drivers_no_duplica_conductor_con_dos_tractos(conexion_revertida):
     await s.usual_driver(conn, nuevo, d, hoy - timedelta(days=3))
     pool = PoolDeUnaConexion(conn)
 
-    busqueda = await list_drivers(q=nombre, limit=10, pool=pool, _=None)
+    busqueda = await search_drivers(q=nombre, limit=10, pool=pool, _=None)
     assert [(str(f["driver_id"]), str(f["tractor_asset_id"])) for f in busqueda] == [(d, nuevo)]
 
     parecidos = await fuzzy_match_drivers(name=nombre, limit=20, pool=pool, _=None)

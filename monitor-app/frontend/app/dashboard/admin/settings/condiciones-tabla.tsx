@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronRight, Plus } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { taxonomiesApi } from '@/lib/api/config'
+import { taxonomyKey } from '@/lib/queries/taxonomies'
 import { CABECERA, EncabezadoOrdenable } from '@/components/ui/tabla/EncabezadoOrdenable'
 import { useOrden } from '@/components/ui/tabla/useOrden'
 import { ChipsDeFiltro } from '@/components/ui/ChipsDeFiltro'
@@ -53,7 +54,7 @@ export function CondicionesTabla() {
     queryFn: () => complianceApi.listRequirements(),
   })
   const tax = useQuery({
-    queryKey: ['taxonomias', 'FLEET_SERVICE_TYPE'],
+    queryKey: taxonomyKey('FLEET_SERVICE_TYPE'),
     queryFn: () => taxonomiesApi.list('FLEET_SERVICE_TYPE'),
   })
   // Los tipos de gestión salen del MISMO catálogo que los subtipos, no de una
@@ -61,7 +62,7 @@ export function CondicionesTabla() {
   // (acá, el panel y la frase) más la función de Postgres: renombrar uno en
   // Configuración dejaba las cuatro copias diciendo cosas distintas.
   const gestionesTax = useQuery({
-    queryKey: ['taxonomias', 'WEBCARGA_OPERATION_TYPE'],
+    queryKey: taxonomyKey('WEBCARGA_OPERATION_TYPE'),
     queryFn: () => taxonomiesApi.list('WEBCARGA_OPERATION_TYPE'),
   })
   const { orden, ordenarPor, comparar } = useOrden({ columna: 'entidad', direccion: 'asc' })

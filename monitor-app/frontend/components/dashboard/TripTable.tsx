@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Check } from 'lucide-react'
+import { Check, PanelRightOpen } from 'lucide-react'
 import type { Trip, TripStop, TripsMeta } from '@/lib/types'
 import { getLatestTempStop, getActiveStop, describeStopTiming } from '@/lib/utils/temperature'
 import { getStopStates } from '@/lib/utils/stopState'
@@ -25,6 +25,8 @@ import { TMS_LOGIN_URLS } from '@/lib/utils/tmsLinks'
 import { dwellStatus } from '@/lib/utils/kpis'
 import { nombreLegible } from '@/lib/utils/nombres'
 import { CeldaConductor } from './CeldaConductor'
+import { EntityCell } from './EntityCell'
+import type { QuickViewTarget } from '@/lib/quickView'
 import type { SortKey } from '@/hooks/useDiarioFilters'
 
 /** Hipervínculo desde la patente hacia el TMS de origen (minuta §7A ítem 16).
@@ -150,6 +152,9 @@ interface Props {
    *  mostrando el dato pero deja de ser un control — que es exactamente el
    *  comportamiento correcto para quien no puede editar. */
   onAsignarConductor?: (trip: Trip) => void
+  /** Abre la vista rápida del tracto, el conductor o la empresa de la fila, como en
+   *  el Cierre (D4). Sin él (sin `directory.read`), esas celdas son texto. */
+  onOpenQuickView?: (target: QuickViewTarget) => void
   /** Selección múltiple para eliminar viajes manuales en lote. Sin esto, o si
    *  ningún viaje de la vista se puede eliminar, no hay casillas: a quien no
    *  puede eliminar nada no se le ofrece una selección que no sirve. */
@@ -168,7 +173,7 @@ interface Props {
  *  Se normaliza SOLO en presentacion. El dato del TMS no se toca (regla 1 de
  *  Pablo): lo que se guarda, se exporta y se compara sigue siendo el original,
  *  y el nombre completo queda en el `title` para quien lo necesite. */
-export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, meta, updatedIds, sortKey, sortDir, onSort, onAsignarConductor, seleccion }: Props) {
+export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, meta, updatedIds, sortKey, sortDir, onSort, onAsignarConductor, onOpenQuickView, seleccion }: Props) {
   // Ítem 3 (feedback post-weekly 2026-07-22, ajustado Ronda 43): solo
   // Patente queda sticky (izquierda) — es fácil no notar que hay más
   // columnas fuera de vista sin scrollear. Sombra/gradiente en el borde que
@@ -488,7 +493,11 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     <td className="px-2.5 py-2.5">
                       <div className="flex items-start gap-1.5">
                         <div>
-                          {primaryPlate ? (
+                          {trip.tractor_plate && trip.tractor_asset_id && onOpenQuickView ? (
+                            <span onClick={e => e.stopPropagation()} className="text-dato font-semibold">
+                              <EntityCell kind="asset" id={trip.tractor_asset_id} label={trip.tractor_plate} mono onOpen={onOpenQuickView} />
+                            </span>
+                          ) : primaryPlate ? (
                             /* La patente es lo que la gente dice en voz alta —
                                "el LRTD13" — y en una tabla de 32 filas se busca
                                de un barrido. Se dibuja como lo que es. */
@@ -521,6 +530,15 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                           puedeEditar={Boolean(onAsignarConductor)}
                           onAsignar={() => onAsignarConductor?.(trip)}
                         />
+                        {/* La celda es el control de asignar; ver al conductor va aparte. */}
+                        {trip.driver_id && onOpenQuickView && (
+                          <button type="button" data-panel-trigger
+                                  onClick={e => { e.stopPropagation(); onOpenQuickView({ kind: 'driver', id: trip.driver_id!, label: trip.driver_name ?? '' }) }}
+                                  aria-label={`Ver conductor ${trip.driver_name ?? ''}`.trim()}
+                                  className="shrink-0 rounded p-0.5 text-informativo hover:text-accion focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+                            <PanelRightOpen size={13} />
+                          </button>
+                        )}
                         <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_has_critical_alert} label="Conductor" compact />
                       </div>
                       {/* El telefono vive bajo el conductor, no en su propia
@@ -546,8 +564,9 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     <td className="px-2.5 py-2.5">
                       {trip.carrier_id ? (
                         <>
-                          <span className="text-dato font-medium text-text-primary leading-snug block line-clamp-2 max-w-[146px]">
-                            {trip.carrier_name}
+                          <span onClick={onOpenQuickView ? e => e.stopPropagation() : undefined}
+                                className="text-dato font-medium text-text-primary leading-snug block line-clamp-2 max-w-[146px]">
+                            <EntityCell kind="carrier" id={trip.carrier_id} label={trip.carrier_name} onOpen={onOpenQuickView} />
                           </span>
                           <div className="flex items-center gap-1 mt-0.5">
                             <InsuranceAlertBadge alert={trip.insurance_alert} />

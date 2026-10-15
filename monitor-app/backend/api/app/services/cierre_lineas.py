@@ -125,7 +125,7 @@ WITH active_roster AS (
          AND aa.valid_during @> $1::date
     JOIN public.carriers c ON c.id = aa.counterpart_id AND c.operational_status = 'ACTIVE'
     LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
-    WHERE a.operational_status = 'ACTIVE' AND a.asset_type = 'TRACTOCAMION'
+    WHERE a.operational_status = 'ACTIVE' AND public.is_power_unit(a.asset_type)
 ),
 today_trips AS (
     SELECT DISTINCT vfr.resolved_tractor_asset_id AS asset_id

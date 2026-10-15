@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { taxonomiesApi } from '@/lib/api/config'
+import { taxonomyKey } from '@/lib/queries/taxonomies'
 
 /** Un motivo del catálogo TRIP_VOID_REASON. `pideNota`: el comentario es
  *  obligatorio. Lo decide el código (OTRO), no la etiqueta, así renombrar
@@ -12,7 +13,7 @@ export type EleccionDeMotivo = { motivoId: string; nota: string }
 /** Los motivos activos de anulación, en el orden de Configuración. */
 export function useMotivosDeAnulacion(): { motivos: MotivoDeAnulacion[]; cargando: boolean } {
   const q = useQuery({
-    queryKey: ['taxonomies', 'TRIP_VOID_REASON'],
+    queryKey: taxonomyKey('TRIP_VOID_REASON'),
     queryFn: () => taxonomiesApi.list('TRIP_VOID_REASON'),
     staleTime: 5 * 60_000,
   })

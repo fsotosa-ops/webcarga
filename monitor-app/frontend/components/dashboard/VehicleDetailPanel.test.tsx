@@ -9,6 +9,10 @@ import { recordStateFields } from '@/lib/states.fixtures'
 
 vi.mock('@/lib/api/assets', () => ({
   assetsApi: {
+    types: vi.fn().mockResolvedValue([
+      { code: 'TRACTOCAMION', label: 'Tracto', is_power_unit: true },
+      { code: 'RAMPLA', label: 'Rampla', is_power_unit: false },
+    ]),
     listComplianceRecords: vi.fn(),
     getDriverAssignment: vi.fn(),
     assignDriver: vi.fn(),
@@ -116,6 +120,7 @@ describe('VehicleDetailPanel', () => {
   it('saves the edited asset_type when "Guardar" is clicked', async () => {
     const onPatch = vi.fn().mockResolvedValue(undefined)
     renderPanel(ASSET, { onPatch })
+    await screen.findByRole('option', { name: 'Rampla' })
     fireEvent.change(screen.getByLabelText('Tipo de equipo'), { target: { value: 'RAMPLA' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
     await waitFor(() => expect(onPatch).toHaveBeenCalledWith('v1', { asset_type: 'RAMPLA', manufacture_year: undefined }))

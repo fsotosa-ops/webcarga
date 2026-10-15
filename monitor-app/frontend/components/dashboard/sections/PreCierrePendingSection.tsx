@@ -8,7 +8,7 @@ import { carriersApi } from '@/lib/api/carriers'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { NewCarrierPanel } from '../NewCarrierPanel'
 import { FleetDriverGapCard } from '../FleetDriverGapCard'
-import { AltaConductorDesdeCierre } from './AltaConductorDesdeCierre'
+import { AltaDeFlota } from '@/components/dashboard/AltaDeFlota'
 import { VincularConductorPropuesto } from './VincularConductorPropuesto'
 import { Estado } from '@/components/ui/Estado'
 import type { CarrierCreateResult } from '@/lib/api/carriers'
@@ -302,10 +302,13 @@ export function PreCierrePendingSection({ fecha }: Props) {
                       {esc.driver_name_tms ? <> — el TMS lo llama &quot;{esc.driver_name_tms}&quot;</> : null}.</>}
               </p>
               {!esc.reason && (canEditDirectory ? (
-                <AltaConductorDesdeCierre
-                  rut={esc.driver_rut}
-                  nombreTms={esc.driver_name_tms ?? null}
-                  onListo={carrierId => afterChange({ entity: 'driver', type: 'create', carrierIds: [carrierId] })}
+                <AltaDeFlota
+                  tipo="conductor"
+                  carrierId={null}
+                  rutFijo={esc.driver_rut}
+                  prefill={esc.driver_name_tms ?? undefined}
+                  etiqueta="Dar de alta a este conductor"
+                  onCreado={carrierId => afterChange({ entity: 'driver', type: 'create', carrierIds: [carrierId] })}
                 />
               ) : noPermission)}
             </div>

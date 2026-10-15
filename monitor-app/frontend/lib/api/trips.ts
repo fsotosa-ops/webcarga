@@ -1,4 +1,4 @@
-import type { AssignmentWarning, CandidatosConductorResponse, Trip, TripCreatePayload, TripNote, AvailableDriver, AvailableAssetsResponse, FleetDailyOverviewResponse, CierreViajesResponse, ClientFacet } from '@/lib/types'
+import type { AssignmentWarning, CandidatosConductorResponse, Trip, TripCreatePayload, TripNote, AvailableDriver, AvailableAssetsResponse, CierreViajesResponse, ClientFacet } from '@/lib/types'
 import { apiFetch } from './client'
 
 export type TripListResponse = {
@@ -228,13 +228,6 @@ export const tripsApi = {
 
   availableAssets: (fecha: string) =>
     apiFetch<AvailableAssetsResponse>(`/api/v1/trips/available-assets?fecha=${encodeURIComponent(fecha)}`),
-
-  fleetDailyOverview: (fecha: string, shipperIds?: string[], origin?: string[]) => {
-    const params = new URLSearchParams({ fecha })
-    if (shipperIds?.length) params.set('shipper_id', shipperIds.join(','))
-    if (origin?.length) params.set('origin', origin.join(','))
-    return apiFetch<FleetDailyOverviewResponse>(`/api/v1/trips/fleet-daily-overview?${params.toString()}`)
-  },
 
   listNotes: (id: string) =>
     apiFetch<TripNote[]>(`/api/v1/trips/${id}/notes`),

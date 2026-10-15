@@ -196,7 +196,7 @@ describe('CertificationFunnel', () => {
     setup()
 
     const enlace = screen.getByRole('link', { name: /Transportes Charlotte Spa/ })
-    expect(enlace).toHaveAttribute('href', '/dashboard/compliance/c1')
+    expect(enlace).toHaveAttribute('href', '/dashboard/carriers/c1?tab=documentos')
     expect(enlace).not.toHaveAttribute('aria-expanded')
   })
 

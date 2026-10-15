@@ -59,6 +59,17 @@ const NAV_GROUPS: NavGroupDef[] = [
   // esta empresa". Y el resto de la app ya lo trataba así: de los diez enlaces
   // con que el Monitor y el Cierre mandan a arreglar algo, NUEVE apuntan a
   // /dashboard/carriers y uno solo a /dashboard/compliance.
+  // Directorio (Entrega C, 14/10): el registro, con una lista por objeto. Cada uno
+  // tiene su lista y su ficha; Certificación enlaza a ellas en vez de tener las suyas.
+  {
+    label: 'Directorio',
+    icon:  BookUser,
+    items: [
+      { href: '/dashboard/carriers', label: 'Empresas' },
+      { href: '/dashboard/drivers',  label: 'Conductores' },
+      { href: '/dashboard/assets',   label: 'Equipos' },
+    ],
+  },
   {
     label: 'Certificación',
     icon:  BadgeCheck,
@@ -76,7 +87,6 @@ const NAV_GROUPS: NavGroupDef[] = [
 // se fue con ella. Un campo del tipo y una rama de render inalcanzables se leen
 // como una capacidad que existe, y no existe.
 const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
-  { href: '/dashboard/carriers',  label: 'Directorio', icon: BookUser },
   { href: '/dashboard/insurance', label: 'Seguros',    icon: Shield },
   { href: '/dashboard/pricing',   label: 'Tarifario',  icon: Receipt },
 ]
@@ -87,9 +97,9 @@ const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
 // Certificacion, que es de donde acaba de salir.
 const NAV_ORDEN: (NavGroupDef | (typeof NAV_ITEMS)[number])[] = [
   NAV_GROUPS[0],                                              // Operaciones
-  NAV_ITEMS[0],                                               // Directorio
-  NAV_GROUPS[1],                                              // Certificación
-  NAV_ITEMS[1], NAV_ITEMS[2],                                 // Seguros, Tarifario
+  NAV_GROUPS[1],                                              // Directorio
+  NAV_GROUPS[2],                                              // Certificación
+  NAV_ITEMS[0], NAV_ITEMS[1],                                 // Seguros, Tarifario
 ]
 
 const esGrupo = (e: (typeof NAV_ORDEN)[number]): e is NavGroupDef => 'items' in e
@@ -102,9 +112,14 @@ function soloLoQuePuede(items: NavLeaf[], puedeClasificar: boolean): NavLeaf[] {
 }
 
 // Solo para el bottom nav mobile — sin concepto de dropdown ahi, se listan
-// los items de los grupos ya aplanados junto a los demas.
+// los items de los grupos ya aplanados junto a los demas. Aplanados pierden su
+// grupo: una etiqueta que se repite entre grupos ("Empresas" en Directorio y en
+// Certificación) toma el nombre de su grupo para no quedar ambigua.
+const REPEATED_LABELS = new Set(
+  NAV_GROUPS.flatMap(g => g.items.map(i => i.label)).filter((l, i, all) => all.indexOf(l) !== i),
+)
 const MOBILE_NAV_ITEMS = [
-  ...NAV_GROUPS.flatMap(g => g.items.map(i => ({ ...i, icon: g.icon }))),
+  ...NAV_GROUPS.flatMap(g => g.items.map(i => ({ ...i, label: REPEATED_LABELS.has(i.label) ? g.label : i.label, icon: g.icon }))),
   ...NAV_ITEMS,
 ]
 
@@ -315,7 +330,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
         </div>
 
         {/* ── Main nav ── */}
-        <nav className="flex-1 flex flex-col px-2.5 py-3 gap-0.5 overflow-hidden">
+        <nav aria-label="Navegación principal" className="flex-1 flex flex-col px-2.5 py-3 gap-0.5 overflow-hidden">
           {NAV_ORDEN.map(entrada => {
             if (esGrupo(entrada)) {
               return (

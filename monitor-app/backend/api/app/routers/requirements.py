@@ -70,13 +70,27 @@ requirements_router = APIRouter(prefix="/compliance-requirements", tags=["compli
 # saber antes de encenderla; que esté vigente o no lo dice su propia columna.
 
 
+# Cert 4 (L6, Entrega C 14/10): el universo es el que está EN ALCANCE, la misma regla que
+# Pendientes (vencimientos.in_scope_sql): empresa activa; conductor o equipo de la flota activa
+# (app.active_fleet) de una empresa activa. "Alcanza 5 de 5" contaba también a los dados de
+# baja, y Certificación después contaba otra cifra. La siembra no cambia: sigue creando registros
+# para todos, para que quien se reactiva vuelva con sus pendientes (ruling del 11/10).
+_EN_ALCANCE = {
+    "CARRIER": "e.operational_status = 'ACTIVE'",
+    "DRIVER": ("EXISTS (SELECT 1 FROM app.active_fleet af JOIN public.carriers ac ON ac.id = af.carrier_id "
+               "AND ac.operational_status = 'ACTIVE' WHERE af.entity_type = 'DRIVER' AND af.entity_id = e.id)"),
+    "ASSET": ("EXISTS (SELECT 1 FROM app.active_fleet af JOIN public.carriers ac ON ac.id = af.carrier_id "
+              "AND ac.operational_status = 'ACTIVE' WHERE af.entity_type = 'ASSET' AND af.entity_id = e.id)"),
+}
+
+
 def _lateral(entidad: str, condicion: str) -> str:
     return f"""
     LEFT JOIN LATERAL (
         SELECT count(*) FILTER (WHERE {condicion}) AS alcanzadas,
                count(*)                            AS universo
         FROM {TABLA_DE_ENTIDAD[entidad]} e
-        WHERE req.target_entity = '{entidad}'
+        WHERE req.target_entity = '{entidad}' AND {_EN_ALCANCE[entidad]}
     ) alcance_{entidad.lower()} ON true"""
 
 

@@ -2,44 +2,51 @@
 
 import { Suspense, useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { FileSpreadsheet, Loader2, Plus } from 'lucide-react'
+import { ArrowUpRight, FileSpreadsheet, Loader2, Plus } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { CertificationStatusTable } from '@/components/compliance/CertificationStatusTable'
 import { CertificationFunnel } from '@/components/compliance/CertificationFunnel'
 import { DirectorioResumen } from '@/components/compliance/DirectorioResumen'
-import { CarrierDrawer } from '@/components/compliance/CarrierDrawer'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
-import { TransferModal } from '@/components/dashboard/TransferModal'
 import { ActualizarPorPlanillaModal } from '@/components/compliance/ActualizarPorPlanillaModal'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
-import type { CertificationGroup, CertificationStatusRow } from '@/lib/types'
+import type { CarrierCreateResult } from '@/lib/api/carriers'
+import type { CertificationGroup } from '@/lib/types'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { Cifra } from '@/components/ui/Cifra'
 import { Estado } from '@/components/ui/Estado'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
 import { invalidateDirectory } from '@/lib/queries/directorio'
-import { useFilaAbierta } from '@/hooks/useFilaAbierta'
+import { carrierHref } from '@/lib/navegacion/directory'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 
-type Vista = 'empresas' | 'conductores' | 'vehiculos' | 'requisitos'
+type Vista = 'empresas' | 'requisitos'
 
-/** Las cuatro agrupaciones miran los MISMOS pendientes, agrupados distinto: el
- *  control no crea vistas nuevas y no hay dos listas que sincronizar (§4).
+/** Las agrupaciones miran los MISMOS pendientes, agrupados distinto: el control
+ *  no crea vistas nuevas y no hay dos listas que sincronizar (§4).
  *
- *  La bandeja ya no es una vista de este conmutador (Task 5): tiene ruta
- *  propia en `/dashboard/compliance/inbox` y entrada propia en el sidebar,
- *  porque es otro trabajo — archivos sin destino, no requisitos sin
- *  documento. `?vista=documentos` sigue reconociéndose acá abajo, pero sólo
- *  para redirigir a la ruta nueva: es lo que hace que un enlace guardado no
- *  quede roto. */
+ *  "Conductor" y "Vehículo" no son vistas de este módulo desde la Entrega C
+ *  (14/10): abren Directorio › Conductores / Equipos con el filtro de documentos
+ *  pendientes puesto. Es el mismo objeto, así que es una sola lista.
+ *
+ *  La bandeja tampoco es una vista (Task 5): tiene ruta propia en
+ *  `/dashboard/compliance/inbox`. `?vista=documentos|conductores|vehiculos`
+ *  se siguen reconociendo abajo, sólo para redirigir: un enlace guardado no
+ *  queda roto. */
 const AGRUPACIONES: { id: Vista; label: string; group: CertificationGroup }[] = [
   { id: 'empresas',    label: 'Empresa',   group: 'carrier' },
-  { id: 'conductores', label: 'Conductor', group: 'driver' },
-  { id: 'vehiculos',   label: 'Vehículo',  group: 'asset' },
   { id: 'requisitos',  label: 'Requisito', group: 'requirement' },
 ]
+const AL_DIRECTORIO: { label: string; href: string; vistaVieja: string }[] = [
+  { label: 'Conductor', href: '/dashboard/drivers?documents=pending', vistaVieja: 'conductores' },
+  { label: 'Vehículo',  href: '/dashboard/assets?documents=pending',  vistaVieja: 'vehiculos' },
+]
+const REDIRECCIONES: Record<string, string> = {
+  documentos: '/dashboard/compliance/inbox',
+  ...Object.fromEntries(AL_DIRECTORIO.map(d => [d.vistaVieja, d.href])),
+}
 
 const INPUT = 'text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all'
 
@@ -70,9 +77,10 @@ function CertificationPageInner() {
    *  únicamente para reenviar a su ruta nueva. `replace` y no `push`: llegar
    *  por un enlace guardado no es un paso de navegación que el botón atrás
    *  deba reponer. */
+  const redireccion = param ? REDIRECCIONES[param] : undefined
   useEffect(() => {
-    if (param === 'documentos') router.replace('/dashboard/compliance/inbox')
-  }, [param, router])
+    if (redireccion) router.replace(redireccion)
+  }, [redireccion, router])
 
   const esVistaConocida = AGRUPACIONES.some(v => v.id === param)
   const vista: Vista = esVistaConocida ? (param as Vista) : 'empresas'
@@ -88,16 +96,7 @@ function CertificationPageInner() {
   const qDebounced = useDebouncedValue(q, 300)
 
   const [catalogoAbierto, setCatalogoAbierto] = useState(false)
-  // El conductor o el vehículo sin empresa que se está por vincular. Reusa el
-  // MISMO modal que la transferencia —con `currentCarrierId` en null— porque
-  // es la misma pregunta ("¿de qué empresa es?") hecha desde otro punto de
-  // partida: una variante es una prop, no un componente hermano.
-  const [asignandoEmpresa, setAsignandoEmpresa] = useState<CertificationStatusRow | null>(null)
-  /** Una sola fila abierta a la vez. La regla y su razón viven en el hook,
-   *  porque este módulo tiene cuatro listas del mismo objeto. */
-  const { abierta: filaAbierta, alternar: alternarFila } = useFilaAbierta()
-
-  const estaSaliendo = param === 'documentos'
+  const estaSaliendo = !!redireccion
 
   const statusQuery = useQuery({
     queryKey: clavesCertificacion.estado(group, qDebounced),
@@ -116,14 +115,6 @@ function CertificationPageInner() {
     enabled: group === 'carrier' && catalogoAbierto,
   })
 
-  /** Ir a la ficha de una empresa (Task 4). Antes esto abría su cajón sin
-   *  salir de Certificación; ahora que la ficha existe como pantalla propia,
-   *  abrir el cajón acá adentro sería mostrar una versión resumida de una
-   *  pantalla que ya tiene una completa. */
-  function irAEmpresa(carrierId: string) {
-    router.push(`/dashboard/compliance/${carrierId}`)
-  }
-
   function cambiarVista(v: Vista) {
     // La vista viaja en la URL: volver del detalle no pierde dónde estabas.
     router.replace(v === 'empresas' ? '/dashboard/compliance' : `/dashboard/compliance?vista=${v}`)
@@ -141,7 +132,7 @@ function CertificationPageInner() {
     // pendientes. El punto de "no salir del modulo" nunca fue solo eso — era
     // quedar donde se puede seguir trabajando, y eso es la ficha, cargandole
     // los documentos que todavia no tiene.
-    router.push(`/dashboard/compliance/${created.id}`)
+    router.push(`${carrierHref(created.id)}?tab=documentos`)
   }
 
   const rows = statusQuery.data?.rows ?? []
@@ -176,6 +167,13 @@ function CertificationPageInner() {
             >
               {label}
             </button>
+          ))}
+          {/* Llevan al Directorio: el ícono dice que se sale del módulo. */}
+          {AL_DIRECTORIO.map(d => (
+            <Link key={d.vistaVieja} href={d.href}
+                  className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-gray-600 hover:text-gray-800">
+              {d.label} <ArrowUpRight size={12} aria-hidden="true" />
+            </Link>
           ))}
         </div>
 
@@ -279,56 +277,12 @@ function CertificationPageInner() {
                 }}
               />
             ) : (
-              <CertificationStatusTable
-                rows={rows}
-                group={group}
-                openRowId={filaAbierta}
-                onToggleRow={alternarFila}
-                // El MISMO cajón que la vista Empresas, acotado al sujeto —
-                // una prop, no un componente hermano.
-                renderDrawer={r => r.carrier_id ? (
-                  <CarrierDrawer
-                    carrierId={r.carrier_id}
-                    carrierName={r.carrier_name ?? ''}
-                    subject={{
-                      entity_type: group === 'driver' ? 'DRIVER' : 'ASSET',
-                      entity_id: r.entity_id,
-                    }}
-                  />
-                ) : null}
-                onIrAEmpresa={irAEmpresa}
-                onAsignarEmpresa={setAsignandoEmpresa}
-              />
+              <CertificationStatusTable rows={rows} />
             )}
           </div>
         )}
       </div>
 
-      {/* Vincular a su empresa a alguien que no tiene ninguna. El endpoint
-          siempre existió (`POST /carriers/{id}/drivers|assets`); lo que
-          faltaba era el botón. Al asignar, la empresa hereda sus requisitos de
-          documentación, así que hay que refrescar toda la certificación y no
-          sólo esta fila. */}
-      {asignandoEmpresa && (
-        <TransferModal
-          open
-          title={`Asignar empresa a ${asignandoEmpresa.entity_name}`}
-          currentCarrierId={null}
-          onClose={() => setAsignandoEmpresa(null)}
-          onTransfer={async carrierId => {
-            if (group === 'driver') {
-              await carriersApi.assignDriver(carrierId, asignandoEmpresa.entity_id)
-            } else {
-              await carriersApi.assignAsset(carrierId, asignandoEmpresa.entity_id)
-            }
-            await invalidateDirectory(qc, {
-              entity: group === 'driver' ? 'driver' : 'asset', id: asignandoEmpresa.entity_id,
-              type: 'assignment', carrierIds: [carrierId],
-            })
-            setAsignandoEmpresa(null)
-          }}
-        />
-      )}
     </div>
   )
 }
