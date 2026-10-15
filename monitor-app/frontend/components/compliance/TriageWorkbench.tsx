@@ -1,47 +1,22 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { X } from 'lucide-react'
+import { CheckCircle2, X } from 'lucide-react'
 import { Estado } from '@/components/ui/Estado'
 import { complianceApi } from '@/lib/api/compliance'
 import { documentIngestApi } from '@/lib/api/documentIngest'
-import type { IngestUploadResult } from '@/lib/types'
-import { CarrierSearchPicker, type CarrierSearchResult } from '@/components/dashboard/CarrierSearchPicker'
+import type { CarrierSearchResult } from '@/components/dashboard/CarrierSearchPicker'
 import { TriageBulkBar } from './TriageBulkBar'
 import { TriageClassifyForm } from './TriageClassifyForm'
-import { TriageDropzone } from './TriageDropzone'
-import { TriageFileTable } from './TriageFileTable'
+import { TriageFileTable, ordenarPorLoQueFalta } from './TriageFileTable'
 import { TriagePreview } from './TriagePreview'
 import { TriageUndoNotice } from './TriageUndoNotice'
-import { Cifra } from '@/components/ui/Cifra'
+import { BulkUploadReview } from './pending/BulkUploadReview'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
-import { useEmpresaDeTrabajo } from '@/hooks/useEmpresaDeTrabajo'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 
-interface Props {
-  /** Sin empresa = la cola global (la bandeja). Con empresa = acotada a esa
-   *  empresa (la ficha). Es una sola prop opcional, no dos modos. */
-  carrierId?:   string
-  carrierName?: string
-  /** Acota el panel a un conductor o vehículo concreto: entrando desde su
-   *  ficha, lo único que interesa es lo que le falta a él. */
-  subject?: { entity_type: 'CARRIER' | 'DRIVER' | 'ASSET'; entity_id: string }
-  /** La empresa con la que llega el lote, cuando se entró desde la ficha de
-   *  una. No es lo mismo que `carrierId`: acá la cola SIGUE siendo global —se
-   *  ve todo lo que espera— y esto sólo dice de quién es lo que se va a subir,
-   *  que es exactamente lo que el selector pregunta. Se puede cambiar. */
-  empresaInicial?: CarrierSearchResult | null
-}
-
 const QUEUE_PAGE = 200
-
-/** El backend corta en 50 archivos por request (`_MAX_FILES_PER_UPLOAD`) y
- *  devuelve 422. Soltar la carpeta de 120 documentos —el caso de uso que
- *  justifica toda la bandeja— mandaba los 120 en una sola tanda y no subía
- *  nada. Se parte acá, del lado del cliente, y los lotes van encadenados. */
-const LOTE_DE_SUBIDA = 50
-
 
 function mensajeDe(e: unknown, porDefecto: string) {
   return e instanceof Error && e.message ? e.message : porDefecto
@@ -53,46 +28,33 @@ function motivosDe(errores: { error: string }[]) {
   return Array.from(new Set(errores.map(e => e.error))).join(' · ')
 }
 
-/** La bandeja de trabajo: tabla, barra contextual y panel de detalle. Cero
- *  modales.
+/**
+ * Por asignar (Entrega D, 15/10): la bandeja de lo que no se pudo asignar al subir.
  *
- *  Reemplaza al par panel + modal de clasificación, que costaba ~5 clics por
- *  documento. Acá el formulario aplica a todo lo marcado: con un archivo
- *  clasifica ese, con quince aplica a los quince. */
-export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicial }: Props) {
+ * Ya no es una forma de subir. Se sube con "Subir documentos" (la MISMA revisión de
+ * lote de Pendientes y de la ficha de empresa, sin contexto) y lo que esa revisión no
+ * resolvió llega aquí con lo que ya se sabía. La lista se agrupa por lo que falta
+ * (titular, tipo o ambos); el detalle muestra el documento grande con la propuesta ya
+ * elegida y se resuelve con Asignar · Descartar; al asignar, pasa al siguiente.
+ * Patrón de bandeja de excepciones (Ramp, Dext, Vanta).
+ */
+export function TriageWorkbench() {
   const qc = useQueryClient()
   const canEdit = usePermiso('documents.upload')
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [errors, setErrors] = useState<{ file_name: string; error: string }[]>([])
   const [notice, setNotice] = useState<string | null>(null)
-  // Cuántos archivos de la tanda ya se subieron. El avance es por lote, no
-  // dentro del lote: fingir un porcentaje dentro de un request sería inventarlo.
-  const [subidos, setSubidos] = useState(0)
   // El ultimo lote aplicado, para poder revertirlo. No hace falta un registro
   // de operaciones: quien deshace es quien acaba de aplicar.
   const [ultimoLote, setUltimoLote] = useState<{ ids: string[]; mensaje: string } | null>(null)
-  // El texto del ÚNICO buscador de empresa de la pantalla. La empresa en sí no
-  // vive acá: vive en `useEmpresaDeTrabajo`, que es la única respuesta a "¿de
-  // qué empresa es lo que estoy trabajando?".
-  //
-  // Sigue siendo OPCIONAL a propósito — la tanda mezclada que llega por correo
-  // es un caso legítimo, y exigirla convertiría la bandeja en un buscador.
-  const [busqueda, setBusqueda] = useState('')
 
-  /** Sin nada marcado, la pantalla está en modo "subir"; con algo marcado,
-   *  en modo "mover". Un solo nombre para la condición porque gobierna las
-   *  dos mitades de la zona de carga y el camino de soltar-en-cualquier-parte:
-   *  escribirla tres veces es como se separaron la primera vez. */
-  const sinSeleccion = selectedIds.size === 0
-
-  const queueKey = clavesCertificacion.cola(carrierId)
+  const queueKey = clavesCertificacion.cola(undefined)
   const queueQuery = useQuery({
     queryKey: queueKey,
-    queryFn: () => documentIngestApi.listQueue({ carrierId, limit: QUEUE_PAGE }),
+    queryFn: () => documentIngestApi.listQueue({ limit: QUEUE_PAGE }),
   })
 
-  const rows = queueQuery.data?.rows ?? []
+  const rows = useMemo(() => ordenarPorLoQueFalta(queueQuery.data?.rows ?? []), [queueQuery.data])
   const total = queueQuery.data?.total ?? 0
 
   // La empresa de la selección. El formulario aplica un requisito de UNA
@@ -105,8 +67,8 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
     return sel.every(r => r.carrier_id === first) ? first : null
   }, [rows, selectedIds])
 
-  const subjectCarrierId = selectedCarrierId
-    ?? (focusedId ? rows.find(r => r.id === focusedId)?.carrier_id ?? null : null)
+  const focusedRow = focusedId ? rows.find(r => r.id === focusedId) ?? null : null
+  const subjectCarrierId = selectedCarrierId ?? focusedRow?.carrier_id ?? null
 
   const pendingQuery = useQuery({
     queryKey: clavesCertificacion.pendientes(subjectCarrierId ?? undefined),
@@ -142,51 +104,7 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
     enabled: !!focusedId && targetIds.length === 1,
   })
 
-  const grupos = new Set(rows.map(r => r.carrier_id)).size
-
-  const carrierLabel = rows.find(r => r.carrier_id === (selectedCarrierId ?? subjectCarrierId))?.carrier_name ?? null
-
-  /** LA ÚNICA respuesta a "¿de qué empresa es lo que estoy trabajando?".
-   *  Reemplaza las diez representaciones que tenía esta pantalla; ver el
-   *  docstring del hook para por qué. */
-  const empresaDeTrabajo = useEmpresaDeTrabajo({
-    deLaRuta: carrierId ? { id: carrierId, business_name: carrierName ?? '' } : null,
-    // Sólo cuando lo marcado/enfocado YA tiene empresa. Sin eso el hook no
-    // podría distinguir "es un hecho" de "alguien la eligió", que es la
-    // distinción de la que depende ofrecer o no la ✕.
-    deLosArchivos: subjectCarrierId && carrierLabel
-      ? { id: subjectCarrierId, business_name: carrierLabel }
-      : null,
-    inicial: empresaInicial ?? null,
-  })
-  const { empresa } = empresaDeTrabajo
-
-  /** Los marcados que TODAVIA no tienen empresa. Son los unicos a los que
-   *  elegir una les cambia algo: los que ya la tienen se mueven con la barra
-   *  de seleccion, que es otro gesto y lo rotula distinto. */
-  const marcadosSinEmpresa = useMemo(
-    () => rows.filter(r => selectedIds.has(r.id) && !r.carrier_id).map(r => r.id),
-    [rows, selectedIds],
-  )
-
-  /** Elegir empresa. Con archivos marcados sin empresa, SE LA ASIGNA a esos y
-   *  no a todo lo que no tenga: una tanda mezclada -- que es el caso que hay
-   *  que soportar -- se resuelve por grupos, marcando los de una empresa,
-   *  eligiendola, y repitiendo. Barrer "todo lo que no tiene empresa" hacia la
-   *  elegida meteria los de la empresa B dentro de la A.
-   *
-   *  Sin seleccion no escribe nada: solo pre-etiqueta lo que se suba despues.
-   *  Cual de las dos cosas va a pasar lo dice la ayuda ANTES de elegir. */
-  async function elegirEmpresa(c: CarrierSearchResult) {
-    empresaDeTrabajo.fijar(c)
-    if (!marcadosSinEmpresa.length) return
-    const n = marcadosSinEmpresa.length
-    await documentIngestApi.moveItems(marcadosSinEmpresa, c.id)
-    clearSelection()
-    setNotice(`${n === 1 ? '1 archivo' : `${n} archivos`} ahora son de ${c.business_name}`)
-    refrescarBandeja()
-  }
-
+  const carrierLabel = rows.find(r => r.carrier_id === subjectCarrierId)?.carrier_name ?? null
 
   const previewItems = rows
     .filter(r => targetIds.includes(r.id))
@@ -197,68 +115,34 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
       preview_url: r.id === focusedId ? previewQuery.data?.preview_url ?? null : null,
     }))
 
-  /** Lo que toda operación de la bandeja deja obsoleto: una sola función,
-   *  compartida con el cajón. Ver lib/queries/certificacion.ts. */
+  /** Lo que toda operación de la bandeja deja obsoleto: una sola función. Ver
+   *  lib/queries/certificacion.ts. */
   function refrescarBandeja() {
     void invalidarCertificacion(qc)
   }
 
-  const uploadMutation = useMutation({
-    mutationFn: async (files: File[]) => {
-      const items: IngestUploadResult['items'] = []
-      const errores: IngestUploadResult['errors'] = []
-      let duplicados = 0
-      setSubidos(0)
-      for (let i = 0; i < files.length; i += LOTE_DE_SUBIDA) {
-        const lote = files.slice(i, i + LOTE_DE_SUBIDA)
-        // Encadenados, no en paralelo: cada lote sube sus archivos a Storage y
-        // lanzar tres tandas de 50 a la vez es pelearle ancho de banda a las
-        // otras dos.
-        const res = await documentIngestApi.upload(empresa?.id, lote)
-        items.push(...res.items)
-        errores.push(...res.errors)
-        duplicados += res.duplicates?.length ?? 0
-        // Se publican mientras avanza: si un lote posterior falla, lo que ya
-        // se sabe no se pierde con el throw.
-        setErrors([...errores])
-        setSubidos(i + lote.length)
-      }
-      return { items, errors: errores, duplicados }
-    },
-    onSuccess: res => {
-      setErrors(res.errors)
-      // Un archivo idéntico a uno que ya pasó por aquí no entra otra vez (14/10).
-      if (res.duplicados) {
-        setNotice(res.duplicados === 1
-          ? '1 archivo ya estaba en Sin clasificar y no se volvió a subir'
-          : `${res.duplicados} archivos ya estaban en Sin clasificar y no se volvieron a subir`)
-      }
-      refrescarBandeja()
-    },
-    onError: e => {
-      // Sin esto la zona volvía al estado vacío, sin un solo mensaje, y quien
-      // soltó 120 archivos se quedaba creyendo que se subieron.
-      setNotice(`No se pudieron subir todos los archivos. ${mensajeDe(e, 'Intenta de nuevo.')}`)
-      refrescarBandeja()
-    },
-  })
+  /** Un archivo sin empresa: se le asigna en su detalle, que es donde se decide.
+   *  Antes era un selector arriba de la pantalla, separado del archivo. */
+  async function elegirEmpresa(c: CarrierSearchResult) {
+    if (!targetIds.length) return
+    await documentIngestApi.moveItems(targetIds, c.id)
+    setNotice(`${targetIds.length === 1 ? 'El archivo' : `${targetIds.length} archivos`} ahora son de ${c.business_name}`)
+    refrescarBandeja()
+  }
+
   const undoMutation = useMutation({
     mutationFn: (ids: string[]) => documentIngestApi.undoClassify(ids),
     onSuccess: (res, ids) => {
-      // Deshacer es la operación inversa de aplicar: invalida el mismo
-      // conjunto, para que el contador del sidebar no quede contradiciendo a
-      // la lista hasta que venza su staleTime.
       refrescarBandeja()
       if (!res.errors.length) {
         setUltimoLote(null)
         setNotice(res.reverted.length === 1
-          ? '1 archivo volvió a Sin clasificar'
-          : `${res.reverted.length} archivos volvieron a Sin clasificar`)
+          ? '1 archivo volvió a Por asignar'
+          : `${res.reverted.length} archivos volvieron a Por asignar`)
         return
       }
       // Con errores el aviso NO se cierra: cerrarlo pierde los ids y con ellos
-      // el segundo intento. Se queda con los que siguen pendientes y con el
-      // motivo real, que no siempre es "ya tenía un documento anterior".
+      // el segundo intento.
       const pendientes = res.errors.map(e => e.item_id).filter(id => ids.includes(id))
       setUltimoLote({
         ids: pendientes.length ? pendientes : ids,
@@ -283,63 +167,16 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
             + (fallidos.length === 1 ? '1 no se pudo descartar' : `${fallidos.length} no se pudieron descartar`)
           : `${ok === 1 ? '1 descartado' : `${ok} descartados`}. Puedes restaurarlos en Descartados.`,
       )
-      clearSelection()
+      avanzarAlSiguiente(ids)
+      setSelectedIds(new Set())
       refrescarBandeja()
     },
   })
-
-  const { mutate: subirArchivos } = uploadMutation
 
   function clearSelection() {
     setSelectedIds(new Set())
     setFocusedId(null)
   }
-
-  function handleFiles(list: FileList | File[]) {
-    const files = Array.from(list)
-    if (files.length) subirArchivos(files)
-  }
-
-  // Soltar un archivo FUERA del recuadro hacía que el navegador navegara al
-  // archivo y sacara a la persona de la aplicación. Con esto, soltar en
-  // cualquier parte de la pantalla lo encamina a la bandeja.
-  useEffect(() => {
-    if (!canEdit) return
-    const prevenir = (e: DragEvent) => e.preventDefault()
-    const soltar = (e: DragEvent) => {
-      // NO BORRAR. Este listener está en `window`, así que también recibe el
-      // drop que ya atendió la zona de carga cuando burbujea hasta acá: sin
-      // esta guarda, soltar SOBRE el recuadro —el gesto más probable de
-      // todos— corría los dos caminos y subía cada archivo DOS VECES, a la
-      // bandeja global y a la ficha de empresa por igual.
-      //
-      // Se mira `defaultPrevented` en vez de cortar la burbuja desde la zona
-      // (`stopPropagation`) porque acá protege a cualquier superficie de drop
-      // que exista hoy o se agregue después: le basta con hacer
-      // `preventDefault`, que igual está obligada a hacer para que el
-      // navegador no navegue al archivo.
-      if (e.defaultPrevented) return
-      // `preventDefault` PRIMERO y siempre: es lo único que impide que el
-      // navegador abra el archivo y saque a la persona de la aplicación.
-      e.preventDefault()
-      // Con selección activa la zona de carga no está en pantalla, y con ella
-      // se fue el único indicador de a qué empresa se atribuiría el lote.
-      // Subir por este camino sería hacerlo en silencio y en nombre de una
-      // empresa invisible.
-      if (!sinSeleccion) {
-        setNotice('Termina con los archivos seleccionados antes de subir otros.')
-        return
-      }
-      const files = e.dataTransfer?.files
-      if (files?.length) subirArchivos(Array.from(files))
-    }
-    window.addEventListener('dragover', prevenir)
-    window.addEventListener('drop', soltar)
-    return () => {
-      window.removeEventListener('dragover', prevenir)
-      window.removeEventListener('drop', soltar)
-    }
-  }, [canEdit, subirArchivos, sinSeleccion])
 
   function handleToggle(id: string, opts?: { range?: boolean }) {
     setSelectedIds(prev => {
@@ -385,33 +222,22 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
 
   function handleApplied(appliedIds: string[], errores: { item_id: string; error: string }[] = []) {
     const quedan = Math.max(total - appliedIds.length, 0)
-    clearSelection()
-    // PASO 2 DEL FUNNEL: esto es una COLA, no un formulario. Clasificar 40
-    // documentos era 40 veces "clasificar, buscar el siguiente con el mouse,
-    // hacer clic". El foco salta solo al que sigue, así que el gesto se reduce
-    // a elegir el casillero y repetir.
-    //
-    // El siguiente se calcula ANTES del refresco, sobre las filas que están en
-    // pantalla: después del refresco el archivo aplicado ya no está y su
-    // posición no existe para buscar el vecino. Se elige el que ocupa su lugar
-    // (el de abajo) y si era el último, el de arriba.
+    setSelectedIds(new Set())
+    // Esto es una COLA, no un formulario: el foco salta solo al que sigue. Se
+    // calcula ANTES del refresco, sobre las filas que están en pantalla.
     avanzarAlSiguiente(appliedIds)
     refrescarBandeja()
 
-    // Sin nada aplicado no hay nada que deshacer: el aviso de abajo, que es el
-    // que se reserva para lo que no tiene vuelta atrás.
     if (!appliedIds.length) {
       setNotice(errores.length
-        ? `No se clasificó ningún documento: ${motivosDe(errores)}`
-        : 'No se clasificó ningún documento')
+        ? `No se asignó ningún documento: ${motivosDe(errores)}`
+        : 'No se asignó ningún documento')
       return
     }
 
-    // Un solo aviso para un solo evento. El conteo restante se pliega acá
-    // dentro en vez de abrir un segundo cartel abajo que dice lo mismo.
     const partes = [
-      appliedIds.length === 1 ? '1 archivo clasificado' : `${appliedIds.length} archivos clasificados`,
-      quedan === 1 ? 'queda 1 sin clasificar' : `quedan ${quedan} sin clasificar`,
+      appliedIds.length === 1 ? '1 archivo asignado' : `${appliedIds.length} archivos asignados`,
+      quedan === 1 ? 'queda 1 por asignar' : `quedan ${quedan} por asignar`,
     ]
     if (errores.length) {
       partes.push(
@@ -422,92 +248,37 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
     setUltimoLote({ ids: appliedIds, mensaje: partes.join(' · ') })
   }
 
+  const header = (
+    <div className="flex items-start justify-between gap-3 flex-wrap">
+      <div>
+        <h1 className="text-cifra font-bold text-text-primary leading-tight">
+          Por asignar{queueQuery.isSuccess && total > 0 && <span className="ml-2 text-informativo tabular-nums">{total}</span>}
+        </h1>
+        <p className="text-dato text-informativo">Lo que no se pudo asignar al subir.</p>
+      </div>
+      {canEdit && <BulkUploadReview trigger="button" />}
+    </div>
+  )
+
+  if (queueQuery.isSuccess && total === 0) {
+    return (
+      <div className="space-y-3">
+        {header}
+        {notice && <Aviso texto={notice} onCerrar={() => setNotice(null)} />}
+        <div className="border border-border rounded-xl bg-white px-6 py-16 text-center">
+          <CheckCircle2 size={28} className="mx-auto text-resuelto" aria-hidden="true" />
+          <p className="mt-2 text-lectura font-semibold text-text-primary">Todo asignado</p>
+          <p className="mt-1 text-dato text-informativo">
+            Si te llegó una tanda de documentos por correo, súbela: el sistema propone a quién va cada uno.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-3">
-      {/* UN SOLO CONTROL DE EMPRESA, y cambia de trabajo según de dónde salió.
-          Antes eran dos —un indicador que decía cuál era y un buscador que la
-          elegía— más un tercero en el panel derecho, cada uno con su condición
-          de visibilidad. Los cuatro defectos del 2026-08-21 fueron choques
-          entre pares de ellos.
-
-          El buscador se retira con la selección activa porque ahí la barra
-          contextual es la dueña del modo "mover", pero LO QUE LA EMPRESA ES
-          se dice siempre: la zona de arrastre sigue aceptando archivos y
-          atribuirlos a una empresa fuera de pantalla es el defecto que este
-          archivo ya tuvo dos veces. */}
-      {canEdit && (empresa || sinSeleccion || marcadosSinEmpresa.length > 0) && !carrierId && (
-        // `items-start`, no `items-center`: con el buscador vacio la pista
-        // ("Escribe al menos 2 caracteres…") ocupa alto, y centrar dejaba la
-        // etiqueta EMPRESA flotando a media altura contra una caja larga —
-        // se leia como un desalineo, no como una etiqueta.
-        <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
-          <span className="text-etiqueta font-semibold text-informativo shrink-0 pt-1.5">EMPRESA</span>
-
-          {empresa ? (
-            <>
-              <span className="inline-flex items-center gap-2 text-dato font-semibold text-text-primary">
-                {empresa.business_name}
-                {/* La ✕ SÓLO cuando es una elección. Si la empresa viene de la
-                    ruta o de los archivos no es una elección sino un hecho, y
-                    ofrecer quitarla sugeriría algo que no se puede hacer. */}
-                {empresaDeTrabajo.sePuedeQuitar && (
-                  <button
-                    type="button"
-                    onClick={empresaDeTrabajo.quitar}
-                    aria-label={`Quitar ${empresa.business_name}`}
-                    className="text-informativo hover:text-text-primary transition-colors"
-                  >
-                    <X size={13} aria-hidden="true" />
-                  </button>
-                )}
-              </span>
-              <span className="text-etiqueta text-informativo">
-                {empresaDeTrabajo.origen === 'archivos'
-                  ? 'Los archivos marcados ya son de ella.'
-                  : 'Lo que subas ahora será de esta empresa.'}
-              </span>
-            </>
-          ) : (
-            (sinSeleccion || marcadosSinEmpresa.length > 0) && (
-              <div className="min-w-0 flex-1 max-w-md">
-                {/* Que va a pasar al elegir, DICHO ANTES de elegir. Con
-                    archivos marcados sin empresa esto ESCRIBE -- les asigna la
-                    empresa --, y una escritura que se descubre despues es
-                    exactamente lo que no puede pasar acá. */}
-                <p className="text-etiqueta text-informativo pb-1">
-                  {marcadosSinEmpresa.length
-                    ? `${marcadosSinEmpresa.length === 1
-                        ? 'El archivo marcado pasa'
-                        : `Los ${marcadosSinEmpresa.length} archivos marcados pasan`} a ser de la empresa que elijas.`
-                    : 'Lo que subas ahora será de la empresa que elijas.'}
-                </p>
-                <CarrierSearchPicker
-                  query={busqueda}
-                  onQueryChange={setBusqueda}
-                  onPick={elegirEmpresa}
-                  size="sm"
-                  showMinCharsHint
-                  placeholder="Elegir empresa…"
-                />
-              </div>
-            )
-          )}
-        </div>
-      )}
-
-      {canEdit && sinSeleccion && (
-        <TriageDropzone
-          carrierName={carrierName}
-          vacia={queueQuery.isSuccess && total === 0}
-          subiendo={uploadMutation.isPending}
-          // React Query conserva las variables de la mutación en vuelo: es de
-          // donde sale cuántos archivos tiene la tanda que se está subiendo.
-          enVuelo={uploadMutation.variables?.length}
-          subidos={subidos}
-          errores={errors}
-          onArchivos={handleFiles}
-        />
-      )}
+      {header}
 
       {ultimoLote && (
         <TriageUndoNotice
@@ -518,25 +289,9 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
         />
       )}
 
-      {/* Un solo lienzo con dos regiones rotuladas, no dos tarjetas sueltas: la
-          pantalla tiene que decir sola que el orden es elegir y despues
-          clasificar. */}
       <div className="border border-border rounded-xl bg-white overflow-hidden">
-        <div className="flex items-baseline gap-2 px-4 py-3 border-b border-border">
-          {queueQuery.isSuccess && <Cifra valor={total} etiqueta="sin clasificar" />}
-          {grupos > 0 && (
-            <span className="text-xs text-gray-500">
-              · {grupos === 1 ? '1 empresa' : `${grupos} empresas`}
-            </span>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(280px,0.7fr)]">
-          <section aria-label="Elige los documentos" className="min-w-0 lg:border-r border-border">
-            <h2 className="px-3 pt-2.5 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              <span className="text-accent">1</span> · Elige los documentos
-            </h2>
-
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,1fr)]">
+          <section aria-label="Archivos por asignar" className="min-w-0 lg:border-r border-border">
             {canEdit && (
               <TriageBulkBar
                 selectedCount={selectedIds.size}
@@ -552,12 +307,12 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
               />
             )}
 
-            <div className="overflow-y-auto max-h-[54vh]">
+            <div className="overflow-y-auto max-h-[64vh]">
               {queueQuery.isPending ? (
                 <Estado tipo="cargando" />
               ) : queueQuery.isError ? (
-                // H2: un error de la cola NUNCA se muestra como "0 sin clasificar".
-                <Estado tipo="error" titulo="No se pudo cargar la cola" detalle="Los documentos siguen guardados.">
+                // H2: un error de la cola NUNCA se muestra como una cola vacía.
+                <Estado tipo="error" titulo="No se pudo cargar Por asignar" detalle="Los documentos siguen guardados.">
                   <button type="button" onClick={() => { void queueQuery.refetch() }}
                           className="rounded-md border border-border bg-white px-3 py-1.5 text-dato font-semibold text-text-primary hover:bg-bg-main">
                     Reintentar
@@ -570,83 +325,70 @@ export function TriageWorkbench({ carrierId, carrierName, subject, empresaInicia
                   selectedIds={selectedIds}
                   onFocus={setFocusedId}
                   onToggle={handleToggle}
-                  // "Marcar todo" respeta la MISMA regla que `handleToggle`:
-                  // una selección no cruza empresas. Sin esto era la única
-                  // puerta por la que se colaba una selección heterogénea, y
-                  // aguas abajo `selectedCarrierId` y `carrierLabel` caen a
-                  // null — o sea que la pantalla deja de saber de quién es lo
-                  // que está marcado, justo antes de ofrecer moverlo.
-                  //
-                  // "Todo" pasa a ser "todo lo de la empresa que ya está en
-                  // foco"; sin foco ni selección, la primera empresa de la
-                  // lista. En la bandeja de UNA empresa (`carrierId`) no
-                  // cambia nada: ahí todas las filas comparten empresa.
+                  // "Marcar todo" respeta la MISMA regla que `handleToggle`: una
+                  // selección no cruza empresas.
                   onToggleAll={() => setSelectedIds(prev => {
                     if (prev.size > 0) return new Set()
                     const empresa = subjectCarrierId ?? rows[0]?.carrier_id ?? null
-                    return new Set(
-                      rows.filter(r => r.carrier_id === empresa).map(r => r.id),
-                    )
+                    return new Set(rows.filter(r => r.carrier_id === empresa).map(r => r.id))
                   })}
                 />
               )}
             </div>
 
-            <div className="flex items-center justify-between flex-wrap gap-2 px-3 py-2 border-t border-border bg-gray-50/60">
-              <p className="text-[10px] text-gray-500">
-                <kbd className="font-sans">↑↓</kbd> mover ·{' '}
-                <kbd className="font-sans">space</kbd> marcar ·{' '}
-                <kbd className="font-sans">⇧+click</kbd> rango
+            <div className="flex items-center justify-between flex-wrap gap-2 px-3 py-2 border-t border-border bg-bg-main">
+              <p className="text-etiqueta text-informativo">
+                <kbd className="font-sans">↑↓</kbd> mover · <kbd className="font-sans">Enter</kbd> asignar ·{' '}
+                <kbd className="font-sans">space</kbd> marcar
               </p>
               {rows.length < total && (
-                <p className="text-[10px] text-gray-500 tabular-nums">
-                  Mostrando {rows.length} de {total}
-                </p>
+                <p className="text-etiqueta text-informativo tabular-nums">Mostrando {rows.length} de {total}</p>
               )}
             </div>
           </section>
 
-          <section aria-label="Indica qué son" className="min-w-0 border-t lg:border-t-0 border-border">
-            <h2 className="px-3 pt-2.5 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              <span className="text-accent">2</span> · Indica qué son
-            </h2>
-            <div className="p-3 pt-1 space-y-3">
-              <TriageClassifyForm
-                targetIds={canEdit ? targetIds : []}
-                subjects={subjects}
-                carrierLabel={carrierLabel}
-                pendingRows={(pendingQuery.data?.rows ?? []).filter(
-                  r => !subject || (r.entity_type === subject.entity_type && r.entity_id === subject.entity_id),
-                )}
-                pendingState={!subjectCarrierId ? 'ready' : pendingQuery.isPending ? 'loading' : pendingQuery.isError ? 'error' : 'ready'}
-                onRetryPending={() => { void pendingQuery.refetch() }}
-                onApplied={handleApplied}
-              />
-              {targetIds.length > 0 && <TriagePreview items={previewItems} />}
-            </div>
+          <section aria-label="Detalle del archivo" className="min-w-0 border-t lg:border-t-0 border-border p-3 space-y-3">
+            {/* El documento grande primero: se asigna leyendo el papel. */}
+            {targetIds.length > 0 && <TriagePreview items={previewItems} />}
+            <TriageClassifyForm
+              // Otro archivo, otro formulario: la propuesta se elige de nuevo y no
+              // queda pegado lo que se eligió para el anterior.
+              key={targetIds.join(',')}
+              targetIds={canEdit ? targetIds : []}
+              subjects={subjects}
+              carrierLabel={carrierLabel}
+              pendingRows={pendingQuery.data?.rows ?? []}
+              pendingState={!subjectCarrierId ? 'ready' : pendingQuery.isPending ? 'loading' : pendingQuery.isError ? 'error' : 'ready'}
+              onRetryPending={() => { void pendingQuery.refetch() }}
+              onApplied={handleApplied}
+              suggestion={targetIds.length === 1 && focusedRow ? {
+                entity_type: focusedRow.suggested_entity_type,
+                entity_id: focusedRow.suggested_entity_id,
+                requirement_id: focusedRow.suggested_requirement_id,
+              } : null}
+              onPickCarrier={canEdit ? elegirEmpresa : undefined}
+              onDiscard={canEdit && targetIds.length === 1 ? () => discardMutation.mutate(targetIds) : undefined}
+            />
           </section>
         </div>
       </div>
 
-      {/* El aviso sin deshacer. El tono oscuro es el mismo token que el aviso
-          de deshacer (`bg-text-primary`): eran dos negros distintos para dos
-          carteles que la persona ve juntos. */}
-      {notice && (
-        <div
-          data-testid="triage-notice"
-          className="inline-flex items-center gap-3 bg-text-primary text-white text-[11px] rounded-lg pl-3 pr-2 py-1.5 shadow-sm"
-        >
-          <span>{notice}</span>
-          <button
-            type="button"
-            onClick={() => setNotice(null)}
-            aria-label="Cerrar aviso"
-            className="p-0.5 rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <X size={12} />
-          </button>
-        </div>
-      )}
+      {notice && <Aviso texto={notice} onCerrar={() => setNotice(null)} />}
+    </div>
+  )
+}
+
+/** El aviso sin deshacer. El tono oscuro es el mismo token que el aviso de
+ *  deshacer (`bg-text-primary`). */
+function Aviso({ texto, onCerrar }: { texto: string; onCerrar: () => void }) {
+  return (
+    <div data-testid="triage-notice"
+         className="inline-flex items-center gap-3 bg-text-primary text-white text-etiqueta rounded-lg pl-3 pr-2 py-1.5 shadow-sm">
+      <span>{texto}</span>
+      <button type="button" onClick={onCerrar} aria-label="Cerrar aviso"
+              className="p-0.5 rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors">
+        <X size={12} />
+      </button>
     </div>
   )
 }

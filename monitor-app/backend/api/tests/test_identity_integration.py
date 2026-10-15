@@ -13,7 +13,7 @@ import pytest
 
 from app.routers.carriers import buscar_en_el_directorio, list_carriers
 from app.routers.drivers import search_drivers
-from app.services.document_matcher import EntityUniverse, PendingOwner, match_document, match_owner, Catalog, RequirementAlias
+from app.services.document_matcher import EntityUniverse, match_document, Catalog, RequirementAlias
 from app.utils.identity import canonical_plate, canonical_rut
 from tests.conftest import PoolDeUnaConexion
 from tests.test_identity import PLATE_CASES, RUT_CASES
@@ -53,8 +53,8 @@ async def _ids_de_carriers(pool, q: str) -> set[str]:
 
 
 async def test_rut_con_y_sin_puntos_encuentra_la_misma_empresa(conexion_revertida):
-    """Review Focus 5: mismo resultado en /carriers?q, /buscar, match_document y
-    match_owner, con el RUT guardado con puntos y buscado sin puntos, y al revés."""
+    """Review Focus 5: mismo resultado en /carriers?q, /buscar y el reconocedor (con y
+    sin tipo declarado), con el RUT guardado con puntos y buscado sin puntos, y al revés."""
     conn = conexion_revertida
     pool = PoolDeUnaConexion(conn)
     con_puntos = await _empresa(conn, "10.000.013-K")      # guardado no canónico
@@ -71,7 +71,9 @@ async def test_rut_con_y_sin_puntos_encuentra_la_misma_empresa(conexion_revertid
                                       ("10000027-K", "F30 10.000.027-K.pdf", canonica)]:
         universo = EntityUniverse(carriers=[(esperada, tax_id, "ZZ")])
         assert [c.entity_id for c in match_document(file_name=archivo, catalog=catalogo, universe=universo)] == [esperada]
-        assert [c.record_id for c in match_owner(archivo, [PendingOwner("r", "CARRIER", "ZZ", tax_id, "ZZ")])] == ["r"]
+        declarado = match_document(file_name=archivo, catalog=Catalog(), universe=universo,
+                                   declared_requirement=RequirementAlias("r-f30", "CARRIER", "F30"))
+        assert [c.entity_id for c in declarado] == [esperada]
 
 
 async def test_rut_de_conductor_con_puntos_en_drivers(conexion_revertida):

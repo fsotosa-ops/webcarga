@@ -188,9 +188,16 @@ export const complianceApi = {
     apiFetch<PendingSummaryResponse>(`/api/v1/compliance-records/pending/summary?group_by=${groupBy}`),
 
   /** Carga en lote: a quién va cada archivo. Solo los NOMBRES; no escribe. */
-  matchPendingFiles: (requirementId: string, fileNames: string[]) =>
+  /** La revisión de una carga en lote, con el contexto que haya: el tipo (Pendientes),
+   *  la empresa (su ficha) o nada (Por asignar). No sube nada. */
+  matchUploadFiles: (fileNames: string[], context: { requirementId?: string; carrierId?: string } = {}) =>
     apiFetch<PendingMatchResponse>('/api/v1/compliance-records/pending/match', {
-      method: 'POST', body: JSON.stringify({ requirement_id: requirementId, file_names: fileNames }),
+      method: 'POST',
+      body: JSON.stringify({
+        file_names: fileNames,
+        ...(context.requirementId ? { requirement_id: context.requirementId } : {}),
+        ...(context.carrierId ? { carrier_id: context.carrierId } : {}),
+      }),
     }),
 
   /** La ficha de una empresa, resumida: cuántos requisitos tiene cada

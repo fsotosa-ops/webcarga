@@ -122,7 +122,7 @@ test('Directorio: dar de baja muestra antes lo que toca (D2), sin confirmar', as
   expect(problems).toEqual([])
 })
 
-test('Sin clasificar: la sección Descartados abre sin errores', async ({ page }) => {
+test('Por asignar: la sección Descartados abre sin errores', async ({ page }) => {
   const problems = watch(page)
   await login(page, 'cert@sim.local')
   await page.goto('/dashboard/compliance/inbox')
@@ -183,6 +183,8 @@ test('Pedir a Certificación: Operaciones pide un documento y Certificación lo 
 // ── Entrega C (D4 + Cert 2b) ────────────────────────────────────────────────
 
 test('Directorio › Conductores: filtrar "Sin empresa" y abrir su ficha propia (C5)', async ({ page }) => {
+  // Sin conductores sin empresa en la copia local, el recorrido toma el camino largo.
+  test.setTimeout(90000)
   const problems = watch(page)
   await login(page, 'cert@sim.local')
   await page.goto('/dashboard/drivers')
@@ -236,5 +238,47 @@ test('El Monitor abre la vista rápida desde una fila (C10)', async ({ page }) =
   await trigger.click()
   await expect(page.getByRole('link', { name: 'Abrir ficha completa' })).toBeVisible({ timeout: 15000 })
   expect(page.url()).toContain('/operations/monitor')
+  expect(problems).toEqual([])
+})
+
+// ── Entrega D (una forma de subir + Por asignar) ────────────────────────────
+
+test('Por asignar: subir sin contexto deja lo no resuelto en la bandeja, y se resuelve ahí (D)', async ({ page }) => {
+  test.setTimeout(120000)
+  const problems = watch(page)
+  await login(page, 'cert@sim.local')
+  await page.goto('/dashboard/compliance/inbox')
+  await expect(page.getByRole('heading', { name: /Por asignar/ })).toBeVisible({ timeout: 20000 })
+
+  // Un nombre que no dice nada: el reconocedor no lo puede asignar.
+  const nombre = `IMG_${Date.now()}.pdf`
+  await page.getByLabel('Elegir documentos').setInputFiles({
+    name: nombre, mimeType: 'application/pdf', buffer: Buffer.from(`%PDF-1.4 ${nombre}`),
+  })
+  const panel = page.getByRole('dialog', { name: 'Subir documentos' })
+  await expect(panel).toBeVisible({ timeout: 20000 })
+  await panel.getByRole('button', { name: /Guardar · 1 a Por asignar/ }).click()
+  await expect(panel.getByText('En Por asignar', { exact: true })).toBeVisible({ timeout: 20000 })
+  await panel.getByRole('button', { name: 'Cerrar el lote' }).click()
+
+  // Llegó a la bandeja: se abre y se descarta (queda restaurable en Descartados).
+  const fila = page.getByRole('table').getByText(nombre)
+  await expect(fila).toBeVisible({ timeout: 20000 })
+  await fila.click()
+  await page.getByRole('button', { name: 'Descartar' }).click()
+  await expect(page.getByText(/Puedes restaurarlos en Descartados/)).toBeVisible({ timeout: 15000 })
+  expect(problems).toEqual([])
+})
+
+test('La ficha de empresa sube documentos con la empresa ya puesta (D)', async ({ page }) => {
+  const problems = watch(page)
+  await login(page, 'cert@sim.local')
+  await page.goto('/dashboard/compliance')
+  const href = await page.locator('a[href*="?tab=documentos"]').first().getAttribute('href', { timeout: 30000 })
+  await page.goto(href!)
+  await expect(page.getByText('De la empresa').first()).toBeVisible({ timeout: 20000 })
+  // Solo si la empresa está activa recibe documentos.
+  const subir = page.getByRole('button', { name: 'Subir documentos' })
+  if (await subir.isVisible().catch(() => false)) await expect(subir).toBeEnabled()
   expect(problems).toEqual([])
 })

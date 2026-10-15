@@ -2,16 +2,26 @@
 
 import { useRef, useState } from 'react'
 import { complianceApi } from '@/lib/api/compliance'
+import { documentIngestApi } from '@/lib/api/documentIngest'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
 import { datoQuePide, datosDelDocumento } from '@/lib/compliance'
 import { periodoQueSeExige, vigenciaDe } from '@/lib/vigencia'
 import { hoyEnChile } from '@/lib/utils/datetime'
-import type { PendingMatchFile, PendingSummaryRow } from '@/lib/types'
+import type { PendingMatchFile, PendingMatchRequirement, PendingSummaryRow } from '@/lib/types'
+
+/** El contexto de una carga (Entrega D): el tipo desde Pendientes, la empresa desde su
+ *  ficha, o nada desde Por asignar. Acota la propuesta; el flujo es el mismo. */
+export type UploadContext = { requirement?: PendingSummaryRow | null; carrierId?: string | null }
+
+/** Lo que la revisión necesita de un tipo: su nombre, su código y qué dato pide. */
+export type UploadRule = Pick<PendingMatchRequirement, 'label' | 'requirement_code' | 'target_entity' | 'expiration_policy' | 'vigencia'>
 
 export type BulkItem = {
   file: File
   match: PendingMatchFile
   recordId: string | null
+  /** El tipo del registro elegido o propuesto; con el tipo fijado, siempre ese. */
+  requirementId: string | null
   /** A quién va, dicho para la pantalla: lo trae el match o la elección. Se
    *  guarda en la fila porque, al guardar, quien ya cumplió sale de la lista
    *  de los que deben el documento y ya no se podría nombrar desde ahí. */
@@ -21,7 +31,7 @@ export type BulkItem = {
   via: 'match' | 'manual' | null
   /** La fecha propia del archivo (impresa o de emisión), si su regla la pide. */
   date: string
-  status: 'pending' | 'saving' | 'saved' | 'error'
+  status: 'pending' | 'saving' | 'saved' | 'staged' | 'error'
   error?: string
 }
 
@@ -35,16 +45,21 @@ export type BulkRow = {
   collision: BulkCollision | null
   /** A quién va el archivo con el que choca. */
   collisionLabel: string | null
+  /** El tipo de la fila y qué dato pide, si se sabe. */
+  rule: UploadRule | null
   ready: boolean
 }
 export type BulkCollision = 'outranked' | 'tie'
 
 const CONCURRENCY = 3
+/** El backend corta en 50 archivos por subida a Por asignar (`_MAX_FILES_PER_UPLOAD`):
+ *  una tanda de 120 se manda en lotes encadenados. */
+const STAGING_BATCH = 50
 /** El mismo `_AMBIGUITY_MARGIN` del matcher del servidor. */
 const AMBIGUITY_MARGIN = 0.05
 
 /** La fuerza de un archivo en su registro. Guardado: ya lo ocupa, gana
- *  siempre. Propuesta del servidor: identificador (RUT, patente) sobre nombre,
+ *  siempre. Propuesta del servidor: identificador o declaración sobre nombre,
  *  luego la confianza. Elección a mano: sin fuerza que comparar (empata). */
 type Strength = { saved: true } | { saved: false; strong: boolean; confidence: number } | null
 function strengthOf(it: BulkItem): Strength {
@@ -59,11 +74,11 @@ function outranks(a: Strength, b: Strength): boolean {
   return a.confidence - b.confidence > AMBIGUITY_MARGIN
 }
 
-/** Regla de choque del lote (P23): la MISMA que `resolve_owner_collisions`
- *  en el servidor (`document_matcher.py`). Entre los archivos que van a un
- *  mismo registro, si uno es estrictamente más fuerte que todos los demás,
- *  se queda y solo los otros bajan (`outranked`); si no, bajan todos (`tie`).
- *  Devuelve índice → motivo, solo de los que bajan. */
+/** Regla de choque del lote (P23): la MISMA que `resolve_collisions` en el
+ *  servidor (`document_matcher.py`). Entre los archivos que van a un mismo
+ *  registro, si uno es estrictamente más fuerte que todos los demás, se queda y
+ *  solo los otros bajan (`outranked`); si no, bajan todos (`tie`). Devuelve
+ *  índice → motivo, solo de los que bajan. */
 export function resolveCollisions(list: BulkItem[]): Map<number, BulkCollision> {
   const groups = new Map<string, number[]>()
   list.forEach((it, i) => { if (it.recordId) groups.set(it.recordId, [...(groups.get(it.recordId) ?? []), i]) })
@@ -79,29 +94,41 @@ export function resolveCollisions(list: BulkItem[]): Map<number, BulkCollision> 
   return demoted
 }
 
-/** El período que se exige hoy (`YYYY-MM`), con la aritmética de la regla
- *  (respeta su desfase). Vacío si la regla no lo define: se pide a mano. */
-function proposedPeriod(requirement: PendingSummaryRow): string {
-  if (!requirement.expiration_policy) return ''
+/** El período que se exige hoy (`YYYY-MM`) según la regla del tipo (respeta su
+ *  desfase). Vacío si la regla no lo define: se pide a mano. */
+function proposedPeriod(rule: UploadRule): string {
+  if (!rule.expiration_policy) return ''
   const p = periodoQueSeExige(
-    vigenciaDe({ expiration_policy: requirement.expiration_policy, vigencia: requirement.vigencia }),
+    vigenciaDe({ expiration_policy: rule.expiration_policy, vigencia: rule.vigencia }),
     new Date(`${hoyEnChile()}T12:00:00`))
   return p ? `${p.periodo.getFullYear()}-${String(p.periodo.getMonth() + 1).padStart(2, '0')}` : ''
 }
 
-/** La carga en lote de Pendientes (spec 2026-10-11, sección 6). Nada se sube
- *  hasta `save()`; se guarda lo que está listo, de a tres, y cada fila conserva
- *  su resultado. Reintentar no repite lo ya guardado. */
-export function usePendingBulkUpload(requirement: PendingSummaryRow) {
+function ruleOfSummary(r: PendingSummaryRow): UploadRule {
+  return {
+    label: r.label, requirement_code: r.requirement_code ?? '', target_entity: r.target_entity ?? 'CARRIER',
+    expiration_policy: r.expiration_policy, vigencia: r.vigencia,
+  }
+}
+
+/** Una carga en lote (spec 2026-10-11 §6; Entrega D). Nada se sube hasta `save()`:
+ *  lo listo va a su registro, de a tres, y lo que quedó sin resolver va a Por asignar
+ *  con lo que ya se sabía (su tipo y la empresa del contexto). Cada fila conserva su
+ *  resultado; reintentar no repite lo ya guardado. */
+export function useBulkUpload(context: UploadContext = {}) {
+  const fixed = context.requirement ?? null
   const subirDocumento = useSubirDocumento()
-  const pide = requirement.expiration_policy ? datoQuePide(requirement.expiration_policy) : null
   const [items, setItems] = useState<BulkItem[]>([])
-  const [batchPeriod, setBatchPeriod] = useState('')
+  const [rules, setRules] = useState<Record<string, UploadRule>>(fixed ? { [fixed.key]: ruleOfSummary(fixed) } : {})
+  /** El período, por tipo: es del lote, no de cada archivo (todos los F30-1 de una
+   *  tanda son del mismo mes). */
+  const [periods, setPeriods] = useState<Record<string, string>>({})
   const [matching, setMatching] = useState(false)
   const [matchError, setMatchError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [savedOnce, setSavedOnce] = useState(false)
+  const [staged, setStaged] = useState(0)
   const lastFiles = useRef<File[]>([])
 
   async function receive(files: File[]) {
@@ -110,16 +137,23 @@ export function usePendingBulkUpload(requirement: PendingSummaryRow) {
     setMatching(true)
     setMatchError(null)
     try {
-      const { files: proposals } = await complianceApi.matchPendingFiles(requirement.key, files.map(f => f.name))
+      const res = await complianceApi.matchUploadFiles(files.map(f => f.name), {
+        requirementId: fixed?.key, carrierId: context.carrierId ?? undefined,
+      })
+      const known: Record<string, UploadRule> = { ...(res.requirements ?? {}) }
+      if (fixed) known[fixed.key] = ruleOfSummary(fixed)
+      setRules(known)
+      setPeriods(Object.fromEntries(Object.entries(known).map(([id, r]) => [id, proposedPeriod(r)])))
       setItems(files.map((file, i) => {
-        const m = proposals[i]
+        const m = res.files[i]
         return {
-          file, match: m, recordId: m.record_id, label: m.subject_label, carrier: m.carrier_name,
+          file, match: m, recordId: m.record_id, requirementId: fixed?.key ?? m.requirement_id,
+          label: m.subject_label, carrier: m.carrier_name,
           via: m.record_id ? 'match' : null, date: '', status: 'pending',
         }
       }))
-      setBatchPeriod(proposedPeriod(requirement))
       setSavedOnce(false)
+      setStaged(0)
     } catch (e) {
       setMatchError(e instanceof Error && e.message ? e.message : 'No se pudo revisar a quién va cada archivo')
     } finally {
@@ -130,8 +164,11 @@ export function usePendingBulkUpload(requirement: PendingSummaryRow) {
   const update = (i: number, patch: Partial<BulkItem>) =>
     setItems(prev => prev.map((it, j) => (j === i ? { ...it, ...patch } : it)))
 
-  const needs = pide?.dato ?? null
-  const dateRequired = !!pide && pide.dato !== 'periodo' && pide.obligatorio
+  const ruleOf = (it: BulkItem): UploadRule | null => (it.requirementId ? rules[it.requirementId] ?? null : null)
+  const pideOf = (it: BulkItem) => {
+    const rule = ruleOf(it)
+    return rule?.expiration_policy ? datoQuePide(rule.expiration_policy) : null
+  }
 
   /** Agrupa y decide qué está listo. Dos archivos al mismo registro chocan
    *  (`resolveCollisions`): el que baja no está listo y se pide elegir (uno ya
@@ -149,25 +186,63 @@ export function usePendingBulkUpload(requirement: PendingSummaryRow) {
         : collision ? 'choose'
         : item.recordId ? 'assigned'
         : item.match.status === 'ambiguous' ? 'choose' : 'unassigned'
+      const pide = pideOf(item)
       const hasData = !pide ? true
-        : pide.dato === 'periodo' ? /^\d{4}-\d{2}$/.test(batchPeriod)
-        : !dateRequired || !!item.date
+        : pide.dato === 'periodo' ? /^\d{4}-\d{2}$/.test(periods[item.requirementId ?? ''] ?? '')
+        : !pide.obligatorio || !!item.date
       const ready = (item.status === 'pending' || item.status === 'error')
         && !!item.recordId && !collision && hasData
-      return { item, index, group, collision, collisionLabel, ready }
+      return { item, index, group, collision, collisionLabel, rule: ruleOf(item), ready }
     })
   }
 
   const dataOf = (it: BulkItem) => {
+    const pide = pideOf(it)
     if (!pide) return undefined
-    const valor = pide.dato === 'periodo' ? batchPeriod : it.date
+    const valor = pide.dato === 'periodo' ? periods[it.requirementId ?? ''] ?? '' : it.date
     const datos = datosDelDocumento(pide.dato, valor)
     return Object.keys(datos).length ? datos : undefined
   }
 
+  /** Lo que no se resolvió va a Por asignar, una tanda por tipo conocido: allí
+   *  se elige de quién es, sin volver a subirlo. */
+  async function stageUnresolved(list: BulkRow[]) {
+    const byType = new Map<string, BulkRow[]>()
+    for (const r of list) {
+      const k = r.item.requirementId ?? ''
+      byType.set(k, [...(byType.get(k) ?? []), r])
+    }
+    for (const [typeId, rows] of byType) {
+      const rule = typeId ? rules[typeId] : null
+      for (let i = 0; i < rows.length; i += STAGING_BATCH) {
+        const batch = rows.slice(i, i + STAGING_BATCH)
+        try {
+          const res = await documentIngestApi.upload(context.carrierId ?? undefined, batch.map(r => r.item.file),
+            rule ? { code: rule.requirement_code, target: rule.target_entity } : undefined)
+          // La subida es por archivo: responde 201 aunque alguno no entre, y lo dice en
+          // `errors`. Cada fila toma SU resultado; un duplicado ya está en Por asignar.
+          const fallas = new Map(res.errors.map(e => [e.file_name, e.error]))
+          let entraron = 0
+          batch.forEach(r => {
+            const falla = fallas.get(r.item.file.name)
+            if (falla) update(r.index, { status: 'error', error: falla })
+            else { update(r.index, { status: 'staged' }); entraron++ }
+          })
+          setStaged(n => n + entraron)
+        } catch (e) {
+          batch.forEach(r => update(r.index, {
+            status: 'error', error: e instanceof Error && e.message ? e.message : 'No se pudo dejar en Por asignar',
+          }))
+        }
+      }
+    }
+  }
+
   async function save() {
-    const queue = rowsOf(items).filter(r => r.ready)
-    if (!queue.length || saving) return
+    const rows = rowsOf(items)
+    const queue = rows.filter(r => r.ready)
+    const unresolved = rows.filter(r => r.item.status === 'pending' && !r.ready && !r.item.recordId)
+    if ((!queue.length && !unresolved.length) || saving) return
     // Si se cierra la pestaña a mitad, lo guardado queda guardado; el resto
     // no. El aviso existe solo mientras hay subidas en vuelo.
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
@@ -190,6 +265,7 @@ export function usePendingBulkUpload(requirement: PendingSummaryRow) {
     }
     try {
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker))
+      if (unresolved.length) await stageUnresolved(unresolved)
     } finally {
       window.removeEventListener('beforeunload', warn)
       setSaving(false)
@@ -200,26 +276,39 @@ export function usePendingBulkUpload(requirement: PendingSummaryRow) {
 
   const rows = rowsOf(items)
   const busy = saving || matching
+  /** Los tipos del lote que piden período: uno por tipo, arriba de la lista. */
+  const periodTypes = [...new Set(items.map(i => i.requirementId).filter((id): id is string => !!id))]
+    .filter(id => {
+      const policy = rules[id]?.expiration_policy
+      return !!policy && datoQuePide(policy)?.dato === 'periodo'
+    })
   return {
-    items, rows, needs, dateRequired,
+    items, rows, rules, fixed,
     receive, matching, matchError,
     retryMatch: () => void receive(lastFiles.current),
-    choose: (i: number, recordId: string, who?: { label: string; carrier: string | null }) => {
+    choose: (i: number, recordId: string, who?: { label: string; carrier: string | null; requirementId?: string }) => {
       if (busy) return
-      update(i, { recordId, label: who?.label ?? null, carrier: who?.carrier ?? null, via: 'manual' })
+      update(i, {
+        recordId, label: who?.label ?? null, carrier: who?.carrier ?? null, via: 'manual',
+        ...(who?.requirementId ? { requirementId: who.requirementId } : {}),
+      })
     },
     remove: (i: number) => { if (!busy) setItems(prev => prev.filter((_, j) => j !== i)) },
     /** "Elegir otro": otro archivo para la misma fila (el que pesaba de más). */
     replaceFile: (i: number, file: File) => { if (!busy) update(i, { file, status: 'pending', error: undefined }) },
     setRowDate: (i: number, date: string) => update(i, { date }),
-    batchPeriod, setBatchPeriod,
+    periodTypes, periods,
+    setPeriod: (requirementId: string, value: string) => setPeriods(p => ({ ...p, [requirementId]: value })),
     ready: rows.filter(r => r.ready).length,
+    /** Lo que al guardar va a Por asignar. */
+    toStage: rows.filter(r => r.item.status === 'pending' && !r.ready && !r.item.recordId).length,
     save, saving, progress,
     result: !saving && savedOnce ? {
       saved: items.filter(i => i.status === 'saved').length,
+      staged,
       errors: items.filter(i => i.status === 'error').length,
       unresolved: rows.filter(r => r.item.status === 'pending' && !r.ready).length,
     } : null,
-    reset: () => { if (!busy) { setItems([]); setSavedOnce(false); setMatchError(null) } },
+    reset: () => { if (!busy) { setItems([]); setSavedOnce(false); setMatchError(null); setStaged(0) } },
   }
 }

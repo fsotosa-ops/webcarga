@@ -140,7 +140,7 @@ describe('TriageWorkbench — deshacer un lote', () => {
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /^deshacer$/i })).not.toBeInTheDocument(),
     )
-    expect(screen.getByText(/2 archivos volvieron a Sin clasificar/i)).toBeInTheDocument()
+    expect(screen.getByText(/2 archivos volvieron a Por asignar/i)).toBeInTheDocument()
   })
 
   it('si el deshacer falla por red, lo dice', async () => {
@@ -160,8 +160,8 @@ describe('TriageWorkbench — deshacer un lote', () => {
     fireEvent.click(await screen.findByRole('button', { name: /simular lote aplicado/i }))
 
     const aviso = await screen.findByRole('status')
-    expect(aviso).toHaveTextContent(/2 archivos clasificados/)
-    expect(aviso).toHaveTextContent(/quedan 0 sin clasificar/)
+    expect(aviso).toHaveTextContent(/2 archivos asignados/)
+    expect(aviso).toHaveTextContent(/quedan 0 por asignar/)
     expect(screen.queryByTestId('triage-notice')).not.toBeInTheDocument()
   })
 })
@@ -175,7 +175,7 @@ describe('TriageWorkbench — todas las operaciones refrescan lo mismo', () => {
   const ESPERADO = [...RAICES_DE_CERTIFICACION]
     .map(k => JSON.stringify(k)).sort()
 
-  it('las cinco mutaciones invalidan el mismo conjunto de claves', async () => {
+  it('las mutaciones de la bandeja invalidan el mismo conjunto de claves', async () => {
     vi.mocked(documentIngestApi.upload).mockResolvedValue({
       batch_id: 'b1', items: [], errors: [],
     })
@@ -207,11 +207,8 @@ describe('TriageWorkbench — todas las operaciones refrescan lo mismo', () => {
       expect(claves, `la operación "${que}" no refresca el mismo conjunto`).toEqual(ESPERADO)
     }
 
-    await clavesDe('subir', () => {
-      fireEvent.change(screen.getByLabelText(/agrega los documentos a Sin clasificar/i), {
-        target: { files: [new File(['x'], 'd.pdf', { type: 'application/pdf' })] },
-      })
-    })
+    // Subir ya no es de la bandeja: es la revisión de lote (BulkUploadReview), que
+    // invalida lo mismo al terminar (useBulkUpload → invalidarCertificacion).
 
     await clavesDe('aplicar un lote', () => {
       fireEvent.click(screen.getByRole('button', { name: /simular lote aplicado/i }))

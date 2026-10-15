@@ -262,14 +262,17 @@ PENDING_MATCH_MAX_FILES = 200
 
 
 class PendingMatchBody(BaseModel):
-    """Los NOMBRES de los archivos arrastrados sobre un documento. Todavía no
-    se sube nada: esto solo propone a quién va cada uno."""
-    requirement_id: UUID
+    """Los NOMBRES de los archivos de una carga en lote, con el contexto que haya
+    (Entrega D): el tipo desde Pendientes, la empresa desde su ficha, o nada desde
+    Por asignar. Todavía no se sube nada: esto solo propone a qué registro va cada uno."""
+    requirement_id: Optional[UUID] = None
+    carrier_id: Optional[UUID] = None
     file_names: list[str] = Field(..., min_length=1)
 
 
 class PendingMatchCandidate(BaseModel):
     record_id: str
+    requirement_id: str
     subject_label: str
     carrier_name: str
     confidence: float
@@ -279,9 +282,11 @@ class PendingMatchFile(BaseModel):
     file_name: str
     status: Literal["matched", "ambiguous", "unmatched"]
     record_id: Optional[str] = None
+    requirement_id: Optional[str] = None
     subject_label: Optional[str] = None
     carrier_name: Optional[str] = None
-    reason: Optional[Literal["rut", "plate", "name"]] = None
+    # declared: la empresa elegida al subir, o el manifiesto.
+    reason: Optional[Literal["rut", "plate", "name", "declared"]] = None
     confidence: Optional[float] = None
     candidates: list[PendingMatchCandidate] = []
     # Otro archivo del lote va al mismo registro (regla P23): "outranked" si
@@ -290,5 +295,15 @@ class PendingMatchFile(BaseModel):
     collision_subject_label: Optional[str] = None
 
 
+class PendingMatchRequirement(BaseModel):
+    """Lo que la revisión necesita de cada tipo propuesto: su nombre y qué dato pide (fecha o período)."""
+    label: str
+    requirement_code: str
+    target_entity: str
+    expiration_policy: Optional[str] = None
+    vigencia: Optional[dict] = None
+
+
 class PendingMatchResponse(BaseModel):
     files: list[PendingMatchFile]
+    requirements: dict[str, PendingMatchRequirement] = {}

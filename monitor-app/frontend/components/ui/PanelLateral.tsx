@@ -24,7 +24,7 @@ function isScrollbarClick(e: MouseEvent, target: Element): boolean {
  *  los mismos que ya usa TransporterSlideOver. Un `z-[9999]` suelto convierte
  *  el apilado en algo que se descubre a los golpes. */
 export function PanelLateral({
-  titulo, onCerrar, pie, children, overlay = 'dim', label,
+  titulo, onCerrar, pie, children, overlay = 'dim', label, ancho = 'normal',
 }: {
   titulo:   ReactNode
   /** Nombre accesible del panel cuando `titulo` no es un texto. */
@@ -36,6 +36,8 @@ export function PanelLateral({
    *  ver y usar la pantalla de atrás, como el peek de Linear; no es modal, y un
    *  clic afuera la cierra. */
   overlay?: 'dim' | 'none'
+  /** `amplio`: lo que se revisa es una tabla (la revisión de una carga en lote). */
+  ancho?: 'normal' | 'amplio'
 }) {
   const panel = useRef<HTMLDivElement>(null)
   const anterior = useRef<HTMLElement | null>(null)
@@ -122,7 +124,7 @@ export function PanelLateral({
         tabIndex={-1}
         onKeyDown={atraparTab}
         className={`fixed right-0 top-0 z-50 h-full w-full bg-white shadow-xl flex flex-col focus-visible:outline-none ${
-          overlay === 'dim' ? 'max-w-md' : 'md:w-[420px] md:border-l md:border-border'
+          overlay === 'none' ? 'md:w-[420px] md:border-l md:border-border' : ancho === 'amplio' ? 'max-w-4xl' : 'max-w-md'
         }`}
       >
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">

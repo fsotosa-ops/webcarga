@@ -1,6 +1,7 @@
 // @vitest-environment node
 /**
- * Los módulos se llaman "Sin clasificar" y "Directorio" (spec §3, E-h). Las
+ * Los módulos se llaman "Por asignar" (Entrega D, 15/10; antes "Sin clasificar") y
+ * "Directorio" (spec §3, E-h). Las
  * rutas siguen en inglés (`/dashboard/compliance/inbox`, `/dashboard/carriers`)
  * y los identificadores viejos (`PuenteALaBandeja`) se quedan: esto mira solo
  * el texto que ve una persona, con los comentarios quitados.
@@ -31,7 +32,13 @@ function sinComentarios(fuente: string): string {
 }
 
 const PROHIBIDOS: { re: RegExp; motivo: string }[] = [
-  { re: /(^|[^A-Za-z])la [Bb]andeja(?![A-Za-z])/, motivo: 'el módulo se llama "Sin clasificar"' },
+  { re: /(^|[^A-Za-z])la [Bb]andeja(?![A-Za-z])/, motivo: 'el módulo se llama "Por asignar"' },
+  // El MÓDULO: como destino ("a/en/de Sin clasificar"), en el menú o en un contador.
+  // "Sin clasificar" como VALOR de un atributo (tipo de operación, zona de un local)
+  // es otra cosa y se queda.
+  { re: /(^|[^A-Za-z])(a|en|de) [Ss]in clasificar/, motivo: 'el módulo se llama "Por asignar" (Entrega D)' },
+  { re: /label: 'Sin clasificar'/,               motivo: 'el módulo se llama "Por asignar" (Entrega D)' },
+  { re: /\} sin clasificar/,                     motivo: 'el módulo se llama "Por asignar" (Entrega D)' },
   { re: /(en|a) Empresas(?![A-Za-z])/,           motivo: 'el enlace lleva al Directorio' },
   { re: />\s*Empresas\s*<\/a>/,                  motivo: 'el enlace lleva al Directorio' },
 ]
@@ -41,7 +48,7 @@ describe('los módulos se nombran como en el glosario', () => {
     expect(['app', 'components', 'lib'].flatMap(d => recorrer(join(RAIZ, d))).length).toBeGreaterThan(50)
   })
 
-  it('ningún texto dice "la bandeja" ni llama "Empresas" al Directorio', () => {
+  it('ningún texto dice "la bandeja" ni "Sin clasificar", ni llama "Empresas" al Directorio', () => {
     const hallazgos: string[] = []
     for (const ruta of ['app', 'components', 'lib'].flatMap(d => recorrer(join(RAIZ, d)))) {
       sinComentarios(readFileSync(ruta, 'utf8')).split('\n').forEach((linea, i) => {

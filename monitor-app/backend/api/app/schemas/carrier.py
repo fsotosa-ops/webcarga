@@ -31,6 +31,13 @@ OperationalStatus = CarrierLifecycle
 # el literal 'ACTIVE' como texto SQL en múltiples routers.
 ACTIVE_OPERATIONAL_STATUS: OperationalStatus = "ACTIVE"
 
+# Los estados que el embudo considera "en juego". ONBOARDING es una empresa
+# recién creada sin RUT todavía: pertenece a "Recién creadas · sin documentos",
+# no al catálogo del fondo. Vive aquí y no en el router: el reconocedor de
+# documentos (services/matcher_io.py) también la usa, y un servicio no importa de
+# un router (era un ciclo latente que la Entrega D destapó).
+FUNNEL_ACTIVE_STATUSES = (ACTIVE_OPERATIONAL_STATUS, "ONBOARDING")
+
 # ManagementType, su orden canónico y su normalización viven en
 # app/schemas/common.py — public.compliance_requirements comparte el mismo
 # dominio (applies_to_management_types) y no hay razón para tener el Literal

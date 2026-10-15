@@ -25,7 +25,7 @@ from ..schemas.document_ingest import (
     UndoClassifyBody, UndoClassifyResult, unclassified_predicate,
 )
 from ..services.audit import log_change
-from ..services.document_matcher import classify_match, match_document
+from ..services.document_matcher import RequirementAlias, classify_match, match_document
 from ..services.matcher_io import cargar_catalogo, cargar_universo
 from ..services.vencimientos import falta_para_aprobar, vencido_predicate
 from ..utils.document_storage import resolve_signed_url, upload_document_version
@@ -41,6 +41,12 @@ _SQL_COLA = """
            c.business_name                            AS carrier_name,
            i.confidence,
            r.name                                     AS suggested_requirement_name,
+           -- Lo que ya se sabe de cada archivo (Entrega D): Por asignar agrupa por lo que
+           -- FALTA (titular, tipo o ambos) y el detalle trae la propuesta ya elegida.
+           i.requirement_id::text                     AS suggested_requirement_id,
+           i.entity_type                              AS suggested_entity_type,
+           i.entity_id::text                          AS suggested_entity_id,
+           COALESCE(sd.full_name, sa.license_plate, sc.business_name) AS suggested_subject_name,
            jsonb_array_length(i.candidates)           AS candidate_count,
            -- Las dos señales de colisión, derivadas en la MISMA pasada.
            -- Se cuentan sobre toda la cola filtrada, no sobre la página:
@@ -94,6 +100,9 @@ _SQL_COLA = """
     LEFT JOIN public.carriers c
            ON c.id = COALESCE(i.carrier_id, b.carrier_id)
     LEFT JOIN public.compliance_requirements r ON r.id = i.requirement_id
+    LEFT JOIN public.drivers  sd ON i.entity_type = 'DRIVER'  AND sd.id = i.entity_id
+    LEFT JOIN public.assets   sa ON i.entity_type = 'ASSET'   AND sa.id = i.entity_id
+    LEFT JOIN public.carriers sc ON i.entity_type = 'CARRIER' AND sc.id = i.entity_id
     {where}
     -- file_name desempata: una carga masiva entra con el mismo created_at
     -- y sin desempate el orden queda arbitrario entre recargas. En una cola
@@ -103,27 +112,14 @@ _SQL_COLA = """
 """
 
 
-def _dedup_candidates(candidatos: list) -> list:
-    """Un mismo RUT puede aparecer dos veces en el nombre del archivo
-    (`F30_<rut>_ANEXO_<rut>.pdf`): `extract_ruts` no deduplica y el loop del
-    motor tampoco, así que llegan dos candidatos que son la MISMA entidad.
-    Sin esto, `classify_match` los ve empatados y declara AMBIGUOUS aunque no
-    haya ninguna ambigüedad real — la Bandeja termina ofreciendo elegir entre
-    una opción y ella misma.
-
-    `match_document` ya devuelve la lista ordenada por confianza descendente,
-    así que quedarse con la primera aparición de cada (entity_type, entity_id)
-    es quedarse con la de mayor confianza.
-    """
-    vistos: set[tuple] = set()
-    unicos = []
-    for c in candidatos:
-        clave = (c.entity_type, c.entity_id)
-        if clave in vistos:
-            continue
-        vistos.add(clave)
-        unicos.append(c)
-    return unicos
+async def _requisito_declarado(conn, requirement_id) -> RequirementAlias | None:
+    """El tipo que declaró quien sube, como contexto del reconocedor."""
+    if not requirement_id:
+        return None
+    req = await conn.fetchrow(
+        "SELECT id::text, target_entity, name FROM public.compliance_requirements WHERE id = $1::uuid",
+        str(requirement_id))
+    return RequirementAlias(req["id"], req["target_entity"], req["name"]) if req else None
 
 
 async def _ingest_files(conn, supabase, *, carrier_id, files, actor, requirement_id=None):
@@ -141,7 +137,9 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor, requirement
     registros cargados por otros caminos no guardan hash y no se comparan.
 
     `requirement_id` es el tipo declarado por quien manda el archivo (desde
-    Pendientes): le gana a lo que adivine el motor por el nombre.
+    Pendientes o la revisión de lote): es CONTEXTO del reconocedor, que deja de
+    adivinar el tipo. Si no aparece el titular, el ítem igual guarda el tipo y cae en
+    "Falta el titular" (Entrega D).
     """
     items: list[dict] = []
     errors: list[dict] = []
@@ -164,6 +162,7 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor, requirement
     # sube la precision: ~2 conductores y ~3 vehiculos contra 87 y 124.
     catalogo = await cargar_catalogo(conn)
     universo = await cargar_universo(conn, carrier_id)
+    declarado = await _requisito_declarado(conn, requirement_id)
 
     # Duplicados: una consulta por lote, no una por archivo.
     hashes = []
@@ -198,9 +197,10 @@ async def _ingest_files(conn, supabase, *, carrier_id, files, actor, requirement
         # el tipo de excepcion y su mensaje, nunca el nombre del archivo) para
         # no perder el rastro en silencio.
         try:
-            candidatos = _dedup_candidates(match_document(
+            candidatos = match_document(
                 file_name=uploaded["file_name"], catalog=catalogo, universe=universo,
-            ))
+                declared_requirement=declarado,
+            )
             motivo_error = None
         except Exception as exc:
             candidatos = []
@@ -651,9 +651,9 @@ async def move_items(
             )
             for item in pendientes:
                 try:
-                    candidatos = _dedup_candidates(match_document(
+                    candidatos = match_document(
                         file_name=item["file_name"], catalog=catalogo, universe=universo,
-                    ))
+                    )
                     motivo_error = None
                 except Exception as exc:
                     candidatos = []

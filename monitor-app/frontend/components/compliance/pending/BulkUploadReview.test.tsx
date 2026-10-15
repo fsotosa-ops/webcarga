@@ -5,8 +5,10 @@ import type { PendingComplianceRow, PendingMatchFile, PendingSummaryRow } from '
 
 const subir = vi.fn()
 vi.mock('@/hooks/useSubirDocumento', () => ({ useSubirDocumento: () => subir }))
-vi.mock('@/lib/api/compliance', () => ({ complianceApi: { matchPendingFiles: vi.fn(), listPending: vi.fn() } }))
+vi.mock('@/lib/api/compliance', () => ({ complianceApi: { matchUploadFiles: vi.fn(), listPending: vi.fn() } }))
+vi.mock('@/lib/api/documentIngest', () => ({ documentIngestApi: { upload: vi.fn().mockResolvedValue({ items: [], errors: [], duplicates: [] }) } }))
 import { complianceApi } from '@/lib/api/compliance'
+import { documentIngestApi } from '@/lib/api/documentIngest'
 import { BulkUploadReview } from './BulkUploadReview'
 
 const VIGENCIA = { validity_months: null, frequency_months: 1, cutoff_day: 18, period_offset_months: 1,
@@ -18,11 +20,11 @@ const LICENCIA: PendingSummaryRow = { ...F30, key: 'req-lic', label: 'Licencia',
   vigencia: { ...VIGENCIA, validity_months: 12, frequency_months: null, cutoff_day: null, period_offset_months: null } }
 
 const m = (over: Partial<PendingMatchFile> & { file_name: string }): PendingMatchFile => ({
-  status: 'unmatched', record_id: null, subject_label: null, carrier_name: null, reason: null,
+  status: 'unmatched', record_id: null, requirement_id: null, subject_label: null, carrier_name: null, reason: null,
   confidence: null, candidates: [], ...over })
 const ANDES = m({ file_name: 'andes.pdf', status: 'ambiguous', candidates: [
-  { record_id: 'r2', subject_label: 'Transportes Andes Ltda', carrier_name: 'Transportes Andes Ltda', confidence: 0.82 },
-  { record_id: 'r3', subject_label: 'Andes Cargo SpA', carrier_name: 'Andes Cargo SpA', confidence: 0.81 }] })
+  { record_id: 'r2', requirement_id: 'req', subject_label: 'Transportes Andes Ltda', carrier_name: 'Transportes Andes Ltda', confidence: 0.82 },
+  { record_id: 'r3', requirement_id: 'req', subject_label: 'Andes Cargo SpA', carrier_name: 'Andes Cargo SpA', confidence: 0.81 }] })
 const SCAN = m({ file_name: 'scan_0042.pdf' })
 const CORDILLERA = m({ file_name: 'cordillera.pdf', status: 'matched', record_id: 'r1',
   subject_label: 'Transportes Cordillera SpA', carrier_name: 'Transportes Cordillera SpA', reason: 'rut', confidence: 1 })
@@ -40,7 +42,7 @@ const DEUDORES = [debe('r1', 'Transportes Cordillera SpA'), debe('r2', 'Transpor
 const archivo = (n: string) => new File(['x'], n, { type: 'application/pdf' })
 
 async function montar(requirement: PendingSummaryRow, files: PendingMatchFile[]) {
-  vi.mocked(complianceApi.matchPendingFiles).mockResolvedValue({ files })
+  vi.mocked(complianceApi.matchUploadFiles).mockResolvedValue({ files, requirements: {} })
   vi.mocked(complianceApi.listPending).mockResolvedValue({ total: DEUDORES.length, rows: DEUDORES })
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={qc}><BulkUploadReview requirement={requirement} /></QueryClientProvider>)
@@ -69,7 +71,7 @@ describe('BulkUploadReview', () => {
     expect(screen.getByText('Arrastra varios F30-1 aquí para ver a quién corresponde cada uno antes de guardar.')).toBeInTheDocument()
     unmount()
     await montar(F30, [CORDILLERA])
-    expect(complianceApi.matchPendingFiles).toHaveBeenCalledWith('req', ['cordillera.pdf'])
+    expect(complianceApi.matchUploadFiles).toHaveBeenCalledWith(['cordillera.pdf'], { requirementId: 'req', carrierId: undefined })
     expect(subir).not.toHaveBeenCalled()
   })
 
@@ -94,7 +96,8 @@ describe('BulkUploadReview', () => {
 
   it('Elegir entre candidatos lo asigna y lo deja listo', async () => {
     await montar(F30, [ANDES])
-    expect(guardar()).toBeDisabled()
+    // Sin elegir, guardar lo deja en Por asignar.
+    expect(guardar()).toHaveTextContent('Guardar · 1 a Por asignar')
     fireEvent.change(screen.getByLabelText('A quién va andes.pdf'), { target: { value: 'r2' } })
     expect(grupo(/^Asignados/).getByText('Transportes Andes Ltda')).toBeInTheDocument()
     expect(guardar()).toHaveTextContent('Guardar 1 listo')
@@ -126,15 +129,18 @@ describe('BulkUploadReview', () => {
     expect(guardar()).toHaveTextContent('Guardar 1 listo')
   })
 
-  it('Sin asignar se puede quitar: no se sube y se ofrece enviarlo a Sin clasificar', async () => {
-    await montar(F30, [SCAN, CORDILLERA])
-    expect(grupo(/^Sin asignar/).getByRole('button', { name: 'Enviar scan_0042.pdf a Sin clasificar' })).toBeInTheDocument()
+  it('Sin asignar se puede quitar; lo que no se quita va a Por asignar al guardar, con su tipo (D5)', async () => {
+    await montar(F30, [SCAN, CORDILLERA, m({ file_name: 'otro.pdf' })])
+    expect(grupo(/^Sin asignar/).getByText(/al guardar quedan en Por asignar/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Quitar scan_0042.pdf' }))
     expect(screen.queryByText('scan_0042.pdf')).not.toBeInTheDocument()
-    expect(screen.getByText('1 archivo de F30-1')).toBeInTheDocument()
+    expect(guardar()).toHaveTextContent('Guardar 1 listo · 1 a Por asignar')
     fireEvent.click(guardar())
     await waitFor(() => expect(subir).toHaveBeenCalledTimes(1))
     expect(subir).toHaveBeenCalledWith('r1', expect.any(File), expect.anything())
+    await waitFor(() => expect(documentIngestApi.upload).toHaveBeenCalledWith(
+      undefined, [expect.any(File)], { code: 'F30_1', target: 'CARRIER' }))
+    expect(await screen.findByText('En Por asignar')).toBeInTheDocument()
   })
 
   it('dos archivos al mismo registro quedan los dos en Por elegir y no se guardan', async () => {
@@ -149,7 +155,7 @@ describe('BulkUploadReview', () => {
   it('en un choque RUT contra nombre, el de RUT queda y el otro ofrece elegir entre todos los que lo deben', async () => {
     const porNombre = m({ file_name: 'cordillera spa.pdf', status: 'ambiguous', collision: 'outranked',
       collision_subject_label: 'Transportes Cordillera SpA', candidates: [
-        { record_id: 'r1', subject_label: 'Transportes Cordillera SpA', carrier_name: 'Transportes Cordillera SpA', confidence: 0.72 }] })
+        { record_id: 'r1', requirement_id: 'req', subject_label: 'Transportes Cordillera SpA', carrier_name: 'Transportes Cordillera SpA', confidence: 0.72 }] })
     await montar(F30, [CORDILLERA, porNombre])
     expect(grupo(/^Asignados/).getByText('cordillera.pdf')).toBeInTheDocument()
     const porElegir = grupo(/^Por elegir/)
@@ -192,7 +198,7 @@ describe('BulkUploadReview', () => {
     expect(await screen.findByText('No se guardó: El archivo pesa más de 7 MB')).toBeInTheDocument()
     expect(screen.getByText('1 guardado')).toBeInTheDocument()
     expect(screen.getByText('1 con error')).toBeInTheDocument()
-    expect(screen.getByText('1 por resolver')).toBeInTheDocument()
+    expect(screen.getByText('1 en Por asignar')).toBeInTheDocument()
     expect(screen.getAllByText('Guardado')).toHaveLength(1)
     // El archivo y su motivo siguen en la fila; se reintenta con el mismo botón.
     expect(screen.getByText('norte.pdf')).toBeInTheDocument()

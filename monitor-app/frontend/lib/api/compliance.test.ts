@@ -18,10 +18,14 @@ describe('Pendientes en el cliente de API', () => {
     expect(apiFetch).toHaveBeenCalledWith('/api/v1/compliance-records/pending/summary?group_by=carrier')
   })
 
-  it('matchPendingFiles manda solo los nombres', async () => {
-    await complianceApi.matchPendingFiles('req-1', ['a.pdf'])
-    expect(apiFetch).toHaveBeenCalledWith('/api/v1/compliance-records/pending/match', {
-      method: 'POST', body: JSON.stringify({ requirement_id: 'req-1', file_names: ['a.pdf'] }),
+  it('matchUploadFiles manda los nombres y solo el contexto que haya', async () => {
+    await complianceApi.matchUploadFiles(['a.pdf'], { requirementId: 'req-1' })
+    expect(apiFetch).toHaveBeenLastCalledWith('/api/v1/compliance-records/pending/match', {
+      method: 'POST', body: JSON.stringify({ file_names: ['a.pdf'], requirement_id: 'req-1' }),
+    })
+    await complianceApi.matchUploadFiles(['a.pdf'])
+    expect(apiFetch).toHaveBeenLastCalledWith('/api/v1/compliance-records/pending/match', {
+      method: 'POST', body: JSON.stringify({ file_names: ['a.pdf'] }),
     })
   })
 })

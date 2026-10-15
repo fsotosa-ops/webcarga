@@ -75,6 +75,12 @@ class QueueRow(BaseModel):
     carrier_name: Optional[str] = None
     confidence: Optional[float] = None
     suggested_requirement_name: Optional[str] = None
+    # Lo que ya se sabe del archivo (Entrega D): Por asignar agrupa por lo que falta
+    # y el detalle trae la propuesta ya elegida.
+    suggested_requirement_id: Optional[str] = None
+    suggested_entity_type: Optional[str] = None
+    suggested_entity_id: Optional[str] = None
+    suggested_subject_name: Optional[str] = None
     candidate_count: int = 0
     # Cuántos items pendientes comparten este destino / este contenido,
     # incluyéndose a sí mismo. 1 = sin colisión.

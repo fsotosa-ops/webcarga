@@ -84,13 +84,13 @@ describe('TriageClassifyForm', () => {
 
   it('con un archivo, el boton dice que va a clasificar ese', async () => {
     setup()
-    expect(await screen.findByRole('button', { name: /^Clasificar$/ })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^Asignar$/ })).toBeInTheDocument()
   })
 
   it('aplica el documento elegido', async () => {
     const onApplied = setup()
     await elegir()
-    fireEvent.click(screen.getByRole('button', { name: /clasificar/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Asignar$/ }))
 
     await waitFor(() => {
       expect(documentIngestApi.classifyBatch).toHaveBeenCalledWith({
@@ -117,7 +117,7 @@ describe('TriageClassifyForm', () => {
 
     expect(await screen.findByText(/En lote puedes moverlos a una empresa o descartarlos/))
       .toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /clasificar/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Asignar$/ })).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/a quién pertenece/i)).not.toBeInTheDocument()
   })
 
@@ -137,7 +137,7 @@ describe('TriageClassifyForm', () => {
     })
     const onApplied = setup()
     await elegir()
-    fireEvent.click(screen.getByRole('button', { name: /clasificar/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Asignar$/ }))
 
     expect(await screen.findByText(/fue eliminado de la bandeja/i)).toBeInTheDocument()
     await waitFor(() => {
@@ -151,14 +151,14 @@ describe('TriageClassifyForm', () => {
     setup()
     await elegir('SOAP')
     expect(screen.getByLabelText(/fecha de vencimiento/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /clasificar/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^Asignar$/ })).toBeDisabled()
   })
 
   it('con fecha opcional la ofrece pero no la exige', async () => {
     setup()
     await elegir('Certificado GPS')
     expect(screen.getByLabelText(/fecha de vencimiento/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /clasificar/i })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /^Asignar$/ })).toBeEnabled()
   })
 
   it('un documento que no vence no pide fecha', async () => {
@@ -176,7 +176,7 @@ describe('TriageClassifyForm', () => {
     vi.mocked(documentIngestApi.classifyBatch).mockRejectedValue(new Error('Esa entidad no tiene ese requisito'))
     setup()
     await elegir()
-    fireEvent.click(screen.getByRole('button', { name: /clasificar/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Asignar$/ }))
 
     expect(await screen.findByText(/no tiene ese requisito/i)).toBeInTheDocument()
   })
@@ -211,9 +211,9 @@ describe('TriageClassifyForm — muestra qué le falta a la empresa', () => {
     fireEvent.click(screen.getByRole('button', { name: /Padrón/ }))
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /clasificar/i })).toBeEnabled()
+      expect(screen.getByRole('button', { name: /^Asignar$/ })).toBeEnabled()
     })
-    fireEvent.click(screen.getByRole('button', { name: /clasificar/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Asignar$/ }))
 
     await waitFor(() => {
       expect(documentIngestApi.classifyBatch).toHaveBeenCalledWith(
@@ -221,6 +221,22 @@ describe('TriageClassifyForm — muestra qué le falta a la empresa', () => {
       )
       expect(onApplied).toHaveBeenCalled()
     })
+  })
+
+  it('la propuesta del reconocedor llega ya elegida: Enter asigna (D6)', async () => {
+    const onApplied = vi.fn()
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <TriageClassifyForm targetIds={['i1']} subjects={SUBJECTS} pendingRows={[PENDIENTE] as never} onApplied={onApplied}
+                            suggestion={{ entity_type: 'ASSET', entity_id: 'a1', requirement_id: 'req-1' }} />
+      </QueryClientProvider>,
+    )
+    const asignar = await screen.findByRole('button', { name: /^Asignar$/ })
+    await waitFor(() => expect(asignar).toBeEnabled())
+    fireEvent.keyDown(asignar, { key: 'Enter' })
+    await waitFor(() => expect(documentIngestApi.classifyBatch).toHaveBeenCalledWith(
+      expect.objectContaining({ entity_type: 'ASSET', entity_id: 'a1', requirement_id: 'req-1' })))
   })
 
   it('deja salir a la vía manual si el documento no está en la lista', () => {
@@ -248,19 +264,17 @@ describe('TriageClassifyForm — muestra qué le falta a la empresa', () => {
   // control de empresa es uno solo y vive arriba (`useEmpresaDeTrabajo`); este
   // panel sólo tiene que DECIR que falta y a dónde ir.
 
-  it('sin empresa lo dice y manda al control de arriba, sin una segunda caja', async () => {
+  it('sin empresa la pregunta en el detalle del archivo, una sola vez (Entrega D)', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={qc}>
-        <TriageClassifyForm targetIds={['i1']} subjects={[]} onApplied={vi.fn()} carrierLabel={null} />
+        <TriageClassifyForm targetIds={['i1']} subjects={[]} onApplied={vi.fn()} carrierLabel={null} onPickCarrier={vi.fn()} />
       </QueryClientProvider>,
     )
 
     expect(await screen.findByText(/todavía no tiene empresa/i)).toBeInTheDocument()
-    expect(screen.getByText(/Elígela arriba/i)).toBeInTheDocument()
-    // Lo que NO puede volver: una segunda caja de "Buscar empresa" acá.
-    expect(screen.queryByLabelText('Buscar empresa transportista')).not.toBeInTheDocument()
-    // Ni el desplegable que no se puede usar.
+    expect(screen.getAllByPlaceholderText('Buscar empresa…')).toHaveLength(1)
+    // Lo que NO puede volver: el desplegable que no se puede usar.
     expect(screen.queryByLabelText('¿A quién pertenece?')).not.toBeInTheDocument()
   })
 

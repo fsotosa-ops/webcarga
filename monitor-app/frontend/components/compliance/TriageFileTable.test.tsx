@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ComponentProps } from 'react'
-import { TriageFileTable } from './TriageFileTable'
+import { TriageFileTable, ordenarPorLoQueFalta } from './TriageFileTable'
 
 const row = (id: string, carrier: string, over: Record<string, unknown> = {}) => ({
   id, file_name: `${id}.png`, mime_type: 'image/png', size_bytes: 10,
@@ -33,16 +33,19 @@ function setup(over: Record<string, unknown> = {}) {
 describe('TriageFileTable', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('agrupa las filas por empresa', () => {
-    setup()
-    // El nombre y el conteo son dos elementos: el nombre pesa, el conteo
-    // acompaña. La fila del grupo se lee como separador, no como una fila más.
-    const acme = screen.getByText('ACME').closest('tr')
-    expect(acme).toHaveTextContent('ACME')
-    expect(acme).toHaveTextContent('2 sin clasificar')
-
-    const norte = screen.getByText('NORTE').closest('tr')
-    expect(norte).toHaveTextContent('1 sin clasificar')
+  it('agrupa por lo que falta, en el orden en que se resuelve (D6)', () => {
+    const filas = [
+      row('a', 'ACME'),                                                     // sin pista
+      row('b', 'ACME', { suggested_requirement_id: 'req' }),               // falta el titular
+      row('c', 'ACME', { suggested_entity_id: 'd1' }),                     // falta el tipo
+      row('d', 'ACME', { suggested_requirement_id: 'req', suggested_entity_id: 'd1' }), // listo
+      row('e', 'NORTE', { suggested_requirement_id: 'req' }),              // falta el titular
+    ]
+    setup({ rows: ordenarPorLoQueFalta(filas as never) })
+    const grupos = screen.getAllByRole('row').map(r => r.textContent ?? '')
+      .filter(t => /^(Listos para asignar|Falta el titular|Falta el tipo|Sin pista)/.test(t))
+    expect(grupos.map(t => t.replace(/·.*/, '').trim())).toEqual([
+      'Listos para asignar1', 'Falta el titular2', 'Falta el tipo1', 'Sin pista1'])
   })
 
   it('muestra las columnas de la tabla', () => {
@@ -96,7 +99,7 @@ describe('TriageFileTable', () => {
 
   it('avisa cuando no queda nada por clasificar', () => {
     setup({ rows: [] })
-    expect(screen.getByText(/no hay documentos sin clasificar/i)).toBeInTheDocument()
+    expect(screen.getByText('Todo asignado')).toBeInTheDocument()
   })
 })
 
@@ -145,32 +148,5 @@ describe('TriageFileTable — colisiones', () => {
     expect(screen.getByText(/ya está en la cola/i)).toBeInTheDocument()
     expect(screen.getByText(/2 archivos.*mismo/i)).toBeInTheDocument()
     expect(screen.getByText(/ya tiene un documento/i)).toBeInTheDocument()
-  })
-
-  // ── Paso 3 del funnel: los sin empresa SON las excepciones ────────────
-
-  it('el grupo sin empresa dice que hacer, no solo cuantos hay', () => {
-    // Esos archivos no se pueden clasificar hasta tener empresa: los
-    // casilleros que se ofrecen salen de los requisitos pendientes de UNA
-    // empresa. El grupo ya existia y solo contaba.
-    render(
-      <TriageFileTable
-        rows={[row('i1', '', { carrier_id: null, carrier_name: null }), row('i2', 'ACME')] as never}
-        focusedId={null} selectedIds={new Set()}
-        onFocus={vi.fn()} onToggle={vi.fn()} onToggleAll={vi.fn()}
-      />,
-    )
-    expect(screen.getByText(/elige una empresa arriba/i)).toBeInTheDocument()
-  })
-
-  it('un grupo CON empresa no lleva esa instruccion', () => {
-    render(
-      <TriageFileTable
-        rows={[row('i2', 'ACME')] as never}
-        focusedId={null} selectedIds={new Set()}
-        onFocus={vi.fn()} onToggle={vi.fn()} onToggleAll={vi.fn()}
-      />,
-    )
-    expect(screen.queryByText(/elige una empresa arriba/i)).not.toBeInTheDocument()
   })
 })

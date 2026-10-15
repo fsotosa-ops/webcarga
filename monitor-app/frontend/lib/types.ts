@@ -798,6 +798,8 @@ export type PendingSummaryResponse = { rows: PendingSummaryRow[] }
 
 export type PendingMatchCandidate = {
   record_id: string
+  /** El tipo del registro: sin contexto, cada candidato puede ser de otro tipo. */
+  requirement_id: string
   subject_label: string
   carrier_name: string
   confidence: number
@@ -806,9 +808,11 @@ export type PendingMatchFile = {
   file_name: string
   status: 'matched' | 'ambiguous' | 'unmatched'
   record_id: string | null
+  requirement_id: string | null
   subject_label: string | null
   carrier_name: string | null
-  reason: 'rut' | 'plate' | 'name' | null
+  /** `declared`: la empresa elegida al subir, o el manifiesto. */
+  reason: 'rut' | 'plate' | 'name' | 'declared' | null
   confidence: number | null
   candidates: PendingMatchCandidate[]
   /** Otro archivo del lote va al mismo registro (regla P23): `outranked` si
@@ -816,7 +820,19 @@ export type PendingMatchFile = {
   collision?: 'outranked' | 'tie' | null
   collision_subject_label?: string | null
 }
-export type PendingMatchResponse = { files: PendingMatchFile[] }
+/** Lo que la revisión necesita de cada tipo propuesto: su nombre y qué dato pide. */
+export type PendingMatchRequirement = {
+  label: string
+  requirement_code: string
+  target_entity: 'CARRIER' | 'DRIVER' | 'ASSET'
+  expiration_policy: PoliticaVencimiento | null
+  vigencia: ReglaDeVigencia | null
+}
+export type PendingMatchResponse = {
+  files: PendingMatchFile[]
+  /** Por id de requisito: los tipos que aparecen en la respuesta. */
+  requirements: Record<string, PendingMatchRequirement>
+}
 
 export type PendingComplianceRow = {
   id:                      string
@@ -1825,6 +1841,13 @@ export type QueueRow = {
   carrier_name:               string | null
   confidence:                 number | null
   suggested_requirement_name: string | null
+  /** Lo que ya se sabe del archivo (Entrega D): Por asignar agrupa por lo que falta
+   *  y el detalle trae la propuesta ya elegida. Opcionales: API y pantalla se
+   *  despliegan por separado. */
+  suggested_requirement_id?:  string | null
+  suggested_entity_type?:     'CARRIER' | 'DRIVER' | 'ASSET' | null
+  suggested_entity_id?:       string | null
+  suggested_subject_name?:    string | null
   candidate_count:            number
   /** Cuántos items pendientes comparten este destino / este contenido,
    *  incluyéndose a sí mismo. 1 = sin colisión. Dos señales distintas aunque

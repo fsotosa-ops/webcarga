@@ -14,7 +14,6 @@ import { SolicitarDocumento } from '@/components/compliance/SolicitarDocumento'
 import { AccionesDeSujeto } from '@/components/compliance/AccionesDeSujeto'
 import { AvisoDeFila } from '@/components/compliance/AvisoDeFila'
 import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
-import { PuenteALaBandeja } from '@/components/compliance/PuenteALaBandeja'
 import { RenglonPendiente } from '@/components/compliance/RenglonPendiente'
 import { FiltroDeEstado } from '@/components/compliance/FiltroDeEstado'
 import { DocumentVersions } from '@/components/compliance/DocumentVersions'
@@ -857,13 +856,6 @@ export function CarrierDocumentsWorkspace({ carrierId, carrier }: {
           </div>
         )}
 
-        {/* Sin la guarda, la pantalla invita a subir documentos a una empresa
-            que no los puede recibir. Se retira en vez de deshabilitarse porque
-            el banner de arriba ya dice por qué — dos veces el mismo motivo, en
-            la misma pantalla, es ruido. */}
-        {empresaActiva && (
-          <PuenteALaBandeja carrierId={carrierId} carrierName={carrier.business_name} />
-        )}
       </div>
 
       {viendoId && previewQuery.data?.file_url && (

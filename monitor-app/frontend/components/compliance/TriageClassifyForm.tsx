@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
@@ -10,6 +10,7 @@ import { Estado } from '@/components/ui/Estado'
 import { PendingSkeleton } from './pending/PendingStates'
 import { PendingSlotPicker, type Slot } from './PendingSlotPicker'
 import type { PendingComplianceRow } from '@/lib/types'
+import { CarrierSearchPicker, type CarrierSearchResult } from '@/components/dashboard/CarrierSearchPicker'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 
 const ETIQUETA_DEL_DATO = {
@@ -35,6 +36,13 @@ interface Props {
    *  se dice solo con el dato en mano. */
   pendingState?: 'loading' | 'error' | 'ready'
   onRetryPending?: () => void
+  /** Lo que el reconocedor propuso para el archivo (Entrega D): si es un casillero
+   *  pendiente, llega ya elegido; si solo se sabe el titular, llega elegido él. */
+  suggestion?: { entity_type?: string | null; entity_id?: string | null; requirement_id?: string | null } | null
+  /** Sin empresa, se pregunta aquí, en el detalle del archivo: es donde se decide. */
+  onPickCarrier?: (c: CarrierSearchResult) => void
+  /** El tercer verbo de la bandeja: Asignar · Cambiar · Descartar. */
+  onDiscard?: () => void
 }
 
 /** Panel derecho: a quién pertenece y qué es.
@@ -43,6 +51,7 @@ interface Props {
  *  necesita una pantalla propia. */
 export function TriageClassifyForm({
   targetIds, subjects, onApplied, carrierLabel, pendingRows = [], pendingState = 'ready', onRetryPending,
+  suggestion, onPickCarrier, onDiscard,
 }: Props) {
   const [subjectKey, setSubjectKey] = useState('')
   const [requirementId, setRequirementId] = useState('')
@@ -51,6 +60,30 @@ export function TriageClassifyForm({
   const [error, setError] = useState<string | null>(null)
   const [slot, setSlot] = useState<Slot | null>(null)
   const [manual, setManual] = useState(false)
+  const [busquedaEmpresa, setBusquedaEmpresa] = useState('')
+
+  // La propuesta ya elegida, cuando llegan los pendientes de su empresa. Una vez: lo
+  // que la persona cambie después no se pisa (quien aloja el formulario lo vuelve a
+  // montar al cambiar de archivo).
+  const [propuestaAplicada, setPropuestaAplicada] = useState(false)
+  useEffect(() => {
+    if (propuestaAplicada || !suggestion?.entity_id) return
+    const casillero = pendingRows.find(r => r.entity_id === suggestion.entity_id
+      && (!suggestion.requirement_id || r.requirement_id === suggestion.requirement_id))
+    if (casillero && suggestion.requirement_id) {
+      setSlot({
+        entity_type: casillero.entity_type as Slot['entity_type'], entity_id: casillero.entity_id,
+        subject_label: casillero.subject_name ?? casillero.carrier_name, requirement_id: casillero.requirement_id,
+        record_id: casillero.id, document_name: casillero.document_name,
+      })
+      setSubjectKey(`${casillero.entity_type}:${casillero.entity_id}`)
+      setPropuestaAplicada(true)
+    } else if (subjects.some(x => x.entity_id === suggestion.entity_id)) {
+      setManual(true)
+      setSubjectKey(`${suggestion.entity_type}:${suggestion.entity_id}`)
+      setPropuestaAplicada(true)
+    }
+  }, [suggestion, pendingRows, subjects, propuestaAplicada])
 
 
   const subject = useMemo(
@@ -130,7 +163,13 @@ export function TriageClassifyForm({
   const SELECT = 'w-full mt-1 text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-all disabled:bg-gray-50 disabled:text-gray-400'
 
   return (
-    <div className="space-y-2.5">
+    // Enter asigna, como en una bandeja de triage (Gmail, Linear): el gesto más
+    // frecuente con una tecla. No dentro de un buscador, donde Enter es elegir.
+    <div className="space-y-2.5" onKeyDown={e => {
+      if (e.key === 'Enter' && canApply && !(e.target as HTMLElement).closest('[role="combobox"], input[type="search"]')) {
+        e.preventDefault(); void apply()
+      }
+    }}>
       <p className="text-[11px] text-gray-500">
         <span className="font-semibold text-slate-700 tabular-nums">
           {targetIds.length === 1 ? '1 documento' : `${targetIds.length} documentos`}
@@ -216,11 +255,23 @@ export function TriageClassifyForm({
                 </button>
               </Estado>
             ) : (
-              <p className="text-[11px] text-informativo bg-accent/5 border border-border rounded-lg px-2 py-1.5">
-                {carrierLabel
-                  ? 'Esta empresa no tiene requisitos pendientes que se puedan asignar. Suele pasar cuando la empresa no está activa.'
-                  : 'Este documento todavía no tiene empresa. Elígela arriba y aparecerá qué le falta.'}
-              </p>
+              carrierLabel ? (
+                <p className="text-[11px] text-informativo bg-accent/5 border border-border rounded-lg px-2 py-1.5">
+                  Esta empresa no tiene requisitos pendientes que se puedan asignar. Suele pasar cuando la empresa no está activa.
+                </p>
+              ) : onPickCarrier ? (
+                <label className="block">
+                  <span className="text-[11px] font-semibold text-gray-600">Este documento todavía no tiene empresa. ¿De qué empresa es?</span>
+                  <div className="mt-1">
+                    <CarrierSearchPicker query={busquedaEmpresa} onQueryChange={setBusquedaEmpresa} onPick={onPickCarrier}
+                                         size="sm" showMinCharsHint placeholder="Buscar empresa…" />
+                  </div>
+                </label>
+              ) : (
+                <p className="text-[11px] text-informativo bg-accent/5 border border-border rounded-lg px-2 py-1.5">
+                  Este documento todavía no tiene empresa.
+                </p>
+              )
             )
           )}
 
@@ -271,15 +322,23 @@ export function TriageClassifyForm({
       )}
 
       {!loteInvalido && (
-      <button
-        type="button"
-        onClick={apply}
-        disabled={!canApply}
-        className="w-full flex items-center justify-center gap-2 text-xs font-semibold px-4 py-2 rounded-lg transition-colors bg-accent text-white hover:bg-accent/90 focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
-      >
-        {saving && <Loader2 size={14} className="motion-safe:animate-spin" />}
-        {targetIds.length === 1 ? 'Clasificar' : `Clasificar los ${targetIds.length}`}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={apply}
+          disabled={!canApply}
+          className="flex-1 flex items-center justify-center gap-2 text-xs font-semibold px-4 py-2 rounded-lg transition-colors bg-accent text-white hover:bg-accent/90 focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+        >
+          {saving && <Loader2 size={14} className="motion-safe:animate-spin" />}
+          Asignar
+        </button>
+        {onDiscard && (
+          <button type="button" onClick={onDiscard} disabled={saving}
+                  className="text-xs font-semibold px-3 py-2 rounded-lg border border-border bg-white text-text-primary hover:bg-bg-main disabled:opacity-50">
+            Descartar
+          </button>
+        )}
+      </div>
       )}
     </div>
   )

@@ -54,7 +54,7 @@ describe('ReassignDocument — HU-03', () => {
   it('devuelve el documento a la bandeja', async () => {
     const onDone = setup()
     fireEvent.click(screen.getByRole('button', { name: /reasignar/i }))
-    fireEvent.click(await screen.findByRole('button', { name: /devolver a sin clasificar/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /devolver a por asignar/i }))
 
     await waitFor(() => {
       expect(complianceApi.reassign).toHaveBeenCalledWith('rec-1', { to_tray: true })
@@ -80,7 +80,7 @@ describe('ReassignDocument — HU-03', () => {
     )
     setup()
     fireEvent.click(screen.getByRole('button', { name: /reasignar/i }))
-    fireEvent.click(await screen.findByRole('button', { name: /devolver a sin clasificar/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /devolver a por asignar/i }))
 
     expect(await screen.findByText(/empresa activa asignada/i)).toBeInTheDocument()
     expect(screen.getByText(/a dónde va/i)).toBeInTheDocument()

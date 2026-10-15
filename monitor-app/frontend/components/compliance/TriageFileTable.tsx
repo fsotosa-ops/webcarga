@@ -44,22 +44,20 @@ export function TriageFileTable({
     return (
       <div className="p-6 text-center">
         <FileQuestion size={20} className="mx-auto text-gray-300 mb-2" />
-        <p className="text-xs text-gray-500">No hay documentos sin clasificar</p>
+        <p className="text-xs text-gray-500">Todo asignado</p>
       </div>
     )
   }
 
   const allSelected = rows.every(r => selectedIds.has(r.id))
 
-  // Las filas ya vienen ordenadas por empresa desde el servidor, así que el
-  // encabezado de grupo se emite cuando cambia el nombre.
-  const counts = new Map<string, number>()
-  for (const r of rows) {
-    const k = r.carrier_name ?? 'Sin empresa'
-    counts.set(k, (counts.get(k) ?? 0) + 1)
-  }
+  // Agrupadas por lo que FALTA (Entrega D): cada grupo pide otra acción. Las filas
+  // llegan en ese orden (`ordenarPorLoQueFalta`), así que el encabezado se emite
+  // cuando cambia el grupo.
+  const counts = new Map<LoQueFalta, number>()
+  for (const r of rows) counts.set(loQueFalta(r), (counts.get(loQueFalta(r)) ?? 0) + 1)
 
-  let lastCarrier: string | null = null
+  let lastGroup: LoQueFalta | null = null
 
   return (
     <table
@@ -85,37 +83,20 @@ export function TriageFileTable({
       </thead>
       <tbody>
         {rows.map(r => {
-          const carrier = r.carrier_name ?? 'Sin empresa'
-          const header = carrier !== lastCarrier ? carrier : null
-          lastCarrier = carrier
+          const group = loQueFalta(r)
+          const header = group !== lastGroup ? group : null
+          lastGroup = group
           const focused = r.id === focusedId
           const checked = selectedIds.has(r.id)
 
           return (
             <Fragment key={r.id}>
               {header && (
-                <tr className={r.carrier_id ? 'bg-slate-100/80' : 'bg-accent/5'}>
-                  <td colSpan={4} className={`px-3 py-1.5 border-y ${r.carrier_id ? 'border-slate-200' : 'border-accent/20'}`}>
-                    <span className="text-[11px] font-bold text-slate-700">{carrier}</span>
-                    <span className="text-[10px] text-slate-500 ml-2 tabular-nums">
-                      {counts.get(carrier)} sin clasificar
-                    </span>
-                    {/* PASO 3 DEL FUNNEL. Los archivos sin empresa SON las
-                        excepciones de la cola: no se pueden clasificar hasta
-                        tenerla, porque los casilleros que se ofrecen salen de
-                        los requisitos pendientes de una empresa. El grupo ya
-                        existía y sólo contaba; acá dice qué hacer.
-
-                        Es la única categoría de excepción que se puede derivar
-                        con lo que la fila trae. "Tiene empresa pero ningún
-                        casillero libre" necesita la consulta de pendientes de
-                        ESA empresa, que sólo corre para la enfocada — fingirla
-                        por fila serían N consultas. */}
-                    {!r.carrier_id && (
-                      <span className="text-[10px] text-informativo ml-2">
-                        · elige una empresa arriba para poder clasificarlos
-                      </span>
-                    )}
+                <tr className="bg-bg-main">
+                  <td colSpan={4} className="px-3 py-1.5 border-y border-border">
+                    <span className="text-etiqueta font-bold text-text-primary">{GRUPO[header].titulo}</span>
+                    <span className="text-etiqueta text-informativo ml-2 tabular-nums">{counts.get(header)}</span>
+                    <span className="text-etiqueta text-informativo ml-2">· {GRUPO[header].ayuda}</span>
                   </td>
                 </tr>
               )}
@@ -215,10 +196,10 @@ function Suggestion({ row }: { row: QueueRow }) {
       </span>
     )
   }
-  if (row.suggested_requirement_name) {
+  if (row.suggested_subject_name || row.suggested_requirement_name) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 text-[10px] font-medium">
-        {row.suggested_requirement_name}
+        {[row.suggested_requirement_name, row.suggested_subject_name ?? row.carrier_name].filter(Boolean).join(' · ')}
         {row.confidence != null && (
           <span className="text-emerald-600 tabular-nums">{Math.round(row.confidence * 100)}%</span>
         )}
@@ -226,4 +207,28 @@ function Suggestion({ row }: { row: QueueRow }) {
     )
   }
   return <span className="text-gray-500" title="Sin sugerencia — el clasificador no encontró ninguna señal en el nombre del archivo">—</span>
+}
+
+
+/** Lo que le falta a un archivo para poder asignarlo: el grupo de Por asignar. */
+export type LoQueFalta = 'listo' | 'titular' | 'tipo' | 'sin_pista'
+
+export function loQueFalta(r: QueueRow): LoQueFalta {
+  const tipo = !!r.suggested_requirement_id
+  const titular = !!r.suggested_entity_id
+  return tipo && titular ? 'listo' : tipo ? 'titular' : titular ? 'tipo' : 'sin_pista'
+}
+
+const ORDEN: LoQueFalta[] = ['listo', 'titular', 'tipo', 'sin_pista']
+
+/** El orden de la lista: por grupo, y dentro del grupo como llegan del servidor. */
+export function ordenarPorLoQueFalta(rows: QueueRow[]): QueueRow[] {
+  return ORDEN.flatMap(g => rows.filter(r => loQueFalta(r) === g))
+}
+
+const GRUPO: Record<LoQueFalta, { titulo: string; ayuda: string }> = {
+  listo:     { titulo: 'Listos para asignar', ayuda: 'se sabe a quién va y qué es: confírmalo' },
+  titular:   { titulo: 'Falta el titular',    ayuda: 'se sabe qué documento es' },
+  tipo:      { titulo: 'Falta el tipo',       ayuda: 'se sabe de quién es' },
+  sin_pista: { titulo: 'Sin pista',           ayuda: 'el nombre no dice de quién es ni qué es' },
 }

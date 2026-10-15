@@ -6,7 +6,7 @@ frontera con Postgres, y viven aparte del router por la misma razon — meter su
 I/O adentro de un router de 400 lineas devuelve el acoplamiento que ese diseno
 evito.
 """
-from ..routers.compliance import FUNNEL_ACTIVE_STATUSES
+from ..schemas.carrier import FUNNEL_ACTIVE_STATUSES
 from .document_matcher import Catalog, EntityUniverse, RequirementAlias
 
 # `requirement_filename_aliases` NO tiene target_entity ni requirement_code:

@@ -4,7 +4,7 @@ contra Postgres está en test_identity_integration.py."""
 import pytest
 
 from app.services.document_matcher import (
-    Catalog, EntityUniverse, PendingOwner, RequirementAlias, extract_ruts, match_document, match_owner,
+    Catalog, EntityUniverse, RequirementAlias, extract_ruts, match_document, reason_of,
 )
 from app.utils.identity import canonical_plate, canonical_rut, plate_in_tokens
 
@@ -78,7 +78,8 @@ def test_el_manifiesto_compara_el_rut_en_forma_canonica():
     assert [c.entity_id for c in cands] == ["c1"]
 
 
-def test_match_owner_con_rut_del_dueno_no_canonico():
-    dueno = PendingOwner("r1", "CARRIER", "ZZ Empresa", "10.000.013-K", "ZZ Empresa")
-    c = match_owner("f30 10000013k.pdf", [dueno])
-    assert (c[0].record_id, c[0].reason) == ("r1", "rut")
+def test_con_el_tipo_declarado_el_rut_del_dueno_no_canonico_igual_calza():
+    c = match_document(file_name="f30 10000013k.pdf", catalog=Catalog(),
+                       universe=EntityUniverse(carriers=[("c1", "10.000.013-K", "ZZ Empresa")]),
+                       declared_requirement=RequirementAlias("r-f30", "CARRIER", "F30"))
+    assert (c[0].entity_id, reason_of(c[0])) == ("c1", "rut")

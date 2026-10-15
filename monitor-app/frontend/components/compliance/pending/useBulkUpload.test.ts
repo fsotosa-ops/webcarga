@@ -4,9 +4,11 @@ import type { PendingMatchFile, PendingSummaryRow } from '@/lib/types'
 
 const subir = vi.fn()
 vi.mock('@/hooks/useSubirDocumento', () => ({ useSubirDocumento: () => subir }))
-vi.mock('@/lib/api/compliance', () => ({ complianceApi: { matchPendingFiles: vi.fn() } }))
+vi.mock('@/lib/api/compliance', () => ({ complianceApi: { matchUploadFiles: vi.fn() } }))
+vi.mock('@/lib/api/documentIngest', () => ({ documentIngestApi: { upload: vi.fn().mockResolvedValue({ items: [], errors: [], duplicates: [] }) } }))
 import { complianceApi } from '@/lib/api/compliance'
-import { usePendingBulkUpload } from './usePendingBulkUpload'
+import { documentIngestApi } from '@/lib/api/documentIngest'
+import { useBulkUpload } from './useBulkUpload'
 
 const VIGENCIA = { validity_months: null, frequency_months: 1, cutoff_day: 18, period_offset_months: 1,
   warning_days: 10, grace_days: 0 }
@@ -18,13 +20,13 @@ const LICENCIA: PendingSummaryRow = { ...F30, key: 'req-lic', label: 'Licencia',
 
 const archivo = (n: string) => new File(['x'], n, { type: 'application/pdf' })
 const asignado = (file_name: string, record_id: string): PendingMatchFile => ({
-  file_name, status: 'matched', record_id, subject_label: record_id.toUpperCase(), carrier_name: record_id.toUpperCase(),
+  file_name, status: 'matched', record_id, requirement_id: 'req', subject_label: record_id.toUpperCase(), carrier_name: record_id.toUpperCase(),
   reason: 'rut', confidence: 0.95, candidates: [] })
 const sinAsignar = (file_name: string): PendingMatchFile => ({
-  file_name, status: 'unmatched', record_id: null, subject_label: null, carrier_name: null, reason: null,
+  file_name, status: 'unmatched', record_id: null, requirement_id: null, subject_label: null, carrier_name: null, reason: null,
   confidence: null, candidates: [] })
 const proponer = (...files: PendingMatchFile[]) =>
-  vi.mocked(complianceApi.matchPendingFiles).mockResolvedValue({ files })
+  vi.mocked(complianceApi.matchUploadFiles).mockResolvedValue({ files, requirements: {} })
 
 /** Una subida que termina cuando el test dice. */
 function diferida() {
@@ -40,29 +42,29 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 
-describe('usePendingBulkUpload', () => {
+describe('useBulkUpload (con el tipo fijado: Pendientes)', () => {
   it('pide la propuesta solo con los nombres y propone el período que hoy se exige', async () => {
     proponer(asignado('a.pdf', 'r1'))
-    const { result } = renderHook(() => usePendingBulkUpload(F30))
+    const { result } = renderHook(() => useBulkUpload({ requirement: F30 }))
     await act(() => result.current.receive([archivo('a.pdf')]))
-    expect(complianceApi.matchPendingFiles).toHaveBeenCalledWith('req', ['a.pdf'])
+    expect(complianceApi.matchUploadFiles).toHaveBeenCalledWith(['a.pdf'], { requirementId: 'req', carrierId: undefined })
     expect(result.current.items[0].recordId).toBe('r1')
     expect(result.current.rows[0].group).toBe('assigned')
     // Mensual con desfase de un mes: en octubre se exige septiembre.
-    expect(result.current.batchPeriod).toBe('2026-09')
+    expect(result.current.periods.req).toBe('2026-09')
   })
 
   it('el período del lote respeta el desfase de la regla (no el "mes anterior" fijo)', async () => {
     proponer(asignado('a.pdf', 'r1'))
     const DOS = { ...F30, vigencia: { ...VIGENCIA, period_offset_months: 2 } }
-    const { result } = renderHook(() => usePendingBulkUpload(DOS))
+    const { result } = renderHook(() => useBulkUpload({ requirement: DOS }))
     await act(() => result.current.receive([archivo('a.pdf')]))
-    expect(result.current.batchPeriod).toBe('2026-08')
+    expect(result.current.periods.req).toBe('2026-08')
   })
 
   it('dos archivos al mismo registro pasan los dos a Por elegir, venga del match o de una elección', async () => {
     proponer(asignado('a.pdf', 'r1'), asignado('b.pdf', 'r1'), sinAsignar('c.pdf'))
-    const { result } = renderHook(() => usePendingBulkUpload(F30))
+    const { result } = renderHook(() => useBulkUpload({ requirement: F30 }))
     await act(() => result.current.receive([archivo('a.pdf'), archivo('b.pdf'), archivo('c.pdf')]))
     expect(result.current.rows.map(r => r.group)).toEqual(['choose', 'choose', 'unassigned'])
     expect(result.current.rows[0].collision).toBe('tie')
@@ -82,7 +84,7 @@ describe('usePendingBulkUpload', () => {
   it('en un choque, el de RUT queda asignado y solo baja el de nombre (misma regla que el servidor)', async () => {
     const porNombre: PendingMatchFile = { ...asignado('cordillera spa.pdf', 'r1'), reason: 'name', confidence: 0.72 }
     proponer(asignado('a.pdf', 'r1'), porNombre)
-    const { result } = renderHook(() => usePendingBulkUpload(F30))
+    const { result } = renderHook(() => useBulkUpload({ requirement: F30 }))
     await act(() => result.current.receive([archivo('a.pdf'), archivo('cordillera spa.pdf')]))
     expect(result.current.rows.map(r => r.group)).toEqual(['assigned', 'choose'])
     expect(result.current.rows.map(r => r.collision)).toEqual([null, 'outranked'])
@@ -93,7 +95,7 @@ describe('usePendingBulkUpload', () => {
   it('el archivo que el servidor bajó por un choque dice a quién va el otro', async () => {
     proponer(asignado('a.pdf', 'r1'), { ...sinAsignar('b.pdf'), status: 'ambiguous', collision: 'outranked',
       collision_subject_label: 'R1' })
-    const { result } = renderHook(() => usePendingBulkUpload(F30))
+    const { result } = renderHook(() => useBulkUpload({ requirement: F30 }))
     await act(() => result.current.receive([archivo('a.pdf'), archivo('b.pdf')]))
     expect(result.current.rows.map(r => r.group)).toEqual(['assigned', 'choose'])
     expect(result.current.rows[1]).toMatchObject({ collision: 'outranked', collisionLabel: 'R1' })
@@ -105,31 +107,32 @@ describe('usePendingBulkUpload', () => {
   it('quitar un archivo lo saca del lote y no se sube', async () => {
     proponer(asignado('a.pdf', 'r1'), sinAsignar('b.pdf'))
     subir.mockResolvedValue(undefined)
-    const { result } = renderHook(() => usePendingBulkUpload(F30))
+    const { result } = renderHook(() => useBulkUpload({ requirement: F30 }))
     await act(() => result.current.receive([archivo('a.pdf'), archivo('b.pdf')]))
     act(() => result.current.remove(1))
     expect(result.current.items.map(i => i.file.name)).toEqual(['a.pdf'])
   })
 
-  it('guarda solo los listos, cada uno a su registro, con el período del lote', async () => {
+  it('guarda los listos en su registro y lo que no se resolvió va a Por asignar con su tipo (D5)', async () => {
     proponer(asignado('a.pdf', 'r1'), sinAsignar('b.pdf'))
     subir.mockResolvedValue(undefined)
-    const { result } = renderHook(() => usePendingBulkUpload(F30))
+    const { result } = renderHook(() => useBulkUpload({ requirement: F30 }))
     await act(() => result.current.receive([archivo('a.pdf'), archivo('b.pdf')]))
-    act(() => result.current.setBatchPeriod('2026-07'))
+    act(() => result.current.setPeriod('req', '2026-07'))
+    expect(result.current.toStage).toBe(1)
     await act(() => result.current.save())
     expect(subir).toHaveBeenCalledTimes(1)
     expect(subir).toHaveBeenCalledWith('r1', expect.any(File), { period_start: '2026-07-01' })
-    expect(result.current.items.map(i => i.status)).toEqual(['saved', 'pending'])
-    expect(result.current.result).toEqual({ saved: 1, errors: 0, unresolved: 1 })
+    expect(documentIngestApi.upload).toHaveBeenCalledWith(undefined, [expect.any(File)], { code: 'F30_1', target: 'CARRIER' })
+    expect(result.current.items.map(i => i.status)).toEqual(['saved', 'staged'])
+    expect(result.current.result).toEqual({ saved: 1, staged: 1, errors: 0, unresolved: 0 })
   })
 
   it('con fecha por fila, una fila sin su fecha no está lista; con ella, viaja su fecha', async () => {
     proponer(asignado('rojas.pdf', 'r1'), asignado('soto.pdf', 'r2'))
     subir.mockResolvedValue(undefined)
-    const { result } = renderHook(() => usePendingBulkUpload(LICENCIA))
+    const { result } = renderHook(() => useBulkUpload({ requirement: LICENCIA }))
     await act(() => result.current.receive([archivo('rojas.pdf'), archivo('soto.pdf')]))
-    expect(result.current.needs).toBe('emision')
     expect(result.current.ready).toBe(0)
     act(() => result.current.setRowDate(0, '2026-05-21'))
     expect(result.current.rows.map(r => r.ready)).toEqual([true, false])
@@ -142,7 +145,7 @@ describe('usePendingBulkUpload', () => {
     proponer(...['a', 'b', 'c', 'd', 'e'].map(n => asignado(`${n}.pdf`, `r-${n}`)))
     const subidas = new Map<string, ReturnType<typeof diferida>>()
     subir.mockImplementation((id: string) => { const d = diferida(); subidas.set(id, d); return d.promesa })
-    const { result } = renderHook(() => usePendingBulkUpload(F30))
+    const { result } = renderHook(() => useBulkUpload({ requirement: F30 }))
     await act(() => result.current.receive(['a', 'b', 'c', 'd', 'e'].map(n => archivo(`${n}.pdf`))))
 
     let guardando!: Promise<void>
@@ -165,12 +168,12 @@ describe('usePendingBulkUpload', () => {
   it('una fila que falla conserva su motivo, las demás siguen, y reintentar no repite lo guardado', async () => {
     proponer(asignado('a.pdf', 'r1'), asignado('c.pdf', 'r3'))
     subir.mockImplementation(async (id: string) => { if (id === 'r1') throw new Error('El archivo pesa más de 7 MB') })
-    const { result } = renderHook(() => usePendingBulkUpload(F30))
+    const { result } = renderHook(() => useBulkUpload({ requirement: F30 }))
     await act(() => result.current.receive([archivo('a.pdf'), archivo('c.pdf')]))
     await act(() => result.current.save())
     expect(result.current.items.map(i => i.status)).toEqual(['error', 'saved'])
     expect(result.current.items[0].error).toBe('El archivo pesa más de 7 MB')
-    expect(result.current.result).toEqual({ saved: 1, errors: 1, unresolved: 0 })
+    expect(result.current.result).toEqual({ saved: 1, staged: 0, errors: 1, unresolved: 0 })
     expect(result.current.ready).toBe(1)
 
     subir.mockReset(); subir.mockResolvedValue(undefined)
@@ -186,7 +189,7 @@ describe('usePendingBulkUpload', () => {
     subir.mockReturnValue(d.promesa)
     const add = vi.spyOn(window, 'addEventListener')
     const rem = vi.spyOn(window, 'removeEventListener')
-    const { result } = renderHook(() => usePendingBulkUpload(F30))
+    const { result } = renderHook(() => useBulkUpload({ requirement: F30 }))
     await act(() => result.current.receive([archivo('a.pdf')]))
     expect(add.mock.calls.some(([t]) => t === 'beforeunload')).toBe(false)
 
@@ -206,5 +209,69 @@ describe('usePendingBulkUpload', () => {
     window.dispatchEvent(despues)
     expect(despues.defaultPrevented).toBe(false)
     add.mockRestore(); rem.mockRestore()
+  })
+})
+
+describe('useBulkUpload sin contexto (Por asignar) y con empresa (su ficha) — D4', () => {
+  const REQS = {
+    'req-f30': { label: 'F30-1', requirement_code: 'F30_1', target_entity: 'CARRIER' as const,
+                 expiration_policy: 'CALENDAR_PERIOD' as const, vigencia: VIGENCIA },
+    'req-lic': { label: 'Licencia', requirement_code: 'LIC', target_entity: 'DRIVER' as const,
+                 expiration_policy: 'ISSUE_PLUS_MONTHS' as const,
+                 vigencia: { ...VIGENCIA, validity_months: 12, frequency_months: null, cutoff_day: null, period_offset_months: null } },
+  }
+
+  it('cada fila trae su tipo y su regla; el período es por tipo; la empresa viaja como contexto', async () => {
+    vi.mocked(complianceApi.matchUploadFiles).mockResolvedValue({
+      requirements: REQS,
+      files: [
+        { ...asignado('f30.pdf', 'r1'), requirement_id: 'req-f30' },
+        { ...sinAsignar('lic.pdf'), status: 'ambiguous', candidates: [
+          { record_id: 'r7', requirement_id: 'req-lic', subject_label: 'Rojas', carrier_name: 'Sur', confidence: 0.9 },
+          { record_id: 'r8', requirement_id: 'req-lic', subject_label: 'Soto', carrier_name: 'Sur', confidence: 0.88 },
+        ] },
+      ],
+    })
+    subir.mockResolvedValue(undefined)
+    const { result } = renderHook(() => useBulkUpload({ carrierId: 'c-sur' }))
+    await act(() => result.current.receive([archivo('f30.pdf'), archivo('lic.pdf')]))
+    expect(complianceApi.matchUploadFiles).toHaveBeenCalledWith(['f30.pdf', 'lic.pdf'], { requirementId: undefined, carrierId: 'c-sur' })
+    expect(result.current.rows.map(r => r.rule?.label ?? null)).toEqual(['F30-1', null])
+    expect(result.current.periodTypes).toEqual(['req-f30'])
+    expect(result.current.periods['req-f30']).toBe('2026-09')
+
+    // Elegir un candidato trae su tipo: la fila pasa a pedir su fecha de emisión.
+    act(() => result.current.choose(1, 'r7', { label: 'Rojas', carrier: 'Sur', requirementId: 'req-lic' }))
+    expect(result.current.rows[1]).toMatchObject({ group: 'assigned', ready: false })
+    expect(result.current.rows[1].rule?.label).toBe('Licencia')
+    act(() => result.current.setRowDate(1, '2026-05-21'))
+    await act(() => result.current.save())
+    expect(subir).toHaveBeenCalledWith('r1', expect.any(File), { period_start: '2026-09-01' })
+    expect(subir).toHaveBeenCalledWith('r7', expect.any(File), { issue_date: '2026-05-21' })
+  })
+})
+
+describe('useBulkUpload — lo que va a Por asignar', () => {
+  it('va en lotes de 50, encadenados: el backend no acepta más por subida', async () => {
+    const nombres = Array.from({ length: 120 }, (_, i) => `f${i}.pdf`)
+    vi.mocked(complianceApi.matchUploadFiles).mockResolvedValue({ requirements: {}, files: nombres.map(sinAsignar) })
+    const { result } = renderHook(() => useBulkUpload({}))
+    await act(() => result.current.receive(nombres.map(archivo)))
+    await act(() => result.current.save())
+    expect(vi.mocked(documentIngestApi.upload).mock.calls.map(c => c[1].length)).toEqual([50, 50, 20])
+    expect(result.current.result?.staged).toBe(120)
+  })
+
+  it('un archivo que la bandeja no aceptó queda con su motivo, no como "En Por asignar"', async () => {
+    vi.mocked(complianceApi.matchUploadFiles).mockResolvedValue({ requirements: {}, files: [sinAsignar('a.pdf'), sinAsignar('b.pdf')] })
+    vi.mocked(documentIngestApi.upload).mockResolvedValueOnce({
+      batch_id: 'b', items: [], errors: [{ file_name: 'b.pdf', error: 'Tipo de archivo no permitido' }], duplicates: [],
+    })
+    const { result } = renderHook(() => useBulkUpload({}))
+    await act(() => result.current.receive([archivo('a.pdf'), archivo('b.pdf')]))
+    await act(() => result.current.save())
+    expect(result.current.items.map(i => i.status)).toEqual(['staged', 'error'])
+    expect(result.current.items[1].error).toBe('Tipo de archivo no permitido')
+    expect(result.current.result?.staged).toBe(1)
   })
 })

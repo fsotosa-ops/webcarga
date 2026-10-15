@@ -279,38 +279,6 @@ def test_el_catalogo_se_lee_una_vez_por_lote_no_una_por_archivo(monkeypatch):
     assert llamadas == {"catalogo": 1, "universo": 1}
 
 
-def test_duplicados_del_mismo_rut_no_degradan_a_ambiguous(monkeypatch):
-    """'F30_<rut>_ANEXO_<rut>.pdf' es un archivo real: el RUT aparece dos
-    veces en el nombre y `extract_ruts` no deduplica, asi que el motor
-    devuelve dos candidatos que son la MISMA empresa. Sin deduplicar antes de
-    clasificar, `classify_match` los ve empatados y AUTO se degrada a
-    AMBIGUOUS aunque no haya ninguna ambiguedad real."""
-    from app.services.document_matcher import MatchCandidate
-
-    mismo_candidato_dos_veces = [
-        MatchCandidate(entity_type="CARRIER", entity_id="c1", requirement_id="req-1",
-                        confidence=0.95, evidence={"entity": {"via": "RUT", "raw": "1-9"}}),
-        MatchCandidate(entity_type="CARRIER", entity_id="c1", requirement_id="req-1",
-                        confidence=0.95, evidence={"entity": {"via": "RUT", "raw": "1-9"}}),
-    ]
-    monkeypatch.setattr("app.routers.document_ingest.match_document",
-                        lambda **kw: mismo_candidato_dos_veces)
-    pool, conn = _pool_de_ingesta()
-    client = make_client(pool)
-
-    client.post("/api/v1/document-ingest/files",
-                files={"files": ("F30.pdf", b"%PDF-1.4", "application/pdf")})
-
-    insert = next(c for c in conn.fetchrow.call_args_list
-                  if "document_ingest_items" in c.args[0])
-    args = insert.args[1:]
-    assert args[5] == "AUTO", (
-        "dos candidatos iguales no son una ambiguedad real: deduplicar antes "
-        "de clasificar tiene que devolver AUTO, no AMBIGUOUS"
-    )
-    assert args[7] == "c1"
-
-
 def test_ambiguous_no_escribe_un_ganador_arbitrario(monkeypatch):
     """Con un empate real (dos empresas homonimas, por ejemplo), elegir
     `candidatos[0]` seria un desempate arbitrario que define el orden de

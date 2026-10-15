@@ -48,17 +48,17 @@ beforeEach(() => {
 // pasa a ser un grupo con DOS trabajos distintos adentro — Empresas y Sin
 // clasificar (ex-Bandeja) —, cada uno con su propia ruta. El contador del
 // trabajo pendiente vive en la entrada de "Sin clasificar", no en el grupo.
-describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () => {
+describe('Sidebar — Certificación se abre en Empresas y Por asignar', () => {
   beforeEach(() => {
     vi.mocked(documentIngestApi.listQueue).mockReset()
   })
 
-  it('sin documents.review no muestra Sin clasificar ni pide su conteo (S6, 14/10)', async () => {
+  it('sin documents.review no muestra Por asignar ni pide su conteo (S6, 14/10)', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 5, rows: [] })
     nav.ruta = '/dashboard/compliance'
     setup(null, ['operations.read'])
     expect(await screen.findAllByText('Empresas')).not.toHaveLength(0)
-    expect(screen.queryByText('Sin clasificar')).not.toBeInTheDocument()
+    expect(screen.queryByText('Por asignar')).not.toBeInTheDocument()
     expect(documentIngestApi.listQueue).not.toHaveBeenCalled()
   })
 
@@ -75,7 +75,7 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
     expect(screen.queryByText('0')).not.toBeInTheDocument()
   })
 
-  it('Certificación se abre en Empresas y Sin clasificar', async () => {
+  it('Certificación se abre en Empresas y Por asignar', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     setup()
     // El grupo arranca plegado (la ruta activa del mock está fuera del grupo,
@@ -86,7 +86,7 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
     const empresas = screen.getAllByRole('link', { name: /^empresas$/i })
     expect(empresas[0]).toHaveAttribute('href', '/dashboard/compliance')
 
-    const sinClasificar = screen.getAllByRole('link', { name: /sin clasificar/i })
+    const sinClasificar = screen.getAllByRole('link', { name: /por asignar/i })
     expect(sinClasificar[0]).toHaveAttribute('href', '/dashboard/compliance/inbox')
   })
 
@@ -96,7 +96,7 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
     fireEvent.click(await screen.findByRole('button', { name: /certificación/i }))
 
     await waitFor(() => {
-      const sinClasificar = screen.getAllByRole('link', { name: /sin clasificar/i })[0]
+      const sinClasificar = screen.getAllByRole('link', { name: /por asignar/i })[0]
       expect(sinClasificar).toHaveTextContent('12')
     })
   })
@@ -108,7 +108,7 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
     setup()
     fireEvent.click(await screen.findByRole('button', { name: /certificación/i }))
 
-    const sinClasificar = screen.getAllByRole('link', { name: /sin clasificar/i })[0]
+    const sinClasificar = screen.getAllByRole('link', { name: /por asignar/i })[0]
     expect(sinClasificar).not.toHaveTextContent('0')
   })
 
@@ -125,7 +125,7 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
       .toHaveAttribute('href', '/dashboard/compliance')
     expect(within(navMobile).getByRole('link', { name: /^directorio$/i }))
       .toHaveAttribute('href', '/dashboard/carriers')
-    expect(within(navMobile).getByRole('link', { name: /sin clasificar/i }))
+    expect(within(navMobile).getByRole('link', { name: /por asignar/i }))
       .toHaveAttribute('href', '/dashboard/compliance/inbox')
     expect(within(navMobile).getByRole('link', { name: /^pendientes$/i }))
       .toHaveAttribute('href', '/dashboard/compliance/pending')
@@ -201,7 +201,7 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
   // Pendientes vuelve como tercer trabajo de Certificación (spec 2026-10-11,
   // decisión D1): "qué documentos se deben y quién los debe". La aserción
   // vieja de que NO existía quedó contradicha por esa decisión.
-  it('Certificación tiene Empresas, Sin clasificar y Pendientes, en ese orden', async () => {
+  it('Certificación tiene Empresas, Por asignar y Pendientes, en ese orden', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     setup()
     fireEvent.click(await screen.findByRole('button', { name: /certificación/i }))
@@ -212,7 +212,7 @@ describe('Sidebar — Certificación se abre en Empresas y Sin clasificar', () =
       .map(a => [a.textContent?.trim(), a.getAttribute('href')])
     expect(delGrupo).toEqual([
       ['Empresas', '/dashboard/compliance'],
-      ['Sin clasificar', '/dashboard/compliance/inbox'],
+      ['Por asignar', '/dashboard/compliance/inbox'],
       ['Pendientes', '/dashboard/compliance/pending'],
     ])
   })

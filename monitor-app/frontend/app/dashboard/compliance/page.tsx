@@ -237,7 +237,7 @@ function CertificationPageInner() {
             group === 'carrier' &&
             (statusQuery.data?.total_unclassified ?? 0) > 0 && (
               <span className="text-etiqueta text-gray-400">
-                · {statusQuery.data?.total_unclassified} sin clasificar
+                · {statusQuery.data?.total_unclassified} por asignar
               </span>
             )}
         </div>

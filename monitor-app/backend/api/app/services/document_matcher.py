@@ -218,21 +218,38 @@ def _fuzzy_confidence(ratio: float) -> float:
     return round(0.60 + (ratio - _FUZZY_FLOOR) * 1.4, 3)
 
 
+_STRONG_VIAS = {"RUT", "PATENTE"}
+_DECLARED_VIAS = {"EMPRESA_DECLARADA", "MANIFEST"}
+
+
 def match_document(
     *,
     file_name: str,
     catalog: Catalog,
     universe: EntityUniverse,
     manifest_row: dict | None = None,
+    declared_requirement: RequirementAlias | None = None,
 ) -> list[MatchCandidate]:
-    """Candidatos para un archivo, ordenados por confianza (mayor primero).
+    """El único reconocedor: de quién es un archivo y qué documento es.
 
-    El scope de empresa se aplica ACOTANDO EL UNIVERSO antes de llamar: cuando
-    el lote es de una sola empresa, el caller pasa solo sus entidades. Así el
-    scope no puede quedar desincronizado entre el filtro y el match.
+    Lo usan la bandeja (Por asignar), la carga en lote de Pendientes y la subida
+    sin contexto (Entrega D, 15/10). Antes Pendientes tenía su propio
+    `match_owner`, con otra escala y otras reglas: el mismo archivo se proponía
+    distinto según dónde se soltaba.
+
+    El contexto ACOTA, no cambia el algoritmo:
+    - la empresa elegida va en el universo (`scope_carrier_id`, cargar_universo);
+    - el tipo conocido (Pendientes: se soltó sobre el F30-1) va en
+      `declared_requirement`: el tipo deja de adivinarse y solo se proponen
+      entidades de su familia.
+
+    La evidencia de cada candidato es la entidad (RUT, patente, nombre, empresa
+    declarada o manifiesto) y el tipo (declarado, alias en el nombre, o ninguno).
+    Con el tipo conocido, la confianza es la de la entidad; sin tipo, 0.60, porque
+    no se sabe a qué registro va. Ordenados por confianza (mayor primero), sin
+    repetir (entidad, tipo).
     """
     normalized = normalize_text(file_name)
-    candidates: list[MatchCandidate] = []
 
     # El manifiesto es una declaración explícita del operador: corta la cascada.
     # Es lo único que rescata a los archivos sin señal en el nombre.
@@ -241,233 +258,144 @@ def match_document(
         if resolved:
             return [resolved]
 
-    # LA EMPRESA YA SABIDA. Va primero porque es la evidencia mas fuerte que hay:
-    # no se dedujo del nombre del archivo, la declaro una persona al acotar el
-    # universo -- entrando a la bandeja de esa empresa, o asignandosela a lo que
-    # marco.
-    #
-    # POR QUE FALTABA. Las otras cuatro ramas exigen una senal EN EL NOMBRE: RUT
-    # de empresa, patente, RUT de conductor, o nombre de conductor. El scope solo
-    # LIMITABA el universo y nunca aportaba, asi que un documento de empresa
-    # -- "Carpeta_Tributaria_Regular.pdf" -- no resolvia ni sabiendo de quien es.
-    # Medido: 67 archivos pasaron por la cola y ninguno produjo un solo
-    # candidato, porque ningun nombre traia RUT ni patente.
-    #
-    # Se limita a requisitos de empresa a proposito: saber la empresa no dice
-    # cual de sus 12 conductores es, y proponer uno seria inventar.
-    if universe.scope_carrier_id:
-        requirement = _match_requirement(normalized, catalog, "CARRIER")
-        if requirement:
-            candidates.append(MatchCandidate(
-                entity_type="CARRIER",
-                entity_id=universe.scope_carrier_id,
-                requirement_id=requirement.requirement_id,
-                confidence=0.95,
-                evidence={
-                    "entity": {"via": "EMPRESA_DECLARADA", "score": 0.95},
-                    "type": {"via": "ALIAS", "score": 0.85, "alias": requirement.alias},
-                },
-            ))
+    def tipo(family: str):
+        """El tipo para una familia: el declarado (si es de esa familia), o el alias del nombre."""
+        if declared_requirement is not None:
+            if declared_requirement.target_entity != family:
+                return None, None
+            return declared_requirement, {"via": "DECLARADO", "score": 1.0}
+        alias = _match_requirement(normalized, catalog, family)
+        return alias, ({"via": "ALIAS", "score": 0.85, "alias": alias.alias} if alias else {"via": None})
 
-    ruts = extract_ruts(file_name)
-    for rut in ruts:
-        for entity_id, tax_id, _name in universe.carriers:
-            if canonical_rut(tax_id) != rut:
-                continue
-            requirement = _match_requirement(normalized, catalog, "CARRIER")
-            candidates.append(MatchCandidate(
-                entity_type="CARRIER",
-                entity_id=entity_id,
-                requirement_id=requirement.requirement_id if requirement else None,
-                confidence=0.95 if requirement else 0.60,
-                evidence={
-                    "entity": {"via": "RUT", "score": 0.95, "raw": rut},
-                    "type": (
-                        {"via": "ALIAS", "score": 0.85, "alias": requirement.alias}
-                        if requirement else {"via": None}
-                    ),
-                },
-            ))
+    def families():
+        if declared_requirement is not None:
+            return {declared_requirement.target_entity}
+        return {"CARRIER", "DRIVER", "ASSET"}
 
-    # Vehículo por patente. No hay que "reconocer" un formato: se busca cuál de
-    # las patentes que existen aparece en el nombre. Diccionario cerrado ⇒ no
-    # se puede inventar un vehículo que no está en la flota.
-    token_list = normalized.split()
-    for entity_id, license_plate in universe.assets:
-        if not plate_in_tokens(license_plate, token_list):
-            continue
-        requirement = _match_requirement(normalized, catalog, "ASSET")
+    candidates: list[MatchCandidate] = []
+
+    def add(family: str, entity_id: str, entity_evidence: dict, entity_score: float, *, needs_type=False):
+        requirement, type_evidence = tipo(family)
+        if needs_type and requirement is None:
+            return
         candidates.append(MatchCandidate(
-            entity_type="ASSET",
-            entity_id=entity_id,
+            entity_type=family, entity_id=entity_id,
             requirement_id=requirement.requirement_id if requirement else None,
-            confidence=0.95 if requirement else 0.60,
-            evidence={
-                "entity": {"via": "PATENTE", "score": 0.95, "raw": license_plate},
-                "type": (
-                    {"via": "ALIAS", "score": 0.85, "alias": requirement.alias}
-                    if requirement else {"via": None}
-                ),
-            },
+            confidence=entity_score if requirement else 0.60,
+            evidence={"entity": entity_evidence, "type": type_evidence},
         ))
 
-    # Conductor por RUT en el nombre del archivo. Simétrica a la rama de
-    # empresas de arriba: sin esto, un archivo que trae el RUT del conductor
-    # ADEMÁS de su nombre queda peor que uno que solo trae el nombre — el
-    # `continue` de la rama difusa de abajo lo saca del match difuso, y antes
-    # de este cambio nada más abajo lo recogía.
-    for rut in ruts:
-        for entity_id, tax_id, _name in universe.drivers:
-            if canonical_rut(tax_id) != rut:
-                continue
-            requirement = _match_requirement(normalized, catalog, "DRIVER")
-            candidates.append(MatchCandidate(
-                entity_type="DRIVER",
-                entity_id=entity_id,
-                requirement_id=requirement.requirement_id if requirement else None,
-                confidence=0.95 if requirement else 0.60,
-                evidence={
-                    "entity": {"via": "RUT", "score": 0.95, "raw": rut},
-                    "type": (
-                        {"via": "ALIAS", "score": 0.85, "alias": requirement.alias}
-                        if requirement else {"via": None}
-                    ),
-                },
-            ))
+    allowed = families()
 
-    # Conductor por nombre de persona. Es el caso dominante en SharePoint:
-    # el nombre del archivo trae la persona, no su RUT.
-    for entity_id, tax_id, full_name in universe.drivers:
-        if canonical_rut(tax_id) in ruts:
-            continue  # ya resuelto por identificador fuerte más arriba
-        ratio = best_name_similarity(normalized, full_name)
-        if ratio < _FUZZY_FLOOR:
-            continue
-        requirement = _match_requirement(normalized, catalog, "DRIVER")
-        candidates.append(MatchCandidate(
-            entity_type="DRIVER",
-            entity_id=entity_id,
-            requirement_id=requirement.requirement_id if requirement else None,
-            confidence=_fuzzy_confidence(ratio),
-            evidence={
-                "entity": {"via": "NOMBRE_FUZZY", "score": round(ratio, 3), "raw": full_name},
-                "type": (
-                    {"via": "ALIAS", "score": 0.85, "alias": requirement.alias}
-                    if requirement else {"via": None}
-                ),
-            },
-        ))
+    # LA EMPRESA YA SABIDA: la declaró una persona al acotar el universo (entrar a
+    # la bandeja de esa empresa, o subir desde su ficha). Es la evidencia más
+    # fuerte, y la única que rescata un documento de empresa sin RUT en el nombre
+    # ("Carpeta_Tributaria_Regular.pdf": medido, 67 archivos así no producían
+    # nada). Solo para requisitos de empresa, y solo con tipo: saber la empresa no
+    # dice cuál de sus 12 conductores es, y proponer uno sería inventar.
+    if universe.scope_carrier_id and "CARRIER" in allowed:
+        add("CARRIER", universe.scope_carrier_id, {"via": "EMPRESA_DECLARADA", "score": 0.95}, 0.95,
+            needs_type=True)
 
-    candidates.sort(key=lambda c: c.confidence, reverse=True)
-    return candidates
-
-
-# ── De quién es un archivo cuando el documento ya se sabe ────────────────────
-#
-# Pendientes (spec 2026-10-11): se arrastran 15 F30-1 sobre el F30-1. El TIPO
-# no hay que adivinarlo, solo el dueño, y el universo es quienes lo DEBEN.
-# `match_document` no sirve tal cual: su confianza depende de reconocer el tipo
-# por alias (sin alias, un RUT exacto queda en 0.60) y no mira nombres de
-# empresa. Esta función reutiliza sus piezas, no las copia.
-
-
-@dataclass(frozen=True)
-class PendingOwner:
-    """Quien debe el documento: su registro pendiente y cómo reconocerlo.
-    `label` es la razón social, el nombre del conductor o la patente."""
-    record_id: str
-    entity_type: str  # CARRIER | DRIVER | ASSET
-    label: str
-    tax_id: str | None
-    carrier_name: str
-
-
-@dataclass(frozen=True)
-class OwnerCandidate:
-    record_id: str
-    confidence: float
-    reason: str  # rut | plate | name
-
-
-def match_owner(file_name: str, owners: list[PendingOwner]) -> list[OwnerCandidate]:
-    """Candidatos para un archivo, de mayor a menor confianza. Un identificador
-    fuerte (RUT con DV válido, patente) vale 0.95; el nombre, la misma escala
-    difusa de la Bandeja (un nombre exacto llega a 0.90)."""
-    normalized = normalize_text(file_name)
     ruts = set(extract_ruts(file_name))
     token_list = normalized.split()
-    found: dict[str, OwnerCandidate] = {}
 
-    def keep(c: OwnerCandidate) -> None:
-        if c.record_id not in found or found[c.record_id].confidence < c.confidence:
-            found[c.record_id] = c
+    if "CARRIER" in allowed:
+        for entity_id, tax_id, business_name in universe.carriers:
+            if canonical_rut(tax_id) in ruts:
+                add("CARRIER", entity_id, {"via": "RUT", "score": 0.95, "raw": canonical_rut(tax_id)}, 0.95)
+                continue
+            ratio = best_name_similarity(normalized, business_name or "")
+            if ratio >= _FUZZY_FLOOR:
+                add("CARRIER", entity_id, {"via": "NOMBRE_FUZZY", "score": round(ratio, 3), "raw": business_name},
+                    _fuzzy_confidence(ratio))
 
-    for o in owners:
-        if canonical_rut(o.tax_id) in ruts:
-            keep(OwnerCandidate(o.record_id, 0.95, "rut"))
-            continue
-        if o.entity_type == "ASSET":
-            if plate_in_tokens(o.label, token_list):
-                keep(OwnerCandidate(o.record_id, 0.95, "plate"))
-            continue
-        ratio = best_name_similarity(normalized, o.label)
-        if ratio >= _FUZZY_FLOOR:
-            keep(OwnerCandidate(o.record_id, _fuzzy_confidence(ratio), "name"))
+    # Vehículo por patente: diccionario cerrado, no se inventa un vehículo que no
+    # está en la flota.
+    if "ASSET" in allowed:
+        for entity_id, license_plate in universe.assets:
+            if plate_in_tokens(license_plate, token_list):
+                add("ASSET", entity_id, {"via": "PATENTE", "score": 0.95, "raw": license_plate}, 0.95)
 
-    # Un identificador fuerte en el archivo manda sobre cualquier nombre: un
-    # homónimo con otro RUT (0.90 exacto) quedaba a menos de _AMBIGUITY_MARGIN
-    # del 0.95 y volvía ambiguo un archivo que sí identifica a su dueño.
-    if any(c.reason != "name" for c in found.values()):
-        found = {k: c for k, c in found.items() if c.reason != "name"}
+    # Conductor por RUT o por nombre (el caso dominante en SharePoint: el nombre
+    # trae la persona, no su RUT).
+    if "DRIVER" in allowed:
+        for entity_id, tax_id, full_name in universe.drivers:
+            if canonical_rut(tax_id) in ruts:
+                add("DRIVER", entity_id, {"via": "RUT", "score": 0.95, "raw": canonical_rut(tax_id)}, 0.95)
+                continue
+            ratio = best_name_similarity(normalized, full_name)
+            if ratio >= _FUZZY_FLOOR:
+                add("DRIVER", entity_id, {"via": "NOMBRE_FUZZY", "score": round(ratio, 3), "raw": full_name},
+                    _fuzzy_confidence(ratio))
 
-    return sorted(found.values(), key=lambda c: c.confidence, reverse=True)
-
-
-def _owner_strength(c: OwnerCandidate) -> tuple[bool, float]:
-    """Un identificador (RUT, patente) pesa más que cualquier nombre."""
-    return (c.reason != "name", c.confidence)
+    return _rank(prefer_identifiers(candidates))
 
 
-def _outranks(a: OwnerCandidate, b: OwnerCandidate) -> bool:
+def prefer_identifiers(candidates: list[MatchCandidate]) -> list[MatchCandidate]:
+    """Un identificador (RUT, patente) en el nombre gana sobre los NOMBRES de su
+    misma familia: un homónimo con otro RUT (nombre exacto, 0.90) quedaba a menos
+    de _AMBIGUITY_MARGIN del 0.95 y volvía ambiguo un archivo que sí identifica a su
+    dueño. Por familia: el RUT de la empresa no borra al conductor nombrado en el
+    mismo archivo, que puede ser el documento de él.
+
+    Pública porque quien acota DESPUÉS del motor (Pendientes: solo quienes deben
+    el documento) la aplica sobre lo que le queda: un RUT de alguien que no lo
+    debe no puede borrar a quien sí."""
+    strong = {c.entity_type for c in candidates if c.evidence["entity"]["via"] in _STRONG_VIAS}
+    return [c for c in candidates
+            if not (c.entity_type in strong and c.evidence["entity"]["via"] == "NOMBRE_FUZZY")]
+
+
+def _rank(candidates: list[MatchCandidate]) -> list[MatchCandidate]:
+    """De mayor a menor confianza, una vez por (entidad, tipo): un RUT repetido en
+    el nombre (`F30_<rut>_ANEXO_<rut>.pdf`) no es un empate consigo mismo."""
+    seen: set[tuple] = set()
+    out = []
+    for c in sorted(candidates, key=lambda c: c.confidence, reverse=True):
+        key = (c.entity_type, c.entity_id, c.requirement_id)
+        if key not in seen:
+            seen.add(key)
+            out.append(c)
+    return out
+
+
+def reason_of(c: MatchCandidate) -> str:
+    """Por qué se propuso, dicho para la pantalla: rut | plate | name | declared."""
+    via = c.evidence["entity"]["via"]
+    return {"RUT": "rut", "PATENTE": "plate", "NOMBRE_FUZZY": "name"}.get(via, "declared")
+
+
+def _strength(c: MatchCandidate) -> tuple[bool, float]:
+    """Un identificador o una declaración pesan más que cualquier nombre."""
+    return (reason_of(c) != "name", c.confidence)
+
+
+def _outranks(a: MatchCandidate, b: MatchCandidate) -> bool:
     """`a` es estrictamente más fuerte que `b`: identificador contra nombre, o
     la misma clase de razón con más de _AMBIGUITY_MARGIN de confianza."""
-    if (a.reason != "name") != (b.reason != "name"):
-        return a.reason != "name"
+    if (reason_of(a) != "name") != (reason_of(b) != "name"):
+        return reason_of(a) != "name"
     return a.confidence - b.confidence > _AMBIGUITY_MARGIN
 
 
-def resolve_owner_collisions(tops: list[OwnerCandidate | None]) -> dict[int, str]:
-    """Regla de choque del lote (P23, refina spec §6). Cuando varios archivos
-    van al mismo registro, si UNO es estrictamente más fuerte que todos los
-    demás (`_outranks`), ese queda asignado y los otros bajan ("outranked");
-    si no hay uno así (dos RUT exactos, dos nombres parecidos) bajan todos
-    ("tie"). Devuelve índice -> motivo, solo de los que bajan.
-
-    `tops` es la propuesta de cada archivo (None si no quedó asignado). La
-    pantalla repite esta misma regla en `usePendingBulkUpload` (`rowsOf`)."""
-    groups: dict[str, list[int]] = {}
+def resolve_collisions(tops: list[MatchCandidate | None]) -> dict[int, str]:
+    """Regla de choque del lote (P23). Cuando varios archivos van al mismo
+    registro (entidad + tipo), si UNO es estrictamente más fuerte que todos los
+    demás, ese queda y los otros bajan ("outranked"); si no hay uno así (dos RUT
+    exactos, dos nombres parecidos) bajan todos ("tie"). Devuelve índice -> motivo,
+    solo de los que bajan. La pantalla repite esta regla en `usePendingBulkUpload`."""
+    groups: dict[tuple, list[int]] = {}
     for i, c in enumerate(tops):
         if c is not None:
-            groups.setdefault(c.record_id, []).append(i)
+            groups.setdefault((c.entity_type, c.entity_id, c.requirement_id), []).append(i)
     demoted: dict[int, str] = {}
     for idx in groups.values():
         if len(idx) < 2:
             continue
-        best = max(idx, key=lambda i: _owner_strength(tops[i]))
+        best = max(idx, key=lambda i: _strength(tops[i]))
         if all(_outranks(tops[best], tops[i]) for i in idx if i != best):
             demoted.update({i: "outranked" for i in idx if i != best})
         else:
             demoted.update({i: "tie" for i in idx})
     return demoted
-
-
-def classify_owner_match(candidates: list[OwnerCandidate]) -> str:
-    """matched: un candidato sin rival cercano (la pantalla igual muestra la
-    razón y deja cambiarlo). ambiguous: dos a menos de _AMBIGUITY_MARGIN.
-    unmatched: ninguno. Nada se guarda sin que una persona confirme el lote."""
-    if not candidates:
-        return "unmatched"
-    top = candidates[0]
-    if any(abs(top.confidence - c.confidence) < _AMBIGUITY_MARGIN for c in candidates[1:]):
-        return "ambiguous"
-    return "matched"

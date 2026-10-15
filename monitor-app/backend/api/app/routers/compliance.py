@@ -27,12 +27,7 @@ from fastapi.responses import Response
 from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require, require_fields
 from ..db import get_pool
-from ..schemas.carrier import ACTIVE_OPERATIONAL_STATUS
-
-# Los estados que el embudo considera "en juego". ONBOARDING es una empresa
-# recién creada sin RUT todavía: pertenece a "Recién creadas · sin documentos",
-# no al catálogo del fondo.
-FUNNEL_ACTIVE_STATUSES = (ACTIVE_OPERATIONAL_STATUS, "ONBOARDING")
+from ..schemas.carrier import ACTIVE_OPERATIONAL_STATUS, FUNNEL_ACTIVE_STATUSES  # noqa: F401
 # D1 (R-B4, decisión del usuario 12/10): ONBOARDING se queda en esta mitad
 # visible, a propósito y para siempre. Sale del CONTEO: carrier_compliance la
 # trata como no activa y su funnel_bucket es NULL. Sacarla de aquí mandaría las
@@ -49,9 +44,7 @@ from ..schemas.compliance import (
 )
 from ..schemas.document_ingest import unclassified_predicate
 from ..utils.identity import plate_matches_sql, rut_matches_sql
-from ..services.document_matcher import (
-    PendingOwner, classify_owner_match, match_owner, resolve_owner_collisions,
-)
+from ..services.upload_match import match_files
 from ..services.audit import log_change, record_manual_edit
 from ..services.vigencia import regla_base_json_sql
 from ..services.fleet_compliance import (
@@ -626,72 +619,24 @@ async def pending_summary(
     return {"rows": rows}
 
 
-# Quienes DEBEN un documento, con lo necesario para reconocerlos en un nombre de
-# archivo. Mismo alcance y misma definición que la cola (`pending_base_ctes`,
-# `in_scope`, PENDING_STATES). El RUT sale en forma canónica NNNNNNNN-D, que es
-# la que devuelve `extract_ruts`; uno inválido queda NULL y no se ofrece.
-_PENDING_OWNERS_SQL = f"""
-WITH {pending_base_ctes('$2')}
-SELECT r.id::text AS record_id, r.entity_type,
-       COALESCE(r.subject_name, c.business_name) AS label,
-       CASE r.entity_type WHEN 'CARRIER' THEN public.canonical_rut(c.tax_id)
-                          WHEN 'DRIVER'  THEN (SELECT public.canonical_rut(d.tax_id)
-                                               FROM public.drivers d WHERE d.id = r.entity_id)
-       END AS tax_id,
-       c.business_name AS carrier_name
-FROM resolved r
-JOIN public.carriers c ON c.id = r.resolved_carrier_id
-WHERE r.requirement_id = $1::uuid AND r.in_scope AND r.document_state = ANY($3::text[])
-"""
-
-
 @router.post("/pending/match", response_model=PendingMatchResponse)
 async def match_pending_files(
     body: PendingMatchBody,
     pool=Depends(get_pool),
     _=Depends(require(Permission.DOCUMENTS_UPLOAD)),
 ):
-    """Pendientes, carga en lote: propone a quién va cada archivo, SOLO entre
-    quienes deben el documento. No escribe nada (spec 2026-10-11, sección 6).
-    Dos archivos para el mismo dueño: si uno es estrictamente más fuerte (RUT o
-    patente contra nombre, o más confianza que el margen) queda y los demás
-    pasan a "por elegir"; si empatan, ninguno se guarda solo (regla P23)."""
+    """La revisión de una carga en lote: propone a qué registro va cada archivo, con
+    el contexto que haya (tipo, empresa o nada). No escribe nada. Ver
+    services/upload_match.py."""
     if len(body.file_names) > PENDING_MATCH_MAX_FILES:
         raise HTTPException(
             422, f"Máximo {PENDING_MATCH_MAX_FILES} archivos por carga; llegaron {len(body.file_names)}.")
-    filas = await pool.fetch(_PENDING_OWNERS_SQL, str(body.requirement_id), "falta", list(PENDING_STATES))
-    owners = [PendingOwner(f["record_id"], f["entity_type"], f["label"], f["tax_id"], f["carrier_name"])
-              for f in filas]
-    por_id = {o.record_id: o for o in owners}
-
-    def _cand(c):
-        o = por_id[c.record_id]
-        return {"record_id": c.record_id, "subject_label": o.label, "carrier_name": o.carrier_name,
-                "confidence": c.confidence}
-
-    files, tops = [], []
-    for name in body.file_names:
-        cands = match_owner(name, owners)
-        status = classify_owner_match(cands)
-        top = cands[0] if status == "matched" else None
-        tops.append(top)
-        files.append({
-            "file_name": name, "status": status,
-            "record_id": top.record_id if top else None,
-            "subject_label": por_id[top.record_id].label if top else None,
-            "carrier_name": por_id[top.record_id].carrier_name if top else None,
-            "reason": top.reason if top else None,
-            "confidence": top.confidence if top else None,
-            "candidates": [_cand(c) for c in cands[:5]],
-            "collision": None, "collision_subject_label": None,
-        })
-
-    # Varios archivos al mismo registro: queda solo el estrictamente más fuerte.
-    for i, kind in resolve_owner_collisions(tops).items():
-        files[i].update(status="ambiguous", record_id=None, subject_label=None,
-                        carrier_name=None, reason=None, confidence=None,
-                        collision=kind, collision_subject_label=por_id[tops[i].record_id].label)
-    return {"files": files}
+    async with pool.acquire() as conn:
+        return await match_files(
+            conn, body.file_names,
+            requirement_id=str(body.requirement_id) if body.requirement_id else None,
+            carrier_id=str(body.carrier_id) if body.carrier_id else None,
+        )
 
 
 @router.get("/pending", response_model=PendingComplianceListResponse)

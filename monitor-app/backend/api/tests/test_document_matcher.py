@@ -307,3 +307,66 @@ def test_el_manifiesto_manda_sobre_el_nombre_del_archivo():
     assert top.confidence == 1.0
     assert top.evidence["entity"]["via"] == "MANIFEST"
     assert classify_match(candidates) == "AUTO"
+
+
+# ── Reglas comunes del reconocedor único (Entrega D, 15/10) ─────────────────
+
+def test_la_empresa_se_reconoce_tambien_por_su_nombre():
+    """Pendientes ya lo hacía; la bandeja no. Ahora es una sola regla."""
+    candidates = match_document(
+        file_name="F30-1 Transporte Lumiliz Limitada.pdf",
+        catalog=_catalog(("r-f30", "CARRIER", "F30-1", 100)),
+        universe=_universe(carriers=[CARRIER_LUMILIZ]),
+    )
+    assert [(c.entity_id, c.requirement_id, c.evidence["entity"]["via"]) for c in candidates] == [
+        ("c-lumiliz", "r-f30", "NOMBRE_FUZZY")]
+
+
+def test_un_rut_gana_a_los_nombres_de_su_familia_y_no_a_los_de_otra():
+    """El RUT de un conductor descarta a sus homónimos; el RUT de la empresa no
+    borra al conductor nombrado en el mismo archivo."""
+    homonimo = ("d-otro", "11111111-1", "Abraham Ulloa")
+    por_rut = match_document(
+        file_name="LICENCIA Abraham Ulloa 16030949-0.pdf",
+        catalog=_catalog(("r-lic", "DRIVER", "LICENCIA", 100)),
+        universe=_universe(drivers=[DRIVER_ULLOA, homonimo]),
+    )
+    assert [c.entity_id for c in por_rut] == ["d-ulloa"]
+
+    mezcla = match_document(
+        file_name="LICENCIA Abraham Ulloa 76989879-4.pdf",
+        catalog=_catalog(("r-lic", "DRIVER", "LICENCIA", 100)),
+        universe=_universe(carriers=[CARRIER_LUMILIZ], drivers=[DRIVER_ULLOA]),
+    )
+    assert {c.entity_id for c in mezcla} == {"c-lumiliz", "d-ulloa"}
+
+
+def test_un_rut_repetido_en_el_nombre_no_es_un_empate_consigo_mismo():
+    candidates = match_document(
+        file_name="F30_76989879-4_ANEXO_76989879-4.pdf",
+        catalog=_catalog(("r-f30", "CARRIER", "F30", 100)),
+        universe=_universe(carriers=[CARRIER_LUMILIZ]),
+    )
+    assert len(candidates) == 1 and classify_match(candidates) == "AUTO"
+
+
+def test_sin_tipo_la_entidad_no_compite_con_un_candidato_que_si_lo_tiene():
+    """El RUT de la empresa sin tipo vale 0.60: no vuelve ambiguo el documento del
+    conductor nombrado en el mismo archivo, que sí trae su tipo."""
+    candidates = match_document(
+        file_name="LICENCIA Abraham Ulloa 76989879-4.pdf",
+        catalog=_catalog(("r-lic", "DRIVER", "LICENCIA", 100)),
+        universe=_universe(carriers=[CARRIER_LUMILIZ], drivers=[DRIVER_ULLOA]),
+    )
+    sin_tipo = next(c for c in candidates if c.entity_type == "CARRIER")
+    assert sin_tipo.requirement_id is None and sin_tipo.confidence == 0.60
+    assert candidates[0].entity_id == "d-ulloa" and classify_match(candidates) == "AUTO"
+
+
+def test_la_empresa_elegida_y_su_rut_en_el_nombre_son_un_solo_candidato():
+    candidates = match_document(
+        file_name="F30 76989879-4.pdf",
+        catalog=_catalog(("r-f30", "CARRIER", "F30", 100)),
+        universe=_universe(carriers=[CARRIER_LUMILIZ], scope="c-lumiliz"),
+    )
+    assert len(candidates) == 1 and classify_match(candidates) == "AUTO"

@@ -98,7 +98,7 @@ export function ReassignDocument({ recordId, carrierId, onDone }: Props) {
           {guardando
             ? <Loader2 size={11} className="motion-safe:animate-spin" />
             : <Undo2 size={11} />}
-          Devolver a sin clasificar
+          Devolver a Por asignar
         </button>
         <button
           type="button"

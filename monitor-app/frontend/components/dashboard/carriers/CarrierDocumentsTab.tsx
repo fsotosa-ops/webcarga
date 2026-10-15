@@ -2,6 +2,8 @@
 
 import { Download, Loader2 } from 'lucide-react'
 import { CarrierDocumentsWorkspace } from '@/components/compliance/CarrierDocumentsWorkspace'
+import { BulkUploadReview } from '@/components/compliance/pending/BulkUploadReview'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 import type { Carrier } from '@/lib/types'
 
 interface Props {
@@ -14,12 +16,16 @@ interface Props {
 
 /** Tab Documentos de la ficha única de empresa (Entrega C, 14/10): la
  *  documentación de la empresa y la de su flota, por sujeto, con su carga. Es
- *  adonde lleva cada fila de Certificación. Un lote de archivos sin destino va a
- *  Sin clasificar, que el espacio de trabajo enlaza ya filtrado por la empresa. */
+ *  adonde lleva cada fila de Certificación. Varios archivos a la vez se suben con
+ *  "Subir documentos", la misma revisión de lote de todas partes, con la empresa ya
+ *  puesta (Entrega D); lo que no se resuelve queda en Por asignar. */
 export function CarrierDocumentsTab({ carrierId, carrier, onExport, exporting, exportError }: Props) {
+  // Una empresa dada de baja o en alta no recibe documentos (misma regla que el espacio de trabajo).
+  const canUpload = usePermiso('documents.upload') && carrier.operational_status === 'ACTIVE'
   return (
     <div className="bg-white rounded-xl border border-border p-4 md:p-5 space-y-3">
       <div className="flex items-center justify-end gap-3">
+        {canUpload && <BulkUploadReview trigger="button" carrierId={carrierId} />}
         {exportError && <p className="text-etiqueta text-status-incidente">{exportError}</p>}
         <button
           type="button"

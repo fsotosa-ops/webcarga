@@ -6,7 +6,7 @@ import { clavesCertificacion } from '@/lib/queries/certificacion'
 import type { PendingComplianceRow, PendingSummaryRow } from '@/lib/types'
 import { hoyEnChile } from '@/lib/utils/datetime'
 
-vi.mock('@/lib/api/compliance', () => ({ complianceApi: { listPending: vi.fn(), uploadFile: vi.fn(), matchPendingFiles: vi.fn() } }))
+vi.mock('@/lib/api/compliance', () => ({ complianceApi: { listPending: vi.fn(), uploadFile: vi.fn(), matchUploadFiles: vi.fn() } }))
 import { complianceApi } from '@/lib/api/compliance'
 
 const F30: PendingSummaryRow = { key: 'req-f30', label: 'F30-1', requirement_code: 'F30_1', target_entity: 'CARRIER',
@@ -167,8 +167,8 @@ describe('PendingHoldersPanel', () => {
 
   it('al guardar el último del lote, queda el resultado del lote junto al estado al día', async () => {
     vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 0, rows: [] })
-    vi.mocked(complianceApi.matchPendingFiles).mockResolvedValue({ files: [{
-      file_name: 'a.pdf', status: 'matched', record_id: 'p1', subject_label: 'Transportes Cordillera SpA',
+    vi.mocked(complianceApi.matchUploadFiles).mockResolvedValue({ requirements: {}, files: [{
+      file_name: 'a.pdf', status: 'matched', record_id: 'p1', requirement_id: 'req', subject_label: 'Transportes Cordillera SpA',
       carrier_name: 'Transportes Cordillera SpA', reason: 'rut', confidence: 0.95, candidates: [] }] })
     vi.mocked(complianceApi.uploadFile).mockResolvedValue({ status: 'APPROVED_MANUAL' } as never)
     const qc = nuevoQc()
