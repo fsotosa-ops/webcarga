@@ -274,9 +274,9 @@ describe('PasoViajesSection', () => {
       })] },
     })
     const fila = screen.getByText('2032999').closest('tr')!
-    fireEvent.click(within(fila).getByRole('button', { name: 'Ver equipo LRTD11' }))
+    fireEvent.click(within(fila).getByRole('link', { name: 'Ver equipo LRTD11' }))
     expect(onOpenQuickView).toHaveBeenCalledWith({ kind: 'asset', id: 'a1', label: 'LRTD11' }, 't1')
-    fireEvent.click(within(fila).getByRole('button', { name: 'Ver empresa Bugarín' }))
+    fireEvent.click(within(fila).getByRole('link', { name: 'Ver empresa Bugarín' }))
     expect(onOpenQuickView).toHaveBeenCalledWith({ kind: 'carrier', id: 'c1', label: 'Bugarín' }, 't1')
     expect(within(fila).getByText('QUINTANA SOSA')).toBeInTheDocument()
     expect(within(fila).getByText('no está en el directorio')).toBeInTheDocument()

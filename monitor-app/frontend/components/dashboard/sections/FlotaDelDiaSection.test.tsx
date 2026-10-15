@@ -1062,12 +1062,12 @@ describe('FlotaDelDiaSection', () => {
   it('conductor, empresa y patente del directorio abren la vista rápida de su propia entidad', async () => {
     const onOpenQuickView = vi.fn()
     renderSection({ onOpenQuickView })
-    fireEvent.click(await screen.findByRole('button', { name: 'Ver equipo FCCP42' }))
+    fireEvent.click(await screen.findByRole('link', { name: 'Ver equipo FCCP42' }))
     expect(onOpenQuickView).toHaveBeenCalledWith({ kind: 'asset', id: 'tr1', label: 'FCCP42' }, 'asset:tr1')
     // El conductor del VIAJE de hoy, no el habitual: es el que se muestra.
-    fireEvent.click(screen.getByRole('button', { name: 'Ver conductor Celis Huerta Brian' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Ver conductor Celis Huerta Brian' }))
     expect(onOpenQuickView).toHaveBeenCalledWith({ kind: 'driver', id: 'v1', label: 'Celis Huerta Brian' }, 'asset:tr1')
-    fireEvent.click(screen.getByRole('button', { name: 'Ver empresa Transportes La Fortaleza Spa' }))
+    fireEvent.click(screen.getByRole('link', { name: 'Ver empresa Transportes La Fortaleza Spa' }))
     expect(onOpenQuickView).toHaveBeenCalledWith(
       { kind: 'carrier', id: 'cf', label: 'Transportes La Fortaleza Spa' }, 'asset:tr3')
   })
@@ -1094,7 +1094,7 @@ describe('FlotaDelDiaSection', () => {
     })
     const onOpenQuickView = vi.fn()
     renderSection({ onOpenQuickView })
-    fireEvent.click(await screen.findByRole('button', { name: 'Ver empresa Empresa del tracto' }))
+    fireEvent.click(await screen.findByRole('link', { name: 'Ver empresa Empresa del tracto' }))
     expect(onOpenQuickView).toHaveBeenCalledWith(
       { kind: 'carrier', id: 'cTractor', label: 'Empresa del tracto' }, 'asset:tx')
   })

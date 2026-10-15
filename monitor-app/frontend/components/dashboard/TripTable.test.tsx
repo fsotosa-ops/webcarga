@@ -490,7 +490,7 @@ describe('TripTable — vista rápida (D4, C10)', () => {
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Ver conductor Vidal Pedro' })[0])
     expect(onOpenQuickView).toHaveBeenLastCalledWith({ kind: 'driver', id: 'd1', label: 'Vidal Pedro' })
-    fireEvent.click(screen.getAllByRole('button', { name: 'Ver equipo HFVP14' })[0])
+    fireEvent.click(screen.getAllByRole('link', { name: 'Ver equipo HFVP14' })[0])
     expect(onOpenQuickView).toHaveBeenLastCalledWith({ kind: 'asset', id: 'a1', label: 'HFVP14' })
     expect(onSelect).not.toHaveBeenCalled()
   })

@@ -8,6 +8,7 @@ import { getDisplayName, tienePrivilegios } from '@/lib/authz/acceso'
 import { obtenerAccesoServidor } from '@/lib/authz/servidor'
 import { destinoSinAcceso } from '@/lib/authz/respuestaMe'
 import { PermisosProvider } from '@/lib/authz/PermisosProvider'
+import { QuickViewProvider } from '@/components/dashboard/QuickViewProvider'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -41,7 +42,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <Topbar displayName={getDisplayName(acceso)} roleName={acceso.role_names[0] ?? null} />
           {/* pb-16 md:pb-0: space for mobile bottom nav */}
           <main className="flex-1 overflow-y-auto bg-bg-main pb-16 md:pb-0">
-            <PermisosProvider acceso={acceso}>{children}</PermisosProvider>
+            <PermisosProvider acceso={acceso}><QuickViewProvider>{children}</QuickViewProvider></PermisosProvider>
           </main>
         </div>
       </div>
