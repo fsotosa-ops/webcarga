@@ -139,7 +139,10 @@ esta entrega.
 ### Tarea 5: verificación y despliegue de la API
 - [ ] Tests del área en la copia local (`-k "insurance or polic or installment or trip or carrier"`) y comparar los
   fallos contra la línea base (hoy fallan 8 de integración sin relación, AGENTLOG 15/10).
-- [ ] Pedir autorización al usuario para aplicar la migración en la base real; aplicarla; desplegar Monitor API.
+- [ ] Pedir autorización al usuario para aplicar la migración en la base real; aplicarla; desplegar Monitor API y el
+  frontend en la misma ventana. La migración no borra nada (la vista materializada queda hasta la Entrega 2), así que
+  la API vieja sigue funcionando hasta que sale la nueva. Después del despliegue, volver a correr la migración: el
+  relleno recoge un pago hecho con la API vieja en esa ventana, y no corre si alguien ya usó el pago nuevo.
 - [ ] Verificar en dev (solo lectura): `/policies?group_by=carrier` y `/trips` dan el mismo estado para Aguilera.
 
 ## Review Focus

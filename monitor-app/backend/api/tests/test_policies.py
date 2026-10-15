@@ -520,3 +520,35 @@ def test_S4_generar_cuotas_fuera_de_la_vigencia_responde_422():
     assert res.status_code == 422
     assert "vigencia" in res.json()["detail"]
     assert not any("INSERT INTO public.insurance_installments" in str(c.args[0]) for c in conn.fetchrow.call_args_list)
+
+
+
+# R3 (revisión final E1): el calendario de una póliza también sale de la vista.
+def test_R3_las_cuotas_de_una_poliza_salen_de_la_vista():
+    pool = AsyncMock()
+    pool.fetch.return_value = []
+    client = make_client(pool)
+    res = client.get("/api/v1/policies/p1/installments")
+    assert res.status_code == 200
+    sql = pool.fetch.call_args.args[0]
+    assert "app.insurance_status" in sql and "payment_status" not in sql
+
+
+# R5 (revisión final E1): el frontend de hoy manda la fecha en UTC (a las 22:00 de
+# Chile ya es mañana). El PATCH de compatibilidad usa la fecha de Chile del servidor.
+def test_R5_el_pago_por_el_patch_viejo_usa_la_fecha_de_chile():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchval.return_value = date(2026, 10, 15)
+    conn.fetchrow.side_effect = [
+        {"policy_id": "p1"},
+        {"id": "i1", "installment_number": 1, "installments_total": 1, "amount_uf": 1, "due_date": None,
+         "due_in_days": None, "installment_state": "PAID", "paid": True, "paid_on": date(2026, 10, 15),
+         "paid_by": None, "outside_validity": False},
+    ]
+    client = make_client(pool)
+    res = client.patch("/api/v1/policies/installments/i1", json={"payment_status": "PAID", "paid_at": "2026-10-16"})
+    assert res.status_code == 200
+    update = conn.fetchrow.call_args_list[0]
+    assert update.args[2] == date(2026, 10, 15)

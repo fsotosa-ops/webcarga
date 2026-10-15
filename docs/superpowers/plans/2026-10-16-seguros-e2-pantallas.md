@@ -75,7 +75,12 @@ en su ficha, con las mismas piezas que el resto de la app.
 
 ### Contracción (al final de la entrega)
 - Migración `…_insurance_retire_stored_states.sql`: copia a `public.audit_log` y borra `insurance_policies.status`,
-  `insurance_policies.expiration_alert_days`, `insurance_installments.payment_status`, `.total_installments`, `.paid_at`.
+  `insurance_policies.expiration_alert_days`, `insurance_installments.payment_status`, `.total_installments`, `.paid_at`;
+  borra también `app.carrier_insurance_status` (materializada), `public.refresh_insurance_view()` y sus 4 triggers
+  (la Entrega 1 los dejó para no cortar la API vieja durante el despliegue). Antes, `generate` deja de escribir
+  `total_installments` (hoy lo exige su NOT NULL).
+- Esquemas: `InsurancePolicyCreateBody`/`PatchBody` pierden `expiration_alert_days` y `status`, y los rechazan
+  (`extra="forbid"`) en vez de descartarlos; `ids` de pago pasan a `list[UUID]`; `outside_validity` con `coalesce`.
 - Backend: se borran `GET /carriers/insurance-overview`, `PATCH /installments/{id}` y los campos de compatibilidad de
   `app/schemas/insurance.py`.
 

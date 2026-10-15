@@ -204,7 +204,9 @@ async def policy_state(conn, policy_id: str) -> dict | None:
 
 # ── Compatibilidad con el frontend actual (la borra la Entrega 2) ─────────────
 
-_LEGACY_HEALTH = {"EXPIRED": "EXPIRED", "EXPIRING": "EXPIRING_SOON", "VALID": "VALID", "NO_DATES": "VALID",
+# Una póliza sin vigencia no es "al día": en la pantalla de hoy se ve como por
+# vencer (revisión final E1), que es lo más cercano a "hay que mirarla".
+_LEGACY_HEALTH = {"EXPIRED": "EXPIRED", "EXPIRING": "EXPIRING_SOON", "VALID": "VALID", "NO_DATES": "EXPIRING_SOON",
                   "CANCELLED": "CANCELLED"}
 
 
@@ -229,9 +231,6 @@ async def carrier_policies(pool, carrier_id: str) -> list[dict]:
     return out
 
 
-_LEGACY_CARRIER_HEALTH = {"EXPIRED": "EXPIRED", "EXPIRING": "EXPIRING_SOON", "VALID": "VALID", "NO_DATES": "VALID",
-                          "NO_POLICY": None}
-
 
 async def legacy_insurance_overview(pool, *, q: str, health: str, operational_status: list[str] | None,
                                     page: int, limit: int) -> dict:
@@ -248,7 +247,7 @@ async def legacy_insurance_overview(pool, *, q: str, health: str, operational_st
                coalesce(s.policies, 0) AS total_policies,
                coalesce(s.overdue_installments, 0) AS total_overdue_installments,
                s.next_due_date AS next_payment_date,
-               CASE s.worst_state WHEN 'EXPIRING' THEN 'EXPIRING_SOON' WHEN 'NO_DATES' THEN 'VALID'
+               CASE s.worst_state WHEN 'EXPIRING' THEN 'EXPIRING_SOON' WHEN 'NO_DATES' THEN 'EXPIRING_SOON'
                                   ELSE s.worst_state END AS worst_policy_health
         FROM public.carriers c
         LEFT JOIN app.carrier_insurance_summary s ON s.carrier_id = c.id
@@ -314,16 +313,20 @@ async def unpay_installments(conn, ids: list[str], *, actor: str) -> dict:
     """Deshace un pago registrado por error: vuelve a impaga, sin fecha ni quién."""
     unpaid, errors = [], []
     for installment_id in ids:
+        # El pago que se deshace queda en la auditoría: cuándo y quién (revisión final E1).
         row = await conn.fetchrow(
-            "UPDATE public.insurance_installments SET paid = false, paid_on = NULL, paid_by = NULL, updated_at = now() "
-            "WHERE id = $1 AND paid RETURNING policy_id",
+            "WITH antes AS (SELECT id, paid_on, paid_by FROM public.insurance_installments WHERE id = $1 AND paid FOR UPDATE) "
+            "UPDATE public.insurance_installments i SET paid = false, paid_on = NULL, paid_by = NULL, updated_at = now() "
+            "FROM antes WHERE i.id = antes.id RETURNING i.policy_id, antes.paid_on, antes.paid_by",
             installment_id,
         )
         if row is None:
             errors.append({"id": installment_id, "error": "No estaba pagada"})
             continue
         await log_change(conn, actor=actor, entity_type=AUDIT_ENTITY, entity_id=row["policy_id"],
-                         action="update", field="paid", old_value={"installment_id": str(installment_id)},
+                         action="update", field="paid",
+                         old_value={"installment_id": str(installment_id), "paid_on": row["paid_on"],
+                                    "paid_by": str(row["paid_by"]) if row["paid_by"] else None},
                          new_value=None)
         unpaid.append(installment_id)
     return {"unpaid": unpaid, "errors": errors}

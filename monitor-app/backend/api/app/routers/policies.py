@@ -277,12 +277,8 @@ async def unlink_asset(
 
 @router.get("/{policy_id}/installments")
 async def list_installments(policy_id: str, pool=Depends(get_pool), _=Depends(require(Permission.INSURANCE_READ))):
-    rows = await pool.fetch(
-        "SELECT id, installment_number, total_installments, amount_uf, due_date, payment_status, paid_at "
-        "FROM public.insurance_installments WHERE policy_id = $1 ORDER BY installment_number",
-        policy_id,
-    )
-    return [dict(r) for r in rows]
+    """Las cuotas de una póliza, con su estado calculado (app.insurance_status)."""
+    return await insurance.policy_installments(pool, policy_id)
 
 
 @router.post("/{policy_id}/installments/generate", status_code=201)
@@ -359,8 +355,9 @@ async def patch_installment(
     async with pool.acquire() as conn:
         async with conn.transaction():
             if body.payment_status == "PAID":
-                paid_on = body.paid_at.date() if body.paid_at else await conn.fetchval(
-                    "SELECT (now() AT TIME ZONE 'America/Santiago')::date")
+                # La fecha de Chile del servidor: el frontend de hoy manda la de UTC,
+                # que después de las 21:00 ya es mañana (revisión final E1).
+                paid_on = await conn.fetchval("SELECT (now() AT TIME ZONE 'America/Santiago')::date")
                 result = await insurance.pay_installments(conn, [installment_id], paid_on=paid_on, actor=user["sub"])
             else:
                 result = await insurance.unpay_installments(conn, [installment_id], actor=user["sub"])

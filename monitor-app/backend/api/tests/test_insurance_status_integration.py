@@ -51,8 +51,6 @@ async def test_S1_policy_state_is_computed_on_read(conexion_revertida):
     assert await _policy_state(conn, valid) == "VALID"
     assert await _policy_state(conn, cancelled) == "CANCELLED"
     assert await _policy_state(conn, no_dates) == "NO_DATES"
-    # Sin vista materializada: no hay nada que refrescar.
-    assert await conn.fetchval("SELECT to_regclass('app.carrier_insurance_status')") is None
 
 
 async def test_S2_installment_state_is_computed_on_read(conexion_revertida):
@@ -224,3 +222,59 @@ async def test_S6_dos_cuotas_vencidas_es_la_alerta_de_la_empresa_en_todas_partes
     assert alerta == "OVERDUE_INSTALLMENTS"
     emp = await insurance.list_carriers(conn, q="76000000")
     assert emp["data"][0]["insurance_alert"] == "OVERDUE_INSTALLMENTS" and emp["data"][0]["worst_state"] == "VALID"
+
+
+
+# ── Arreglos de la revisión final de la Entrega 1 ─────────────────────────────
+
+MIGRACION = (__import__("pathlib").Path(__file__).resolve().parents[2]
+             / "supabase/migrations/20261020090000_insurance_facts_and_status_views.sql")
+
+
+def test_R1_la_entrega_1_no_borra_la_vista_materializada():
+    """Expandir sin cortar: la API que corre hoy lee app.carrier_insurance_status
+    hasta que se despliega la nueva. La borra la Entrega 2."""
+    sql = MIGRACION.read_text()
+    assert "DROP MATERIALIZED VIEW" not in sql and "DROP FUNCTION IF EXISTS public.refresh_insurance_view" not in sql
+
+
+async def test_R2_volver_a_correr_la_migracion_no_resucita_un_pago_deshecho(conexion_revertida):
+    from app.services import insurance
+
+    conn = conexion_revertida
+    policy, ids, today = await _policy_with_installments(conn, n=2)
+    actor = "11111111-1111-1111-1111-111111111111"
+    await conn.execute("UPDATE public.insurance_installments SET payment_status = 'PAID' WHERE id = ANY($1::uuid[])", ids)
+    await insurance.pay_installments(conn, [ids[1]], paid_on=today, actor=actor)
+    await insurance.unpay_installments(conn, [ids[0]], actor=actor)
+
+    await conn.execute(MIGRACION.read_text())
+
+    assert await conn.fetchval("SELECT paid FROM public.insurance_installments WHERE id = $1", ids[0]) is False
+
+
+async def test_R4_una_poliza_sin_fechas_no_se_ve_al_dia_en_la_pantalla_de_hoy(conexion_revertida):
+    from app.services import insurance
+
+    conn = conexion_revertida
+    carrier = await _carrier(conn)
+    await _policy(conn, carrier, valid_from=None, valid_to=None)
+    legacy = await insurance.carrier_policies(conn, carrier)
+    assert legacy[0]["policy_health"] == "EXPIRING_SOON"
+    overview = await insurance.legacy_insurance_overview(conn, q="Seguros Test", health="", operational_status=None, page=1, limit=5)
+    assert overview["data"][0]["worst_policy_health"] == "EXPIRING_SOON"
+
+
+async def test_R6_deshacer_un_pago_guarda_en_la_auditoria_lo_que_borra(conexion_revertida):
+    from app.services import insurance
+
+    conn = conexion_revertida
+    policy, ids, today = await _policy_with_installments(conn, n=1)
+    actor = "11111111-1111-1111-1111-111111111111"
+    await insurance.pay_installments(conn, ids, paid_on=today, actor=actor)
+    await insurance.unpay_installments(conn, ids, actor=actor)
+    old = await conn.fetchval(
+        "SELECT old_value FROM public.audit_log WHERE entity_id = $1 AND field = 'paid' AND new_value IS NULL", policy)
+    import json
+    old = json.loads(old)
+    assert old["paid_on"] == today.isoformat() and old["paid_by"] == actor

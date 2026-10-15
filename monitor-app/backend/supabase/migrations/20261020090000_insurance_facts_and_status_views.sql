@@ -7,7 +7,7 @@
 -- vista MATERIALIZADA que solo se refrescaba cuando alguien escribía: una póliza
 -- vencida ayer seguía "al día" si nadie tocaba Seguros.
 --
--- Esta migración SOLO AGREGA: los hechos nuevos (rellenados desde los datos
+-- Esta migración SOLO AGREGA (no borra nada, ni la vista materializada): los hechos nuevos (rellenados desde los datos
 -- actuales, que son la base: carga de prueba desde Mage) y dos vistas normales.
 -- Las columnas viejas las borra la Entrega 2, con su copia en audit_log.
 -- Re-ejecutable.
@@ -29,10 +29,15 @@ ALTER TABLE public.insurance_installments
     ADD COLUMN IF NOT EXISTS paid_on date,
     ADD COLUMN IF NOT EXISTS paid_by uuid;
 
+-- Solo mientras nadie haya pagado o deshecho un pago con la API nueva (lo dice
+-- la auditoría): después, payment_status ya no se mantiene y volver a correr
+-- esto resucitaría un pago deshecho. Re-ejecutable sin ese riesgo.
 UPDATE public.insurance_installments
 SET paid = true,
     paid_on = (paid_at AT TIME ZONE 'America/Santiago')::date
-WHERE payment_status = 'PAID' AND paid = false;
+WHERE payment_status = 'PAID' AND paid = false
+  AND NOT EXISTS (SELECT 1 FROM public.audit_log
+                  WHERE entity_type = 'INSURANCE_POLICY' AND field = 'paid');
 
 -- 3. El plazo de "Por vencer" de las pólizas: el mismo mecanismo que los
 --    documentos (una fila global), sin pantalla hasta el rediseño de
@@ -41,13 +46,9 @@ INSERT INTO app.alert_thresholds (doc_type, label, warning_days, error_days)
 VALUES ('poliza_por_vencer', 'Póliza por vencer', 30, 0)
 ON CONFLICT (doc_type) DO NOTHING;
 
--- 4. Fuera la vista materializada, su función de refresco y sus 4 triggers.
-DROP TRIGGER IF EXISTS trg_refresh_view_on_policy ON public.insurance_policies;
-DROP TRIGGER IF EXISTS trg_refresh_view_on_installment ON public.insurance_installments;
-DROP TRIGGER IF EXISTS trg_refresh_view_on_policy_coverages ON public.policy_coverages;
-DROP TRIGGER IF EXISTS trg_refresh_view_on_policy_assets ON public.policy_assets;
-DROP FUNCTION IF EXISTS public.refresh_insurance_view();
-DROP MATERIALIZED VIEW IF EXISTS app.carrier_insurance_status;
+-- 4. La vista materializada (app.carrier_insurance_status), su función de
+--    refresco y sus 4 triggers se quedan hasta la Entrega 2: la API que corre
+--    al aplicar esto todavía la lee. Ningún código nuevo la usa.
 
 -- 5. El estado de la póliza y de cada cuota: UNA regla, calculada al leer.
 --    "Hoy" es la fecha de Chile, solo aquí: los días que faltan (expires_in_days,
