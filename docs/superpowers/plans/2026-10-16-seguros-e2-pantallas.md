@@ -91,8 +91,10 @@ en su ficha, con las mismas piezas que el resto de la app.
    `PoliciesTable carrierId`; `InsuranceLine` de Detalles lee `GET /carriers/{id}/policies`): S8 y S10.
 6. **Borrar lo viejo y la guarda** (`InsurancePolicyModal`, `InstallmentRow`, `InsuranceSummaryCard`,
    `lib/insurance.tsx`; `lib/api/policies.ts` y `lib/api/carriers.ts` sin los métodos viejos): S11.
-7. **Contracción** (migración + backend): S15. Ensayo en copia local y `ROLLBACK` en la real; **se aplica con
-   autorización**, y se despliega API y frontend en la misma ventana.
+7. **Contracción** (migración + backend): S15. Antes de borrar columnas, confirmar con `mage-agent` (solo lectura:
+   listar pipelines y buscar `insurance_policies` / `insurance_installments` en sus bloques) que ninguno escribe estas
+   tablas: los datos vinieron de una carga de prueba desde Mage (usuario, 15/10). Ensayo en copia local y `ROLLBACK` en
+   la real; **se aplica con autorización**, y se despliega API y frontend en la misma ventana.
 8. **Verificación:** vitest completo + tsc + build (se tocan `lib/states.ts` y el menú, que son compartidos), humo con
    S12, trinquetes, capturas a 1440 y 390 de Pólizas (los dos agrupamientos), ficha de póliza, Cuotas y la pestaña
    Seguros de la empresa; recorrido en dev con sesión, solo lectura.

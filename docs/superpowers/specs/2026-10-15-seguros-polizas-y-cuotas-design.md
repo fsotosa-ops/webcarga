@@ -61,6 +61,10 @@ La pantalla solo pinta lo que manda la API, con el glosario de `lib/states.ts`.
 
 ### Migración de datos (no inventa nada)
 
+Los datos actuales son la base (usuario, 15/10): llegaron con una carga de prueba desde Mage, que no quedó como
+integración. Eso explica las rarezas (pagadas sin fecha, `total_installments` mal, cuotas fuera de vigencia): se
+conservan y se marcan, no se corrigen a mano.
+
 1. `paid := (payment_status = 'PAID')`; `paid_on := paid_at::date` (las 54 sin fecha quedan `paid = true, paid_on = null`).
 2. `status = 'CANCELLED'` → `cancelled_at = updated_at` (hoy: 0 filas).
 3. Se borran `status`, `payment_status`, `total_installments`, `expiration_alert_days` (copia previa de las 4 columnas
