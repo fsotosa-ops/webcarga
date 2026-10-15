@@ -35,6 +35,7 @@ export function PuenteALaBandeja({ carrierId, carrierName }: Props) {
       ¿Tienes muchos documentos de {carrierName}?{' '}
       <Link
         href={`/dashboard/compliance/inbox?empresa=${carrierId}`}
+        prefetch={false}
         className="font-semibold text-accion transition-opacity hover:opacity-70"
       >
         Llévalos a Sin clasificar

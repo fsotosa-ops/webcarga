@@ -213,6 +213,7 @@ function EmpresaDetailPageInner() {
   // El tipo de operación derivado de la flota (el chip de GestionDeclarada): el
   // mismo resumen que usa la pestaña Documentos, así que comparten caché.
   const summaryQuery = useQuery({ queryKey: clavesCertificacion.resumen(id), queryFn: () => complianceApi.summary(id) })
+  const derivedOperation = summaryQuery.data?.carrier_operation_types.join(' + ') || null
   const assetsQuery  = useQuery({ queryKey: directoryKeys.carrierAssets(id), queryFn: () => carriersApi.listAssets(id) })
   const policiesQuery = useQuery({ queryKey: ['carrier-policies', id], queryFn: () => carriersApi.listPolicies(id) })
   const shippersQuery = useQuery({ queryKey: ['carrier-shippers', id], queryFn: () => carriersApi.listShippers(id) })
@@ -486,12 +487,19 @@ function EmpresaDetailPageInner() {
                 )}
                 <StatusChip tone={life.tone} icon={life.icon}>{life.label}</StatusChip>
                 <StatusChip tone={enabled.tone} icon={enabled.icon}>{enabled.label}</StatusChip>
-                {/* Lo declarado y lo derivado de la flota, en un solo chip (Entrega B).
-                    Vivía en la ficha de Certificación, retirada en la Entrega C. */}
+                {/* El tipo de operación DERIVADO de los tractos de la flota, y al lado lo
+                    DECLARADO (solo si difiere: un solo chip, Entrega B). Vivían en la ficha de
+                    Certificación, retirada en la Entrega C. Sin el resumen no se afirma nada. */}
+                {summaryQuery.data && (derivedOperation
+                  ? <span className="text-etiqueta font-semibold px-2 py-0.5 rounded-full bg-accent/10 text-accent"
+                          title="Derivado de los vehículos de la flota. Se edita en cada vehículo.">{derivedOperation}</span>
+                  : <span className="text-etiqueta font-medium px-2 py-0.5 rounded-full bg-accent/5 text-informativo">
+                      Tipo de operación sin determinar
+                    </span>)}
                 <GestionDeclarada
                   carrierId={id}
                   declarado={carrier.management_types}
-                  derivado={summaryQuery.data ? summaryQuery.data.carrier_operation_types.join(' + ') || null : null}
+                  derivado={derivedOperation}
                   canEdit={canEdit && carrier.operational_status === 'ACTIVE'}
                   onGuardado={() => afterChange({ entity: 'carrier', id, type: 'update' })}
                 />

@@ -175,6 +175,9 @@ function FilaEmpresa({ row }: { row: CertificationStatusRow }) {
   return (
     <Link
       href={`${carrierHref(row.entity_id)}?tab=documentos`}
+      // Sin precarga: el embudo lista decenas de empresas y precargar cada ficha
+      // agota el límite de tasa (429), como en la lista de Empresas.
+      prefetch={false}
       className="flex items-center gap-2.5 px-4 py-2 border-b border-border transition-colors hover:bg-bg-main"
     >
       <ChevronRight size={12} className="text-informativo shrink-0" aria-hidden="true" />

@@ -169,7 +169,7 @@ function WhereWorks({ history }: { history: AssignmentPeriod[] }) {
           {history.map(p => (
             <li key={`${p.carrier_id}-${p.valid_from}`} className="flex items-center gap-2 text-dato">
               <Building2 size={13} className="text-informativo shrink-0" />
-              <Link href={carrierHref(p.carrier_id)} className={`hover:text-accion ${p.current ? 'font-semibold text-text-primary' : 'text-informativo'}`}>
+              <Link href={carrierHref(p.carrier_id)} prefetch={false} className={`hover:text-accion ${p.current ? 'font-semibold text-text-primary' : 'text-informativo'}`}>
                 {p.carrier_name}
               </Link>
               <span className="text-informativo text-xs">{periodLabel(p)}</span>
@@ -207,7 +207,7 @@ function Activity({ activity, loading, monitorHref }: { activity?: EntityActivit
           <p>Viajes en los últimos 30 días: <span className="font-semibold tabular-nums">{activity.trips_30d}</span></p>
         </div>
       )}
-      <Link href={monitorHref} className="mt-2 inline-flex items-center gap-1 text-dato font-semibold text-accion hover:underline">
+      <Link href={monitorHref} prefetch={false} className="mt-2 inline-flex items-center gap-1 text-dato font-semibold text-accion hover:underline">
         Ver viajes en el Monitor <ArrowRight size={13} />
       </Link>
     </section>
