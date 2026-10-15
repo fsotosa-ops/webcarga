@@ -162,7 +162,8 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
       : []),
     ...(canEdit && carrierId ? [{ id: 'remove', label: 'Quitar de la empresa', destructive: true, onSelect: () => setModal('remove') }] : []),
   ]
-  const primaryAction = canUploadDocuments || canRequestDocuments ? (
+  // En Documentos la sección ya tiene su subida y sus pedidos: no se repite arriba.
+  const primaryAction = (canUploadDocuments || canRequestDocuments) && tab !== 'documentos' ? (
     <button type="button" onClick={() => setTab('documentos')}
             className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-dato font-semibold text-white hover:bg-accent/90">
       <Upload size={14} aria-hidden="true" /> {canUploadDocuments ? 'Subir documentos' : 'Pedir a Certificación'}

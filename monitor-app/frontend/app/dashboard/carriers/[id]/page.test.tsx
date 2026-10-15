@@ -632,5 +632,12 @@ describe('ficha de empresa liviana', () => {
     await elegirDelMenu('Activar')
     expect(await screen.findByRole('alert')).toHaveTextContent('Para activarla falta su RUT.')
   })
+
+  it('en Documentos no se repite "Subir documentos" en el encabezado', async () => {
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams('tab=documentos') as unknown as ReturnType<typeof useSearchParams>)
+    renderPage()
+    await screen.findByRole('button', { name: 'Más acciones' })
+    expect(screen.queryAllByRole('button', { name: /^Subir documentos$/ }).length).toBeLessThanOrEqual(1)
+  })
 })
 

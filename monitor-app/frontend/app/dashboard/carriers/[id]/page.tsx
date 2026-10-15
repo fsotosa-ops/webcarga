@@ -325,7 +325,8 @@ function EmpresaDetailPageInner() {
         chips={[life, enabled]}
         reason={carrierBlockingReason(carrier.compliance_summary, carrier.operational_status)}
         onSeeDocuments={() => setActiveTab('documentos')}
-        primaryAction={canUploadDocuments ? (
+        // En Documentos la sección ya tiene su subida: no se repite arriba.
+        primaryAction={canUploadDocuments && activeTab !== 'documentos' ? (
           <button type="button" onClick={() => setActiveTab('documentos')}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-dato font-semibold text-white hover:bg-accent/90">
             <Upload size={14} aria-hidden="true" /> Subir documentos
