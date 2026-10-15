@@ -188,25 +188,43 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
   "Todo asignado" con "Subir documentos"; la ficha de Huemul › Documentos tiene "Subir documentos" junto a "Exportar
   todo"; sin errores de API. No se subió nada en dev.
 - **Siguiente paso exacto:**
-  1. **Rediseño de fichas + navegación + kit de Certificación: SPEC ESCRITA, esperando revisión del usuario.**
-     `docs/superpowers/specs/2026-10-15-fichas-directorio-y-navegacion-design.md` (`1ccfdfc4`), maquetas
-     `docs/superpowers/mockups/2026-10-15-fichas-*.html`. Decisiones del usuario en el companion (15/10): forma
-     "encabezado + contenido" para las 3 fichas; Documentos = tabla con filtro; clic en un nombre = vista rápida
-     (EntityCell como `<a href>`, Ctrl/Cmd + clic a la ficha); versión LIVIANA (cada dato una vez: encabezado con
-     la razón del "No habilitado", Resumen = un bloque Detalles); material visual = las piezas de Pendientes (barra
-     gris `Tabs`, `SegmentedControl`, chip estado+fecha de `pendingRowStatus`, `RenglonPendiente`), NO pestañas
-     subrayadas; alcance A: Entrega 1 = kit + fichas + navegación, Entrega 2 = Empresas y Por asignar alineados;
-     Cmd+K fuera. Verificado al escribirla: `/drivers|assets/{id}/summary` ya trae `can_operate`, empresa y
-     tracto/conductor habitual (sin endpoints nuevos para conductor/equipo); la habilitación de la empresa cuenta los
-     obligatorios de su flota activa, pero sus cifras incluyen opcionales → único cambio de backend:
-     `blocking_own`/`blocking_fleet` en `carrier_compliance`. Documentos de las 3 fichas = `CarrierDocumentsWorkspace`
-     generalizado a `DocumentsWorkspace`; `DocumentChecklist` queda solo en la vista rápida.
-     Spec aprobada por el usuario ("estoy ok"). **Plan de la Entrega 1 escrito** (`3c049997`):
-     `docs/superpowers/plans/2026-10-15-entrega-1-fichas-y-navegacion.md`, 9 tareas (0 backend `blocking`; 1 kit;
-     2 proveedor de vista rápida + `EntityCell` como enlace; 3 ficha conductor/equipo; 4 `DocumentsWorkspace`; 5 ficha
-     empresa; 6 el modal ES la ficha propia → se retiran `DriverDetailPanel`/`VehicleDetailPanel`; 7 enlaces en
-     Pendientes, Pedidos, Por asignar, viaje y Seguros + volver con filtros; 8 verificación). Ejecución inline.
-     **Siguiente:** que el usuario revise el plan → ejecutar la Tarea 0.
+  1. **Fichas + navegación + kit — ENTREGA 1 DESPLEGADA en dev (15/10, `3c049997..cc5607b9`).** Plan
+     `docs/superpowers/plans/2026-10-15-entrega-1-fichas-y-navegacion.md`, ejecutado inline (9 tareas + revisión final).
+     - **Qué quedó:** kit en `components/ui` (`tabla/Table`, `ComplianceCounts` único con las pastillas de Pendientes,
+       `ActionsMenu`, `CABECERA` sin mayúsculas); vista rápida con proveedor único en el layout y `EntityCell` como `<a
+       href>` (clic = vista rápida, Ctrl/Cmd = pestaña nueva, siempre `stopPropagation`); fichas livianas
+       (`components/directory/ProfileHeader`, `DetailsBlock`, formularios movidos de los paneles): conductor/equipo y
+       empresa con encabezado + razón de lo que bloquea + ⋯; Documentos de conductor/equipo = `EntityDocuments` (Pendientes
+       en chico, filas compartidas `SubjectDocumentRows` con `pendingRowStatus`); el modal sobre la ficha de empresa ES
+       `FleetProfile variant="dialog"` (se borraron `DriverDetailPanel`/`VehicleDetailPanel`); nombres enlazados en
+       Pendientes, Pedidos, detalle del viaje, Seguros (tabla), Por asignar (encabezado del detalle) y Documentos de la
+       empresa; las listas pasan `?next=` con sus filtros.
+     - **Backend:** `ComplianceSummary.blocking {own, fleet}` (de la misma columna `blocks` que `can_operate`);
+       `/pending?entity_id` sin `carrier_id` ya no exige empresa (LEFT JOIN; la cola global sigue con ACTIVE) y trae
+       `open_request_id`. Sin migraciones.
+     - **Rulings del ejecutor (decididos sin preguntar):** segundo chip de conductor/equipo = `summaryStyle` (regla D-R8 de
+       toda la app), no "Habilitado" como decía la spec; Documentos de la empresa conserva su partición (Vencido o falta ·
+       Por vencer · Al día) con el control del kit; la subida en lote de la ficha de una persona usa el contexto de su
+       empresa; reasignar exige `documents.review` (el panel lo mostraba con `documents.upload` y respondía 403); en
+       Seguros solo la tabla enlaza (la tarjeta del teléfono es un botón); en Por asignar solo la empresa del encabezado;
+       "volver" a la lista de empresas dice "Volver al Directorio" (glosario).
+     - **Lo que encontró la verificación y se corrigió:** el humo halló que "Pedir a Certificación" de Operaciones se había
+       perdido al migrar Documentos (→ `RequestToCertification`); la revisión final (opus) halló 5 importantes, todos
+       corregidos con test RED→GREEN: la vista rápida no se cerraba al navegar; Escape/Tab entre capas (pila
+       `lib/ui/layers`); la razón salía de `…/compliance-records` (sin invalidar, firma URL) → ahora de las mismas filas de
+       `/pending` que Documentos, y F2 real (lo que bloquea en `/pending` = `blocking.own`, verificado en base real);
+       nombre del sujeto en Documentos de la empresa; Activar/Reactivar fallaban en silencio. La captura final halló
+       "Subir documentos" duplicado en Documentos.
+     - **Verificación:** vitest 1.819/1.819 (202 archivos); tsc y build OK; humo 20/20 (copia local, 4 recorridos nuevos);
+       backend del área 183 en copia local y 181 + F2/F3/RF1/open_request contra la base real (revertidos); trinquetes
+       bajados (color crudo 1.216, `<h1>` 8, bajo 11 px 172); Deploy Frontend y Deploy Monitor API en verde; recorrido
+       en dev (Propietario, solo lectura): ficha de conductor con razón y Documentos, Pendientes → vista rápida → ficha
+       (el panel se cierra) → Volver, ficha de empresa; 0 errores de consola, todo 200.
+     - **Menores diferidos:** nombre de conductor vacío se puede guardar (heredado); "Ver documentos" junto a "La empresa
+       no está activa"; Documentos sin columna "Actualizado" ni ⋯ por fila; `BulkUploadReview` con `carrier_name` nulo;
+       `ActionsMenu` sin flechas ni foco al abrir; ícono de subir en "Pedir a Certificación"; el chip de un renglón se corre
+       cuando tiene "Agregar vencimiento".
+     **Siguiente:** que el usuario mire la Entrega 1 en dev → Entrega 2 (Empresas y Por asignar con el kit, misma spec).
   2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
      el 409 solo ocurre con la pantalla vieja). La salida del 409 en `AltaDeFlota` pasó a ser del anfitrión
