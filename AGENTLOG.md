@@ -191,9 +191,24 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
   dejó de buscar la gestión por etiqueta.
 - Tests: C1-C11 (+C2b catálogo) en verde; tsc limpio; vitest 1.849/1.849; humo 11/11 en la copia local (con la máquina
   tranquila: con carga 280 todo da timeout, 8 GB no alcanzan para correr suites y humo a la vez).
-- **Siguiente paso exacto:** con la suite del backend contra la base real en verde → commit y push a `dev`; ver los
-  workflows; recorrido en dev con sesión (listas, ficha de conductor sin empresa, Actividad → Monitor, ficha de empresa
-  › Documentos, URL vieja, vista rápida del Monitor), solo lectura.
+- Suite del backend contra la base real: 1.741 verdes + 4 que fijaban lo que cambió a propósito (corregidos: 2 topes
+  del trinquete de D1 bajan por `fleet-daily-overview`; el alcance L6 se prueba como "alcanzadas = aplicables de la vista
+  previa que están en alcance", porque la siembra sigue siendo para todos; el tipo desconocido lo rechaza la FK).
+  `test_padron_conductor.py` quedó fuera (Disk IO).
+- **DESPLEGADA en dev** (`60889a12`, los dos workflows en verde) + arreglo `7de43b66`.
+- **Recorrido en dev (15/10 madrugada, Propietario, solo lectura):** Conductores 102 / sin empresa 10 / de baja 9 / sin
+  origen 62 (igual a lo medido en la base); ficha de un conductor sin empresa (C5) con "Asignar a una empresa" y su
+  actividad; "Ver viajes en el Monitor" → Historial con 34 viajes (C11); vista rápida del tracto desde la fila (C10, dice
+  "Tracto" desde el catálogo); fila del embudo y URL vieja → ficha › Documentos (C6, 429 requisitos de Huemul).
+  **Dos bugs hallados y corregidos en `7de43b66`:** el chip del tipo DERIVADO de la flota no se movió al encabezado
+  (Huemul decía "Gestión sin declarar" teniendo 13 tractos de Equipo Completo), y el embudo precargaba cada ficha
+  (`<Link>` sin `prefetch={false}`) → 429 del límite de tasa.
+- `7de43b66` verificado en dev: Huemul muestra "Equipo Completo" (derivado) y "Gestión sin declarar" (declarado), y el
+  embudo ya no dispara 429.
+- **Siguiente paso exacto:** lo que decida el usuario: pasar A+B+C a `main` (nada de las tres está en producción), el
+  pendiente del popover del Monitor, o las pestañas de la ficha propia según la maqueta. Siguen esperando: el Google
+  Sheet del tipo de operación, la validación de Pablo de "Pedir a Certificación" y el dato del tracto GPRZ30.
+- Tangente: un conductor en la base real se llama "Cajas Leiva Iván Alejandro\N" (`\N` literal de una carga vieja).
 - Pendiente con motivo: el alta dentro del popover "Asignar conductor" del Monitor sigue aparte (no es solo un alta: si el
   RUT existe ofrece asignar al existente, avisos, "a todos sus viajes"); unificarla exige que `AltaDeFlota` absorba ese flujo.
 - Tangentes nuevas: `FLEET_SERVICE_TYPE` tiene una fila "Tractocamión" sin `code` mezclada con carrocerías (10 tractos la
