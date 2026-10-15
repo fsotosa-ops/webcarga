@@ -274,7 +274,17 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
        El primer deploy falló por el trinquete de color crudo (copié `hover:bg-gray-50`); corregido con token.
        **Ojo:** en la copia local fallan 8 tests de integración (anulados, cliente del viaje, firma inmutable, asignación,
        trips del día) SIN mi cambio (verificado con stash): deriva de la copia local, pendiente de revisar aparte.
-     **Siguiente:** que el usuario mire en dev las fichas nuevas, Seguros, Requisito y el Monitor. Con eso la spec de fichas y
+     - **Seguros: auditoría + spec (15/10, sin código).** El usuario: "auditar el módulo de seguros… robusto, sin
+       parches, sin duplicar" y "¿no debería tener submódulos?". Auditoría de backend y datos (solo lectura): 9/33
+       pólizas ACTIVE ya vencidas, vista materializada sin refresco programado, 87 OVERDUE + 63 PENDING con fecha pasada,
+       54 PAID sin fecha, `total_installments` mal en 155/294, 44 cuotas fuera de vigencia, regla de "peor estado"
+       duplicada (Seguros vs Monitor), auditoría de cuotas con entidad equivocada, permisos dispares. Spec:
+       `docs/superpowers/specs/2026-10-15-seguros-polizas-y-cuotas-design.md` (hechos guardados, estados en una vista
+       normal, submódulos Pólizas y Cuotas, ficha de póliza con ProfileLayout). Maqueta: companion
+       `.superpowers/brainstorm/56411-1792100703/content/seguros.html`. El usuario aprobó la dirección ("estoy ok");
+       D1 (plazo a Configuración) y D2 (2+ cuotas impagas es regla del negocio) van con mi recomendación, a confirmar.
+     **Siguiente:** el usuario revisa la spec y la maqueta de Seguros → plan (writing-plans) → ejecución. La migración
+       se ensaya en local y con ROLLBACK en la real, y se aplica solo con autorización. Con eso la spec de fichas y
      navegación queda cerrada (fuera: Cmd+K).
   2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
