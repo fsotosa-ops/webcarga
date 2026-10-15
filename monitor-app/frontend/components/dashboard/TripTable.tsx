@@ -351,7 +351,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                 <th onClick={() => onSort('source_system_trip_id')} className="px-2.5 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">ID Viaje<OrdenIcono activo={sortKey === 'source_system_trip_id'} direccion={sortDir} /></th>
                 <th onClick={() => onSort('tractor_plate')} className="px-2.5 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Patente<OrdenIcono activo={sortKey === 'tractor_plate'} direccion={sortDir} /></th>
                 <th onClick={() => onSort('driver_name')} className="px-2.5 py-2.5 text-left w-[168px] cursor-pointer select-none hover:bg-gray-50 transition-colors">Conductor<OrdenIcono activo={sortKey === 'driver_name'} direccion={sortDir} /></th>
-                <th onClick={() => onSort('origin')} className="px-2.5 py-2.5 text-left w-[124px] cursor-pointer select-none hover:bg-gray-50 transition-colors">Origen · Carga<OrdenIcono activo={sortKey === 'origin'} direccion={sortDir} /></th>
+                <th onClick={() => onSort('origin')} className="px-2.5 py-2.5 text-left w-[124px] cursor-pointer select-none hover:bg-bg-main transition-colors">Origen · Carga<OrdenIcono activo={sortKey === 'origin'} direccion={sortDir} /></th>
                 <th className="px-2.5 py-2.5 text-left">Destinos</th>
                 <th className="px-2.5 py-2.5 text-center w-[64px]">Temp</th>
                 <th onClick={() => onSort('carrier_name')} className="px-2.5 py-2.5 text-left w-[162px] cursor-pointer select-none hover:bg-gray-50 transition-colors">EETT<OrdenIcono activo={sortKey === 'carrier_name'} direccion={sortDir} /></th>
