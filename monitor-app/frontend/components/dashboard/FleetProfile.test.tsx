@@ -20,6 +20,7 @@ vi.mock('@/lib/api/assets', () => ({
 }))
 vi.mock('@/lib/api/entitySummary', async (orig) => ({ ...(await orig<object>()), fetchEntitySummary: vi.fn() }))
 vi.mock('@/lib/api/locations', () => ({ locationsApi: { list: vi.fn().mockResolvedValue({ data: [{ id: 'cd1', name: 'CD Quilicura' }] }) } }))
+vi.mock('@/lib/api/carriers', () => ({ carriersApi: { listDrivers: vi.fn().mockResolvedValue([]), unassignDriver: vi.fn().mockResolvedValue({}), unassignAsset: vi.fn(), assignDriver: vi.fn(), assignAsset: vi.fn(), list: vi.fn().mockResolvedValue({ data: [] }) } }))
 vi.mock('@/lib/api/compliance', () => ({ complianceApi: { listPending: vi.fn().mockResolvedValue({ total: 0, rows: [] }), get: vi.fn() } }))
 vi.mock('@/lib/api/config', () => ({ taxonomiesApi: { list: vi.fn().mockResolvedValue([]) } }))
 vi.mock('@/hooks/useAssetTypes', () => ({ useAssetTypes: () => ({ types: [{ code: 'TRACTOCAMION', label: 'Tracto' }], labelOf: () => 'Tracto' }) }))
@@ -74,6 +75,7 @@ const sections = () => [...screen.getByRole('group', { name: /Secciones del/ }).
 beforeEach(() => {
   search = ''
   negados.set = new Set()
+  vi.mocked(driversApi.patch).mockReset()
   vi.mocked(driversApi.get).mockResolvedValue(DRIVER as never)
   vi.mocked(driversApi.assignments).mockResolvedValue([
     { carrier_id: 'c1', carrier_name: 'Transportes Andes', carrier_status: 'ACTIVE', valid_from: '2026-09-20', valid_until: null, current: true },
@@ -190,4 +192,26 @@ describe('FleetProfile (Entrega 1 de fichas)', () => {
     expect(await screen.findByText('El nombre no puede quedar vacío.')).toBeInTheDocument()
     expect(screen.getByLabelText('Nombre')).toHaveValue('Otro nombre')
   })
+
+  // Los flujos destructivos que probaban los paneles retirados, ahora desde el ⋯.
+  it('"Dar de baja" pide confirmación y deja al conductor INACTIVE', async () => {
+    vi.mocked(driversApi.patch).mockResolvedValue(DRIVER as never)
+    renderProfile()
+    fireEvent.click(await screen.findByRole('button', { name: 'Más acciones' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Dar de baja' }))
+    expect(driversApi.patch).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar baja' }))
+    await waitFor(() => expect(driversApi.patch).toHaveBeenCalledWith('d1', { operational_status: 'INACTIVE' }))
+  })
+
+  it('"Quitar de la empresa" pide confirmación antes de quitar', async () => {
+    const { carriersApi } = await import('@/lib/api/carriers')
+    renderProfile()
+    fireEvent.click(await screen.findByRole('button', { name: 'Más acciones' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Quitar de la empresa' }))
+    expect(carriersApi.unassignDriver).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Quitar del roster' }))
+    await waitFor(() => expect(carriersApi.unassignDriver).toHaveBeenCalledWith('c1', 'd1'))
+  })
 })
+

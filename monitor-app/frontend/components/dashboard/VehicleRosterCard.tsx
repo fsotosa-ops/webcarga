@@ -18,7 +18,7 @@ interface Props {
 /** Tarjeta compacta del roster de equipos: patente, tipo y el par de chips de
  *  la spec §6.2 (D-R8): ciclo de vida y peor estado de sus documentos, el
  *  segundo en gris si el equipo está de baja. El detalle por documento vive en
- *  VehicleDetailPanel.
+ *  ficha (FleetProfile en modal).
  *
  *  Muestra TRES clasificaciones distintas, que en pantalla se confundían:
  *  el rol físico (`asset_type`: Tracto/Rampla), el subtipo de carrocería

@@ -76,7 +76,8 @@ describe('la escala tipografica', () => {
     // 197 -> 185 el 2026-10-15: CABECERA sin 10px (kit de fichas) más lo que bajaron las entregas A-D;
     //   el tope estaba por encima del número real.
     // 185 -> 182 el 2026-10-15: encabezado y Resumen de la ficha de empresa sin 10px (kit de fichas, Tarea 5).
-    const DEUDA = 182
+    // 182 -> 172 el 2026-10-15: se retiraron los paneles de conductor y equipo (kit de fichas, Tarea 6).
+    const DEUDA = 172
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

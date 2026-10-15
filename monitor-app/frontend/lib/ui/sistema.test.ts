@@ -112,7 +112,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 1329 -> 1288 el 2026-10-15: lo que bajaron las entregas A-D y el kit de fichas (Table, ComplianceCounts,
     //   CABECERA con tokens); el tope estaba por encima del número real.
     // 1288 -> 1255 el 2026-10-15: la ficha de empresa con ProfileHeader y DetailsBlock (kit de fichas, Tarea 5).
-    const DEUDA = 1255
+    // 1255 -> 1216 el 2026-10-15: se retiraron DriverDetailPanel y VehicleDetailPanel; el modal es la ficha (Tarea 6).
+    const DEUDA = 1216
 
     const total = usosDeColorCrudo()
     expect(

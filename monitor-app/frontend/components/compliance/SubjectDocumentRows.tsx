@@ -116,11 +116,13 @@ export function SubjectDocumentRows({ filas, carrierId, canEdit, puedeRevisar, p
     await complianceApi.quitarSolicitud(recordId)
     await invalidarCertificacion(queryClient)
   }
-  /** Con archivo: sus versiones y, para quien carga, reasignarlo a otro requisito (HU-03). */
+  /** Con archivo: sus versiones y reasignarlo a otro requisito (HU-03). Reasignar
+   *  es `documents.review`, el permiso que exige la API: con solo poder subir
+   *  sería un botón que responde 403. */
   const accionesDe = (f: PendingComplianceRow) => f.tiene_archivo ? (
     <>
       <DocumentVersions recordId={f.id} />
-      {canEdit && carrierId && <ReassignDocument recordId={f.id} carrierId={carrierId} onDone={() => { void invalidarCertificacion(queryClient) }} />}
+      {puedeRevisar && carrierId && <ReassignDocument recordId={f.id} carrierId={carrierId} onDone={() => { void invalidarCertificacion(queryClient) }} />}
     </>
   ) : undefined
 

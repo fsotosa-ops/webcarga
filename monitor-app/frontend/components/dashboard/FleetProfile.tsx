@@ -11,7 +11,7 @@ import { carriersApi } from '@/lib/api/carriers'
 import { entitySummaryKey, fetchEntitySummary, type AssetSummary, type DriverSummary } from '@/lib/api/entitySummary'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { CLOSURE_NOTICE, directoryKeys, invalidateDirectory, type DirectoryChange } from '@/lib/queries/directorio'
-import { returnLink } from '@/lib/navegacion/directory'
+import { assetHref, driverHref, returnLink } from '@/lib/navegacion/directory'
 import { monitorSearchHref } from '@/lib/navegacion/viaje'
 import { blockingReason, fleetMemberStyle, isCarrierDeactivated, summaryStyle, type StateStyle } from '@/lib/states'
 import { diaMes } from '@/lib/pending'
@@ -26,6 +26,7 @@ import { AssetEditForm } from '@/components/directory/AssetEditForm'
 import { DriverContacts } from '@/components/directory/DriverContacts'
 import { EntityCell } from './EntityCell'
 import { TransferModal } from './TransferModal'
+import { DetailShell } from './DetailShell'
 import { CorrectIdentityModal } from './CorrectIdentityModal'
 import { BajaReasonModal } from './BajaReasonModal'
 import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
@@ -48,7 +49,14 @@ const NO_CARRIER: StateStyle = { label: 'Sin empresa', tone: 'neutral', icon: Bu
  * Resumen que es UN bloque de Detalles con "Editar" (cada dato, una vez). Existe
  * aunque no tenga empresa (C5).
  */
-export function FleetProfile({ kind, id }: { kind: FleetKind; id: string }) {
+export function FleetProfile({ kind, id, variant = 'page', onClose }: {
+  kind: FleetKind
+  id: string
+  /** `dialog`: la misma ficha sobre la de su empresa (Entrega 1 de fichas): no
+   *  lee la sección de la URL (es la de la empresa) y ofrece la ficha completa. */
+  variant?: 'page' | 'dialog'
+  onClose?: () => void
+}) {
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   const back = returnLink(searchParams.get('next'))
@@ -57,7 +65,7 @@ export function FleetProfile({ kind, id }: { kind: FleetKind; id: string }) {
     { id: 'documentos', label: 'Documentos' },
     ...(kind === 'driver' ? [{ id: 'contactos' as const, label: 'Contactos' }] : []),
   ]
-  const requested = searchParams.get('tab')
+  const requested = variant === 'page' ? searchParams.get('tab') : null
   const [tab, setTab] = useState<Section>(sectionTabs.find(t => t.id === requested)?.id ?? 'resumen')
   const [modal, setModal] = useState<'transfer' | 'identity' | 'baja' | 'remove' | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -79,10 +87,15 @@ export function FleetProfile({ kind, id }: { kind: FleetKind; id: string }) {
   const assetQuery = useQuery({
     queryKey: directoryKeys.assetDetail(id), queryFn: () => assetsApi.get(id), enabled: kind === 'asset', retry: false,
   })
-  const recordsQuery = useQuery({
-    queryKey: [kind === 'driver' ? 'driver-compliance-records' : 'asset-compliance-records', id],
-    queryFn: () => (kind === 'driver' ? driversApi.listComplianceRecords(id) : assetsApi.listComplianceRecords(id)),
+  // Los documentos, para nombrar en el encabezado lo que bloquea. Dos consultas
+  // explícitas, como el detalle: las claves son las que invalida el Directorio.
+  const driverRecordsQuery = useQuery({
+    queryKey: ['driver-compliance-records', id], queryFn: () => driversApi.listComplianceRecords(id), enabled: kind === 'driver',
   })
+  const assetRecordsQuery = useQuery({
+    queryKey: ['asset-compliance-records', id], queryFn: () => assetsApi.listComplianceRecords(id), enabled: kind === 'asset',
+  })
+  const recordsQuery = kind === 'driver' ? driverRecordsQuery : assetRecordsQuery
   const historyQuery = useQuery({
     queryKey: directoryKeys.assignments(kind, id),
     queryFn: () => (kind === 'driver' ? driversApi.assignments(id) : assetsApi.assignments(id)),
@@ -183,14 +196,21 @@ export function FleetProfile({ kind, id }: { kind: FleetKind; id: string }) {
     </div>
   )
 
-  return (
+  const fullHref = (kind === 'driver' ? driverHref : assetHref)(id, variant === 'dialog' ? currentUrl() : undefined)
+  const content = (
     <div className="space-y-4 p-4 md:p-6">
-      <nav aria-label="Ruta" className="flex items-center gap-1.5 text-xs text-informativo">
-        {back
-          ? <Link href={back.href} className="hover:text-accion">{back.label}</Link>
-          : <>Directorio <span aria-hidden>›</span> <Link href={LIST[kind].href} className="hover:text-accion">{LIST[kind].label}</Link></>}
-        <span aria-hidden>›</span> <span className="font-semibold text-text-primary">{title}</span>
-      </nav>
+      {variant === 'dialog' ? (
+        <Link href={fullHref} prefetch={false} className="inline-flex items-center gap-1 text-dato font-medium text-accion hover:underline">
+          Abrir ficha completa <ArrowRight size={13} aria-hidden="true" />
+        </Link>
+      ) : (
+        <nav aria-label="Ruta" className="flex items-center gap-1.5 text-xs text-informativo">
+          {back
+            ? <Link href={back.href} className="hover:text-accion">{back.label}</Link>
+            : <>Directorio <span aria-hidden>›</span> <Link href={LIST[kind].href} className="hover:text-accion">{LIST[kind].label}</Link></>}
+          <span aria-hidden>›</span> <span className="font-semibold text-text-primary">{title}</span>
+        </nav>
+      )}
       <ProfileHeader title={title} chips={chips} reason={reason} onSeeDocuments={() => setTab('documentos')}
                      primaryAction={primaryAction} menuItems={menuItems} />
       {notice && <p role="status" className="text-dato text-resuelto">{notice}</p>}
@@ -255,6 +275,17 @@ export function FleetProfile({ kind, id }: { kind: FleetKind; id: string }) {
       />
     </div>
   )
+
+  return variant === 'dialog'
+    ? <DetailShell variant="dialog" label={`${LIST[kind].noun} ${title}`} onClose={onClose}>
+        <div className="min-w-0 flex-1 overflow-y-auto">{content}</div>
+      </DetailShell>
+    : content
+}
+
+/** La URL desde la que se abrió el modal: la ficha completa vuelve ahí. */
+function currentUrl(): string {
+  return typeof window === 'undefined' ? '' : `${window.location.pathname}${window.location.search}`
 }
 
 /** "desde 20/09 · antes Riquelme Hnos.": dónde trabaja, dentro de Detalles

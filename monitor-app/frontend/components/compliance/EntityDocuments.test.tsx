@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { PendingComplianceRow } from '@/lib/types'
 
 vi.mock('@/lib/api/compliance', () => ({ complianceApi: { listPending: vi.fn(), get: vi.fn() } }))
-vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
+const negados = vi.hoisted(() => ({ set: new Set<string>() }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: (p: string) => !negados.set.has(p) }))
 // La subida en lote tiene su propio test; acá solo importa que esté.
 vi.mock('./pending/BulkUploadReview', () => ({ BulkUploadReview: () => <div>Subida en lote</div> }))
 
@@ -29,7 +30,7 @@ function montar(carrierId: string | null = 'c1') {
   )
 }
 
-beforeEach(() => vi.mocked(complianceApi.listPending).mockReset())
+beforeEach(() => { vi.mocked(complianceApi.listPending).mockReset(); negados.set = new Set() })
 
 describe('EntityDocuments (la sección Documentos de una ficha)', () => {
   it('F5: abre en el primer filtro que tiene algo, en orden Vencidos → Faltan → Por vencer → Todos', async () => {
@@ -59,4 +60,26 @@ describe('EntityDocuments (la sección Documentos de una ficha)', () => {
     expect(await screen.findByText('Licencia de conducir')).toBeInTheDocument()
     expect(complianceApi.listPending).toHaveBeenCalledWith(expect.objectContaining({ entityId: 'd1', carrierId: undefined, estado: 'todos' }))
   })
+
+  // La API exige documents.review para reasignar (POST …/reassign): con solo
+  // documents.upload el botón sería un 403.
+  it('reasignar un documento exige documents.review, no basta con poder subir', async () => {
+    negados.set = new Set(['documents.review'])
+    vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 1, rows: [
+      fila({ document_state: 'UP_TO_DATE', status: 'APPROVED', tiene_archivo: true }),
+    ] } as never)
+    montar()
+    expect(await screen.findByText('Licencia de conducir')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Reasignar/ })).not.toBeInTheDocument()
+  })
+
+  it('sin documents.upload no ofrece subir', async () => {
+    negados.set = new Set(['documents.upload'])
+    vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 1, rows: [fila({})] } as never)
+    montar()
+    expect(await screen.findByText('Licencia de conducir')).toBeInTheDocument()
+    expect(screen.queryByText('Subir')).not.toBeInTheDocument()
+    expect(screen.queryByText('Subida en lote')).not.toBeInTheDocument()
+  })
 })
+

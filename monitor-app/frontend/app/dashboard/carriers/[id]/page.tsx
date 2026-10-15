@@ -6,8 +6,7 @@ import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, Search, Upload } from 'lucide-react'
 import { carriersApi } from '@/lib/api/carriers'
-import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
-import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
+import type { AssetType } from '@/lib/api/assets'
 import { contactsApi } from '@/lib/api/contacts'
 import { Tabs } from '@/components/ui/Tabs'
 import { ProfileHeader } from '@/components/directory/ProfileHeader'
@@ -15,16 +14,13 @@ import { DetailsBlock } from '@/components/directory/DetailsBlock'
 import { CarrierEditForm, InsuranceLine } from '@/components/directory/CarrierDetails'
 import { SEVERITY_ORDER, documentStateStyle, enablementStyle, lifecycleStyle, carrierBlockingReason, type ComplianceSummary, type DocumentState } from '@/lib/states'
 import { canonicalPlate, canonicalRut, plateSearchKey, rutDigits, rutSearchKey } from '@/lib/identity'
-import type { Driver, Asset, OperationalStatus } from '@/lib/types'
 import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
 import { ContactCard, AddContactForm } from '@/components/dashboard/ContactCard'
 import { CarrierDocumentsTab } from '@/components/dashboard/carriers/CarrierDocumentsTab'
 import { DriverRosterCard } from '@/components/dashboard/DriverRosterCard'
 import { VehicleRosterCard } from '@/components/dashboard/VehicleRosterCard'
 import { DirectoryNotice } from '@/components/dashboard/DirectoryNotice'
-import { DriverDetailPanel } from '@/components/dashboard/DriverDetailPanel'
-import { VehicleDetailPanel } from '@/components/dashboard/VehicleDetailPanel'
-import { TransferModal } from '@/components/dashboard/TransferModal'
+import { FleetProfile } from '@/components/dashboard/FleetProfile'
 import { AltaDeFlota } from '@/components/dashboard/AltaDeFlota'
 import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
 import { ReactivateCarrierModal } from '@/components/dashboard/ReactivateCarrierModal'
@@ -74,16 +70,12 @@ function EmpresaDetailPageInner() {
   const backLink            = returnLink(searchParams.get('next'))
   const canEdit = usePermiso('directory.edit')
   const canAdmin = usePermiso('directory.delete')
-  const canRequestDocuments = usePermiso('certification.request')
-  const canCorrectIdentity = usePermiso('directory.identity')
   // Cada botón con el permiso de SU endpoint (bloque 0, 0.3): ninguno responde 403.
-  const canChangeFleetStatus = usePermiso('directory.fleet_status')
   const canEditPolicies = usePermiso('policies.edit')
   const canDeletePolicies = usePermiso('policies.delete')
-  // Los documentos son de Certificación: subirlos y reasignarlos se decide con
+  // Los documentos son de Certificación: subirlos se decide con
   // SUS permisos, los mismos que exige la API (L5, 11/10).
   const canUploadDocuments = usePermiso('documents.upload')
-  const canReviewDocuments = usePermiso('documents.review')
   const [activeTab, setActiveTab] = useState<Tab>(
     requestedTab ?? (handoffDriverName ? 'conductores' : handoffTractorPlate ? 'equipos' : 'resumen'),
   )
@@ -114,7 +106,6 @@ function EmpresaDetailPageInner() {
   })
   const [submitting,     setSubmitting]     = useState(false)
 
-  const [transferTarget, setTransferTarget] = useState<{ kind: 'driver' | 'asset'; id: string; label: string } | null>(null)
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
   const [reactivateOpen, setReactivateOpen] = useState(false)
   const [clientsOpen, setClientsOpen] = useState(false)
@@ -144,17 +135,6 @@ function EmpresaDetailPageInner() {
     queryFn: () => carriersApi.deactivationImpact(id),
     enabled: bajaModalOpen,
     staleTime: 0,
-  })
-
-  const selectedDriverQuery = useQuery({
-    queryKey: directoryKeys.driverDetail(selectedDriverId),
-    queryFn: () => driversApi.get(selectedDriverId!),
-    enabled: !!selectedDriverId,
-  })
-  const selectedAssetQuery = useQuery({
-    queryKey: directoryKeys.assetDetail(selectedAssetId),
-    queryFn: () => assetsApi.get(selectedAssetId!),
-    enabled: !!selectedAssetId,
   })
 
   const carrier = carrierQuery.data
@@ -204,43 +184,6 @@ function EmpresaDetailPageInner() {
     // con la ficha montada la hace releer una empresa que ya no existe (404).
     router.push('/dashboard/carriers')
     await afterChange({ entity: 'carrier', id, type: 'delete' })
-  }
-
-  async function handlePatchDriver(driverId: string, body: DriverPatchBody) {
-    await driversApi.patch(driverId, body)
-    await afterChange({ entity: 'driver', id: driverId, type: 'update', carrierIds: [id] })
-  }
-  async function handleRemoveDriver(driverId: string) {
-    await carriersApi.unassignDriver(id, driverId)
-    setSelectedDriverId(null)
-    await afterChange({ entity: 'driver', id: driverId, type: 'assignment', carrierIds: [id] })
-  }
-
-  async function handlePatchAsset(assetId: string, body: AssetPatchBody) {
-    await assetsApi.patch(assetId, body)
-    await afterChange({ entity: 'asset', id: assetId, type: 'update', carrierIds: [id] })
-  }
-  async function handleRemoveAsset(assetId: string) {
-    await carriersApi.unassignAsset(id, assetId)
-    setSelectedAssetId(null)
-    await afterChange({ entity: 'asset', id: assetId, type: 'assignment', carrierIds: [id] })
-  }
-
-  async function handleConfirmTransfer(toCarrierId: string, toCarrierName: string) {
-    if (!transferTarget) return
-    if (transferTarget.kind === 'driver') {
-      await carriersApi.assignDriver(toCarrierId, transferTarget.id)
-      setSelectedDriverId(null)
-    } else {
-      await carriersApi.assignAsset(toCarrierId, transferTarget.id)
-      setSelectedAssetId(null)
-    }
-    // Origen y destino: los dos rosters cambiaron.
-    await afterChange(
-      { entity: transferTarget.kind, id: transferTarget.id, type: 'assignment', carrierIds: [id, toCarrierId] },
-      `Listo: ${transferTarget.label} quedó en ${toCarrierName}.`,
-    )
-    setTransferTarget(null)
   }
 
   async function handleAddPolicy() {
@@ -340,8 +283,6 @@ function EmpresaDetailPageInner() {
   // `compliance_summary`, y la lista de abajo son las filas que la bloquean.
   const summary = carrier?.compliance_summary
 
-  const selectedDriver: Driver | null = selectedDriverId ? selectedDriverQuery.data ?? null : null
-  const selectedAsset:  Asset  | null = selectedAssetId  ? selectedAssetQuery.data  ?? null : null
 
   if (carrierQuery.isPending) return (
     <div className="p-6 flex items-center gap-2 text-sm text-gray-400">
@@ -730,39 +671,10 @@ function EmpresaDetailPageInner() {
       </div>
       )}
 
-      <DriverDetailPanel
-        driver={selectedDriver}
-        carrierId={id}
-        carrierName={carrier.business_name}
-        canEdit={canEdit}
-        canChangeFleetStatus={canChangeFleetStatus}
-        canDeleteContacts={canAdmin}
-        canUploadDocuments={canUploadDocuments}
-        canReviewDocuments={canReviewDocuments}
-          canRequestDocuments={canRequestDocuments}
-          canCorrectIdentity={canCorrectIdentity}
-        onClose={() => setSelectedDriverId(null)}
-        onPatch={handlePatchDriver}
-        onRemove={() => handleRemoveDriver(selectedDriver!.id)}
-        onTransferClick={() => selectedDriver && setTransferTarget({ kind: 'driver', id: selectedDriver.id, label: `conductor ${selectedDriver.full_name}` })}
-      />
-
-      <VehicleDetailPanel
-        asset={selectedAsset}
-        carrierId={id}
-        carrierName={carrier.business_name}
-        canEdit={canEdit}
-        canChangeFleetStatus={canChangeFleetStatus}
-        canUploadDocuments={canUploadDocuments}
-        canReviewDocuments={canReviewDocuments}
-          canRequestDocuments={canRequestDocuments}
-          canCorrectIdentity={canCorrectIdentity}
-        onClose={() => setSelectedAssetId(null)}
-        onPatch={handlePatchAsset}
-        onRemove={() => handleRemoveAsset(selectedAsset!.id)}
-        onTransferClick={() => selectedAsset && setTransferTarget({ kind: 'asset', id: selectedAsset.id, label: `equipo ${selectedAsset.license_plate}` })}
-        drivers={drivers}
-      />
+      {/* El conductor o el equipo, sobre la ficha de su empresa: ES su ficha propia,
+          en modal (Entrega 1 de fichas, 15/10). Una sola implementación de Detalles. */}
+      {selectedDriverId && <FleetProfile kind="driver" id={selectedDriverId} variant="dialog" onClose={() => setSelectedDriverId(null)} />}
+      {selectedAssetId && <FleetProfile kind="asset" id={selectedAssetId} variant="dialog" onClose={() => setSelectedAssetId(null)} />}
 
       <InsurancePolicyModal
         carrierId={selectedPolicyId ? id : null}
@@ -771,14 +683,6 @@ function EmpresaDetailPageInner() {
         onClose={() => setSelectedPolicyId(null)}
         canAdmin={canDeletePolicies}
         canEdit={canEditPolicies}
-      />
-
-      <TransferModal
-        open={!!transferTarget}
-        title={transferTarget ? `Transferir ${transferTarget.label}` : 'Transferir'}
-        currentCarrierId={id}
-        onClose={() => setTransferTarget(null)}
-        onTransfer={handleConfirmTransfer}
       />
 
       {bajaModalOpen && (

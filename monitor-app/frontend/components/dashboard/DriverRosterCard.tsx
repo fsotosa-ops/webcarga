@@ -18,7 +18,7 @@ interface Props {
  *  peor estado de sus documentos (`compliance_summary`, lo calcula la API).
  *  El par va completo, sin reemplazar uno por otro: dado de baja, el documental
  *  se ve en gris, no en verde ni en rojo. El detalle por documento vive en
- *  DriverDetailPanel, abierto al hacer click. */
+ *  ficha (FleetProfile en modal), abierta al hacer click. */
 export function DriverRosterCard({ driver, carrierStatus, onOpen }: Props) {
   return (
     <button

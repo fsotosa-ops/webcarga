@@ -54,8 +54,16 @@ vi.mock('@/lib/api/drivers', () => ({
   driversApi: {
     get: vi.fn(), create: vi.fn(), patch: vi.fn(), listComplianceRecords: vi.fn(),
     listContacts: vi.fn(), createContact: vi.fn(),
+    assignments: vi.fn().mockResolvedValue([]), activity: vi.fn().mockResolvedValue({ trips_30d: 0, last_trip_date: null, last_trip_client: null }),
   },
 }))
+// El modal de un conductor o equipo es su ficha propia (Entrega 1 de fichas): lee su resumen y sus documentos.
+vi.mock('@/lib/api/entitySummary', async (orig) => ({ ...(await orig<object>()), fetchEntitySummary: vi.fn().mockResolvedValue({
+  id: 'd1', operational_status: 'ACTIVE', full_name: 'Juan Pérez', tax_id: '22222222-2',
+  carrier: { id: 't1', name: 'Transportes Test', operational_status: 'ACTIVE' }, home_location: null, usual_tractor: null, phone: null,
+  documents: { total: 0, up_to_date: 0, pending: 0 },
+  compliance_summary: { worst_state: 'UP_TO_DATE', own: { overdue: 0, expiring: 0, missing: 0 }, fleet: null, can_operate: true, blocking: { own: 0, fleet: null } },
+}) }))
 vi.mock('@/lib/api/assets', () => ({
   assetsApi: {
     get: vi.fn(), create: vi.fn(), patch: vi.fn(), listComplianceRecords: vi.fn(),
@@ -186,14 +194,16 @@ describe('EmpresaDetailPage', () => {
     renderPage()
     await clickTab(/Conductores/)
     fireEvent.click(await screen.findByText('Juan Pérez'))
-    // La empresa también tiene su "Dar de baja": se busca dentro del panel del conductor.
-    const panel = await screen.findByRole('dialog', { name: 'Detalle de Juan Pérez' })
-    fireEvent.click(within(panel).getByRole('button', { name: 'Dar de baja' }))
+    // La empresa también tiene su "Dar de baja": se elige dentro de la ficha del conductor.
+    const dialogo = await screen.findByRole('dialog')
+    fireEvent.click(await within(dialogo).findByRole('button', { name: 'Más acciones' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Dar de baja' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Confirmar baja' }))
-    expect(await screen.findByText('El Cierre se actualizará en alrededor de un minuto.')).toBeInTheDocument()
+    expect(await screen.findByText(/El Cierre se actualizará en alrededor de un minuto\./)).toBeInTheDocument()
   })
 
-  it('el Operador (sin directory.edit) da de baja a un conductor desde su panel', async () => {
+
+  it('el Operador (sin directory.edit) da de baja a un conductor desde su ficha', async () => {
     permisos.darDeBaja = false
     permisos.negados = new Set(['directory.edit', 'policies.edit', 'policies.delete'])
     vi.mocked(driversApi.get).mockResolvedValue({
@@ -205,10 +215,13 @@ describe('EmpresaDetailPage', () => {
     renderPage()
     await clickTab(/Conductores/)
     fireEvent.click(await screen.findByText('Juan Pérez'))
-    expect(await screen.findByRole('button', { name: 'Dar de baja' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Quitar del roster/ })).not.toBeInTheDocument()
+    const dialogo = await screen.findByRole('dialog')
+    fireEvent.click(await within(dialogo).findByRole('button', { name: 'Más acciones' }))
+    expect(screen.getByRole('menuitem', { name: 'Dar de baja' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /Quitar de la empresa/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '+ Conductor' })).not.toBeInTheDocument()
   })
+
 
   it('"+ Póliza" se muestra con policies.edit, no con directory.edit', async () => {
     permisos.negados = new Set(['policies.edit'])
@@ -494,31 +507,20 @@ describe('EmpresaDetailPage', () => {
   })
 
   it('un editor puede transferir: el gate de pantalla decia admin y el endpoint aceptaba editor', async () => {
-    // El desalineado no protegia nada —un editor podia hacerlo por API igual— y
-    // le escondia el boton a quien mantiene esto al dia todos los dias.
-    vi.mocked(createClient).mockReturnValue({
-      auth: { getSession: vi.fn().mockResolvedValue({ data: { session: { user: { id: 'u1' } } } }) },
-      from: vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            single: vi.fn().mockResolvedValue({ data: { role: 'editor' } }),
-          }),
-        }),
-      }),
-    } as unknown as ReturnType<typeof createClient>)
     vi.mocked(driversApi.get).mockResolvedValue({
       id: 'd1', tax_id: '22222222-2', country_code: 'CL', full_name: 'Juan Pérez',
       operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
       total_requirements: 5, last_document_update: null,
-  home_location_id: null, home_location_name: null,
-  home_location_shipper: null, suggested_home_location: null,
+      home_location_id: null, home_location_name: null, home_location_shipper: null, suggested_home_location: null,
     })
     renderPage()
     await clickTab(/Conductores/)
     fireEvent.click(await screen.findByText('Juan Pérez'))
-
-    expect(await screen.findByRole('button', { name: /transferir/i })).toBeInTheDocument()
+    const dialogo = await screen.findByRole('dialog')
+    fireEvent.click(await within(dialogo).findByRole('button', { name: 'Más acciones' }))
+    expect(screen.getByRole('menuitem', { name: 'Transferir a otra empresa' })).toBeInTheDocument()
   })
+
 
   it('al transferir avisa a dónde quedó el conductor', async () => {
     vi.mocked(carriersApi.assignDriver).mockResolvedValue(undefined as never)
@@ -526,19 +528,21 @@ describe('EmpresaDetailPage', () => {
       id: 'd1', tax_id: '22222222-2', country_code: 'CL', full_name: 'Juan Pérez',
       operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
       total_requirements: 5, last_document_update: null,
-      home_location_id: null, home_location_name: null,
-      home_location_shipper: null, suggested_home_location: null,
+      home_location_id: null, home_location_name: null, home_location_shipper: null, suggested_home_location: null,
     })
     renderPage()
     await clickTab(/Conductores/)
     fireEvent.click(await screen.findByText('Juan Pérez'))
-    fireEvent.click(await screen.findByRole('button', { name: /transferir/i }))
+    const dialogo = await screen.findByRole('dialog')
+    fireEvent.click(await within(dialogo).findByRole('button', { name: 'Más acciones' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Transferir a otra empresa' }))
     fireEvent.change(screen.getByPlaceholderText(/empresa destino/i), { target: { value: 'Otra' } })
     fireEvent.click(await screen.findByText('Otra Empresa'))
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar transferencia' }))
     await waitFor(() => expect(carriersApi.assignDriver).toHaveBeenCalledWith('c2', 'd1'))
-    expect(await screen.findByText(/Listo: conductor Juan Pérez quedó en Otra Empresa\./)).toBeInTheDocument()
+    expect(await screen.findByText(/Listo: quedó en Otra Empresa\./)).toBeInTheDocument()
   })
+
 
   // Hallazgo 4 de la revision final: d4e6cc03 bajo tres gates de canAdmin a
   // canEdit (los dos props de los paneles y este boton); la ronda de arreglo
@@ -607,6 +611,16 @@ describe('ficha de empresa liviana', () => {
     expect(within(detalles).getByText('RUT')).toBeInTheDocument()
     expect(screen.queryByText(/Tax ID/)).not.toBeInTheDocument()
     expect(screen.queryByText(/documentos al día|al día$/)).not.toBeInTheDocument()
+  })
+
+  it('el modal de un conductor ES su ficha, con "Abrir ficha completa"', async () => {
+    renderPage()
+    await clickTab(/Conductores/)
+    fireEvent.click(await screen.findByText('Juan Pérez'))
+    const dialogo = await screen.findByRole('dialog')
+    expect(within(dialogo).getByRole('link', { name: /Abrir ficha completa/ }).getAttribute('href'))
+      .toMatch(/^\/dashboard\/drivers\/d1\?next=/)
+    expect(within(dialogo).getByRole('group', { name: 'Secciones del conductor' })).toBeInTheDocument()
   })
 })
 
