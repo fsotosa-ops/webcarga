@@ -15,6 +15,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { StatusChip } from '@/components/ui/StatusChip'
 import { Estado } from '@/components/ui/Estado'
 import { ComplianceCounts } from '@/components/ui/ComplianceCounts'
+import { TableHeader } from '@/components/ui/tabla/Table'
 
 interface Props {
   /** El alcance `active`: empresas activas más cualquiera con archivos esperando. */
@@ -101,6 +102,8 @@ export function CertificationFunnel({ rows, catalogRows, catalogEstado, onExpand
         <SegmentedControl label="Ciclo de vida" options={opciones} value={tab.id} onChange={elegir} />
       </div>
 
+      {(tab.status.includes('ACTIVE') ? activas.length > 0 : filas.length > 0) && <Columns />}
+
       {tab.status.includes('ACTIVE') ? (
         FUNNEL_BUCKET_ORDER.map(bucket => {
           const { label, icon: Icono, tone } = funnelBucketStyle(bucket)
@@ -156,6 +159,36 @@ export function CertificationFunnel({ rows, catalogRows, catalogEstado, onExpand
   )
 }
 
+/** El ancho de cada columna, el mismo en el encabezado y en la fila: así se
+ *  alinean aunque una celda venga vacía (Entrega 2 de fichas). */
+const COL = {
+  type:     'w-32 shrink-0',
+  trips:    'w-24 shrink-0',
+  // En el teléfono no hay encabezado: estas celdas miden lo que su contenido,
+  // y el nombre conserva su lugar.
+  progress: 'md:w-44 shrink-0',
+  pending:  'md:w-28 shrink-0',
+  waiting:  'md:w-8 shrink-0',
+}
+
+/** El encabezado de la lista, una vez. En el teléfono no se ve (`TableHeader`),
+ *  igual que Tipo y Viajes en la fila. */
+function Columns() {
+  return (
+    <TableHeader>
+      <span className="flex flex-1 items-center gap-2.5 px-1">
+        <span className="w-3 shrink-0" />
+        <span className="flex-1">Empresa</span>
+        <span className={COL.type}>Tipo</span>
+        <span className={COL.trips}>Viajes 30 días</span>
+        <span className={COL.progress}>Avance</span>
+        <span className={COL.pending}>Pendientes</span>
+        <span className={COL.waiting} />
+      </span>
+    </TableHeader>
+  )
+}
+
 /** La fila del embudo NAVEGA a la ficha de la empresa, así que es un enlace.
  *
  *  Fue un `role="button"` con `aria-expanded` mientras abría un cajón acá
@@ -182,16 +215,24 @@ function FilaEmpresa({ row }: { row: CertificationStatusRow }) {
       className="flex items-center gap-2.5 px-4 py-2 border-b border-border transition-colors hover:bg-bg-main"
     >
       <ChevronRight size={12} className="text-informativo shrink-0" aria-hidden="true" />
-      {/* El sujeto es lo más fuerte de la fila: es lo que se escanea (§9). */}
-      <span className="flex-1 min-w-0 truncate text-[13.5px] font-semibold text-text-primary">
-        {row.entity_name}
+      {/* El sujeto es lo más fuerte de la fila: es lo que se escanea (§9). El
+          ciclo de vida y la habilitación de una no activa van con el nombre, para
+          que las columnas no se corran. */}
+      <span className="flex flex-1 min-w-0 items-center gap-2">
+        <span className="min-w-0 truncate text-dato font-semibold text-text-primary">{row.entity_name}</span>
+        {!activa && (() => {
+          const ciclo = lifecycleStyle('carrier', row.operational_status ?? '')
+          const hab = enablementStyleFromFlag(row.compliance_summary?.can_operate ?? false, false)
+          return (
+            <>
+              <StatusChip tone={ciclo.tone} icon={ciclo.icon}>{ciclo.label}</StatusChip>
+              <StatusChip tone={hab.tone} icon={hab.icon}>{hab.label}</StatusChip>
+            </>
+          )
+        })()}
       </span>
 
-      {gestion && (
-        <span className="hidden sm:inline text-etiqueta text-informativo shrink-0">
-          {gestion}
-        </span>
-      )}
+      <span className={`${COL.type} hidden sm:block truncate text-etiqueta text-informativo`}>{gestion}</span>
 
       {/* Marca de actividad. Va NEUTRA a propósito: el mockup la pintaba en
           rojo, pero el §9 reserva el rojo #b00020 para un solo significado
@@ -199,49 +240,42 @@ function FilaEmpresa({ row }: { row: CertificationStatusRow }) {
           avisar. Y no ordena: hoy hay 0 viajes futuros vinculados, así que
           priorizar por actividad prometería una anticipación que los datos
           no tienen. */}
-      {(row.trips_30d ?? 0) > 0 && (
-        <span className="hidden md:inline text-etiqueta text-informativo shrink-0 tabular-nums">
-          {row.trips_30d} viajes · 30 días
-        </span>
-      )}
+      <span data-testid={`viajes-${row.entity_id}`} className={`${COL.trips} hidden md:block text-etiqueta text-informativo tabular-nums`}>
+        {(row.trips_30d ?? 0) > 0 ? row.trips_30d : ''}
+      </span>
 
       {/* La barra mide 96px: con "1 de 382" el relleno daba 0,25px y se
           veia IGUAL que cero. "Empezado" y "no empezado" son cosas
           distintas y tienen que verse distinto, asi que cualquier avance
           mayor a cero ocupa al menos 3px. La barra deja de ser proporcional
           en el extremo bajo a proposito: ahi lo que importa es si arranco. */}
-      <span className="h-1.5 w-24 rounded-full bg-border overflow-hidden shrink-0">
-        <span
-          className={`block h-full rounded-full ${alDia ? 'bg-resuelto' : 'bg-accion'}`}
-          style={{ width: pct > 0 ? `max(3px, ${pct}%)` : 0 }}
-        />
-      </span>
-      <span className="text-etiqueta text-informativo tabular-nums whitespace-nowrap shrink-0 w-16 text-right">
-        {row.satisfied_count} de {row.total_count}
-      </span>
-
-      {row.compliance_summary && <ComplianceCounts counts={totalCounts(row.compliance_summary)} muted={!activa} />}
-
-      {!activa && (() => {
-        const ciclo = lifecycleStyle('carrier', row.operational_status ?? '')
-        const hab = enablementStyleFromFlag(row.compliance_summary?.can_operate ?? false, false)
-        return (
-          <>
-            <StatusChip tone={ciclo.tone} icon={ciclo.icon}>{ciclo.label}</StatusChip>
-            <StatusChip tone={hab.tone} icon={hab.icon}>{hab.label}</StatusChip>
-          </>
-        )
-      })()}
-
-      {row.unclassified_count > 0 && (
-        <span
-          data-testid={`espera-${row.entity_id}`}
-          title={`${row.unclassified_count} archivos esperando que los ubiques`}
-          className="inline-flex items-center rounded-full bg-espera px-2 py-0.5 text-etiqueta font-bold tabular-nums text-white shrink-0"
-        >
-          {row.unclassified_count}
+      <span className={`${COL.progress} flex items-center gap-2`}>
+        <span className="hidden sm:block h-1.5 w-24 rounded-full bg-border overflow-hidden shrink-0">
+          <span
+            className={`block h-full rounded-full ${alDia ? 'bg-resuelto' : 'bg-accion'}`}
+            style={{ width: pct > 0 ? `max(3px, ${pct}%)` : 0 }}
+          />
         </span>
-      )}
+        <span className="text-etiqueta text-informativo tabular-nums whitespace-nowrap">
+          {row.satisfied_count} de {row.total_count}
+        </span>
+      </span>
+
+      <span className={`${COL.pending} flex`}>
+        {row.compliance_summary && <ComplianceCounts counts={totalCounts(row.compliance_summary)} muted={!activa} />}
+      </span>
+
+      <span className={`${COL.waiting} ${row.unclassified_count > 0 ? 'flex' : 'hidden md:flex'} justify-end`}>
+        {row.unclassified_count > 0 && (
+          <span
+            data-testid={`espera-${row.entity_id}`}
+            title={`${row.unclassified_count} archivos esperando que los ubiques`}
+            className="inline-flex items-center rounded-full bg-espera px-2 py-0.5 text-etiqueta font-bold tabular-nums text-white"
+          >
+            {row.unclassified_count}
+          </span>
+        )}
+      </span>
     </Link>
   )
 }

@@ -59,6 +59,13 @@ beforeEach(() => {
 })
 
 describe('Por asignar (TriageWorkbench, Entrega D)', () => {
+  // E2-7 (Entrega 2 de fichas): el total queda en el menú y en los grupos, no en el título.
+  it('E2-7: el título no lleva el total', async () => {
+    setup()
+    await screen.findByText('i1.png')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^Por asignar$/)
+  })
+
   it('D7: vacía dice "Todo asignado" y ofrece subir, sin zona de arrastre ni selector de empresa', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     setup()

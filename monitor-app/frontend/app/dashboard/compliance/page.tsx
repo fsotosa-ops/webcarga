@@ -16,6 +16,7 @@ import type { CarrierCreateResult } from '@/lib/api/carriers'
 import type { CertificationGroup } from '@/lib/types'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { Cifra } from '@/components/ui/Cifra'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Estado } from '@/components/ui/Estado'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
 import { invalidateDirectory } from '@/lib/queries/directorio'
@@ -142,73 +143,49 @@ function CertificationPageInner() {
 
   return (
     <div className="p-4 md:p-6 space-y-3">
-      <div>
-        <EncabezadoDePagina
-          titulo="Certificación"
-          bajada="Qué le falta a cada empresa para estar en condiciones de operar, y qué documentos llegaron todavía sin asignar."
-        />
-      </div>
+      {/* La acción principal a la derecha del título, como "Subir documentos" en
+          Por asignar (kit de la Entrega 2 de fichas). Actúan sobre empresas, no
+          sobre la agrupación: se ven en las dos. */}
+      <EncabezadoDePagina
+        titulo="Certificación"
+        bajada="Qué le falta a cada empresa para estar en condiciones de operar, y qué documentos llegaron todavía sin asignar."
+      >
+        <button
+          type="button"
+          onClick={() => setPlanillaOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-white px-3 py-1.5 text-dato font-semibold text-text-primary hover:bg-bg-main"
+        >
+          <FileSpreadsheet size={14} aria-hidden="true" />
+          Actualizar por planilla
+        </button>
+        <button
+          type="button"
+          onClick={() => setNewCarrierOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-dato font-semibold text-white hover:bg-accent/90"
+        >
+          <Plus size={14} aria-hidden="true" /> Nueva empresa
+        </button>
+      </EncabezadoDePagina>
 
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-[11px] text-gray-500">Agrupar por</span>
-        <div
-          role="group"
-          aria-label="Agrupar por"
-          className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit"
-        >
-          {AGRUPACIONES.map(({ id: v, label }) => (
-            <button
-              key={v}
-              onClick={() => cambiarVista(v)}
-              aria-pressed={vista === v}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                vista === v ? 'bg-white text-text-primary shadow-sm' : 'text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-          {/* Llevan al Directorio: el ícono dice que se sale del módulo. */}
-          {AL_DIRECTORIO.map(d => (
-            <Link key={d.vistaVieja} href={d.href}
-                  className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-gray-600 hover:text-gray-800">
-              {d.label} <ArrowUpRight size={12} aria-hidden="true" />
-            </Link>
-          ))}
-        </div>
-
-        {group && (
-          <>
-            <input
-              value={q}
-              onChange={e => setQ(e.target.value)}
-              placeholder={group === 'carrier' ? 'Buscar empresa…'
-                : group === 'driver' ? 'Buscar conductor…'
-                : group === 'requirement' ? 'Buscar documento…' : 'Buscar patente…'}
-              aria-label="Buscar"
-              className={INPUT + ' w-64'}
-            />
-            <div className="ml-auto flex items-center gap-2">
-              {group === 'carrier' && (<>
-              <button
-                type="button"
-                onClick={() => setPlanillaOpen(true)}
-                className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 hover:text-accent transition-colors cursor-pointer"
-              >
-                <FileSpreadsheet size={13} />
-                Actualizar por planilla
-              </button>
-              <button
-                type="button"
-                onClick={() => setNewCarrierOpen(true)}
-                className="flex items-center gap-1.5 text-xs font-semibold text-accent border border-accent/30 rounded-lg px-2.5 py-1.5 hover:bg-accent/5 transition-colors cursor-pointer"
-              >
-                <Plus size={13} /> Nueva empresa
-              </button>
-              </>)}
-            </div>
-          </>
-        )}
+        <span className="text-etiqueta text-informativo">Agrupar por</span>
+        <SegmentedControl label="Agrupar por" options={AGRUPACIONES.map(({ id, label }) => ({ id, label }))}
+                          value={vista} onChange={cambiarVista} />
+        {/* Llevan al Directorio: fuera del control, porque no agrupan aquí; el
+            ícono dice que se sale del módulo. */}
+        {AL_DIRECTORIO.map(d => (
+          <Link key={d.vistaVieja} href={d.href}
+                className="inline-flex items-center gap-1 text-etiqueta font-semibold text-informativo hover:text-text-primary">
+            {d.label} <ArrowUpRight size={12} aria-hidden="true" />
+          </Link>
+        ))}
+        <input
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder={group === 'carrier' ? 'Buscar empresa…' : 'Buscar documento…'}
+          aria-label="Buscar"
+          className={INPUT + ' w-64'}
+        />
       </div>
 
       <NewCarrierPanel

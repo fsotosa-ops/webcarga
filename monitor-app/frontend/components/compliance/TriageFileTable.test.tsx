@@ -2,6 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ComponentProps } from 'react'
 import { TriageFileTable, ordenarPorLoQueFalta } from './TriageFileTable'
+import { QuickViewContext } from '@/components/dashboard/QuickViewProvider'
 
 const row = (id: string, carrier: string, over: Record<string, unknown> = {}) => ({
   id, file_name: `${id}.png`, mime_type: 'image/png', size_bytes: 10,
@@ -100,6 +101,53 @@ describe('TriageFileTable', () => {
   it('avisa cuando no queda nada por clasificar', () => {
     setup({ rows: [] })
     expect(screen.getByText('Todo asignado')).toBeInTheDocument()
+  })
+})
+
+// Entrega 2 de fichas: Por asignar con las piezas del kit.
+describe('TriageFileTable — kit', () => {
+  it('E2-2: la cabecera va en texto normal y el nombre de archivo en la letra normal', () => {
+    setup()
+    const archivo = screen.getByRole('columnheader', { name: /archivo/i })
+    expect(archivo.className).not.toMatch(/uppercase|text-\[10px\]/)
+    expect(archivo.className).toMatch(/text-etiqueta/)
+    const nombre = screen.getByText('i1.png')
+    expect(nombre.className).not.toMatch(/font-mono/)
+    expect(nombre.className).toMatch(/text-dato/)
+  })
+
+  it('E2-5: la sugerencia es una línea con el requisito, el titular como enlace y el % en gris', () => {
+    const open = vi.fn()
+    render(
+      <QuickViewContext.Provider value={open}>
+        <TriageFileTable
+          rows={[row('i1', 'ACME', {
+            match_status: 'SUGGESTED', suggested_requirement_name: 'Licencia', confidence: 0.85,
+            suggested_requirement_id: 'req', suggested_entity_type: 'DRIVER', suggested_entity_id: 'd1',
+            suggested_subject_name: 'Vidal Soto, Pedro',
+          })] as never}
+          focusedId={null} selectedIds={new Set()} onFocus={vi.fn()} onToggle={vi.fn()} onToggleAll={vi.fn()}
+        />
+      </QuickViewContext.Provider>,
+    )
+    const titular = screen.getByRole('link', { name: 'Ver conductor Vidal Soto, Pedro' })
+    expect(titular).toHaveAttribute('href', '/dashboard/drivers/d1')
+    const sugerencia = titular.closest('[data-suggestion]')!
+    expect(sugerencia).toHaveTextContent('Licencia · Vidal Soto, Pedro85%')
+    expect(sugerencia.className).not.toMatch(/border|bg-/)
+    expect(sugerencia.className).toMatch(/whitespace-nowrap/)
+    expect(screen.getByText('85%').className).toMatch(/text-informativo/)
+    fireEvent.click(titular)
+    expect(open).toHaveBeenCalledWith({ kind: 'driver', id: 'd1', label: 'Vidal Soto, Pedro' })
+  })
+
+  it('E2-6: los avisos van con su ícono dentro de la celda del archivo, sin franja aparte', () => {
+    setup({ rows: [fila({ mismo_casillero: 3 })] })
+    const aviso = screen.getByText('3 archivos reclaman el mismo casillero')
+    expect(aviso.closest('td')).toContainElement(screen.getByText('i1.png'))
+    expect(aviso.closest('td')!.querySelector('svg')).not.toBeNull()
+    // El título del grupo y la fila del archivo; ninguna extra para los avisos.
+    expect(screen.getAllByRole('row').filter(r => r.querySelector('td'))).toHaveLength(2)
   })
 })
 

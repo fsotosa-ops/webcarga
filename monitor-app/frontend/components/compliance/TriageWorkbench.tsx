@@ -10,6 +10,7 @@ import type { CarrierSearchResult } from '@/components/dashboard/CarrierSearchPi
 import { TriageBulkBar } from './TriageBulkBar'
 import { TriageClassifyForm } from './TriageClassifyForm'
 import { TriageFileTable, ordenarPorLoQueFalta } from './TriageFileTable'
+import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { TriagePreview } from './TriagePreview'
 import { TriageUndoNotice } from './TriageUndoNotice'
 import { BulkUploadReview } from './pending/BulkUploadReview'
@@ -248,16 +249,11 @@ export function TriageWorkbench() {
     setUltimoLote({ ids: appliedIds, mensaje: partes.join(' · ') })
   }
 
+  // El total queda en el menú y en los grupos, no en el título (Entrega 2 de fichas).
   const header = (
-    <div className="flex items-start justify-between gap-3 flex-wrap">
-      <div>
-        <h1 className="text-cifra font-bold text-text-primary leading-tight">
-          Por asignar{queueQuery.isSuccess && total > 0 && <span className="ml-2 text-informativo tabular-nums">{total}</span>}
-        </h1>
-        <p className="text-dato text-informativo">Lo que no se pudo asignar al subir.</p>
-      </div>
+    <EncabezadoDePagina titulo="Por asignar" bajada="Lo que no se pudo asignar al subir.">
       {canEdit && <BulkUploadReview trigger="button" />}
-    </div>
+    </EncabezadoDePagina>
   )
 
   if (queueQuery.isSuccess && total === 0) {

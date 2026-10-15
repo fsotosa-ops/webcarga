@@ -38,6 +38,16 @@ function setup(over: Partial<Props> = {}) {
 }
 
 describe('CertificationFunnel', () => {
+  // E2-3 (Entrega 2 de fichas): la lista se lee como tabla, con el encabezado del kit.
+  it('E2-3: la lista tiene encabezados de columna, en texto normal', () => {
+    setup()
+    const empresa = screen.getByText('Empresa', { selector: 'span' })
+    const encabezado = empresa.parentElement!
+    expect(Array.from(encabezado.children).map(c => c.textContent).filter(Boolean))
+      .toEqual(['Empresa', 'Tipo', 'Viajes 30 días', 'Avance', 'Pendientes'])
+    expect(encabezado.className).not.toMatch(/uppercase/)
+  })
+
   it('agrupa las empresas activas por su balde y nombra la cantidad', () => {
     setup({ rows: [
       fila({ entity_id: 'a', entity_name: 'Nogales', funnel_bucket: 'not_enabled' }),
@@ -158,8 +168,10 @@ describe('CertificationFunnel', () => {
   it('la marca de actividad no usa el rojo reservado a los archivos que esperan', () => {
     setup({ rows: [fila({ trips_30d: 14, unclassified_count: 0 })] })
 
-    const marca = screen.getByText(/14 viajes/i)
-    expect(marca.className).not.toMatch(/red/)
+    // Desde la Entrega 2 de fichas el número va bajo la columna "Viajes 30 días".
+    const marca = screen.getByTestId('viajes-c1')
+    expect(marca).toHaveTextContent('14')
+    expect(marca.className).not.toMatch(/red|espera/)
   })
 
   it('los archivos esperando si van en rojo, y dicen cuantos', () => {
@@ -170,7 +182,7 @@ describe('CertificationFunnel', () => {
 
   it('no inventa actividad cuando no hay viajes', () => {
     setup({ rows: [fila({ trips_30d: 0 })] })
-    expect(screen.queryByText(/viajes/i)).not.toBeInTheDocument()
+    expect(screen.getByTestId('viajes-c1')).toBeEmptyDOMElement()
   })
 
   it('muestra el tipo de gestion de la empresa', () => {

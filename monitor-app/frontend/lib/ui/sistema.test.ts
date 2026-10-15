@@ -113,7 +113,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     //   CABECERA con tokens); el tope estaba por encima del número real.
     // 1288 -> 1255 el 2026-10-15: la ficha de empresa con ProfileHeader y DetailsBlock (kit de fichas, Tarea 5).
     // 1255 -> 1216 el 2026-10-15: se retiraron DriverDetailPanel y VehicleDetailPanel; el modal es la ficha (Tarea 6).
-    const DEUDA = 1216
+    // 1216 -> 1194 el 2026-10-15: Empresas y Por asignar con las piezas del kit (Entrega 2 de fichas).
+    const DEUDA = 1194
 
     const total = usosDeColorCrudo()
     expect(
@@ -128,7 +129,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // Medido el 2026-08-16: eran 15 <h1> con SIETE combinaciones distintas de
     // clases. Baja a medida que cada pagina usa <EncabezadoDePagina>.
     // 9 -> 8 el 2026-10-15: el nombre editable de la ficha de empresa salió del <h1> (kit de fichas, Tarea 5).
-    const DEUDA = 8
+    // 8 -> 7 el 2026-10-15: Por asignar usa EncabezadoDePagina (Entrega 2 de fichas).
+    const DEUDA = 7
 
     const hallazgos = h1FueraDelEncabezado()
     expect(

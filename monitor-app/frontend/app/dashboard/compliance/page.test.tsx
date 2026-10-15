@@ -135,8 +135,35 @@ describe('Certificación — una lista, dos vistas', () => {
 
     const agrupador = screen.getByRole('group', { name: /agrupar por/i })
     expect(within(agrupador).getAllByRole('button').map(b => b.textContent)).toEqual(['Empresa', 'Requisito'])
-    expect(within(agrupador).getByRole('link', { name: /Conductor/ })).toHaveAttribute('href', '/dashboard/drivers?documents=pending')
-    expect(within(agrupador).getByRole('link', { name: /Vehículo/ })).toHaveAttribute('href', '/dashboard/assets?documents=pending')
+    // Entrega 2 de fichas: los enlaces al Directorio quedan al lado del control y
+    // fuera de él; dentro de un control segmentado prometerían quedarse aquí.
+    expect(within(agrupador).queryByRole('link')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Conductor/ })).toHaveAttribute('href', '/dashboard/drivers?documents=pending')
+    expect(screen.getByRole('link', { name: /Vehículo/ })).toHaveAttribute('href', '/dashboard/assets?documents=pending')
+  })
+
+  // E2-1 (Entrega 2 de fichas): el agrupador es el control segmentado de
+  // Pendientes (lo elegido en celeste), y la fila cuenta con ComplianceCounts.
+  it('E2-1: agrupa con el control segmentado del kit y cada fila cuenta con ComplianceCounts', async () => {
+    setup()
+    const fila = (await screen.findByText('Test Empresa Webcarga')).closest('a')!
+    const elegido = within(screen.getByRole('group', { name: /agrupar por/i })).getByRole('button', { name: 'Empresa' })
+    expect(elegido).toHaveAttribute('aria-pressed', 'true')
+    expect(elegido.className).toMatch(/text-accion/)
+    expect(elegido.className).not.toMatch(/shadow-sm/)
+    expect(within(fila as HTMLElement).getByTestId('counts-missing')).toHaveTextContent('1')
+  })
+
+  // E2-4: la acción principal es un botón lleno, en el encabezado de la página.
+  it('E2-4: "Nueva empresa" es la acción principal del encabezado', async () => {
+    setup()
+    await screen.findByText('Test Empresa Webcarga')
+    const boton = screen.getByRole('button', { name: /Nueva empresa/i })
+    expect(boton.className).toMatch(/bg-accent/)
+    expect(boton.className).toMatch(/text-white/)
+    // El encabezado es el contenedor del <h1> y su bajada (EncabezadoDePagina).
+    const encabezado = screen.getByRole('heading', { level: 1, name: 'Certificación' }).parentElement!.parentElement!
+    expect(encabezado).toContainElement(boton)
   })
 
   // La bandeja ya no vive en esta pantalla (Task 5): no hay boton propio que

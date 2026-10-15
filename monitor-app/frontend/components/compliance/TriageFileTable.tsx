@@ -3,6 +3,10 @@
 import { Fragment } from 'react'
 import { AlertTriangle, FileQuestion } from 'lucide-react'
 import type { QueueRow } from '@/lib/types'
+import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
+import { StatusChip } from '@/components/ui/StatusChip'
+import { EntityCell } from '@/components/dashboard/EntityCell'
+import type { EntityKind } from '@/lib/api/entitySummary'
 
 interface Props {
   rows:        QueueRow[]
@@ -43,8 +47,8 @@ export function TriageFileTable({
   if (!rows.length) {
     return (
       <div className="p-6 text-center">
-        <FileQuestion size={20} className="mx-auto text-gray-300 mb-2" />
-        <p className="text-xs text-gray-500">Todo asignado</p>
+        <FileQuestion size={20} className="mx-auto text-informativo mb-2" />
+        <p className="text-dato text-informativo">Todo asignado</p>
       </div>
     )
   }
@@ -65,7 +69,7 @@ export function TriageFileTable({
       tabIndex={0}
       onKeyDown={handleKey}
     >
-      <thead className="sticky top-0 z-10 bg-white">
+      <thead className="sticky top-0 z-10 bg-bg-main">
         <tr className="border-b border-border">
           <th scope="col" className="py-2 pl-3 pr-1 w-9">
             <input
@@ -76,9 +80,10 @@ export function TriageFileTable({
               className="cursor-pointer accent-accent focus:outline-none focus:ring-2 focus:ring-accent/40 rounded-sm"
             />
           </th>
-          <th scope="col" className="py-2 px-2 text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Archivo</th>
-          <th scope="col" className="py-2 px-2 text-[10px] uppercase tracking-wider text-gray-500 font-semibold w-20 text-right">Subido</th>
-          <th scope="col" className="py-2 pl-2 pr-3 text-[10px] uppercase tracking-wider text-gray-500 font-semibold w-40">Sugerencia</th>
+          <th scope="col" className={CABECERA}>Archivo</th>
+          <th scope="col" className={`${CABECERA} hidden w-20 !text-right sm:table-cell`}>Subido</th>
+          {/* Escalonada: en el teléfono el nombre del archivo conserva su lugar. */}
+          <th scope="col" className={`${CABECERA} w-36 sm:w-56 xl:w-72`}>Sugerencia</th>
         </tr>
       </thead>
       <tbody>
@@ -129,15 +134,17 @@ export function TriageFileTable({
                     }}
                   />
                 </td>
-                <td className="py-1.5 px-2 text-[11px] font-mono text-slate-700 truncate max-w-0">{r.file_name}</td>
-                <td className="py-1.5 px-2 text-[11px] text-gray-500 text-right tabular-nums whitespace-nowrap">
+                <td className="py-1.5 px-3 max-w-0">
+                  <span className="block truncate text-dato text-text-primary">{r.file_name}</span>
+                  <Colisiones row={r} />
+                </td>
+                <td className="hidden py-1.5 px-3 text-dato text-informativo text-right tabular-nums whitespace-nowrap sm:table-cell">
                   {new Date(r.created_at).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' })}
                 </td>
-                <td className="py-1.5 pl-2 pr-3 text-[11px]">
+                <td className="py-1.5 px-3 text-dato max-w-0">
                   <Suggestion row={r} />
                 </td>
               </tr>
-              <Colisiones row={r} />
             </Fragment>
           )
         })}
@@ -169,44 +176,52 @@ function Colisiones({ row }: { row: QueueRow }) {
 
   if (!avisos.length) return null
 
+  // Dentro de la celda del archivo, con su ícono (Entrega 2 de fichas): la franja
+  // rosada usaba el rojo de espera, que es solo para "hay archivos esperando".
   return (
-    <tr className="bg-espera/5">
-      <td colSpan={4} className="pl-3 pr-3 pb-1.5">
-        <div className="space-y-0.5">
-          {avisos.map(aviso => (
-            <p key={aviso} className="flex items-center gap-1.5 text-etiqueta text-espera">
-              <AlertTriangle size={11} className="shrink-0" aria-hidden="true" />
-              {aviso}
-            </p>
-          ))}
-        </div>
-      </td>
-    </tr>
+    <span className="mt-0.5 block space-y-0.5">
+      {avisos.map(aviso => (
+        <span key={aviso} className="flex items-center gap-1.5 text-etiqueta text-informativo">
+          <AlertTriangle size={11} className="shrink-0 text-warning" aria-hidden="true" />
+          {aviso}
+        </span>
+      ))}
+    </span>
   )
 }
 
 /** Cuando no hay sugerencia, el clasificador SÍ corrió: buscó una señal en el
  *  nombre del archivo (RUT, patente, nombre de conductor) y no encontró
  *  ninguna. Ese archivo espera una asignación manual. */
+const KIND: Record<'CARRIER' | 'DRIVER' | 'ASSET', EntityKind> = { CARRIER: 'carrier', DRIVER: 'driver', ASSET: 'asset' }
+
 function Suggestion({ row }: { row: QueueRow }) {
   if (row.match_status === 'AMBIGUOUS' && row.candidate_count > 0) {
-    return (
-      <span className="inline-flex items-center rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 text-[10px] font-medium">
-        {row.candidate_count} posibles
-      </span>
-    )
+    return <StatusChip tone="warning">{row.candidate_count} posibles</StatusChip>
   }
+  const titular = row.suggested_subject_name ?? row.carrier_name
   if (row.suggested_subject_name || row.suggested_requirement_name) {
+    // Una línea, sin borde (Entrega 2 de fichas): el requisito, el titular con
+    // su vista rápida y el % en gris. El titular sin id resuelto es texto.
+    // Sin titular sugerido se muestra la empresa del lote.
+    const [kind, id]: [EntityKind, string | null | undefined] = row.suggested_subject_name
+      ? [row.suggested_entity_type ? KIND[row.suggested_entity_type] : 'carrier', row.suggested_entity_id]
+      : ['carrier', row.carrier_id]
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 text-[10px] font-medium">
-        {[row.suggested_requirement_name, row.suggested_subject_name ?? row.carrier_name].filter(Boolean).join(' · ')}
+      <span data-suggestion className="flex min-w-0 items-baseline gap-1.5 whitespace-nowrap"
+            title={[row.suggested_requirement_name, titular].filter(Boolean).join(' · ')}>
+        <span className="min-w-0 truncate">
+          {row.suggested_requirement_name}
+          {row.suggested_requirement_name && titular && ' · '}
+          {titular && <EntityCell kind={kind} id={id} label={titular} />}
+        </span>
         {row.confidence != null && (
-          <span className="text-emerald-600 tabular-nums">{Math.round(row.confidence * 100)}%</span>
+          <span className="shrink-0 text-etiqueta text-informativo tabular-nums">{Math.round(row.confidence * 100)}%</span>
         )}
       </span>
     )
   }
-  return <span className="text-gray-500" title="Sin sugerencia — el clasificador no encontró ninguna señal en el nombre del archivo">—</span>
+  return <span className="text-informativo" title="Sin sugerencia — el clasificador no encontró ninguna señal en el nombre del archivo">—</span>
 }
 
 
