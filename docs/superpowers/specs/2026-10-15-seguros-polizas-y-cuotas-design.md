@@ -99,7 +99,8 @@ de trabajo):
 - **Ficha de empresa › Seguros**: la tabla de Pólizas filtrada por la empresa (la misma, no una segunda); la fila
   abre la ficha de póliza.
 - Se borran `InsurancePolicyModal` (878 líneas) y `POLICY_HEALTH_CONFIG`; los estados entran a `lib/states.ts`.
-- El catálogo de coberturas va a Configuración, junto a los otros catálogos.
+- El catálogo de coberturas se queda donde está, sin pantalla nueva: dónde se edita lo decide el rediseño de
+  Configuración (usuario, 15/10: Configuración "se está volviendo un Frankenstein"; es un proyecto aparte).
 
 ## Estados de cada pantalla
 
@@ -111,8 +112,9 @@ de trabajo):
 
 ## Decisiones (recomendación marcada; el usuario confirma al revisar esta spec)
 
-- **D1, plazo de "Por vencer":** pasa a Configuración (`app.alert_thresholds`, fila `poliza_por_vencer`), como los
-  documentos. Las 33 pólizas tienen hoy el valor por defecto (30), así que no se pierde nada. *Recomendado.*
+- **D1, plazo de "Por vencer":** un solo dato en la base (`app.alert_thresholds`, fila `poliza_por_vencer`, 30 días),
+  el mismo mecanismo que `documento_por_vencer`, **sin pantalla en Configuración** hasta que Configuración se rediseñe
+  (usuario, 15/10). Las 33 pólizas tienen hoy 30 días y nadie lo cambió nunca, así que no se pierde nada.
 - **D2, "2 o más cuotas impagas":** es una regla del negocio, no solo del Monitor: vive en la vista de la empresa
   (`insurance_alert`) y la muestran Seguros, la ficha de empresa y el Monitor. *Recomendado.*
 
