@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 let search = ''
+const push = vi.fn()
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: vi.fn() }),
+  useRouter: () => ({ replace: vi.fn(), push }),
   usePathname: () => '/dashboard/drivers',
   useSearchParams: () => new URLSearchParams(search),
 }))
@@ -50,5 +51,22 @@ describe('FleetList', () => {
     const href = (await screen.findByRole('link', { name: 'Vidal Soto, Pedro' })).getAttribute('href')!
     expect(new URL(href, 'http://x').searchParams.get('next')).toBe('/dashboard/drivers?flag=without_carrier&q=vidal')
   })
-})
 
+  // Las tres listas del Directorio con la cabecera del kit (15/10).
+  it('L4: la tabla usa la cabecera del kit, sin mayúsculas', async () => {
+    search = ''
+    renderList()
+    await screen.findByRole('link', { name: 'Vidal Soto, Pedro' })
+    const conductor = screen.getByRole('columnheader', { name: 'Conductor' })
+    expect(conductor.className).not.toMatch(/uppercase/)
+    expect(conductor.className).toMatch(/text-etiqueta/)
+  })
+
+  it('L1: el clic en la fila abre la ficha, igual que en Empresas', async () => {
+    search = ''
+    renderList()
+    const nombre = await screen.findByRole('link', { name: 'Vidal Soto, Pedro' })
+    fireEvent.click(nombre.closest('tr')!.querySelector('td:last-child')!)
+    expect(push).toHaveBeenCalledWith(nombre.getAttribute('href'))
+  })
+})

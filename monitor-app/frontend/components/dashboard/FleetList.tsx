@@ -16,6 +16,7 @@ import { ChipsDeFiltro, type Chip } from '@/components/ui/ChipsDeFiltro'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { Estado } from '@/components/ui/Estado'
 import { StatusChip } from '@/components/ui/StatusChip'
+import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
 import type { DocumentsFilter, FleetListResponse, FleetListRow } from '@/lib/types'
 
 export type FleetKind = 'driver' | 'asset'
@@ -136,12 +137,12 @@ export function FleetList({ kind }: { kind: FleetKind }) {
         <div className={`bg-white rounded-2xl border border-border overflow-x-auto transition-opacity ${query.isFetching ? 'opacity-60' : ''}`}>
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-border text-etiqueta font-bold text-informativo uppercase tracking-wide bg-bg-main">
-                <th className="px-3 py-3 text-left">{kind === 'driver' ? 'Conductor' : 'Patente'}</th>
-                <th className="px-3 py-3 text-left">{kind === 'driver' ? 'RUT' : 'Tipo'}</th>
-                <th className="px-3 py-3 text-left">Empresa hoy</th>
-                <th className="px-3 py-3 text-left w-32">Estado</th>
-                <th className="px-3 py-3 text-left w-32">Documentos</th>
+              <tr className="border-b border-border bg-bg-main">
+                <th scope="col" className={CABECERA}>{kind === 'driver' ? 'Conductor' : 'Patente'}</th>
+                <th scope="col" className={CABECERA}>{kind === 'driver' ? 'RUT' : 'Tipo'}</th>
+                <th scope="col" className={CABECERA}>Empresa hoy</th>
+                <th scope="col" className={`${CABECERA} w-32`}>Estado</th>
+                <th scope="col" className={`${CABECERA} w-32`}>Documentos</th>
               </tr>
             </thead>
             <tbody>
@@ -183,12 +184,15 @@ function Row({ kind, row, typeLabel, toDocuments, returnTo }: {
   // su pestaña Documentos, que es lo que se vino a trabajar.
   const profile = kind === 'driver' ? driverHref(row.id, returnTo) : assetHref(row.id, returnTo)
   const href = toDocuments ? `${profile}&tab=documentos` : profile
+  const router = useRouter()
   const lifecycle = fleetMemberStyle(kind, row.operational_status, row.carrier?.operational_status)
   const docs = summaryStyle(row.compliance_summary, row.operational_status === 'ACTIVE')
   return (
-    <tr className="border-b border-border/60 last:border-0 hover:bg-bg-main">
+    // La fila entera abre la ficha, como en Empresas; el nombre es el enlace
+    // (Ctrl/Cmd + clic, lector de pantalla).
+    <tr onClick={() => router.push(href)} className="border-b border-border/60 last:border-0 cursor-pointer hover:bg-bg-main">
       <td className="px-3 py-2.5">
-        <Link href={href} prefetch={false} className={`font-semibold text-text-primary hover:text-accent ${kind === 'asset' ? 'font-mono' : ''}`}>
+        <Link href={href} prefetch={false} onClick={e => e.stopPropagation()} className={`font-semibold text-text-primary hover:text-accent ${kind === 'asset' ? 'font-identificador' : ''}`}>
           {kind === 'driver' ? row.full_name : row.license_plate}
         </Link>
       </td>
@@ -197,7 +201,7 @@ function Row({ kind, row, typeLabel, toDocuments, returnTo }: {
       </td>
       <td className="px-3 py-2.5 text-xs">
         {row.carrier
-          ? <Link href={carrierHref(row.carrier.id)} prefetch={false} className="text-text-primary hover:text-accent">{row.carrier.name}</Link>
+          ? <Link href={carrierHref(row.carrier.id)} prefetch={false} onClick={e => e.stopPropagation()} className="text-text-primary hover:text-accent">{row.carrier.name}</Link>
           : <span className="text-warning">Sin empresa</span>}
       </td>
       <td className="px-3 py-2.5"><StatusChip tone={lifecycle.tone} icon={lifecycle.icon}>{lifecycle.label}</StatusChip></td>

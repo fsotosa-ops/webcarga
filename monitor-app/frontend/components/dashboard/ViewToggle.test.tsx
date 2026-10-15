@@ -25,4 +25,14 @@ describe('ViewToggle', () => {
     fireEvent.click(screen.getByText('Tarjetas'))
     expect(onChange).toHaveBeenCalledWith('tablero')
   })
+
+  // Es el control segmentado del kit: lo elegido en celeste claro, no en el celeste
+  // lleno de la acción principal de la página (15/10).
+  it('usa el control segmentado del kit', () => {
+    render(<ViewToggle value="tabla" onChange={vi.fn()} />)
+    const elegido = screen.getByRole('button', { name: /Tabla/ })
+    expect(elegido).toHaveAttribute('aria-pressed', 'true')
+    expect(elegido.className).toMatch(/text-accion/)
+    expect(elegido.className).not.toMatch(/bg-accent /)
+  })
 })

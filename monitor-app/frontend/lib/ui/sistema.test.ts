@@ -114,7 +114,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 1288 -> 1255 el 2026-10-15: la ficha de empresa con ProfileHeader y DetailsBlock (kit de fichas, Tarea 5).
     // 1255 -> 1216 el 2026-10-15: se retiraron DriverDetailPanel y VehicleDetailPanel; el modal es la ficha (Tarea 6).
     // 1216 -> 1194 el 2026-10-15: Empresas y Por asignar con las piezas del kit (Entrega 2 de fichas).
-    const DEUDA = 1194
+    // 1194 -> 1142 el 2026-10-15: las listas del Directorio con el kit; se retiró TransporterSlideOver.
+    const DEUDA = 1142
 
     const total = usosDeColorCrudo()
     expect(

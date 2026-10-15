@@ -5,8 +5,8 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, ChevronLeft, ChevronRight, Search, Loader2, Plus } from 'lucide-react'
-import type { CarrierListFacets, CarrierListItem, CarrierOperationalStatus } from '@/lib/types'
+import { ChevronLeft, ChevronRight, Search, Plus } from 'lucide-react'
+import type { CarrierListFacets, CarrierOperationalStatus } from '@/lib/types'
 import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
 import { useTransporters } from '@/hooks/useTransporters'
@@ -15,9 +15,10 @@ import { StatusChip } from '@/components/ui/StatusChip'
 import { CARRIER_LIFECYCLE_GROUP_LABELS, ENABLEMENT_GROUP_LABELS, enablementStyle, lifecycleStyle } from '@/lib/states'
 import { TransporterCard } from '@/components/dashboard/TransporterCard'
 import { ResultadosDelDirectorio } from '@/components/dashboard/ResultadosDelDirectorio'
-import { TransporterSlideOver } from '@/components/dashboard/TransporterSlideOver'
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
-import { AlertStatTiles } from '@/components/dashboard/AlertStatTiles'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { Estado } from '@/components/ui/Estado'
+import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
 import { updatedRelative } from '@/lib/compliance'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
@@ -61,8 +62,6 @@ const ENABLEMENT_TABS: { id: EnablementTab; label: string; facetKey: keyof Carri
   { id: 'enabled',     label: ENABLEMENT_GROUP_LABELS.enabled,     facetKey: 'enabled' },
 ]
 
-const EMPTY_FACETS: CarrierListFacets = { total: 0, enabled: 0, not_enabled: 0 }
-
 export default function EmpresasTransportePage() {
   return (
     <Suspense fallback={null}>
@@ -89,7 +88,6 @@ function EmpresasTransportePageInner() {
   const [enablementTab, setEnablementTab] = useState<EnablementTab>('')
   const [page, setPage]           = useState(1)
   const [viewMode, setViewMode]   = useState<ViewMode>('tablero')
-  const [selected, setSelected]   = useState<CarrierListItem | null>(null)
   const canEdit = usePermiso('directory.edit')
   const [addCarrierOpen, setAddCarrierOpen] = useState(searchParams.get('create') === '1')
   const qDebounced = useDebouncedValue(q, 300)
@@ -133,7 +131,6 @@ function EmpresasTransportePageInner() {
   })
   const items = useMemo(() => query.data?.data ?? [], [query.data])
   const tabTotal = query.data?.count ?? 0
-  const facets = query.data?.facets ?? EMPTY_FACETS
   const loading  = query.isPending
   const fetching = query.isFetching
   const error = query.error ? (query.error instanceof Error ? query.error.message : 'Error cargando empresas') : null
@@ -151,16 +148,19 @@ function EmpresasTransportePageInner() {
   // facets.total = conteo real de la tab actual sin el filtro de habilitación
   // (a diferencia de tabTotal, que sí lo aplica) — así el badge de la tab no
   // cambia al elegir un filtro de habilitación.
-  const tabCounts: Record<TransporterTab, number> = TABS.reduce((acc, t) => {
+  // `undefined` mientras la consulta está en vuelo: un "0" ahí afirma algo falso.
+  const tabCounts: Record<TransporterTab, number | undefined> = TABS.reduce((acc, t) => {
     if (t.id === tab) {
-      acc[t.id] = facets.total
+      acc[t.id] = query.data?.facets.total
     } else {
       const idx = otherTabs.findIndex(ot => ot.id === t.id)
-      acc[t.id] = otherCountQueries[idx]?.data?.count ?? 0
+      acc[t.id] = otherCountQueries[idx]?.data?.count
     }
     return acc
-  }, {} as Record<TransporterTab, number>)
+  }, {} as Record<TransporterTab, number | undefined>)
   const grandTotal = TABS.reduce((sum, t) => sum + (tabCounts[t.id] ?? 0), 0)
+  const countsReady = TABS.every(t => tabCounts[t.id] !== undefined)
+  const badge = (n: number | undefined) => n === undefined ? undefined : String(n)
 
   const totalPages = Math.max(1, Math.ceil(tabTotal / LIMIT))
 
@@ -178,25 +178,22 @@ function EmpresasTransportePageInner() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <EncabezadoDePagina
-            titulo="Empresas de Transporte"
-            bajada={loading ? '…' : `${grandTotal.toLocaleString('es-CL')} empresa${grandTotal !== 1 ? 's' : ''}`}
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          {canEdit && (
-            <button
-              onClick={() => setAddCarrierOpen(v => !v)}
-              className="flex items-center gap-1.5 text-xs bg-accent hover:bg-accent/90 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm transition"
-            >
-              <Plus size={13} /> Nueva empresa
-            </button>
-          )}
-          <ViewToggle value={viewMode} onChange={handleViewModeChange} labels={VIEW_LABELS} />
-        </div>
-      </div>
+      {/* La acción principal a la derecha del título (kit de fichas). */}
+      <EncabezadoDePagina
+        titulo="Empresas de Transporte"
+        bajada={!countsReady ? '…' : `${grandTotal.toLocaleString('es-CL')} empresa${grandTotal !== 1 ? 's' : ''}`}
+      >
+        <ViewToggle value={viewMode} onChange={handleViewModeChange} labels={VIEW_LABELS} />
+        {canEdit && (
+          <button
+            type="button"
+            onClick={() => setAddCarrierOpen(v => !v)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-dato font-semibold text-white hover:bg-accent/90"
+          >
+            <Plus size={14} aria-hidden="true" /> Nueva empresa
+          </button>
+        )}
+      </EncabezadoDePagina>
 
       <NewCarrierPanel
         open={addCarrierOpen}
@@ -205,137 +202,90 @@ function EmpresasTransportePageInner() {
         onCreated={handleCarrierCreated}
       />
 
-      {/* ── Tabs Activas / Legacy — split principal, membresía mutuamente
-         excluyente real, viene de operational_status ── */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-        {TABS.map(t => {
-          const active = tab === t.id
-          return (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              aria-pressed={active}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {t.label} <span className="ml-1 text-gray-400">{tabCounts[t.id]}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* ── Tiles de habilitación — segundo eje, lo calcula la API. Solo en
-         las activas: una dada de baja no es "No habilitada" (spec §3).
-         Clickeables (filtran), no solo informativos. ── */}
-      {tab === 'active' && (
-        <AlertStatTiles
-          tiles={ENABLEMENT_TABS.map(t => ({
-            id: t.id, label: t.label, value: facets[t.facetKey],
-            tone: t.id === 'not_enabled' ? 'danger' : t.id === 'enabled' ? 'success' : 'neutral',
-          }))}
-          active={enablementTab}
-          onSelect={id => setEnablementTab(id as EnablementTab)}
-        />
-      )}
-
-      <div className="bg-white border border-border rounded-2xl px-3.5 py-2.5 flex items-center gap-2 flex-wrap">
+      {/* Dos ejes que no se mezclan, con el control segmentado del kit: el ciclo de
+          vida (lo decide una persona) y, solo entre las activas, la habilitación (la
+          calcula la API; una dada de baja no es "No habilitada", spec §3). */}
+      <div className="bg-white border border-border rounded-2xl px-3.5 py-2.5 flex items-center gap-3 flex-wrap">
         <div className="relative shrink-0">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-informativo pointer-events-none" aria-hidden="true" />
           <input
             value={q}
             onChange={e => setQ(e.target.value)}
             placeholder="Empresa, conductor o patente…"
             aria-label="Buscar empresa, conductor o patente"
-            className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-72 bg-white placeholder:text-gray-400 transition-all"
+            className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-72 max-w-full bg-white placeholder:text-informativo"
           />
         </div>
+        <SegmentedControl
+          label="Ciclo de vida"
+          options={TABS.map(t => ({ id: t.id, label: t.label, badge: badge(tabCounts[t.id]) }))}
+          value={tab}
+          onChange={setTab}
+        />
+        {tab === 'active' && (
+          <SegmentedControl
+            label="Habilitación"
+            options={ENABLEMENT_TABS.map(t => ({ id: t.id || 'all', label: t.label, badge: badge(query.data?.facets[t.facetKey]) }))}
+            value={enablementTab || 'all'}
+            onChange={id => setEnablementTab(id === 'all' ? '' : id as EnablementTab)}
+          />
+        )}
       </div>
 
       {busqueda.data && <ResultadosDelDirectorio datos={busqueda.data} />}
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{error}</div>
-      )}
-
-      {loading ? (
-        <div className="flex items-center justify-center py-20 text-gray-400 gap-2 text-sm">
-          <Loader2 size={16} className="animate-spin" /> Cargando…
-        </div>
+      {error ? (
+        <Estado tipo="error" titulo="No se pudieron cargar las empresas" detalle={error} />
+      ) : loading ? (
+        <Estado tipo="cargando" />
       ) : items.length === 0 ? (
-        <p className="bg-white rounded-2xl border border-border px-4 py-14 text-center text-sm text-gray-400">{emptyLabel}</p>
+        <Estado tipo="vacio" titulo={emptyLabel} />
       ) : viewMode === 'tablero' ? (
         <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 transition-opacity duration-150 ${fetching ? 'opacity-60' : ''}`}>
-          {items.map(item => (
-            <TransporterCard returnTo={returnTo} key={item.id} item={item} onOpen={setSelected} selected={selected?.id === item.id} />
-          ))}
+          {items.map(item => <TransporterCard returnTo={returnTo} key={item.id} item={item} />)}
         </div>
       ) : (
         <div className={`transition-opacity duration-150 ${fetching ? 'opacity-60' : ''}`}>
           <div className="md:hidden grid grid-cols-1 gap-3">
-            {items.map(item => (
-              <TransporterCard returnTo={returnTo} key={item.id} item={item} onOpen={setSelected} selected={selected?.id === item.id} />
-            ))}
+            {items.map(item => <TransporterCard returnTo={returnTo} key={item.id} item={item} />)}
           </div>
 
           <div className="hidden md:block bg-white rounded-2xl border border-border overflow-hidden">
-            <table className="w-full text-sm">
+            <table className="w-full text-dato">
               <thead>
-                <tr className="border-b border-border text-[10px] font-bold text-gray-400 uppercase tracking-wide bg-gray-50">
-                  <th className="px-3 py-3 text-left">Empresa</th>
-                  <th className="px-3 py-3 text-left w-32">Tax ID</th>
-                  <th className="px-3 py-3 text-left w-24">Estado</th>
-                  <th className="px-3 py-3 text-left w-32">Habilitación</th>
-                  <th className="px-3 py-3 text-left w-28">Última actualización</th>
-                  <th className="px-3 py-3 w-8"></th>
+                <tr className="border-b border-border bg-bg-main">
+                  <th scope="col" className={CABECERA}>Empresa</th>
+                  <th scope="col" className={`${CABECERA} w-32`}>RUT</th>
+                  <th scope="col" className={`${CABECERA} w-32`}>Estado</th>
+                  <th scope="col" className={`${CABECERA} w-36`}>Habilitación</th>
+                  <th scope="col" className={`${CABECERA} w-44`}>Última actualización</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((item, i) => {
+                {items.map(item => {
                   const lifecycle = lifecycleStyle('carrier', item.operational_status)
+                  const enablement = enablementStyle(item.compliance_summary, item.operational_status === 'ACTIVE')
+                  const href = carrierHref(item.id, returnTo)
                   return (
-                  <tr
-                    key={item.id}
-                    onClick={() => setSelected(item)}
-                    className={`border-b border-border/60 last:border-0 cursor-pointer transition-colors ${
-                      selected?.id === item.id ? 'bg-accent/5' : i % 2 === 1 ? 'bg-gray-50/40 hover:bg-gray-50' : 'hover:bg-gray-50/70'
-                    }`}
-                  >
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-                          <Building2 size={14} className="text-gray-400" />
-                        </div>
-                        <p className="font-semibold text-text-primary truncate leading-tight">
-                          {item.business_name || <span className="italic text-gray-400">Sin nombre</span>}
-                        </p>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 font-mono text-xs text-gray-500">{item.tax_id}</td>
-                    <td className="px-3 py-3">
-                      <StatusChip tone={lifecycle.tone} icon={lifecycle.icon}>{lifecycle.label}</StatusChip>
-                    </td>
-                    <td className="px-3 py-3">
-                      {(() => {
-                        const s = enablementStyle(item.compliance_summary, item.operational_status === 'ACTIVE')
-                        return <StatusChip tone={s.tone} icon={s.icon}>{s.label}</StatusChip>
-                      })()}
-                    </td>
-                    <td className="px-3 py-3 text-xs text-gray-500">{updatedRelative(item.last_document_update) ?? '—'}</td>
-                    <td className="px-3 py-3 text-center">
-                      {/* prefetch=false: mismo motivo que TransporterCard — evita que Next.js
-                         prefetchee las 100 filas visibles a la vez y agote el rate limit. */}
-                      <Link
-                        href={carrierHref(item.id, returnTo)}
-                        prefetch={false}
-                        onClick={e => e.stopPropagation()}
-                        title="Ver ficha completa"
-                        className="text-gray-300 hover:text-accent transition-colors"
-                      >
-                        <ChevronRight size={15} />
-                      </Link>
-                    </td>
-                  </tr>
+                    // La fila entera abre la ficha, como en Conductores y Equipos; el
+                    // nombre es el enlace (Ctrl/Cmd + clic, lector de pantalla).
+                    <tr
+                      key={item.id}
+                      onClick={() => router.push(href)}
+                      className="border-b border-border/60 last:border-0 cursor-pointer transition-colors hover:bg-bg-main"
+                    >
+                      <td className="px-3 py-2.5">
+                        {/* prefetch=false: precargar las 100 filas visibles agota el límite de tasa. */}
+                        <Link href={href} prefetch={false} onClick={e => e.stopPropagation()}
+                              className="font-semibold text-text-primary hover:text-accent">
+                          {item.business_name || <span className="italic text-informativo">Sin nombre</span>}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2.5 font-identificador text-etiqueta text-informativo">{item.tax_id}</td>
+                      <td className="px-3 py-2.5"><StatusChip tone={lifecycle.tone} icon={lifecycle.icon}>{lifecycle.label}</StatusChip></td>
+                      <td className="px-3 py-2.5"><StatusChip tone={enablement.tone} icon={enablement.icon}>{enablement.label}</StatusChip></td>
+                      <td className="px-3 py-2.5 text-etiqueta text-informativo whitespace-nowrap">{updatedRelative(item.last_document_update) ?? '—'}</td>
+                    </tr>
                   )
                 })}
               </tbody>
@@ -349,22 +299,20 @@ function EmpresasTransportePageInner() {
           <button
             onClick={() => setPage(p => Math.max(1, p - 1))}
             disabled={page <= 1}
-            className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-informativo hover:border-accion disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ChevronLeft size={13} /> Anterior
           </button>
-          <span className="text-xs text-gray-400">Página {page} de {totalPages}</span>
+          <span className="text-xs text-informativo">Página {page} de {totalPages}</span>
           <button
             onClick={() => setPage(p => Math.min(totalPages, p + 1))}
             disabled={page >= totalPages}
-            className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-informativo hover:border-accion disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Siguiente <ChevronRight size={13} />
           </button>
         </div>
       )}
-
-      <TransporterSlideOver item={selected} onClose={() => setSelected(null)} />
     </div>
   )
 }

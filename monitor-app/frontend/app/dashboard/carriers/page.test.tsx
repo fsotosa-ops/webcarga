@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { complianceSummary } from '@/lib/states.fixtures'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -10,8 +10,9 @@ import type { CarrierListResponse } from '@/lib/types'
 
 vi.mock('next/navigation', () => ({ useRouter: vi.fn(), useSearchParams: vi.fn() }))
 vi.mock('@/lib/supabase/client', () => ({ createClient: vi.fn() }))
-// Sin sesión: sin permisos de escritura.
-vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => false }))
+// Sin sesión: sin permisos de escritura, salvo el test que lo pide.
+let canEdit = false
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => canEdit }))
 vi.mock('@/lib/api/carriers', () => ({
   carriersApi: { list: vi.fn(), create: vi.fn(), buscar: vi.fn() },
 }))
@@ -32,6 +33,8 @@ function renderPage() {
 const pushMock = vi.fn()
 
 beforeEach(() => {
+  canEdit = false
+  localStorage.clear()
   pushMock.mockReset()
   vi.mocked(useRouter).mockReturnValue({ push: pushMock } as unknown as ReturnType<typeof useRouter>)
   vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams() as unknown as ReturnType<typeof useSearchParams>)
@@ -205,10 +208,78 @@ describe('EmpresasTransportePage', () => {
         total_requirements: 3, last_document_update: null, compliance_summary: complianceSummary() }],
     })
     renderPage()
-    const enlaces = await screen.findAllByTitle('Ver ficha completa')
-    for (const a of enlaces) {
-      expect(new URL(a.getAttribute('href')!, 'http://x').searchParams.get('next')).toBe('/dashboard/carriers?q=andes')
-    }
+    const enlace = await screen.findByRole('link', { name: /Transportes Andes/ })
+    expect(new URL(enlace.getAttribute('href')!, 'http://x').searchParams.get('next')).toBe('/dashboard/carriers?q=andes')
   })
 })
 
+// La lista de empresas del Directorio con el kit (15/10, después de la Entrega 2):
+// una empresa se mira en su ficha (o en la vista rápida), no en un tercer modal.
+const ANDES = { id: 'c1', tax_id: '76555555-8', country_code: 'CL', business_name: 'Transportes Andes', operational_status: 'ACTIVE' as const,
+  total_requirements: 3, last_document_update: null, compliance_summary: complianceSummary() }
+
+function withAndes() {
+  vi.mocked(carriersApi.list).mockResolvedValue({
+    ...emptyResponse(), count: 1, facets: { total: 1, enabled: 0, not_enabled: 1 }, data: [ANDES],
+  })
+}
+
+describe('Directorio › Empresas con el kit', () => {
+  it('L1: el clic en una fila de la tabla abre la ficha, con la lista para volver, sin modal', async () => {
+    localStorage.setItem('empresas:vista', 'tabla')
+    withAndes()
+    renderPage()
+    // En la vista Tabla también existen las tarjetas del teléfono (jsdom no aplica `md:`).
+    const nombre = (await screen.findAllByRole('link', { name: /Transportes Andes/ })).find(a => a.closest('tr'))!
+    fireEvent.click(nombre.closest('tr')!)
+    expect(pushMock).toHaveBeenCalledWith('/dashboard/carriers/c1?next=%2Fdashboard%2Fcarriers')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('L2: en Tarjetas, la tarjeta es un enlace a la ficha', async () => {
+    withAndes()
+    renderPage()
+    const tarjeta = await screen.findByRole('link', { name: /Transportes Andes/ })
+    expect(tarjeta).toHaveAttribute('href', '/dashboard/carriers/c1?next=%2Fdashboard%2Fcarriers')
+    fireEvent.click(tarjeta)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('L3: ciclo de vida y habilitación se eligen con el control segmentado del kit', async () => {
+    withAndes()
+    renderPage()
+    await screen.findByRole('link', { name: /Transportes Andes/ })
+    const ciclo = screen.getByRole('group', { name: 'Ciclo de vida' })
+    const activas = within(ciclo).getByRole('button', { name: /^Activas/ })
+    expect(activas).toHaveAttribute('aria-pressed', 'true')
+    expect(activas.className).toMatch(/text-accion/)
+    const habilitacion = screen.getByRole('group', { name: 'Habilitación' })
+    expect(within(habilitacion).getAllByRole('button').map(b => b.title)).toEqual(['Todas', 'No habilitadas', 'Habilitadas'])
+  })
+
+  it('L4: la tabla usa la cabecera del kit, sin mayúsculas', async () => {
+    localStorage.setItem('empresas:vista', 'tabla')
+    withAndes()
+    renderPage()
+    await screen.findAllByRole('link', { name: /Transportes Andes/ })
+    const empresa = screen.getByRole('columnheader', { name: 'Empresa' })
+    expect(empresa.className).not.toMatch(/uppercase/)
+    expect(empresa.className).toMatch(/text-etiqueta/)
+  })
+
+  it('L5: "Nueva empresa" es la acción principal del encabezado', async () => {
+    canEdit = true
+    renderPage()
+    const boton = await screen.findByRole('button', { name: /Nueva empresa/ })
+    expect(boton.className).toMatch(/bg-accent/)
+    const encabezado = screen.getByRole('heading', { level: 1 }).parentElement!.parentElement!
+    expect(encabezado).toContainElement(boton)
+  })
+
+  it('L6: mientras carga, los controles no muestran conteos (un "0" en vuelo miente)', async () => {
+    vi.mocked(carriersApi.list).mockReturnValue(new Promise(() => {}))
+    renderPage()
+    const activas = await screen.findByRole('button', { name: /^Activas/ })
+    expect(activas).toHaveTextContent(/^Activas$/)
+  })
+})
