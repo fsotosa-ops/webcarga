@@ -35,6 +35,7 @@ from ..services.fleet_compliance import (
 from ..services.entity_summary import carrier_summary
 from ..services.fleet_driver_gap import compute_fleet_driver_gap
 from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
+from ..services import insurance
 from ..utils.identity import plate_matches_sql, rut_matches_sql
 from ..utils.document_storage import build_documents_zip, resolve_signed_url, safe_storage_name
 
@@ -170,104 +171,25 @@ async def list_carriers(
 #    con el path param (mismo nivel de profundidad). No expone cuotas
 #    individuales cross-empresa — eso quedó descartado explícitamente. ────
 
-_INSURANCE_HEALTH_VALUES = {"EXPIRED", "EXPIRING_SOON", "VALID", "CANCELLED"}
-
-_INSURANCE_OVERVIEW_AGG = """
-    SELECT c.id AS carrier_id, c.business_name, c.tax_id, c.operational_status,
-           COUNT(p.policy_id) AS total_policies,
-           COALESCE(SUM(p.overdue_installments), 0) AS total_overdue_installments,
-           MIN(p.next_payment_date) AS next_payment_date,
-           CASE
-               WHEN COUNT(p.policy_id) = 0 THEN NULL
-               WHEN BOOL_OR(p.policy_health = 'EXPIRED') THEN 'EXPIRED'
-               WHEN BOOL_OR(p.policy_health = 'EXPIRING_SOON') THEN 'EXPIRING_SOON'
-               WHEN BOOL_OR(p.policy_health = 'VALID') THEN 'VALID'
-               ELSE 'CANCELLED'
-           END AS worst_policy_health
-    FROM public.carriers c
-    LEFT JOIN app.carrier_insurance_status p ON p.carrier_id = c.id
-    {q_where}
-    GROUP BY c.id, c.business_name, c.tax_id, c.operational_status
-"""
-
-
 @router.get("/insurance-overview", response_model=CarrierInsuranceOverviewResponse)
 async def list_carriers_insurance_overview(
-    q: str = Query("", description="Buscar por nombre o tax_id"),
-    health: str = Query("", description="EXPIRED|EXPIRING_SOON|VALID|CANCELLED|NONE — filtra por worst_policy_health"),
-    operational_status: str = Query("", description="ACTIVE|INACTIVE|LEGACY_INACTIVE|ONBOARDING — filtra por estado de la empresa, mismo eje que /carriers"),
+    q: str = Query("", description="Buscar por nombre o RUT"),
+    health: str = Query("", description="EXPIRED|EXPIRING_SOON|VALID|NONE"),
+    operational_status: str = Query("", description="ACTIVE|INACTIVE|LEGACY_INACTIVE|ONBOARDING"),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     pool=Depends(get_pool),
-    _=Depends(require(Permission.DIRECTORY_READ)),
+    _=Depends(require(Permission.INSURANCE_READ)),
 ):
-    if health and health != "NONE" and health not in _INSURANCE_HEALTH_VALUES:
+    """Compatibilidad con la pantalla de Seguros de hoy: lee app.carrier_insurance_summary
+    (la misma regla que /policies y /trips). La reemplaza GET /policies?group_by=carrier y
+    se borra en la Entrega 2 de Seguros."""
+    if health and health not in {"EXPIRED", "EXPIRING_SOON", "VALID", "CANCELLED", "NONE"}:
         raise HTTPException(422, "health inválido")
-
-    q_params: list = []
-    q_clauses: list[str] = []
-    if q:
-        q_params.append(q)
-        q_clauses.append(f"(c.business_name ILIKE '%' || ${len(q_params)} || '%' OR {rut_matches_sql('c.tax_id', f'${len(q_params)}')})")
-    if operational_status:
-        q_params.append(_estados(operational_status))
-        q_clauses.append(f"c.operational_status = ANY(${len(q_params)}::text[])")
-    q_where = ("WHERE " + " AND ".join(q_clauses)) if q_clauses else ""
-    agg_cte = f"WITH agg AS ({_INSURANCE_OVERVIEW_AGG.format(q_where=q_where)})"
-
-    health_params = list(q_params)
-    if health == "NONE":
-        health_where = "WHERE worst_policy_health IS NULL"
-    elif health:
-        health_params.append(health)
-        health_where = f"WHERE worst_policy_health = ${len(health_params)}"
-    else:
-        health_where = ""
-
-    offset = (page - 1) * limit
-    lp, op = len(health_params) + 1, len(health_params) + 2
-
-    rows = await pool.fetch(
-        f"""
-        {agg_cte}
-        SELECT * FROM agg
-        {health_where}
-        ORDER BY
-            CASE worst_policy_health
-                WHEN 'EXPIRED' THEN 1
-                WHEN 'EXPIRING_SOON' THEN 2
-                WHEN 'VALID' THEN 3
-                WHEN 'CANCELLED' THEN 4
-                ELSE 5
-            END,
-            total_overdue_installments DESC,
-            business_name ASC
-        LIMIT ${lp} OFFSET ${op}
-        """,
-        *health_params, limit, offset,
+    return await insurance.legacy_insurance_overview(
+        pool, q=q, health=health, operational_status=_estados(operational_status) if operational_status else None,
+        page=page, limit=limit,
     )
-    count = await pool.fetchval(f"{agg_cte} SELECT count(*) FROM agg {health_where}", *health_params)
-    facets = await pool.fetchrow(
-        f"""
-        {agg_cte}
-        SELECT
-            COUNT(*) FILTER (WHERE worst_policy_health = 'EXPIRED') AS expired,
-            COUNT(*) FILTER (WHERE worst_policy_health = 'EXPIRING_SOON') AS expiring_soon,
-            COUNT(*) FILTER (WHERE worst_policy_health = 'VALID') AS valid,
-            COUNT(*) FILTER (WHERE worst_policy_health = 'CANCELLED') AS cancelled,
-            COUNT(*) FILTER (WHERE worst_policy_health IS NULL) AS no_policy,
-            COUNT(*) AS total
-        FROM agg
-        """,
-        *q_params,
-    )
-    return {
-        "data": [dict(r) for r in rows],
-        "count": count,
-        "page": page,
-        "limit": limit,
-        "facets": dict(facets),
-    }
 
 
 async def _assemble_carrier_detail(carrier_id: str, pool, supabase=None) -> dict:
@@ -915,18 +837,8 @@ async def create_carrier_contact(
 # ── Pólizas de seguro (H2.3 — ver routers/policies.py para el resto del CRUD) ──
 
 @router.get("/{carrier_id}/policies")
-async def list_carrier_policies(carrier_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
-    rows = await pool.fetch(
-        """
-        SELECT policy_id AS id, insurance_company, policy_number, coverage_names,
-               total_assets_covered, policy_expiration_date, policy_health, missing_physical_file,
-               total_installments, paid_installments, overdue_installments, next_payment_date
-        FROM app.carrier_insurance_status WHERE carrier_id = $1
-        ORDER BY policy_expiration_date NULLS LAST
-        """,
-        carrier_id,
-    )
-    return [dict(r) for r in rows]
+async def list_carrier_policies(carrier_id: str, pool=Depends(get_pool), _=Depends(require(Permission.INSURANCE_READ))):
+    return await insurance.carrier_policies(pool, carrier_id)
 
 
 @router.post("/{carrier_id}/policies", status_code=201)

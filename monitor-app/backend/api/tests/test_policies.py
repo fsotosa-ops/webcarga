@@ -35,14 +35,16 @@ def test_get_policy_assembles_coverages_assets_installments():
         "id": "p1", "carrier_id": "c1", "insurance_company": "HDI", "policy_number": "87974",
         "valid_from": None, "valid_to": None, "expiration_alert_days": 30,
         "policy_document_url": None, "has_endorsement": False, "endorsement_document_url": None,
-        "external_portal_url": None, "status": "ACTIVE", "is_manual_override": False,
+        "external_portal_url": None, "status": "ACTIVE", "cancelled_at": None, "cancelled_reason": None, "is_manual_override": False,
         "created_at": None, "updated_at": None,
     }
     pool.fetch.side_effect = [
         [{"coverage_type_id": "ct1", "code": "VEHICULOS_MOTORIZADOS", "name": "Vehículos Motorizados"}],
         [{"asset_id": "a1", "license_plate": "ABCD12", "asset_type": "TRACTOCAMION"}],
-        [{"id": "i1", "installment_number": 1, "total_installments": 2, "amount_uf": 1.04,
-          "due_date": None, "payment_status": "PENDING", "paid_at": None}],
+        # Las cuotas salen de app.insurance_status (Seguros E1): la forma de la vista.
+        [{"id": "i1", "installment_number": 1, "installments_total": 2, "amount_uf": 1.04, "due_date": None,
+          "due_in_days": None, "installment_state": "PENDING", "paid": False, "paid_on": None, "paid_by": None,
+          "outside_validity": False}],
     ]
     client = make_client(pool)
 
@@ -61,7 +63,7 @@ def test_patch_policy_optimistic_lock_conflict():
     wire_transactional_conn(pool, conn)
     conn.fetchrow.return_value = {
         "updated_at": "2026-07-16T10:00:00", "carrier_id": "c1", "insurance_company": "HDI",
-        "policy_number": "1", "valid_from": None, "valid_to": None, "status": "ACTIVE",
+        "policy_number": "1", "valid_from": None, "valid_to": None, "status": "ACTIVE", "cancelled_at": None, "cancelled_reason": None,
         "expiration_alert_days": 30, "external_portal_url": None,
     }
     client = make_client(pool)
@@ -80,14 +82,14 @@ def test_patch_policy_sets_manual_override():
     wire_transactional_conn(pool, conn)
     conn.fetchrow.return_value = {
         "updated_at": None, "carrier_id": "c1", "insurance_company": "HDI",
-        "policy_number": "1", "valid_from": None, "valid_to": None, "status": "ACTIVE",
+        "policy_number": "1", "valid_from": None, "valid_to": None, "status": "ACTIVE", "cancelled_at": None, "cancelled_reason": None,
         "expiration_alert_days": 30, "external_portal_url": None,
     }
     pool.fetchrow.return_value = {
         "id": "p1", "carrier_id": "c1", "insurance_company": "Chubb", "policy_number": "1",
         "valid_from": None, "valid_to": None, "expiration_alert_days": 30,
         "policy_document_url": None, "has_endorsement": False, "endorsement_document_url": None,
-        "external_portal_url": None, "status": "ACTIVE", "is_manual_override": True,
+        "external_portal_url": None, "status": "ACTIVE", "cancelled_at": None, "cancelled_reason": None, "is_manual_override": True,
         "created_at": None, "updated_at": None,
     }
     pool.fetch.side_effect = [[], [], []]
@@ -226,14 +228,14 @@ def test_patch_policy_updates_has_endorsement():
     wire_transactional_conn(pool, conn)
     conn.fetchrow.return_value = {
         "updated_at": None, "carrier_id": "c1", "insurance_company": "HDI",
-        "policy_number": "1", "valid_from": None, "valid_to": None, "status": "ACTIVE",
+        "policy_number": "1", "valid_from": None, "valid_to": None, "status": "ACTIVE", "cancelled_at": None, "cancelled_reason": None,
         "expiration_alert_days": 30, "has_endorsement": False, "external_portal_url": None,
     }
     pool.fetchrow.return_value = {
         "id": "p1", "carrier_id": "c1", "insurance_company": "HDI", "policy_number": "1",
         "valid_from": None, "valid_to": None, "expiration_alert_days": 30,
         "policy_document_url": None, "has_endorsement": True, "endorsement_document_url": None,
-        "external_portal_url": None, "status": "ACTIVE", "is_manual_override": True,
+        "external_portal_url": None, "status": "ACTIVE", "cancelled_at": None, "cancelled_reason": None, "is_manual_override": True,
         "created_at": None, "updated_at": None,
     }
     pool.fetch.side_effect = [[], [], []]
@@ -253,7 +255,7 @@ def test_patch_policy_updates_endorsement_number():
     wire_transactional_conn(pool, conn)
     conn.fetchrow.return_value = {
         "updated_at": None, "carrier_id": "c1", "insurance_company": "HDI",
-        "policy_number": "1", "valid_from": None, "valid_to": None, "status": "ACTIVE",
+        "policy_number": "1", "valid_from": None, "valid_to": None, "status": "ACTIVE", "cancelled_at": None, "cancelled_reason": None,
         "expiration_alert_days": 30, "has_endorsement": True, "endorsement_number": None,
         "external_portal_url": None,
     }
@@ -262,7 +264,7 @@ def test_patch_policy_updates_endorsement_number():
         "valid_from": None, "valid_to": None, "expiration_alert_days": 30,
         "policy_document_url": None, "has_endorsement": True, "endorsement_number": "END-99",
         "endorsement_document_url": None,
-        "external_portal_url": None, "status": "ACTIVE", "is_manual_override": True,
+        "external_portal_url": None, "status": "ACTIVE", "cancelled_at": None, "cancelled_reason": None, "is_manual_override": True,
         "created_at": None, "updated_at": None,
     }
     pool.fetch.side_effect = [[], [], []]
@@ -461,7 +463,7 @@ def test_delete_policy_file_clears_column_and_removes_from_storage():
         "id": "p1", "carrier_id": "c1", "insurance_company": "SURA", "policy_number": "1",
         "valid_from": None, "valid_to": None, "expiration_alert_days": 30,
         "policy_document_url": None, "has_endorsement": False, "endorsement_number": None,
-        "endorsement_document_url": None, "external_portal_url": None, "status": "ACTIVE",
+        "endorsement_document_url": None, "external_portal_url": None, "status": "ACTIVE", "cancelled_at": None, "cancelled_reason": None,
         "is_manual_override": True, "created_at": None, "updated_at": None,
     }
     pool.fetch.return_value = []
@@ -490,7 +492,7 @@ def test_delete_policy_file_endorsement_kind_clears_endorsement_column():
         "id": "p1", "carrier_id": "c1", "insurance_company": "SURA", "policy_number": "1",
         "valid_from": None, "valid_to": None, "expiration_alert_days": 30,
         "policy_document_url": None, "has_endorsement": True, "endorsement_number": "END-1",
-        "endorsement_document_url": None, "external_portal_url": None, "status": "ACTIVE",
+        "endorsement_document_url": None, "external_portal_url": None, "status": "ACTIVE", "cancelled_at": None, "cancelled_reason": None,
         "is_manual_override": True, "created_at": None, "updated_at": None,
     }
     pool.fetch.return_value = []
@@ -511,7 +513,7 @@ def test_get_policy_resolves_signed_urls():
         "valid_from": None, "valid_to": None, "expiration_alert_days": 30,
         "policy_document_url": "policy/p1/document/x.pdf", "has_endorsement": False,
         "endorsement_document_url": None,
-        "external_portal_url": None, "status": "ACTIVE", "is_manual_override": False,
+        "external_portal_url": None, "status": "ACTIVE", "cancelled_at": None, "cancelled_reason": None, "is_manual_override": False,
         "created_at": None, "updated_at": None,
     }
     pool.fetch.side_effect = [[], [], []]

@@ -85,3 +85,38 @@ async def test_S2_installment_state_is_computed_on_read(conexion_revertida):
     assert rows[pending]["outside_validity"] is False
     # El total sale de contar las cuotas, no de la columna copiada.
     assert {r["installments_total"] for r in rows.values()} == {4}
+
+
+async def test_las_lecturas_de_seguros_corren_contra_la_base(conexion_revertida):
+    """El SQL de services/insurance.py, ejecutado con parámetros (no literales)."""
+    from app.services import insurance
+
+    conn = conexion_revertida
+    today = await _today(conn)
+    carrier = await _carrier(conn)
+    policy = await _policy(conn, carrier, valid_from=today - timedelta(days=60), valid_to=today - timedelta(days=1))
+    for n, delta in ((1, -40), (2, -10)):
+        await conn.execute(
+            "INSERT INTO public.insurance_installments (policy_id, installment_number, total_installments, amount_uf, due_date) "
+            "VALUES ($1, $2, 2, 3.1, $3)", policy, n, today + timedelta(days=delta),
+        )
+
+    pol = await insurance.list_policies(conn, q="Seguros Test", state="EXPIRED")
+    assert [r["id"] for r in pol["data"]] == [policy]
+    assert pol["data"][0]["overdue_installments"] == 2 and pol["facets"]["UNPAID"] >= 1
+
+    emp = await insurance.list_carriers(conn, q="76000000", state="EXPIRED")
+    assert [r["carrier_id"] for r in emp["data"]] == [carrier]
+    assert emp["data"][0]["insurance_alert"] == "EXPIRED"
+
+    cuo = await insurance.list_installments(conn, q="Seguros Test", state="OVERDUE")
+    assert len(cuo["data"]) == 2 and cuo["facets"]["OVERDUE"] == 2
+
+    legacy = await insurance.carrier_policies(conn, carrier)
+    assert legacy[0]["policy_health"] == "EXPIRED" and legacy[0]["total_installments"] == 2
+
+    overview = await insurance.legacy_insurance_overview(conn, q="Seguros Test", health="", operational_status=["ACTIVE"], page=1, limit=10)
+    assert overview["data"][0]["worst_policy_health"] == "EXPIRED"
+
+    cuotas = await insurance.policy_installments(conn, policy)
+    assert [c["payment_status"] for c in cuotas] == ["OVERDUE", "OVERDUE"]

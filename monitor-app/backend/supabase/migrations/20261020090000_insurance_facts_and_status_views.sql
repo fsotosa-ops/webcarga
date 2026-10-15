@@ -50,7 +50,9 @@ DROP FUNCTION IF EXISTS public.refresh_insurance_view();
 DROP MATERIALIZED VIEW IF EXISTS app.carrier_insurance_status;
 
 -- 5. El estado de la póliza y de cada cuota: UNA regla, calculada al leer.
---    "Hoy" es la fecha de Chile. Una fila por cuota, y una por póliza sin cuotas.
+--    "Hoy" es la fecha de Chile, solo aquí: los días que faltan (expires_in_days,
+--    due_in_days) salen de la vista para que nadie más recalcule "hoy".
+--    Una fila por cuota, y una por póliza sin cuotas.
 CREATE OR REPLACE VIEW app.insurance_status AS
 WITH hoy AS (
     SELECT (now() AT TIME ZONE 'America/Santiago')::date AS d,
@@ -71,6 +73,7 @@ SELECT
         WHEN p.valid_to <= hoy.d + hoy.aviso   THEN 'EXPIRING'
         ELSE 'VALID'
     END                          AS policy_state,
+    p.valid_to - hoy.d           AS expires_in_days,
     i.id                         AS installment_id,
     i.installment_number,
     count(i.id) OVER (PARTITION BY p.id) AS installments_total,
@@ -85,6 +88,7 @@ SELECT
         WHEN i.due_date < hoy.d  THEN 'OVERDUE'
         ELSE 'PENDING'
     END                          AS installment_state,
+    i.due_date - hoy.d           AS due_in_days,
     (i.id IS NOT NULL AND i.due_date IS NOT NULL
         AND (i.due_date < p.valid_from OR i.due_date > p.valid_to)) AS outside_validity
 FROM public.insurance_policies p

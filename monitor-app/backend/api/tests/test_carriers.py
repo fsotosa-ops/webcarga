@@ -123,7 +123,8 @@ def test_list_carriers_insurance_overview_aggregates_by_carrier():
     assert body["facets"] == {"expired": 1, "expiring_soon": 0, "valid": 0, "cancelled": 0, "no_policy": 0, "total": 1}
     fetch_query = pool.fetch.call_args.args[0]
     assert "FROM public.carriers c" in fetch_query
-    assert "LEFT JOIN app.carrier_insurance_status p ON p.carrier_id = c.id" in fetch_query
+    # Seguros E1: la misma vista de empresa que /policies y /trips, no la materializada.
+    assert "LEFT JOIN app.carrier_insurance_summary s ON s.carrier_id = c.id" in fetch_query
     count_query = pool.fetchval.call_args.args[0]
     assert "count(*)" in count_query
 
@@ -839,21 +840,27 @@ def test_create_carrier_contact_rejects_mismatched_entity():
 
 
 def test_list_carrier_policies_reads_from_insurance_status_view():
+    """Seguros E1: las pólizas de la empresa salen de app.insurance_status, con su
+    estado calculado y los nombres que lee el frontend de hoy."""
     pool = AsyncMock()
     pool.fetch.return_value = [{
-        "id": "p1", "insurance_company": "HDI", "policy_number": "87974",
-        "coverage_names": "Vehículos Motorizados", "total_assets_covered": 1,
-        "policy_expiration_date": None, "policy_health": "VALID",
-        "total_installments": 2, "paid_installments": 1, "overdue_installments": 0,
-        "next_payment_date": None,
+        "id": "p1", "carrier_id": "c1", "carrier_name": "Acme", "carrier_tax_id": "1-9",
+        "insurance_company": "HDI", "policy_number": "87974", "valid_from": None, "valid_to": None,
+        "has_file": False, "policy_state": "EXPIRING", "expires_in_days": 10, "installments_total": 2,
+        "paid_installments": 1, "unpaid_installments": 1, "overdue_installments": 0, "next_due_date": None,
+        "has_outside_validity": False,
     }]
+    pool.fetchrow.return_value = {"total": 1}
     client = make_client(pool)
 
     res = client.get("/api/v1/carriers/c1/policies")
 
     assert res.status_code == 200
-    assert res.json()[0]["insurance_company"] == "HDI"
-    assert "FROM app.carrier_insurance_status" in pool.fetch.call_args.args[0]
+    fila = res.json()[0]
+    assert fila["insurance_company"] == "HDI"
+    assert fila["policy_state"] == "EXPIRING" and fila["policy_health"] == "EXPIRING_SOON"
+    assert fila["total_installments"] == 2 and fila["missing_physical_file"] is True
+    assert "FROM app.insurance_status" in pool.fetch.call_args.args[0]
 
 
 def test_create_carrier_policy_rejects_mismatched_carrier_id():

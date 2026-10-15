@@ -6,7 +6,7 @@ insurance.py de Checkpoint A-E (columnas planas coverage/plate, borrado
 import calendar
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require
@@ -15,6 +15,7 @@ from ..schemas.insurance import (
     InstallmentPatchBody, InstallmentScheduleGenerateBody, InsurancePolicyPatchBody,
     PolicyAssetLinkBody, PolicyCoverageLinkBody,
 )
+from ..services import insurance
 from ..services.audit import log_change, record_manual_edit
 from ..utils.document_storage import (
     delete_document_version, log_document_replacement, resolve_signed_url, upload_document_version,
@@ -37,9 +38,8 @@ async def _assemble_policy_detail(policy_id: str, pool, supabase=None) -> dict:
     policy = await pool.fetchrow(
         """
         SELECT id, carrier_id, insurance_company, policy_number, valid_from, valid_to,
-               expiration_alert_days, policy_document_url, has_endorsement, endorsement_number,
-               endorsement_document_url,
-               external_portal_url, status, is_manual_override, created_at, updated_at
+               policy_document_url, has_endorsement, endorsement_number, endorsement_document_url,
+               external_portal_url, cancelled_at, cancelled_reason, is_manual_override, created_at, updated_at
         FROM public.insurance_policies WHERE id = $1
         """,
         policy_id,
@@ -63,19 +63,16 @@ async def _assemble_policy_detail(policy_id: str, pool, supabase=None) -> dict:
         """,
         policy_id,
     )
-    installments = await pool.fetch(
-        """
-        SELECT id, installment_number, total_installments, amount_uf, due_date, payment_status, paid_at
-        FROM public.insurance_installments WHERE policy_id = $1 ORDER BY installment_number
-        """,
-        policy_id,
-    )
-
+    # El estado de la póliza y de cada cuota sale de la vista (una sola regla).
+    state = await insurance.policy_state(pool, policy_id) or {"policy_state": None, "expires_in_days": None}
     result = {
         **dict(policy),
+        **state,
+        # Compatibilidad con el frontend de hoy (la retira la Entrega 2).
+        "status": "CANCELLED" if policy["cancelled_at"] else "ACTIVE",
         "coverages": [dict(c) for c in coverages],
         "assets": [dict(a) for a in assets],
-        "installments": [dict(i) for i in installments],
+        "installments": await insurance.policy_installments(pool, policy_id),
     }
     # policy_document_url/endorsement_document_url guardan el storage_path
     # crudo (ver upload_policy_file) — firmarlos antes de devolverlos.
@@ -83,6 +80,26 @@ async def _assemble_policy_detail(policy_id: str, pool, supabase=None) -> dict:
         result["policy_document_url"] = resolve_signed_url(supabase, result["policy_document_url"])
         result["endorsement_document_url"] = resolve_signed_url(supabase, result["endorsement_document_url"])
     return result
+
+
+@router.get("")
+async def list_policies(
+    group_by: str = Query("policy", pattern="^(policy|carrier)$"),
+    state: str = Query(""),
+    q: str = Query(""),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    pool=Depends(get_pool),
+    _=Depends(require(Permission.INSURANCE_READ)),
+):
+    """La lista de Seguros › Pólizas: por póliza o por empresa (incluye las activas sin póliza)."""
+    if group_by == "carrier":
+        if state and state not in insurance.CARRIER_STATES:
+            raise HTTPException(422, "state inválido")
+        return await insurance.list_carriers(pool, state=state, q=q, page=page, limit=limit)
+    if state and state not in insurance.POLICY_FILTERS:
+        raise HTTPException(422, "state inválido")
+    return await insurance.list_policies(pool, state=state, q=q, page=page, limit=limit)
 
 
 @router.get("/{policy_id}")
