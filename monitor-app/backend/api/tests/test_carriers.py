@@ -29,7 +29,8 @@ def _carrier_facets_row(**overrides):
 
 # Las columnas que lee take_summary (D1, Task 5): una empresa sin pendientes.
 RESUMEN_VACIO = {"worst_state": None, "own_overdue": 0, "own_expiring": 0, "own_missing": 0,
-                 "fleet_overdue": 0, "fleet_expiring": 0, "fleet_missing": 0, "can_operate": True}
+                 "fleet_overdue": 0, "fleet_expiring": 0, "fleet_missing": 0, "can_operate": True,
+                 "blocking_own": 0, "blocking_fleet": 0}
 # Conductor o equipo (ruling F1): cifras propias y lo que decide la habilitación.
 RESUMEN_VACIO_ENTIDAD = {"worst_state": None, "overdue": 0, "expiring": 0, "missing": 0,
                          "blocking_mandatory": 0}

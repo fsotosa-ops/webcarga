@@ -7,7 +7,8 @@ import {
 } from './states'
 
 const summary = (over: Partial<ComplianceSummary> = {}): ComplianceSummary => ({
-  worst_state: 'UP_TO_DATE', own: { overdue: 0, expiring: 0, missing: 0 }, fleet: null, can_operate: true, ...over,
+  worst_state: 'UP_TO_DATE', own: { overdue: 0, expiring: 0, missing: 0 }, fleet: null, can_operate: true,
+  blocking: { own: 0, fleet: null }, ...over,
 })
 
 describe('glosario de estados (spec D1 §3)', () => {

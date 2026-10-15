@@ -57,7 +57,7 @@ const FILA = {
   // sin él la fila no pertenece a ningún grupo y no se dibuja.
   management_types: ['TRACTOREO'], trips_30d: 0,
   funnel_bucket: 'not_enabled',
-  compliance_summary: { worst_state: 'MISSING', can_operate: false, own: { overdue: 0, expiring: 0, missing: 1 }, fleet: { overdue: 0, expiring: 0, missing: 0 } },
+  compliance_summary: { worst_state: 'MISSING', can_operate: false, own: { overdue: 0, expiring: 0, missing: 1 }, fleet: { overdue: 0, expiring: 0, missing: 0 }, blocking: { own: 1, fleet: 0 } },
 } satisfies CertificationStatusRow
 
 function setup() {

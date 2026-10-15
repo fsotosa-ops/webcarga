@@ -66,7 +66,7 @@ async def test_la_vista_rapida_del_conductor_trae_su_resumen_y_su_empresa(conexi
     assert resumen["carrier"]["id"] == f["carrier"]
     assert resumen["compliance_summary"] == {
         "worst_state": "MISSING", "own": {"overdue": 0, "expiring": 0, "missing": 1},
-        "fleet": None, "can_operate": False,
+        "fleet": None, "can_operate": False, "blocking": {"own": 1, "fleet": None},
     }
 
 

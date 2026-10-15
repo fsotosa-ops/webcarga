@@ -31,7 +31,12 @@ export interface ComplianceSummary {
   /** Solo empresas: lo de su flota activa. */
   fleet: StateCounts | null
   can_operate: boolean
+  /** Los obligatorios vencidos o faltantes: lo que hace falso a `can_operate`.
+   *  Las cifras de arriba cuentan también los opcionales (fichas, 15/10). */
+  blocking: BlockingCounts
 }
+/** `fleet` solo en empresas (su flota activa). */
+export interface BlockingCounts { own: number; fleet: number | null }
 export interface StateStyle { label: string; tone: StatusTone; icon: LucideIcon }
 
 /** Peor primero; `NOT_REQUIRED` no participa. Espejo de `SEVERITY_ORDER`. */

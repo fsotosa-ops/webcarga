@@ -353,6 +353,7 @@ def _carrier_status_row(**over):
         # Las columnas que lee take_summary (D1, Task 6): una empresa sin pendientes.
         "worst_state": None, "own_overdue": 0, "own_expiring": 0, "own_missing": 0,
         "fleet_overdue": 0, "fleet_expiring": 0, "fleet_missing": 0, "can_operate": True,
+        "blocking_own": 0, "blocking_fleet": 0,
     }
     row.update(over)
     return row

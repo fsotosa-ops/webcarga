@@ -6,6 +6,7 @@ import type { ComplianceSummary } from '@/lib/states'
 const base: ComplianceSummary = {
   worst_state: 'MISSING', can_operate: false,
   own: { overdue: 1, expiring: 2, missing: 3 }, fleet: { overdue: 4, expiring: 0, missing: 1 },
+  blocking: { own: 4, fleet: 5 },
 }
 
 describe('ComplianceCounts', () => {

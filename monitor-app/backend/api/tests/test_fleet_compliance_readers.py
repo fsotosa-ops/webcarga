@@ -4,14 +4,16 @@ from app.services.fleet_compliance import take_summary
 
 def _fila(**extra):
     return {"id": "c1", "worst_state": "OVERDUE", "own_overdue": 1, "own_expiring": 0, "own_missing": 2,
-            "fleet_overdue": 0, "fleet_expiring": 3, "fleet_missing": 0, "can_operate": False, **extra}
+            "fleet_overdue": 0, "fleet_expiring": 3, "fleet_missing": 0, "can_operate": False,
+            "blocking_own": 2, "blocking_fleet": 0, **extra}
 
 
 def test_take_summary_arma_el_resumen_y_saca_las_columnas_sueltas():
     fila = _fila()
     resumen = take_summary(fila, with_fleet=True)
     assert resumen == {"worst_state": "OVERDUE", "own": {"overdue": 1, "expiring": 0, "missing": 2},
-                       "fleet": {"overdue": 0, "expiring": 3, "missing": 0}, "can_operate": False}
+                       "fleet": {"overdue": 0, "expiring": 3, "missing": 0}, "can_operate": False,
+                       "blocking": {"own": 2, "fleet": 0}}
     assert fila == {"id": "c1"}
 
 
@@ -22,7 +24,7 @@ def test_take_summary_de_entidad_arma_la_habilitacion_y_no_toca_el_ciclo_de_vida
             "expiring": 1, "missing": 2, "blocking_mandatory": 2}
     resumen = take_summary(fila, with_fleet=False)
     assert resumen == {"worst_state": "MISSING", "own": {"overdue": 0, "expiring": 1, "missing": 2},
-                       "fleet": None, "can_operate": False}
+                       "fleet": None, "can_operate": False, "blocking": {"own": 2, "fleet": None}}
     assert fila == {"id": "d1", "operational_status": "ACTIVE"}
 
 
@@ -42,7 +44,8 @@ from app.services.fleet_compliance import funnel_bucket_for
 def _resumen(*, can_operate=True, own=(0, 0, 0), fleet=(0, 0, 0)):
     a = dict(zip(("overdue", "expiring", "missing"), own))
     b = dict(zip(("overdue", "expiring", "missing"), fleet))
-    return {"worst_state": "UP_TO_DATE", "own": a, "fleet": b, "can_operate": can_operate}
+    return {"worst_state": "UP_TO_DATE", "own": a, "fleet": b, "can_operate": can_operate,
+            "blocking": {"own": 0 if can_operate else 1, "fleet": 0}}
 
 
 def test_el_balde_de_una_empresa_no_activa_es_ninguno():

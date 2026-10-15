@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from app.schemas import asset, carrier, driver
 from app.schemas.states import (
+    BlockingCounts,
     BLOCKING_STATES, SEVERITY_ORDER, CarrierLifecycle, ComplianceSummary, DocumentState, FleetLifecycle,
     StateCounts,
 )
@@ -36,10 +37,10 @@ def test_los_schemas_usan_el_ciclo_de_vida_del_glosario():
 
 def test_el_resumen_rechaza_un_estado_fuera_del_glosario():
     with pytest.raises(ValidationError):
-        ComplianceSummary(worst_state="CRITICAL", own=StateCounts(), can_operate=True)
+        ComplianceSummary(worst_state="CRITICAL", own=StateCounts(), can_operate=True, blocking=BlockingCounts())
 
 
 def test_el_resumen_sin_flota_es_de_conductor_o_equipo():
-    resumen = ComplianceSummary(worst_state="UP_TO_DATE", own=StateCounts(), can_operate=True)
+    resumen = ComplianceSummary(worst_state="UP_TO_DATE", own=StateCounts(), can_operate=True, blocking=BlockingCounts())
     assert resumen.fleet is None
     assert resumen.own.model_dump() == {"overdue": 0, "expiring": 0, "missing": 0}

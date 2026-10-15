@@ -115,6 +115,7 @@ async def test_empresa_activa_sin_registros_queda_habilitada(conexion_revertida)
         "own": {"overdue": 0, "expiring": 0, "missing": 0},
         "fleet": {"overdue": 0, "expiring": 0, "missing": 0},
         "can_operate": True,
+        "blocking": {"own": 0, "fleet": 0},
     }
 
 

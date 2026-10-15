@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from ..schemas.states import BLOCKING_STATES, SEVERITY_ORDER, ComplianceSummary, FunnelBucket, StateCounts
+from ..schemas.states import BLOCKING_STATES, SEVERITY_ORDER, BlockingCounts, ComplianceSummary, FunnelBucket, StateCounts
 from .vencimientos import (
     PENDING_STATES,
     cubierto_predicate,
@@ -240,7 +240,9 @@ def carrier_compliance_cte() -> str:
            {_cifra('OVERDUE', "o.entity_type <> 'CARRIER'")} AS fleet_overdue,
            {_cifra('EXPIRING', "o.entity_type <> 'CARRIER'")} AS fleet_expiring,
            {_cifra('MISSING', "o.entity_type <> 'CARRIER'")} AS fleet_missing,
-           (c.operational_status = 'ACTIVE' AND NOT COALESCE(bool_or(o.blocks), false)) AS can_operate
+           (c.operational_status = 'ACTIVE' AND NOT COALESCE(bool_or(o.blocks), false)) AS can_operate,
+           count(*) FILTER (WHERE o.blocks AND o.entity_type = 'CARRIER') AS blocking_own,
+           count(*) FILTER (WHERE o.blocks AND o.entity_type <> 'CARRIER') AS blocking_fleet
     FROM public.carriers c
     LEFT JOIN owed o ON o.carrier_id = c.id
     GROUP BY c.id, c.operational_status
@@ -270,12 +272,14 @@ def summary_from_row(row: Mapping[str, Any], *, with_fleet: bool) -> ComplianceS
             fleet=StateCounts(overdue=_n(row, "fleet_overdue"), expiring=_n(row, "fleet_expiring"),
                               missing=_n(row, "fleet_missing")),
             can_operate=bool(row["can_operate"]),
+            blocking=BlockingCounts(own=_n(row, "blocking_own"), fleet=_n(row, "blocking_fleet")),
         )
     return ComplianceSummary(
         worst_state=worst,
         own=StateCounts(overdue=_n(row, "overdue"), expiring=_n(row, "expiring"), missing=_n(row, "missing")),
         fleet=None,
         can_operate=row["operational_status"] == "ACTIVE" and _n(row, "blocking_mandatory") == 0,
+        blocking=BlockingCounts(own=_n(row, "blocking_mandatory")),
     )
 
 
@@ -325,6 +329,7 @@ def alert_severity_sql(alias: str = "cr") -> str:
 CARRIER_SUMMARY_COLUMNS: tuple[str, ...] = (
     "worst_state", "own_overdue", "own_expiring", "own_missing",
     "fleet_overdue", "fleet_expiring", "fleet_missing", "can_operate",
+    "blocking_own", "blocking_fleet",
 )
 # Una fila de conductor o equipo no trae la habilitación hecha: la arma
 # `summary_from_row` con `blocking_mandatory` y el `operational_status` que el

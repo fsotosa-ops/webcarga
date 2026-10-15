@@ -69,6 +69,7 @@ async def test_la_lista_trae_el_resumen_con_la_flota_activa(conexion_revertida):
         "own": {"overdue": 0, "expiring": 0, "missing": 0},
         "fleet": {"overdue": 0, "expiring": 0, "missing": 1},
         "can_operate": False,
+        "blocking": {"own": 0, "fleet": 1},
     }
     # Lo viejo se retiró en la Task 16 (contraer, §9).
     assert not {"compliance_health", "pending_mandatory"} & set(fila)
@@ -167,6 +168,7 @@ async def test_el_roster_trae_el_resumen_de_cada_conductor(conexion_revertida):
         "own": {"overdue": 0, "expiring": 0, "missing": 1},
         "fleet": None,
         "can_operate": False,
+        "blocking": {"own": 1, "fleet": None},
     }
     # Dado de baja y sin pendientes: nada que deba, y aun así no habilitado (R-B2).
     de_baja = filas[f["inactive_driver"]]["compliance_summary"]

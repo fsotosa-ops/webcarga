@@ -7,6 +7,7 @@ import type { ComplianceSummary } from '@/lib/states'
 const RESUMEN: ComplianceSummary = {
   worst_state: 'MISSING', can_operate: false,
   own: { overdue: 0, expiring: 0, missing: 2 }, fleet: { overdue: 1, expiring: 0, missing: 3 },
+  blocking: { own: 2, fleet: 4 },
 }
 
 function fila(over: Partial<CertificationStatusRow> = {}): CertificationStatusRow {
