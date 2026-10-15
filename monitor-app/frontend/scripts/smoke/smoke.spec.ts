@@ -106,13 +106,14 @@ test('Directorio: dar de baja muestra antes lo que toca (D2), sin confirmar', as
   await page.locator('a[href^="/dashboard/carriers/"]').first().waitFor({ timeout: 30000 })
   const fichas = await page.locator('a[href^="/dashboard/carriers/"]')
     .evaluateAll(as => [...new Set(as.map(a => (a as HTMLAnchorElement).getAttribute('href')!))])
-  // La primera empresa activa: solo a ella se le ofrece "Dar de baja".
-  const baja = page.getByRole('button', { name: 'Dar de baja' })
+  // La primera empresa activa: solo a ella se le ofrece "Dar de baja", en el ⋯.
+  const baja = page.getByRole('menuitem', { name: 'Dar de baja' })
   let encontrada = false
   for (const href of fichas.slice(0, 10)) {
     await page.goto(href)
-    await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {})
+    await page.getByRole('button', { name: 'Más acciones' }).click({ timeout: 30000 })
     if (await baja.isVisible().catch(() => false)) { encontrada = true; break }
+    await page.keyboard.press('Escape')
   }
   expect(encontrada, 'ninguna de las primeras 10 empresas está activa').toBe(true)
   await baja.click()
@@ -152,6 +153,8 @@ test('Pedir a Certificación: Operaciones pide un documento y Certificación lo 
     const total = await cards.count()
     for (let i = 0; i < Math.min(total, 4) && !pedido; i++) {
       await cards.nth(i).click()
+      // El modal es la ficha del conductor: sus documentos están en su sección.
+      await ops.getByRole('dialog').getByRole('button', { name: 'Documentos' }).click({ timeout: 15000 })
       const pedir = ops.getByRole('button', { name: /^Pedir .* a Certificación$/ }).first()
       // isVisible no espera: waitFor sí.
       if (await pedir.waitFor({ state: 'visible', timeout: 8000 }).then(() => true, () => false)) {
@@ -194,24 +197,23 @@ test('Directorio › Conductores: filtrar "Sin empresa" y abrir su ficha propia 
   if (await ficha.waitFor({ timeout: 15000 }).then(() => true, () => false)) {
     await ficha.click()
     await page.waitForURL(/\/dashboard\/drivers\/[0-9a-f-]{36}/)
-    await expect(page.getByText('Dónde trabaja')).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('region', { name: 'Detalles' })).toBeVisible({ timeout: 15000 })
   } else {
     // La copia local puede no tener conductores sin empresa: abrir cualquiera.
     await page.goto('/dashboard/drivers')
     await page.locator('tbody a[href^="/dashboard/drivers/"]').first().click()
-    await expect(page.getByText('Dónde trabaja')).toBeVisible({ timeout: 15000 })
+    await expect(page.getByRole('region', { name: 'Detalles' })).toBeVisible({ timeout: 15000 })
   }
   expect(problems).toEqual([])
 })
 
-test('La ficha de un equipo: Actividad → "Ver viajes en el Monitor" (C11)', async ({ page }) => {
+test('La ficha de un equipo: "Ver en el Monitor" desde Detalles (C11)', async ({ page }) => {
   const problems = watch(page)
   await login(page, 'ops@sim.local')
   await page.goto('/dashboard/assets')
   await page.locator('tbody a[href^="/dashboard/assets/"]').first().click()
   await page.waitForURL(/\/dashboard\/assets\/[0-9a-f-]{36}/)
-  await page.getByRole('button', { name: 'Actividad' }).click()
-  await page.getByRole('link', { name: /Ver viajes en el Monitor/ }).click()
+  await page.getByRole('link', { name: /Ver en el Monitor/ }).click()
   await page.waitForURL(/\/operations\/monitor\?tab=historial&q=/)
   const q = new URL(page.url()).searchParams.get('q')!
   await expect(page.locator(`input[value="${q}"]`)).toBeVisible({ timeout: 15000 })
@@ -224,27 +226,22 @@ test('Certificación › Conductores con pendientes: la fila abre la ficha en la
   await page.goto('/dashboard/drivers?documents=pending')
   await page.locator('tbody a[href^="/dashboard/drivers/"]').first().click()
   await page.waitForURL(/\/dashboard\/drivers\/[0-9a-f-]{36}\?tab=documentos/)
-  await expect(page.getByRole('button', { name: 'Documentos' })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByText('Documentación')).toBeVisible({ timeout: 15000 })
+  await expect(page.getByRole('button', { name: 'Documentos' }).first()).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('region', { name: 'Documentos' })).toBeVisible({ timeout: 15000 })
   expect(problems).toEqual([])
 })
 
-test('La ficha de un equipo: sus 4 pestañas abren sin errores', async ({ page }) => {
+test('La ficha de un equipo: Resumen y Documentos abren sin errores', async ({ page }) => {
   const problems = watch(page)
   await login(page, 'ops@sim.local')
   await page.goto('/dashboard/assets')
   await page.locator('tbody a[href^="/dashboard/assets/"]').first().click()
   await page.waitForURL(/\/dashboard\/assets\/[0-9a-f-]{36}/)
   const tabs = page.getByRole('group', { name: 'Secciones del equipo' }).getByRole('button')
-  await expect(tabs).toHaveText(['Resumen', 'Documentos', 'Dónde trabaja', 'Actividad'])
-  await page.getByRole('button', { name: 'Documentos' }).click()
-  await expect(page.getByText('Documentación')).toBeVisible({ timeout: 15000 })
-  await page.getByRole('button', { name: 'Dónde trabaja' }).click()
-  await expect(page.getByRole('heading', { name: 'Dónde trabaja' })).toBeVisible()
-  await page.getByRole('button', { name: 'Actividad' }).click()
-  await expect(page.getByRole('link', { name: /Ver viajes en el Monitor/ })).toBeVisible()
-  await page.getByRole('button', { name: 'Resumen' }).click()
-  await expect(page.getByText('Tipo de equipo', { exact: true })).toBeVisible()
+  await expect(tabs).toHaveText(['Resumen', 'Documentos'])
+  await expect(page.getByRole('region', { name: 'Detalles' }).getByText('Tipo de operación')).toBeVisible({ timeout: 15000 })
+  await tabs.filter({ hasText: 'Documentos' }).click()
+  await expect(page.getByRole('region', { name: 'Documentos' })).toBeVisible({ timeout: 15000 })
   expect(problems).toEqual([])
 })
 
@@ -288,6 +285,63 @@ test('Monitor › Asignar conductor: el alta es la común y un RUT existente ofr
   await page.getByLabel('RUT').fill('14444444-2')
   await page.getByRole('button', { name: 'Crear y asignar' }).click()
   await expect(page.getByRole('button', { name: /^Asignar a / })).toBeVisible({ timeout: 15000 })
+  expect(problems).toEqual([])
+})
+
+// ── Entrega 1 de fichas (kit, fichas y navegación) ─────────────────────────
+
+test('Ficha de conductor: la razón lleva a sus documentos', async ({ page }) => {
+  const problems = watch(page)
+  await login(page, 'cert@sim.local')
+  await page.goto('/dashboard/drivers?documents=pending')
+  const href = await page.locator('tbody a[href^="/dashboard/drivers/"]').first().getAttribute('href', { timeout: 30000 })
+  await page.goto(href!.split('?')[0])
+  await page.getByRole('button', { name: 'Ver documentos' }).click({ timeout: 15000 })
+  const docs = page.getByRole('region', { name: 'Documentos' })
+  await expect(docs).toBeVisible({ timeout: 15000 })
+  await expect(docs.getByRole('group', { name: 'Filtrar documentos' }).locator('[aria-pressed="true"]')).not.toHaveText(/^Todos/)
+  expect(problems).toEqual([])
+})
+
+test('Pendientes: el titular abre su vista rápida (clic y Enter) y de ahí su ficha', async ({ page }) => {
+  const problems = watch(page)
+  await login(page, 'cert@sim.local')
+  await page.goto('/dashboard/compliance/pending')
+  const titular = page.getByRole('link', { name: /^Ver (conductor|equipo|empresa) / }).first()
+  await titular.waitFor({ timeout: 30000 })
+  // RF4: Enter sobre el enlace abre la vista rápida (el navegador lo vuelve clic).
+  await titular.focus()
+  await page.keyboard.press('Enter')
+  const abrir = page.getByRole('link', { name: 'Abrir ficha completa' })
+  await expect(abrir).toBeVisible({ timeout: 15000 })
+  expect(page.url()).toContain('/compliance/pending')
+  await abrir.click()
+  await page.waitForURL(/\/dashboard\/(drivers|assets|carriers)\/[0-9a-f-]{36}/, { timeout: 15000 })
+  expect(problems).toEqual([])
+})
+
+test('Lista filtrada → ficha → volver conserva el filtro', async ({ page }) => {
+  const problems = watch(page)
+  await login(page, 'cert@sim.local')
+  await page.goto('/dashboard/drivers?q=CARLA')
+  await page.locator('tbody a[href^="/dashboard/drivers/"]').first().click({ timeout: 30000 })
+  await page.waitForURL(/\/dashboard\/drivers\/[0-9a-f-]{36}/)
+  await page.getByRole('link', { name: 'Volver a Conductores' }).click({ timeout: 15000 })
+  await page.waitForURL(/\/dashboard\/drivers\?q=CARLA/)
+  expect(problems).toEqual([])
+})
+
+test('Ficha de empresa: el modal de un conductor ofrece su ficha completa', async ({ page }) => {
+  const problems = watch(page)
+  await login(page, 'cert@sim.local')
+  await page.goto('/dashboard/carriers')
+  const href = await page.locator('a[href^="/dashboard/carriers/"]').first().getAttribute('href', { timeout: 30000 })
+  await page.goto(`${href!.split('?')[0]}?tab=conductores`)
+  const card = page.locator('button:has(div.rounded-full.w-8)').first()
+  if (!(await card.waitFor({ timeout: 15000 }).then(() => true, () => false))) test.skip(true, 'la primera empresa no tiene conductores')
+  await card.click()
+  await page.getByRole('dialog').getByRole('link', { name: /Abrir ficha completa/ }).click({ timeout: 15000 })
+  await page.waitForURL(/\/dashboard\/drivers\/[0-9a-f-]{36}\?next=/)
   expect(problems).toEqual([])
 })
 
