@@ -232,9 +232,16 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
 - **DESPLEGADA en dev** (`9f24a0cd`, los dos workflows en verde). Recorrido en dev (solo lectura): Por asignar dice
   "Todo asignado" con "Subir documentos"; la ficha de Huemul › Documentos tiene "Subir documentos" junto a "Exportar
   todo"; sin errores de API. No se subió nada en dev.
-- **Siguiente paso exacto:** lo que decida el usuario: pasar A+B+C+D a `main` (nada está en producción), el popover del
-  Monitor (tercera alta de conductor), o las pestañas de la ficha propia según la maqueta. Pendiente de probar con datos
-  reales: una tanda mezclada subida sin contexto (Pablo/Carla).
+- **Siguiente paso exacto (acordado para el 16/10, ~2–2,5 h, solo pantalla, sin suite del backend):** cerrar lo que
+  queda de C:
+  1. **Pestañas en la ficha propia** de conductor y equipo (`FleetProfile` + paneles en variante `page`), fiel a la
+     maqueta: Resumen · Documentos · Dónde trabaja · Actividad · Contactos (30–45 min).
+  2. **Alta del popover "Asignar conductor" del Monitor dentro de `AltaDeFlota`** (1–1,5 h): `onCreado` devuelve el
+     conductor creado; el caso "ese RUT ya existe → asignar el existente" (409) y los avisos de empresa no habilitada
+     pasan al alta común; el popover gana el origen habitual. Riesgo: las reglas finas del 409 y los avisos; si algo
+     no cuadra, avisar antes de seguir.
+  Después: tsc, vitest, humo, despliegue, recorrido. Luego decide el usuario si A+B+C+D pasan a `main` (nada está en
+  producción). Pendiente de probar con datos reales: una tanda mezclada subida sin contexto (Pablo/Carla).
 - Pendiente con motivo: el alta dentro del popover "Asignar conductor" del Monitor sigue aparte (no es solo un alta: si el
   RUT existe ofrece asignar al existente, avisos, "a todos sus viajes"); unificarla exige que `AltaDeFlota` absorba ese flujo.
 - Tangentes nuevas: `FLEET_SERVICE_TYPE` tiene una fila "Tractocamión" sin `code` mezclada con carrocerías (10 tractos la
