@@ -38,10 +38,10 @@ La pantalla solo pinta lo que manda la API, con el glosario de `lib/states.ts`.
 | Tabla | Cambia |
 |---|---|
 | `insurance_policies` | `status` se retira. Entra `cancelled_at timestamptz` + `cancelled_reason text` (el único estado que decide una persona). `expiration_alert_days` se retira (ver D1) |
-| `insurance_installments` | `payment_status` y `total_installments` se retiran. Entran `paid boolean NOT NULL DEFAULT false`, `paid_at date` (nullable: "pagada, fecha no registrada") y `paid_by uuid` |
+| `insurance_installments` | `payment_status` y `total_installments` se retiran. Entran `paid boolean NOT NULL DEFAULT false`, `paid_on date` (nullable: "pagada, fecha no registrada") y `paid_by uuid`; `paid_at` se retira |
 | `app.alert_thresholds` | Fila nueva `poliza_por_vencer` (`warning_days` = 30), el mismo mecanismo que `documento_por_vencer` |
 
-`paid` y `paid_at` son dos columnas a propósito: un `null` no puede querer decir a la vez "impaga" y "pagada sin fecha"
+`paid` y `paid_on` son dos columnas a propósito: un `null` no puede querer decir a la vez "impaga" y "pagada sin fecha"
 (feedback "un null con dos significados").
 
 ### Estados que se calculan (una vista normal, no materializada)
@@ -61,7 +61,7 @@ La pantalla solo pinta lo que manda la API, con el glosario de `lib/states.ts`.
 
 ### Migración de datos (no inventa nada)
 
-1. `paid := (payment_status = 'PAID')`; `paid_at := paid_at::date` (las 54 sin fecha quedan `paid = true, paid_at = null`).
+1. `paid := (payment_status = 'PAID')`; `paid_on := paid_at::date` (las 54 sin fecha quedan `paid = true, paid_on = null`).
 2. `status = 'CANCELLED'` → `cancelled_at = updated_at` (hoy: 0 filas).
 3. Se borran `status`, `payment_status`, `total_installments`, `expiration_alert_days` (copia previa de las 4 columnas
    en `audit_log`, como la migración de umbrales del 15/10).
@@ -76,7 +76,7 @@ Se ensaya en la copia local y con `ROLLBACK` en la base real; se aplica solo con
 - `GET /policies` (nuevo): la lista de Pólizas, con `group_by=policy|carrier`, filtros por estado (incluye
   `NO_POLICY` agrupando por empresa, `UNPAID` y `NO_FILE`) y `facets`. Reemplaza a `/carriers/insurance-overview`.
 - `GET /installments` (nuevo): la cola de Cuotas, filtros `OVERDUE | DUE_30 | PAID | ALL`, con empresa y póliza.
-- `POST /installments/pay` (nuevo, en lote): `{ ids, paid_at }`, guarda `paid_by`; reemplaza el PATCH de una cuota.
+- `POST /installments/pay` (nuevo, en lote): `{ ids, paid_on }`, guarda `paid_by`; reemplaza el PATCH de una cuota.
 - `POST /policies/{id}/installments/generate` rechaza (422) cuotas fuera de la vigencia.
 - `POST /policies/{id}/cancel` con motivo (reemplaza `status = CANCELLED`).
 - Auditoría: `entity_type = 'INSURANCE_POLICY'` con el id de la póliza para la póliza y sus cuotas.
@@ -124,7 +124,7 @@ de trabajo):
 |---|---|---|
 | S1 | Una póliza con `valid_to` ayer es `EXPIRED` sin que nadie escriba nada (no hay vista materializada) | base local + real |
 | S2 | La cuota impaga con fecha pasada es `OVERDUE`; pagada es `PAID` aunque no tenga fecha | base local |
-| S3 | Pagar en lote guarda `paid`, `paid_at` y `paid_by`, y deja una auditoría por cuota con el id de la póliza | pytest |
+| S3 | Pagar en lote guarda `paid`, `paid_on` y `paid_by`, y deja una auditoría por cuota con el id de la póliza | pytest |
 | S4 | Generar cuotas fuera de la vigencia responde 422 | pytest |
 | S5 | La migración conserva las 60 pagadas (54 sin fecha) y no toca las 44 fuera de vigencia | base local + ROLLBACK real |
 | S6 | El peor estado de la empresa es el mismo en `/policies?group_by=carrier`, la ficha de empresa y `/trips` | pytest |
