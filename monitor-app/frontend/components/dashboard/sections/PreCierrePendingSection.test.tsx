@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PreCierrePendingSection } from './PreCierrePendingSection'
 import type { DailyClosureStatus } from '@/lib/types'
+import { ApiError } from '@/lib/api/client'
 
 vi.mock('@/lib/api/dailyClosures', () => ({
   dailyClosuresApi: { get: vi.fn() },
@@ -10,6 +11,9 @@ vi.mock('@/lib/api/dailyClosures', () => ({
 vi.mock('@/lib/api/carriers', () => ({
   carriersApi: { create: vi.fn(), patch: vi.fn(), assignDriver: vi.fn(), fleetDriverGap: vi.fn().mockResolvedValue({ rows: [] }) },
 }))
+
+vi.mock('@/lib/api/drivers', () => ({ driversApi: { create: vi.fn() } }))
+vi.mock('@/lib/api/locations', () => ({ locationsApi: { list: vi.fn().mockResolvedValue({ data: [] }) } }))
 
 const permisos = vi.hoisted(() => ({ negados: new Set<string>() }))
 vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: (p: string) => !permisos.negados.has(p) }))
@@ -292,5 +296,32 @@ describe('PreCierrePendingSection', () => {
     expect(await screen.findByText('HKXW55')).toBeInTheDocument()
     // Y la consecuencia real, que es que el día no se cierra.
     expect(screen.getByText(/bloquea el cierre del día/)).toBeInTheDocument()
+  })
+
+  // El pendiente busca el RUT igual que el alta: un 409 solo ocurre si alguien
+  // registró a esa persona con la pantalla abierta. La salida relee el cierre
+  // (y el pendiente desaparece); "asignar" no tendría sentido acá.
+  it('CONDUCTOR_NO_REGISTRADO: si el RUT ya existe, ofrece actualizar el cierre y lo relee', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const { driversApi } = await import('@/lib/api/drivers')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [],
+        CONDUCTOR_NO_REGISTRADO: [{ driver_rut: '8245112-9', driver_name_tms: 'JAIME VIDAL' }],
+      },
+    }))
+    vi.mocked(driversApi.create).mockRejectedValue(new ApiError('Jaime Vidal ya está registrado con el RUT 8245112-9.', 409, {
+      code: 'CONDUCTOR_YA_EXISTE', driver_id: 'd-jv', full_name: 'Jaime Vidal',
+      message: 'Jaime Vidal ya está registrado con el RUT 8245112-9.',
+    }))
+    renderSection()
+    fireEvent.click(await screen.findByRole('button', { name: 'Dar de alta a este conductor' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+
+    const salida = await screen.findByRole('button', { name: 'Ya está registrado: actualizar el cierre' })
+    expect(screen.queryByRole('button', { name: /^Asignar a/ })).not.toBeInTheDocument()
+    const lecturas = vi.mocked(dailyClosuresApi.get).mock.calls.length
+    fireEvent.click(salida)
+    await waitFor(() => expect(vi.mocked(dailyClosuresApi.get).mock.calls.length).toBeGreaterThan(lecturas))
   })
 })

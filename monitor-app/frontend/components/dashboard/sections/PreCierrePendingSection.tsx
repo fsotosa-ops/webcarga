@@ -309,6 +309,14 @@ export function PreCierrePendingSection({ fecha }: Props) {
                   prefill={esc.driver_name_tms ?? undefined}
                   etiqueta="Dar de alta a este conductor"
                   onCreado={carrierId => afterChange({ entity: 'driver', type: 'create', carrierIds: [carrierId] })}
+                  /* El pendiente busca el RUT igual que el alta: un 409 solo
+                     ocurre si alguien lo registró mientras esta pantalla
+                     estaba abierta. No hay nada que asignar; releer el
+                     cierre hace desaparecer el pendiente. */
+                  yaExiste={{
+                    accion: () => 'Ya está registrado: actualizar el cierre',
+                    usar: existente => afterChange({ entity: 'driver', id: existente.driver_id, type: 'update' }),
+                  }}
                 />
               ) : noPermission)}
             </div>

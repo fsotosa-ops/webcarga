@@ -65,9 +65,15 @@ interface Props {
    *  asigna los viajes). Si rechaza, el error se muestra acá y el alta no se
    *  cierra. */
   onCreado: (carrierId: string | null, creado: { id: string; full_name?: string }) => Promise<void> | void
-  /** Solo conductores. Con ella, un 409 "ese RUT ya existe" ofrece usar a esa
-   *  persona en vez de quedar en un callejón sin salida (el Monitor la asigna). */
-  onYaExiste?: (existente: ConductorYaExiste) => Promise<void> | void
+  /** Solo conductores. Con ella, un 409 "ese RUT ya existe" ofrece una salida
+   *  en vez de un callejón sin salida. Qué hace la salida lo decide quien aloja
+   *  el alta: el Monitor asigna los viajes a esa persona; el Cierre solo se
+   *  relee, porque el pendiente era que no estuviera registrada. */
+  yaExiste?: {
+    /** El texto del botón, con el nombre de quien ya existe. */
+    accion: (nombre: string) => string
+    usar: (existente: ConductorYaExiste) => Promise<void> | void
+  }
   /** El texto del botón de guardar, si no es "Guardar". */
   etiquetaGuardar?: string
 }
@@ -92,7 +98,7 @@ interface Props {
  */
 export function AltaDeFlota({
   carrierId, rutFijo, etiqueta, tipo, gestionesDeclaradas, prefill, abiertoAlInicio,
-  abierto: abiertoProp, onAbiertoChange, onCreado, onYaExiste, etiquetaGuardar,
+  abierto: abiertoProp, onAbiertoChange, onCreado, yaExiste: salida, etiquetaGuardar,
 }: Props) {
   const controlado = abiertoProp !== undefined
   const [abiertoLocal, setAbiertoLocal] = useState(!!abiertoAlInicio)
@@ -189,7 +195,7 @@ export function AltaDeFlota({
     } catch (e) {
       // El mensaje del backend ya nombra a la persona cuando el RUT existe;
       // tragárselo era exactamente el bug del Diario.
-      setYaExiste(onYaExiste ? conductorYaExiste(e) : null)
+      setYaExiste(salida ? conductorYaExiste(e) : null)
       setError(e instanceof ApiError ? e.message : `No se pudo crear el ${tipo}`)
     } finally {
       setGuardando(false)
@@ -200,7 +206,7 @@ export function AltaDeFlota({
     setGuardando(true)
     setError(null)
     try {
-      await onYaExiste?.(existente)
+      await salida?.usar(existente)
       setYaExiste(null)
       setAbierto(false)
     } catch (e) {
@@ -308,10 +314,10 @@ export function AltaDeFlota({
       )}
       {error && <p className="basis-full @max-md:order-1 text-etiqueta text-status-incidente">{error}</p>}
       {/* La salida del callejón: si ya existe, usarla es lo que se venía a hacer. */}
-      {yaExiste && (
+      {yaExiste && salida && (
         <button type="button" disabled={guardando} onClick={() => usarExistente(yaExiste)}
                 className="basis-full @max-md:order-1 rounded-lg border border-status-incidente/35 bg-white px-3 py-1.5 text-etiqueta font-medium text-status-incidente hover:bg-status-incidente/10 disabled:opacity-50">
-          Asignar a {nombreLegible(yaExiste.full_name)}
+          {salida.accion(nombreLegible(yaExiste.full_name))}
         </button>
       )}
       </div>

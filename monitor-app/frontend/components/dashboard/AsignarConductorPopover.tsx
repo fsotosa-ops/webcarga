@@ -196,7 +196,7 @@ export function AsignarConductorPopover({
             await invalidateDirectory(queryClient, { entity: 'driver', id: creado.id, type: 'create', carrierIds: [carrierId] })
             await asignar(creado.id)
           }}
-          onYaExiste={existente => asignar(existente.driver_id)}
+          yaExiste={{ accion: nombre => `Asignar a ${nombre}`, usar: existente => asignar(existente.driver_id) }}
         />
       </div>
       </>)}
