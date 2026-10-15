@@ -232,20 +232,29 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
 - **DESPLEGADA en dev** (`9f24a0cd`, los dos workflows en verde). Recorrido en dev (solo lectura): Por asignar dice
   "Todo asignado" con "Subir documentos"; la ficha de Huemul › Documentos tiene "Subir documentos" junto a "Exportar
   todo"; sin errores de API. No se subió nada en dev.
-- **Siguiente paso exacto (acordado para el 16/10, ~2–2,5 h, solo pantalla, sin suite del backend):** cerrar lo que
-  queda de C:
-  1. **Pestañas en la ficha propia** de conductor y equipo (`FleetProfile` + paneles en variante `page`), fiel a la
-     maqueta: Resumen · Documentos · Dónde trabaja · Actividad · Contactos (30–45 min).
-  2. **Alta del popover "Asignar conductor" del Monitor dentro de `AltaDeFlota`** (1–1,5 h): `onCreado` devuelve el
-     conductor creado; el caso "ese RUT ya existe → asignar el existente" (409) y los avisos de empresa no habilitada
-     pasan al alta común; el popover gana el origen habitual. Riesgo: las reglas finas del 409 y los avisos; si algo
-     no cuadra, avisar antes de seguir.
-  Después: tsc, vitest, humo, despliegue, recorrido. Luego decide el usuario si A+B+C+D pasan a `main` (nada está en
-  producción). Pendiente de probar con datos reales: una tanda mezclada subida sin contexto (Pablo/Carla).
-- Pendiente con motivo: el alta dentro del popover "Asignar conductor" del Monitor sigue aparte (no es solo un alta: si el
-  RUT existe ofrece asignar al existente, avisos, "a todos sus viajes"); unificarla exige que `AltaDeFlota` absorba ese flujo.
-- Tangentes nuevas: `FLEET_SERVICE_TYPE` tiene una fila "Tractocamión" sin `code` mezclada con carrocerías (10 tractos la
-  usan); la ficha propia no tiene pestañas como la maqueta (Resumen · Documentos · …): hoy es el panel en una columna.
+- **15/10 — Pendiente 1 de C HECHO (el usuario: "vamos con el pendiente 1"):** pestañas en la ficha propia
+  (`535316c2`, push a `dev`). Resumen · Documentos · Dónde trabaja · Actividad · Contactos (el equipo sin Contactos), en
+  `?tab=`; las listas filtradas por documentos (colas de Certificación) abren en Documentos.
+  - Decisiones: la barra de pestañas se extrajo de la ficha de empresa a `components/ui/Tabs.tsx` y la usan las dos
+    fichas (`SegmentedControl` es para filtros, no para navegar). Los paneles reciben `section` en la variante página; el
+    modal no cambia. Se retiró la prop `extra`. El encabezado usa `EncabezadoDePagina` (lo exigió el trinquete de `<h1>`).
+    Sin chip de habilitación en el encabezado: el detalle de conductor/equipo no trae `can_operate`.
+  - Verificación: tsc limpio; vitest de las áreas tocadas + `lib` 1.206/1.206 (E1, E2, E3 nuevos; E3 probado con
+    mutación); humo 15/15 en la copia local (2 recorridos nuevos); capturas en escritorio y teléfono.
+- **Siguiente paso exacto:**
+  1. ~~Confirmar despliegue y recorrer dev~~ **HECHO 15/10:** Deploy Frontend de `535316c2` en verde (verify +
+     build-and-deploy). Recorrido en dev (Propietario, solo lectura): Conductores con pendientes → la fila enlaza
+     `?tab=documentos` y abre en Documentos (13 requisitos); las 5 pestañas muestran lo suyo (Dónde trabaja: Huemul
+     actual; Actividad: último viaje 11/10 · Walmart, 1 en 30 días); el equipo tiene 4 pestañas y abre en Resumen;
+     "Ver viajes en el Monitor" → `?tab=historial&q=<patente>`; la ficha de empresa sigue con sus 6 pestañas y conteos.
+     Todas las llamadas a la API en 200, 0 errores de consola.
+  2. **Pendiente 2 de C (diferido por el usuario):** alta del popover "Asignar conductor" del Monitor dentro de
+     `AltaDeFlota`. Diseño ya revisado (plan del 15/10): `onCreado(carrierId, creado)`, prop `onYaExiste` para el 409
+     `CONDUCTOR_YA_EXISTE`, `etiquetaGuardar`; el popover borra su formulario y crear+asignar pasa a ser "crear y después
+     `onAsignar`"; `onDarDeAlta` pasa a `puedeDarDeAlta: boolean` y el Monitor pierde su `driversApi.create` duplicado.
+  3. Luego decide el usuario si A+B+C+D pasan a `main` (nada está en producción). Pendiente de probar con datos reales:
+     una tanda mezclada subida sin contexto (Pablo/Carla).
+- Tangente: `FLEET_SERVICE_TYPE` tiene una fila "Tractocamión" sin `code` mezclada con carrocerías (10 tractos la usan).
 
 1. ~~Mirar M2 en dev~~ **HECHO 12/10 noche:** chip gris "Dada de baja" y "La empresa no está activa", sin "se puede asignar".
    Ojo: abrir un viaje con divergencia TMS deja una nota "sistema" a nombre de quien lo abre (`_log_tms_divergence_once`,
