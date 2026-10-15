@@ -16,10 +16,28 @@ import { fmtDate } from '@/lib/utils/datetime'
 import { DriverDetailPanel } from './DriverDetailPanel'
 import { VehicleDetailPanel } from './VehicleDetailPanel'
 import { TransferModal } from './TransferModal'
+import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { Estado } from '@/components/ui/Estado'
+import { StatusChip } from '@/components/ui/StatusChip'
+import { Tabs, type TabOption } from '@/components/ui/Tabs'
+import { fleetMemberStyle } from '@/lib/states'
 import type { AssignmentPeriod, EntityActivity } from '@/lib/types'
 
 export type FleetKind = 'driver' | 'asset'
+
+/** Las pestañas de la maqueta aprobada (Entrega C): Resumen · Documentos · Dónde
+ *  trabaja · Actividad · Contactos. El equipo no tiene contactos. */
+export type ProfileTab = 'resumen' | 'documentos' | 'historial' | 'actividad' | 'contactos'
+
+function profileTabs(kind: FleetKind): TabOption<ProfileTab>[] {
+  return [
+    { id: 'resumen', label: 'Resumen' },
+    { id: 'documentos', label: 'Documentos' },
+    { id: 'historial', label: 'Dónde trabaja' },
+    { id: 'actividad', label: 'Actividad' },
+    ...(kind === 'driver' ? [{ id: 'contactos' as const, label: 'Contactos' }] : []),
+  ]
+}
 
 const LIST = {
   driver: { href: '/dashboard/drivers', label: 'Conductores', noun: 'conductor' },
@@ -34,7 +52,11 @@ const LIST = {
  */
 export function FleetProfile({ kind, id }: { kind: FleetKind; id: string }) {
   const queryClient = useQueryClient()
-  const back = returnLink(useSearchParams().get('next'))
+  const searchParams = useSearchParams()
+  const back = returnLink(searchParams.get('next'))
+  const tabs = profileTabs(kind)
+  const requestedTab = searchParams.get('tab')
+  const [tab, setTab] = useState<ProfileTab>(tabs.find(t => t.id === requestedTab)?.id ?? 'resumen')
   const [transferOpen, setTransferOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -79,6 +101,7 @@ export function FleetProfile({ kind, id }: { kind: FleetKind; id: string }) {
   if (!entity.data || historyQuery.isPending) return <Estado tipo="cargando" />
 
   const title = kind === 'driver' ? driverQuery.data!.full_name : assetQuery.data!.license_plate
+  const lifecycle = fleetMemberStyle(kind, entity.data.operational_status, current?.carrier_status)
   const monitorQuery = kind === 'driver' ? driverQuery.data!.tax_id : assetQuery.data!.license_plate
 
   async function afterChange(change: DirectoryChange, done?: string) {
@@ -101,14 +124,8 @@ export function FleetProfile({ kind, id }: { kind: FleetKind; id: string }) {
     setTransferOpen(false)
   }
 
-  const extra = (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6">
-      <WhereWorks history={historyQuery.data ?? []} />
-      <Activity activity={activityQuery.data} loading={activityQuery.isPending} monitorHref={monitorSearchHref(monitorQuery)} />
-    </div>
-  )
   const shared = {
-    carrierId, carrierName: current?.carrier_name, variant: 'page' as const, extra, canEdit, canChangeFleetStatus,
+    carrierId, carrierName: current?.carrier_name, variant: 'page' as const, canEdit, canChangeFleetStatus,
     canUploadDocuments, canReviewDocuments, canRequestDocuments, canCorrectIdentity,
     onRemove: carrierId ? handleRemove : undefined,
     onTransferClick: canEdit ? () => setTransferOpen(true) : undefined,
@@ -122,11 +139,32 @@ export function FleetProfile({ kind, id }: { kind: FleetKind; id: string }) {
           : <>Directorio <span aria-hidden>›</span> <Link href={LIST[kind].href} className="hover:text-accion">{LIST[kind].label}</Link></>}
         <span aria-hidden>›</span> <span className="text-text-primary font-semibold">{title}</span>
       </nav>
+      <EncabezadoDePagina
+        titulo={title}
+        bajada={
+          <span className="flex flex-wrap items-center gap-2">
+            <StatusChip tone={lifecycle.tone} icon={lifecycle.icon}>{lifecycle.label}</StatusChip>
+            {current && (
+              <Link href={carrierHref(current.carrier_id)} prefetch={false} className="inline-flex items-center gap-1 text-informativo hover:text-accion">
+                <Building2 size={13} /> {current.carrier_name}
+              </Link>
+            )}
+          </span>
+        }
+      />
       {notice && <p role="status" className="text-xs text-resuelto">{notice}</p>}
 
-      {kind === 'driver' ? (
+      <Tabs label={`Secciones del ${LIST[kind].noun}`} tabs={tabs} value={tab} onChange={setTab} />
+
+      {tab === 'historial' && <WhereWorks history={historyQuery.data ?? []} />}
+      {tab === 'actividad' && (
+        <Activity activity={activityQuery.data} loading={activityQuery.isPending} monitorHref={monitorSearchHref(monitorQuery)} />
+      )}
+
+      {tab !== 'historial' && tab !== 'actividad' && (kind === 'driver' ? (
         <DriverDetailPanel
           {...shared}
+          section={tab}
           driver={driverQuery.data!}
           canDeleteContacts={canAdmin}
           onPatch={async (driverId: string, body: DriverPatchBody) => {
@@ -137,6 +175,7 @@ export function FleetProfile({ kind, id }: { kind: FleetKind; id: string }) {
       ) : (
         <VehicleDetailPanel
           {...shared}
+          section={tab === 'contactos' ? 'resumen' : tab}
           asset={assetQuery.data!}
           drivers={carrierDriversQuery.data ?? []}
           onPatch={async (assetId: string, body: AssetPatchBody) => {
@@ -144,7 +183,7 @@ export function FleetProfile({ kind, id }: { kind: FleetKind; id: string }) {
             await afterChange({ entity: 'asset', id: assetId, type: 'update', carrierIds: [carrierId] })
           }}
         />
-      )}
+      ))}
 
       <TransferModal
         open={transferOpen}

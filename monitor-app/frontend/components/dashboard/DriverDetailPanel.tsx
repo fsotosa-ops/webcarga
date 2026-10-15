@@ -3,7 +3,7 @@
 import { CorrectIdentityModal } from './CorrectIdentityModal'
 import { certificationRequestsApi } from '@/lib/api/certificationRequests'
 import { useSubirDocumento } from '@/hooks/useSubirDocumento'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Check, Loader2, ArrowRightLeft, Trash2, ExternalLink } from 'lucide-react'
@@ -13,7 +13,7 @@ import { locationsApi } from '@/lib/api/locations'
 import { contactsApi } from '@/lib/api/contacts'
 import { invalidateDirectory } from '@/lib/queries/directorio'
 import { DocumentChecklist } from './DocumentChecklist'
-import { DetailShell, type DetailVariant } from './DetailShell'
+import { DetailShell, summaryColumnClass, type DetailSection, type DetailVariant } from './DetailShell'
 import { documentStateCounts } from '@/lib/states'
 import { CompletionRing } from './CompletionRing'
 import { BajaReasonModal } from './BajaReasonModal'
@@ -46,8 +46,8 @@ interface Props {
   canDeleteContacts: boolean
   /** `dialog` sobre la ficha de su empresa; `page` en su ficha propia (D4). */
   variant?:        DetailVariant
-  /** Lo que la ficha propia agrega a la derecha: dónde trabaja y su actividad. */
-  extra?:          ReactNode
+  /** En la ficha propia, la pestaña que se dibuja (D4); sin ella, todo junto. */
+  section?:        DetailSection
   /** Solo en el modal. */
   onClose?:        () => void
   onPatch:         (id: string, body: DriverPatchBody) => Promise<void>
@@ -61,7 +61,7 @@ interface Props {
  *  el roster, que solo expone el agregado) vía GET /drivers/{id}/compliance-records.
  *  Solo lectura desde Ronda 88 — subir/editar documentos se hace en
  *  Certificación, ver TransporterDocumentsPanel. */
-export function DriverDetailPanel({ driver, carrierId, carrierName, canEdit, canChangeFleetStatus, canDeleteContacts, canUploadDocuments, canReviewDocuments, canRequestDocuments = false, canCorrectIdentity = false, variant = 'dialog', extra, onClose, onPatch, onRemove, onTransferClick }: Props) {
+export function DriverDetailPanel({ driver, carrierId, carrierName, canEdit, canChangeFleetStatus, canDeleteContacts, canUploadDocuments, canReviewDocuments, canRequestDocuments = false, canCorrectIdentity = false, variant = 'dialog', section, onClose, onPatch, onRemove, onTransferClick }: Props) {
   const open = !!driver
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState({ full_name: '', home_location_id: '' })
@@ -157,10 +157,13 @@ export function DriverDetailPanel({ driver, carrierId, carrierName, canEdit, can
   const ok = documentStateCounts(items).UP_TO_DATE
   const total = items.length
 
+  const show = (s: DetailSection) => !section || section === s
+
   return (
     <>
       <DetailShell variant={variant} label={`Detalle de ${driver.full_name}`} onClose={onClose}>
-        <div className="sm:w-[320px] shrink-0 bg-gray-50 border-b sm:border-b-0 sm:border-r border-border overflow-y-auto p-5">
+        {show('resumen') && (
+        <div className={summaryColumnClass(section)}>
           <div className="flex items-center gap-3 mb-5">
             <div
               className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
@@ -307,9 +310,11 @@ export function DriverDetailPanel({ driver, carrierId, carrierName, canEdit, can
             )}
           </div>
         </div>
+        )}
 
+        {(show('documentos') || show('contactos')) && (
         <div className="flex-1 min-w-0 overflow-y-auto p-6">
-          {extra}
+          {show('documentos') && (<>
           <div className="flex items-center justify-between mb-3">
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Documentación</p>
           </div>
@@ -343,8 +348,10 @@ export function DriverDetailPanel({ driver, carrierId, carrierName, canEdit, can
               } : undefined}
             />
           )}
+          </>)}
 
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3 mt-6">Contactos</p>
+          {show('contactos') && (<>
+          <p className={`text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-3 ${section ? '' : 'mt-6'}`}>Contactos</p>
           {contactsQuery.isPending ? (
             <p className="text-xs text-gray-400 flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>
           ) : (
@@ -365,7 +372,9 @@ export function DriverDetailPanel({ driver, carrierId, carrierName, canEdit, can
               )}
             </div>
           )}
+          </>)}
         </div>
+        )}
       </DetailShell>
       {correcting && driver && (
         <CorrectIdentityModal

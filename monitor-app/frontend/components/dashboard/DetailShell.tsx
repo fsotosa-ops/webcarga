@@ -5,6 +5,18 @@ import { X } from 'lucide-react'
 
 export type DetailVariant = 'dialog' | 'page'
 
+/** La pestaña de la ficha propia que el panel dibuja. Sin ella, el panel
+ *  muestra todo junto, como en el modal. */
+export type DetailSection = 'resumen' | 'documentos' | 'contactos'
+
+/** La columna de datos: al costado en el modal; sola, como pestaña Resumen, en
+ *  la ficha propia. */
+export function summaryColumnClass(section?: DetailSection): string {
+  return section
+    ? 'w-full max-w-xl p-5 md:p-6'
+    : 'sm:w-[320px] shrink-0 bg-gray-50 border-b sm:border-b-0 sm:border-r border-border overflow-y-auto p-5'
+}
+
 /**
  * El armazón de la ficha de un conductor o un equipo. Es el mismo contenido en
  * dos lugares (D4, Entrega C 14/10): como modal sobre la ficha de su empresa, y

@@ -144,7 +144,7 @@ export function FleetList({ kind }: { kind: FleetKind }) {
               </tr>
             </thead>
             <tbody>
-              {data!.rows.map(row => <Row key={row.id} kind={kind} row={row} typeLabel={labelOf(row.asset_type)} />)}
+              {data!.rows.map(row => <Row key={row.id} kind={kind} row={row} typeLabel={labelOf(row.asset_type)} toDocuments={!!documents} />)}
             </tbody>
           </table>
         </div>
@@ -173,8 +173,11 @@ export function FleetList({ kind }: { kind: FleetKind }) {
   )
 }
 
-function Row({ kind, row, typeLabel }: { kind: FleetKind; row: FleetListRow; typeLabel: string }) {
-  const href = kind === 'driver' ? driverHref(row.id) : assetHref(row.id)
+function Row({ kind, row, typeLabel, toDocuments }: { kind: FleetKind; row: FleetListRow; typeLabel: string; toDocuments: boolean }) {
+  // Filtrando por documentos (la cola de Certificación) se llega a la ficha en
+  // su pestaña Documentos, que es lo que se vino a trabajar.
+  const profile = kind === 'driver' ? driverHref(row.id) : assetHref(row.id)
+  const href = toDocuments ? `${profile}?tab=documentos` : profile
   const lifecycle = fleetMemberStyle(kind, row.operational_status, row.carrier?.operational_status)
   const docs = summaryStyle(row.compliance_summary, row.operational_status === 'ACTIVE')
   return (

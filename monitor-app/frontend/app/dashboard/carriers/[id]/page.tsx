@@ -6,13 +6,14 @@ import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, ChevronRight, PenLine, Check, X,
-  Loader2, Search, Users, Truck, ShieldCheck, FileText,
+  Loader2, Search, Users, Truck,
 } from 'lucide-react'
 import { carriersApi } from '@/lib/api/carriers'
 import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
 import { assetsApi, type AssetPatchBody, type AssetType } from '@/lib/api/assets'
 import { contactsApi } from '@/lib/api/contacts'
 import { StatusChip } from '@/components/ui/StatusChip'
+import { Tabs } from '@/components/ui/Tabs'
 import { SEVERITY_ORDER, documentStateCounts, documentStateStyle, enablementStyle, isBlocking, lifecycleStyle, stateCountsLine, type ComplianceSummary, type DocumentState } from '@/lib/states'
 import { canonicalPlate, canonicalRut, plateSearchKey, rutDigits, rutSearchKey } from '@/lib/identity'
 import type { Driver, Asset, OperationalStatus } from '@/lib/types'
@@ -558,33 +559,19 @@ function EmpresaDetailPageInner() {
       </div>
 
       {/* ── Tabs — una sección visible a la vez, cero scroll entre ellas ── */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit max-w-full overflow-x-auto">
-        {([
-          { id: 'resumen' as const,     label: 'Resumen',     icon: FileText,    count: null },
-          { id: 'documentos' as const,  label: 'Documentos',  icon: FileText,    count: summary ? (summary.own.overdue + summary.own.missing) || null : null },
-          { id: 'conductores' as const, label: 'Conductores', icon: Users,       count: drivers.length },
-          { id: 'equipos' as const,     label: 'Equipos',     icon: Truck,       count: assets.length },
-          { id: 'seguros' as const,     label: 'Seguros',     icon: ShieldCheck, count: policies.length },
-          { id: 'contactos' as const,   label: 'Contactos',   icon: Users,       count: carrier.contacts.length },
-        ]).map(t => {
-          const active = activeTab === t.id
-          return (
-            <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id)}
-              aria-pressed={active}
-              className={`shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {t.label}
-              {t.count != null && (
-                <span className={`ml-1.5 ${t.id === 'documentos' ? 'text-status-incidente font-bold' : 'text-gray-400'}`}>{t.count}</span>
-              )}
-            </button>
-          )
-        })}
-      </div>
+      <Tabs
+        label="Secciones de la empresa"
+        value={activeTab}
+        onChange={setActiveTab}
+        tabs={[
+          { id: 'resumen',     label: 'Resumen' },
+          { id: 'documentos',  label: 'Documentos',  count: summary ? (summary.own.overdue + summary.own.missing) || null : null, urgent: true },
+          { id: 'conductores', label: 'Conductores', count: drivers.length },
+          { id: 'equipos',     label: 'Equipos',     count: assets.length },
+          { id: 'seguros',     label: 'Seguros',     count: policies.length },
+          { id: 'contactos',   label: 'Contactos',   count: carrier.contacts.length },
+        ]}
+      />
 
       {/* ── Resumen: vista compacta, sin la lista completa de alertas ── */}
       {activeTab === 'resumen' && (
