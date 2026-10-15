@@ -12,6 +12,11 @@ no desde las columnas viejas. Los borra la Entrega 2 junto con ese frontend.
 from __future__ import annotations
 
 from ..utils.identity import rut_matches_sql
+from .audit import log_change
+
+# La entidad de auditoría de todo lo de una póliza (la póliza y sus cuotas):
+# antes era CARRIER, a veces con el id de la póliza, y el rastro no llevaba a nada.
+AUDIT_ENTITY = "INSURANCE_POLICY"
 
 POLICY_STATES = ("EXPIRED", "EXPIRING", "VALID", "NO_DATES", "CANCELLED")
 # Filtros de la lista de Pólizas que no son un estado de la póliza.
@@ -274,3 +279,68 @@ async def legacy_insurance_overview(pool, *, q: str, health: str, operational_st
         *params,
     )
     return {"data": [dict(r) for r in rows], "count": count, "page": page, "limit": limit, "facets": dict(facets)}
+
+
+# ── Escrituras: el pago es un hecho (si, cuándo, quién) ───────────────────────
+
+async def pay_installments(conn, ids: list[str], *, paid_on, actor: str) -> dict:
+    """Marca pagadas las cuotas impagas de `ids`. Las ya pagadas (o repetidas)
+    vuelven en `errors` sin pisar su fecha ni quién. Una auditoría por cuota,
+    contra su póliza."""
+    paid, errors, seen = [], [], set()
+    for installment_id in ids:
+        if installment_id in seen:
+            errors.append({"id": installment_id, "error": "Repetida en el pedido"})
+            continue
+        seen.add(installment_id)
+        row = await conn.fetchrow(
+            "UPDATE public.insurance_installments SET paid = true, paid_on = $2, paid_by = $3::uuid, updated_at = now() "
+            "WHERE id = $1 AND NOT paid RETURNING policy_id",
+            installment_id, paid_on, actor,
+        )
+        if row is None:
+            exists = await conn.fetchval("SELECT paid FROM public.insurance_installments WHERE id = $1", installment_id)
+            errors.append({"id": installment_id,
+                           "error": "No existe" if exists is None else "Ya estaba pagada"})
+            continue
+        await log_change(conn, actor=actor, entity_type=AUDIT_ENTITY, entity_id=row["policy_id"],
+                         action="update", field="paid", old_value=None,
+                         new_value={"installment_id": str(installment_id), "paid_on": paid_on})
+        paid.append(installment_id)
+    return {"paid": paid, "errors": errors}
+
+
+async def unpay_installments(conn, ids: list[str], *, actor: str) -> dict:
+    """Deshace un pago registrado por error: vuelve a impaga, sin fecha ni quién."""
+    unpaid, errors = [], []
+    for installment_id in ids:
+        row = await conn.fetchrow(
+            "UPDATE public.insurance_installments SET paid = false, paid_on = NULL, paid_by = NULL, updated_at = now() "
+            "WHERE id = $1 AND paid RETURNING policy_id",
+            installment_id,
+        )
+        if row is None:
+            errors.append({"id": installment_id, "error": "No estaba pagada"})
+            continue
+        await log_change(conn, actor=actor, entity_type=AUDIT_ENTITY, entity_id=row["policy_id"],
+                         action="update", field="paid", old_value={"installment_id": str(installment_id)},
+                         new_value=None)
+        unpaid.append(installment_id)
+    return {"unpaid": unpaid, "errors": errors}
+
+
+async def cancel_policy(conn, policy_id: str, *, reason: str, actor: str) -> None:
+    updated = await conn.fetchval(
+        "UPDATE public.insurance_policies SET cancelled_at = now(), cancelled_reason = $2, updated_at = now() "
+        "WHERE id = $1 AND cancelled_at IS NULL RETURNING id",
+        policy_id, reason,
+    )
+    if updated is None:
+        raise LookupError("La póliza no existe o ya estaba cancelada")
+    await log_change(conn, actor=actor, entity_type=AUDIT_ENTITY, entity_id=policy_id,
+                     action="update", field="cancelled_at", new_value={"reason": reason})
+
+
+def schedule_outside_validity(due_dates: list, valid_from, valid_to) -> list:
+    """Las fechas del calendario que caen fuera de la vigencia de la póliza."""
+    return [d for d in due_dates if (valid_from and d < valid_from) or (valid_to and d > valid_to)]

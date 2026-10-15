@@ -43,8 +43,24 @@ class PolicyAssetLinkBody(BaseModel):
 
 
 class InstallmentPatchBody(BaseModel):
+    """Compatibilidad con el frontend de hoy (lo retira la Entrega 2 de Seguros):
+    PAID paga la cuota y PENDING deshace el pago, con las mismas funciones que
+    POST /installments/pay y /unpay."""
     payment_status: Optional[PaymentStatus] = None
     paid_at: Optional[datetime] = None
+
+
+class InstallmentsPayBody(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=500)
+    paid_on: date
+
+
+class InstallmentsUnpayBody(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=500)
+
+
+class PolicyCancelBody(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
 
 
 class InstallmentScheduleGenerateBody(BaseModel):

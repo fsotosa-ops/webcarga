@@ -101,7 +101,7 @@ function EmpresaDetailPageInner() {
 
   const [addPolicyOpen,  setAddPolicyOpen]  = useState(false)
   const [policyForm,     setPolicyForm]     = useState<PolicyFormState>({
-    insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30',
+    insurance_company: '', policy_number: '', valid_from: '', valid_to: '',
     has_endorsement: false, endorsement_number: '',
   })
   const [submitting,     setSubmitting]     = useState(false)
@@ -197,12 +197,11 @@ function EmpresaDetailPageInner() {
         policy_number: policyForm.policy_number || undefined,
         valid_from: policyForm.valid_from || undefined,
         valid_to: policyForm.valid_to || undefined,
-        expiration_alert_days: policyForm.expiration_alert_days ? Number(policyForm.expiration_alert_days) : undefined,
         has_endorsement: policyForm.has_endorsement,
         endorsement_number: policyForm.endorsement_number || undefined,
       })
       setPolicyForm({
-        insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30',
+        insurance_company: '', policy_number: '', valid_from: '', valid_to: '',
         has_endorsement: false, endorsement_number: '',
       })
       setAddPolicyOpen(false)

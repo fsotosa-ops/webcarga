@@ -13,13 +13,14 @@ import { DocumentPreviewModal } from './DocumentPreviewModal'
 
 export type PolicyFormState = {
   insurance_company: string; policy_number: string
-  valid_from: string; valid_to: string; expiration_alert_days: string
+  valid_from: string; valid_to: string
   has_endorsement: boolean; endorsement_number: string
 }
 
 /** Formulario de alta de póliza — expone los mismos campos que soporta
  *  InsurancePolicyCreateBody (insurance_company/policy_number/valid_from/
- *  valid_to/expiration_alert_days), no solo aseguradora+número. Antes el
+ *  valid_to), no solo aseguradora+número. El plazo de "Por vencer" ya no es
+ *  por póliza: es uno solo, en la base (Seguros E1, 15/10). Antes el
  *  formulario dejaba vigencia/alerta de vencimiento sin setear al crear,
  *  aunque el modelo real de datos (y el resto de la UI, ej. policy_health)
  *  depende de esos campos — una póliza recién creada quedaba "incompleta"
@@ -63,11 +64,6 @@ export function PolicyCreateForm({ form, onChange, onSubmit, onCancel, submittin
           <input type="date" aria-label="Vigencia hasta" value={form.valid_to}
             onChange={e => onChange({ ...form, valid_to: e.target.value })} className={inputCls} />
         </div>
-      </div>
-      <div className="space-y-0.5">
-        <label className={labelCls}>Alerta de vencimiento (días antes)</label>
-        <input type="number" min={1} aria-label="Alerta de vencimiento en días" value={form.expiration_alert_days}
-          onChange={e => onChange({ ...form, expiration_alert_days: e.target.value })} className={inputCls} />
       </div>
       <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
         <input type="checkbox" checked={form.has_endorsement}
@@ -151,7 +147,7 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
   const [fileErr, setFileErr] = useState<string | null>(null)
   const [addPolicyOpen, setAddPolicyOpen] = useState(false)
   const [policyForm, setPolicyForm] = useState({
-    insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30',
+    insurance_company: '', policy_number: '', valid_from: '', valid_to: '',
     has_endorsement: false, endorsement_number: '',
   })
   const [addingPolicy, setAddingPolicy] = useState(false)
@@ -200,7 +196,7 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
 
   useEffect(() => {
     setAddPolicyOpen(false)
-    setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30', has_endorsement: false, endorsement_number: '' })
+    setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', has_endorsement: false, endorsement_number: '' })
     setAddPolicyErr(null)
   }, [carrierId])
 
@@ -335,11 +331,10 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
         policy_number: policyForm.policy_number || undefined,
         valid_from: policyForm.valid_from || undefined,
         valid_to: policyForm.valid_to || undefined,
-        expiration_alert_days: policyForm.expiration_alert_days ? Number(policyForm.expiration_alert_days) : undefined,
         has_endorsement: policyForm.has_endorsement,
         endorsement_number: policyForm.endorsement_number || undefined,
       })
-      setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', expiration_alert_days: '30', has_endorsement: false, endorsement_number: '' })
+      setPolicyForm({ insurance_company: '', policy_number: '', valid_from: '', valid_to: '', has_endorsement: false, endorsement_number: '' })
       setAddPolicyOpen(false)
       queryClient.invalidateQueries({ queryKey: ['carrier-policies', carrierId] })
     } catch (e) {

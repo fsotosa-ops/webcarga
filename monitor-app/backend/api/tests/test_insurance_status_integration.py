@@ -120,3 +120,87 @@ async def test_las_lecturas_de_seguros_corren_contra_la_base(conexion_revertida)
 
     cuotas = await insurance.policy_installments(conn, policy)
     assert [c["payment_status"] for c in cuotas] == ["OVERDUE", "OVERDUE"]
+
+
+async def _policy_with_installments(conn, n=3):
+    today = await _today(conn)
+    carrier = await _carrier(conn)
+    policy = await _policy(conn, carrier, valid_from=today - timedelta(days=90), valid_to=today + timedelta(days=270))
+    ids = [await conn.fetchval(
+        "INSERT INTO public.insurance_installments (policy_id, installment_number, total_installments, amount_uf, due_date) "
+        "VALUES ($1, $2, $3, 2, $4) RETURNING id", policy, i + 1, n, today - timedelta(days=30 * (n - i)),
+    ) for i in range(n)]
+    return policy, ids, today
+
+
+async def test_S3_pagar_en_lote_guarda_el_hecho_y_audita_contra_la_poliza(conexion_revertida):
+    from app.services import insurance
+
+    conn = conexion_revertida
+    policy, ids, today = await _policy_with_installments(conn)
+    actor = "11111111-1111-1111-1111-111111111111"
+
+    result = await insurance.pay_installments(conn, ids[:2] + [ids[0]], paid_on=today, actor=actor)
+
+    assert sorted(result["paid"]) == sorted(ids[:2])
+    # La repetida no se paga dos veces: lo dice, y no pisa la fecha ni quién.
+    assert [e["id"] for e in result["errors"]] == [ids[0]]
+    rows = {r["id"]: r for r in await conn.fetch(
+        "SELECT id, paid, paid_on, paid_by::text FROM public.insurance_installments WHERE id = ANY($1::uuid[])", ids)}
+    assert rows[ids[0]]["paid"] and rows[ids[0]]["paid_on"] == today and rows[ids[0]]["paid_by"] == actor
+    assert not rows[ids[2]]["paid"]
+    audit = await conn.fetch(
+        "SELECT entity_type, entity_id FROM public.audit_log WHERE field = 'paid' AND entity_id = $1", policy)
+    assert len(audit) == 2 and {a["entity_type"] for a in audit} == {"INSURANCE_POLICY"}
+
+
+async def test_deshacer_un_pago_lo_deja_impago_y_audita(conexion_revertida):
+    from app.services import insurance
+
+    conn = conexion_revertida
+    policy, ids, today = await _policy_with_installments(conn, n=1)
+    actor = "11111111-1111-1111-1111-111111111111"
+    await insurance.pay_installments(conn, ids, paid_on=today, actor=actor)
+
+    result = await insurance.unpay_installments(conn, ids, actor=actor)
+
+    assert result["unpaid"] == ids
+    row = await conn.fetchrow("SELECT paid, paid_on, paid_by FROM public.insurance_installments WHERE id = $1", ids[0])
+    assert (row["paid"], row["paid_on"], row["paid_by"]) == (False, None, None)
+    assert await conn.fetchval(
+        "SELECT count(*) FROM public.audit_log WHERE field = 'paid' AND entity_id = $1 AND entity_type = 'INSURANCE_POLICY'",
+        policy) == 2
+
+
+async def test_cancelar_una_poliza_guarda_fecha_y_motivo(conexion_revertida):
+    from app.services import insurance
+
+    conn = conexion_revertida
+    policy, _, _ = await _policy_with_installments(conn, n=1)
+    await insurance.cancel_policy(conn, policy, reason="Se cambió de aseguradora",
+                                  actor="11111111-1111-1111-1111-111111111111")
+    assert await _policy_state(conn, policy) == "CANCELLED"
+    assert await conn.fetchval("SELECT cancelled_reason FROM public.insurance_policies WHERE id = $1", policy) \
+        == "Se cambió de aseguradora"
+
+
+async def test_generar_el_plan_crea_las_cuotas_mensuales_dentro_de_la_vigencia(conexion_revertida):
+    """El camino feliz de POST /policies/{id}/installments/generate, contra la base."""
+    from app.routers.policies import _add_months
+    from app.services import insurance
+
+    conn = conexion_revertida
+    today = await _today(conn)
+    carrier = await _carrier(conn)
+    policy = await _policy(conn, carrier, valid_from=today, valid_to=today + timedelta(days=400))
+    fechas = [_add_months(today, i) for i in range(3)]
+    assert insurance.schedule_outside_validity(fechas, today, today + timedelta(days=400)) == []
+    assert insurance.schedule_outside_validity([today - timedelta(days=1)], today, None) == [today - timedelta(days=1)]
+    for i, d in enumerate(fechas):
+        await conn.execute(
+            "INSERT INTO public.insurance_installments (policy_id, installment_number, total_installments, amount_uf, due_date) "
+            "VALUES ($1, $2, 3, 2.5, $3)", policy, i + 1, d)
+    cuotas = await insurance.policy_installments(conn, policy)
+    assert [c["installment_number"] for c in cuotas] == [1, 2, 3]
+    assert {c["installments_total"] for c in cuotas} == {3}
+    assert not any(c["outside_validity"] for c in cuotas)

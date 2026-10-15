@@ -13,7 +13,7 @@ from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.insurance import (
     InstallmentPatchBody, InstallmentScheduleGenerateBody, InsurancePolicyPatchBody,
-    PolicyAssetLinkBody, PolicyCoverageLinkBody,
+    PolicyAssetLinkBody, PolicyCancelBody, PolicyCoverageLinkBody,
 )
 from ..services import insurance
 from ..services.audit import log_change, record_manual_edit
@@ -129,9 +129,10 @@ async def patch_policy(
             if body.expected_updated_at is not None and current["updated_at"] != body.expected_updated_at:
                 raise HTTPException(409, "El registro fue modificado por otro usuario; recargue e intente de nuevo")
 
+            # `status` y `expiration_alert_days` ya no se escriben (Seguros E1): la
+            # vigencia se calcula y el plazo es uno solo (app.alert_thresholds).
             fields = ("insurance_company", "policy_number", "valid_from", "valid_to",
-                      "status", "expiration_alert_days", "has_endorsement", "endorsement_number",
-                      "external_portal_url")
+                      "has_endorsement", "endorsement_number", "external_portal_url")
             touched = [f for f in fields if getattr(body, f) is not None]
             if not touched:
                 raise HTTPException(422, "Ningún campo enviado")
@@ -143,22 +144,19 @@ async def patch_policy(
                     policy_number = COALESCE($3, policy_number),
                     valid_from = COALESCE($4, valid_from),
                     valid_to = COALESCE($5, valid_to),
-                    status = COALESCE($6, status),
-                    expiration_alert_days = COALESCE($7, expiration_alert_days),
-                    has_endorsement = COALESCE($8, has_endorsement),
-                    endorsement_number = COALESCE($9, endorsement_number),
-                    external_portal_url = COALESCE($10, external_portal_url),
+                    has_endorsement = COALESCE($6, has_endorsement),
+                    endorsement_number = COALESCE($7, endorsement_number),
+                    external_portal_url = COALESCE($8, external_portal_url),
                     updated_at = NOW()
                 WHERE id = $1
                 """,
                 policy_id, body.insurance_company, body.policy_number, body.valid_from,
-                body.valid_to, body.status, body.expiration_alert_days, body.has_endorsement,
-                body.endorsement_number, body.external_portal_url,
+                body.valid_to, body.has_endorsement, body.endorsement_number, body.external_portal_url,
             )
             for field in touched:
                 await record_manual_edit(
                     conn, table="insurance_policies", where={"id": policy_id}, actor=user["sub"],
-                    entity_type="CARRIER", entity_id=current["carrier_id"],
+                    entity_type=insurance.AUDIT_ENTITY, entity_id=policy_id,
                     action="update", field=field, old_value=current[field], new_value=getattr(body, field),
                 )
     return await _assemble_policy_detail(policy_id, pool, supabase)
@@ -188,7 +186,7 @@ async def delete_policy(
 
             await conn.execute("DELETE FROM public.insurance_policies WHERE id = $1", policy_id)
             await log_change(
-                conn, actor=user["sub"], entity_type="CARRIER", entity_id=current["carrier_id"],
+                conn, actor=user["sub"], entity_type=insurance.AUDIT_ENTITY, entity_id=policy_id,
                 action="delete", field="insurance_policy",
                 old_value=f'{current["insurance_company"]} / {current["policy_number"]}', source="api",
             )
@@ -211,7 +209,7 @@ async def link_coverage(
                 policy_id, body.coverage_type_id,
             )
             await log_change(
-                conn, actor=user["sub"], entity_type="CARRIER", entity_id=policy_id,
+                conn, actor=user["sub"], entity_type=insurance.AUDIT_ENTITY, entity_id=policy_id,
                 action="link_coverage", new_value=body.coverage_type_id, source="api",
             )
     return {"ok": True}
@@ -230,7 +228,7 @@ async def unlink_coverage(
             if result == "DELETE 0":
                 raise HTTPException(404, "Vínculo no encontrado")
             await log_change(
-                conn, actor=user["sub"], entity_type="CARRIER", entity_id=policy_id,
+                conn, actor=user["sub"], entity_type=insurance.AUDIT_ENTITY, entity_id=policy_id,
                 action="unlink_coverage", old_value=coverage_type_id, source="api",
             )
     return {"ok": True}
@@ -292,83 +290,88 @@ async def generate_installment_schedule(
     policy_id: str, body: InstallmentScheduleGenerateBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     """Genera el plan de cuotas completo de una póliza (mensual, monto fijo).
-    Solo aplica cuando la póliza todavía no tiene ninguna cuota — no hay
-    endpoint para agregar cuotas sueltas a un plan ya generado (evita dejar
-    total_installments inconsistente entre filas, ver InstallmentScheduleGenerateBody)."""
+    Solo aplica cuando la póliza todavía no tiene ninguna cuota, y rechaza el plan
+    si alguna cuota cae fuera de la vigencia (Seguros E1: hay 44 así, de la carga
+    de prueba; no se agregan más)."""
     async with pool.acquire() as conn:
         async with conn.transaction():
-            carrier_id = await conn.fetchval(
-                "SELECT carrier_id FROM public.insurance_policies WHERE id = $1", policy_id,
+            policy = await conn.fetchrow(
+                "SELECT carrier_id, valid_from, valid_to FROM public.insurance_policies WHERE id = $1", policy_id,
             )
-            if not carrier_id:
+            if not policy:
                 raise HTTPException(404, "Póliza no encontrada")
             existing = await conn.fetchval(
                 "SELECT count(*) FROM public.insurance_installments WHERE policy_id = $1", policy_id,
             )
             if existing > 0:
                 raise HTTPException(422, "La póliza ya tiene cuotas — no se puede regenerar el plan")
+            due_dates = [_add_months(body.first_due_date, i) for i in range(body.total_installments)]
+            fuera = insurance.schedule_outside_validity(due_dates, policy["valid_from"], policy["valid_to"])
+            if fuera:
+                raise HTTPException(
+                    422, f"{len(fuera)} cuota(s) caen fuera de la vigencia de la póliza "
+                         f"(primera: {fuera[0].strftime('%d/%m/%Y')}). Ajusta la primera fecha o el número de cuotas.",
+                )
 
             rows = []
-            for i in range(body.total_installments):
+            for i, due in enumerate(due_dates):
                 row = await conn.fetchrow(
                     """
                     INSERT INTO public.insurance_installments
-                        (policy_id, installment_number, total_installments, amount_uf, due_date, payment_status)
-                    VALUES ($1, $2, $3, $4, $5, 'PENDING')
-                    RETURNING id, installment_number, total_installments, amount_uf, due_date, payment_status, paid_at
+                        (policy_id, installment_number, total_installments, amount_uf, due_date)
+                    VALUES ($1, $2, $3, $4, $5)
+                    RETURNING id
                     """,
-                    policy_id, i + 1, body.total_installments, body.amount_uf,
-                    _add_months(body.first_due_date, i),
+                    policy_id, i + 1, body.total_installments, body.amount_uf, due,
                 )
-                rows.append(dict(row))
+                rows.append(row["id"])
 
             await log_change(
-                conn, actor=user["sub"], entity_type="CARRIER", entity_id=carrier_id,
-                action="create", field="installment_schedule", new_value=policy_id, source="api",
+                conn, actor=user["sub"], entity_type=insurance.AUDIT_ENTITY, entity_id=policy_id,
+                action="create", field="installment_schedule", new_value=body.total_installments, source="api",
             )
-    return rows
+            return await insurance.policy_installments(conn, policy_id)
+
+
+@router.post("/{policy_id}/cancel")
+async def cancel_policy(
+    policy_id: str, body: PolicyCancelBody, pool=Depends(get_pool), supabase=Depends(get_supabase),
+    user=Depends(require(Permission.POLICIES_EDIT)),
+):
+    """Cancelar es el único estado de la póliza que decide una persona: fecha y motivo."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            try:
+                await insurance.cancel_policy(conn, policy_id, reason=body.reason, actor=user["sub"])
+            except LookupError as exc:
+                raise HTTPException(404, str(exc)) from exc
+    return await _assemble_policy_detail(policy_id, pool, supabase)
 
 
 @router.patch("/installments/{installment_id}")
 async def patch_installment(
     installment_id: str, body: InstallmentPatchBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
+    """Compatibilidad con el frontend de hoy (la retira la Entrega 2): PAID paga y
+    PENDING deshace el pago, con las mismas funciones que /installments/pay y /unpay."""
+    if body.payment_status not in ("PAID", "PENDING"):
+        raise HTTPException(422, "payment_status debe ser PAID o PENDING")
     async with pool.acquire() as conn:
         async with conn.transaction():
-            current = await conn.fetchrow(
-                "SELECT policy_id, payment_status, paid_at FROM public.insurance_installments WHERE id = $1",
-                installment_id,
+            if body.payment_status == "PAID":
+                paid_on = body.paid_at.date() if body.paid_at else await conn.fetchval(
+                    "SELECT (now() AT TIME ZONE 'America/Santiago')::date")
+                result = await insurance.pay_installments(conn, [installment_id], paid_on=paid_on, actor=user["sub"])
+            else:
+                result = await insurance.unpay_installments(conn, [installment_id], actor=user["sub"])
+            if result["errors"]:
+                raise HTTPException(409, result["errors"][0]["error"])
+            row = await conn.fetchrow(
+                "SELECT installment_id AS id, installment_number, installments_total, amount_uf, due_date, due_in_days, "
+                "installment_state, paid, paid_on, paid_by, outside_validity "
+                "FROM app.insurance_status WHERE installment_id = $1", installment_id,
             )
-            if not current:
-                raise HTTPException(404, "Cuota no encontrada")
-
-            touched = [f for f in ("payment_status", "paid_at") if getattr(body, f) is not None]
-            if not touched:
-                raise HTTPException(422, "Ningún campo enviado")
-
-            await conn.execute(
-                """
-                UPDATE public.insurance_installments SET
-                    payment_status = COALESCE($2, payment_status),
-                    paid_at = COALESCE($3, paid_at),
-                    updated_at = NOW()
-                WHERE id = $1
-                """,
-                installment_id, body.payment_status, body.paid_at,
-            )
-            for field in touched:
-                await record_manual_edit(
-                    conn, table="insurance_installments", where={"id": installment_id}, actor=user["sub"],
-                    entity_type="CARRIER", entity_id=current["policy_id"], action="update", field=field,
-                    old_value=str(current[field]) if current[field] is not None else None,
-                    new_value=getattr(body, field),
-                )
-    row = await pool.fetchrow(
-        "SELECT id, installment_number, total_installments, amount_uf, due_date, payment_status, paid_at "
-        "FROM public.insurance_installments WHERE id = $1",
-        installment_id,
-    )
-    return dict(row)
+    return insurance._legacy_installment(dict(row))
 
 
 @router.post("/{policy_id}/file", status_code=201)
@@ -412,13 +415,13 @@ async def upload_policy_file(
             )
             await record_manual_edit(
                 conn, table="insurance_policies", where={"id": policy_id}, actor=user["sub"],
-                entity_type="CARRIER", entity_id=current["carrier_id"],
+                entity_type=insurance.AUDIT_ENTITY, entity_id=policy_id,
                 action="document_upload", field=column,
                 old_value=old_storage_path, new_value=uploaded["storage_path"],
             )
             if old_storage_path:
                 await log_document_replacement(
-                    conn, entity_type="CARRIER", entity_id=current["carrier_id"],
+                    conn, entity_type=insurance.AUDIT_ENTITY, entity_id=policy_id,
                     doc_name=f"policy:{policy_id}:{kind}",
                     old_status=None, old_expiry_date=None,
                     old_storage_path=old_storage_path, actor=user["sub"],
@@ -466,7 +469,7 @@ async def delete_policy_file(
             )
             await record_manual_edit(
                 conn, table="insurance_policies", where={"id": policy_id}, actor=user["sub"],
-                entity_type="CARRIER", entity_id=current["carrier_id"],
+                entity_type=insurance.AUDIT_ENTITY, entity_id=policy_id,
                 action="document_delete", field=column,
                 old_value=storage_path, new_value=None,
             )

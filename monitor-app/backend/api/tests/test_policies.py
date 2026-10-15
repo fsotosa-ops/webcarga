@@ -197,11 +197,15 @@ def test_patch_installment_updates_payment_status():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchrow.return_value = {"policy_id": "p1", "payment_status": "PENDING", "paid_at": None}
-    pool.fetchrow.return_value = {
-        "id": "i1", "installment_number": 1, "total_installments": 2, "amount_uf": 1.04,
-        "due_date": None, "payment_status": "PAID", "paid_at": "2026-07-16T00:00:00",
-    }
+    # Seguros E1: el PATCH viejo paga con la misma función que /installments/pay
+    # (UPDATE ... RETURNING policy_id) y devuelve la cuota leída de la vista.
+    conn.fetchval.return_value = date(2026, 7, 16)
+    conn.fetchrow.side_effect = [
+        {"policy_id": "p1"},
+        {"id": "i1", "installment_number": 1, "installments_total": 2, "amount_uf": 1.04, "due_date": None,
+         "due_in_days": None, "installment_state": "PAID", "paid": True, "paid_on": date(2026, 7, 16),
+         "paid_by": None, "outside_validity": False},
+    ]
     client = make_client(pool)
 
     res = client.patch("/api/v1/policies/installments/i1", json={"payment_status": "PAID"})
@@ -245,8 +249,8 @@ def test_patch_policy_updates_has_endorsement():
 
     assert res.status_code == 200
     update_sql = conn.execute.call_args_list[0].args[0]
-    assert "has_endorsement = COALESCE($8, has_endorsement)" in update_sql
-    assert conn.execute.call_args_list[0].args[8] is True
+    assert "has_endorsement = COALESCE($6, has_endorsement)" in update_sql
+    assert conn.execute.call_args_list[0].args[6] is True  # $6 desde Seguros E1 (sin status ni plazo)
 
 
 def test_patch_policy_updates_endorsement_number():
@@ -274,44 +278,17 @@ def test_patch_policy_updates_endorsement_number():
 
     assert res.status_code == 200
     update_sql = conn.execute.call_args_list[0].args[0]
-    assert "endorsement_number = COALESCE($9, endorsement_number)" in update_sql
-    assert conn.execute.call_args_list[0].args[9] == "END-99"
+    assert "endorsement_number = COALESCE($7, endorsement_number)" in update_sql
+    assert conn.execute.call_args_list[0].args[7] == "END-99"  # $7 desde Seguros E1
 
 
-def test_generate_installment_schedule_creates_monthly_rows():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    conn.fetchval.side_effect = ["c1", 0]
-    conn.fetchrow.side_effect = [
-        {"id": "i1", "installment_number": 1, "total_installments": 3, "amount_uf": 2.5,
-         "due_date": "2026-01-15", "payment_status": "PENDING", "paid_at": None},
-        {"id": "i2", "installment_number": 2, "total_installments": 3, "amount_uf": 2.5,
-         "due_date": "2026-02-15", "payment_status": "PENDING", "paid_at": None},
-        {"id": "i3", "installment_number": 3, "total_installments": 3, "amount_uf": 2.5,
-         "due_date": "2026-03-15", "payment_status": "PENDING", "paid_at": None},
-    ]
-    client = make_client(pool)
-
-    res = client.post(
-        "/api/v1/policies/p1/installments/generate",
-        json={"total_installments": 3, "amount_uf": 2.5, "first_due_date": "2026-01-15"},
-    )
-
-    assert res.status_code == 201
-    body = res.json()
-    assert len(body) == 3
-    assert [r["due_date"] for r in body] == ["2026-01-15", "2026-02-15", "2026-03-15"]
-    insert_calls = [c for c in conn.fetchrow.call_args_list]
-    assert len(insert_calls) == 3
-    assert insert_calls[1].args[1:] == ("p1", 2, 3, 2.5, date(2026, 2, 15))
-
-
+# El plan exitoso se prueba contra la base (test_insurance_status_integration.py):
+# aquí solo los rechazos, que no llegan a escribir.
 def test_generate_installment_schedule_404_when_policy_missing():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchval.return_value = None
+    conn.fetchrow.return_value = None
     client = make_client(pool)
 
     res = client.post(
@@ -326,7 +303,8 @@ def test_generate_installment_schedule_rejects_when_already_has_installments():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchval.side_effect = ["c1", 2]
+    conn.fetchrow.return_value = {"carrier_id": "c1", "valid_from": None, "valid_to": None}
+    conn.fetchval.return_value = 2
     client = make_client(pool)
 
     res = client.post(
@@ -525,3 +503,20 @@ def test_get_policy_resolves_signed_urls():
 
     assert res.status_code == 200
     assert res.json()["policy_document_url"] == "https://signed.example.com/x.pdf"
+
+
+# S4 (Seguros E1): una cuota fuera de la vigencia de su póliza se rechaza, y no se crea ninguna.
+def test_S4_generar_cuotas_fuera_de_la_vigencia_responde_422():
+    pool = AsyncMock()
+    conn = AsyncMock()
+    wire_transactional_conn(pool, conn)
+    conn.fetchrow.return_value = {"carrier_id": "c1", "valid_from": date(2026, 1, 1), "valid_to": date(2026, 6, 30)}
+    conn.fetchval.return_value = 0
+    client = make_client(pool)
+
+    res = client.post("/api/v1/policies/p1/installments/generate",
+                      json={"total_installments": 12, "amount_uf": 2.0, "first_due_date": "2026-01-15"})
+
+    assert res.status_code == 422
+    assert "vigencia" in res.json()["detail"]
+    assert not any("INSERT INTO public.insurance_installments" in str(c.args[0]) for c in conn.fetchrow.call_args_list)

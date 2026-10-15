@@ -246,12 +246,12 @@ describe('InsurancePolicyModal', () => {
 
     await waitFor(() => expect(carriersApi.createPolicy).toHaveBeenCalledWith('c2', {
       insurance_company: 'Mapfre', policy_number: undefined,
-      valid_from: undefined, valid_to: undefined, expiration_alert_days: 30, has_endorsement: false,
+      valid_from: undefined, valid_to: undefined, has_endorsement: false,
       endorsement_number: undefined,
     }))
   })
 
-  it('sends vigencia, expiration_alert_days and has_endorsement when set on the new-policy form', async () => {
+  it('sends vigencia and has_endorsement when set on the new-policy form (el plazo ya no es por póliza)', async () => {
     renderModal('c2')
     await screen.findByText(/Sin pólizas registradas todavía/)
 
@@ -259,14 +259,15 @@ describe('InsurancePolicyModal', () => {
     fireEvent.change(screen.getByPlaceholderText('Aseguradora'), { target: { value: 'Mapfre' } })
     fireEvent.change(screen.getByLabelText('Vigencia desde'), { target: { value: '2026-01-01' } })
     fireEvent.change(screen.getByLabelText('Vigencia hasta'), { target: { value: '2027-01-01' } })
-    fireEvent.change(screen.getByLabelText('Alerta de vencimiento en días'), { target: { value: '45' } })
+    // El campo del plazo ya no existe (Seguros E1): es uno solo, en la base.
+    expect(screen.queryByLabelText('Alerta de vencimiento en días')).not.toBeInTheDocument()
     fireEvent.click(screen.getByText('Tiene endoso'))
     fireEvent.change(screen.getByPlaceholderText('N° de endoso'), { target: { value: 'END-1' } })
     fireEvent.click(screen.getByText('Guardar'))
 
     await waitFor(() => expect(carriersApi.createPolicy).toHaveBeenCalledWith('c2', {
       insurance_company: 'Mapfre', policy_number: undefined,
-      valid_from: '2026-01-01', valid_to: '2027-01-01', expiration_alert_days: 45, has_endorsement: true,
+      valid_from: '2026-01-01', valid_to: '2027-01-01', has_endorsement: true,
       endorsement_number: 'END-1',
     }))
   })

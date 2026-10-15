@@ -921,7 +921,9 @@ def test_create_carrier_policy_serializes_uuid_id_in_audit_log():
 
     assert res.status_code == 201
     audit_call = conn.execute.call_args
-    assert audit_call.args[7] == '"11111111-1111-1111-1111-111111111111"'
+    # Seguros E1: la póliza nueva se audita como póliza; su id (uuid) va como entity_id.
+    assert audit_call.args[2] == "INSURANCE_POLICY"
+    assert audit_call.args[3] == "11111111-1111-1111-1111-111111111111"
 
 
 def test_create_carrier_policy_persists_has_endorsement():

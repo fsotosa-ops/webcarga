@@ -855,17 +855,18 @@ async def create_carrier_policy(
                 """
                 INSERT INTO public.insurance_policies
                     (carrier_id, insurance_company, policy_number, valid_from, valid_to,
-                     expiration_alert_days, has_endorsement, endorsement_number)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                     has_endorsement, endorsement_number)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING id, carrier_id, insurance_company, policy_number, valid_from, valid_to,
-                          expiration_alert_days, has_endorsement, endorsement_number, status, created_at
+                          has_endorsement, endorsement_number, created_at
                 """,
                 carrier_id, body.insurance_company, body.policy_number, body.valid_from,
-                body.valid_to, body.expiration_alert_days, body.has_endorsement, body.endorsement_number,
+                body.valid_to, body.has_endorsement, body.endorsement_number,
             )
+            # La póliza nueva se audita como póliza (Seguros E1), con su empresa en el valor.
             await log_change(
-                conn, actor=user["sub"], entity_type="CARRIER", entity_id=carrier_id,
-                action="create", field="insurance_policy", new_value=str(row["id"]), source="api",
+                conn, actor=user["sub"], entity_type=insurance.AUDIT_ENTITY, entity_id=row["id"],
+                action="create", field="insurance_policy", new_value={"carrier_id": carrier_id}, source="api",
             )
     return dict(row)
 

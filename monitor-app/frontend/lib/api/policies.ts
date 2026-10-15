@@ -9,7 +9,6 @@ export type PolicyPatchBody = {
   valid_from?:             string
   valid_to?:               string
   status?:                 PolicyStatus
-  expiration_alert_days?:  number
   has_endorsement?:        boolean
   endorsement_number?:     string
   external_portal_url?:    string

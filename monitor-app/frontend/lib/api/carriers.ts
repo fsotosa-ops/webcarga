@@ -73,7 +73,6 @@ export type InsurancePolicyCreateBody = {
   policy_number?:          string
   valid_from?:             string
   valid_to?:               string
-  expiration_alert_days?:  number
   has_endorsement?:        boolean
   endorsement_number?:     string
 }
