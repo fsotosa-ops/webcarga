@@ -801,6 +801,12 @@ _SORTABLE_COLUMNS = {
     "client_name", "current_status", "source_system_trip_id",
     "status_reported_at",
 }
+# Ordenables que no son alias del SELECT. El origen es la definición única de
+# services/origen_del_viaje.py (Monitor, 15/10: "Origen · Carga" alfabético).
+# Expresión fija, nunca input del usuario.
+_SORT_EXPRESSIONS = {
+    "origin": origen_del_viaje("t"),
+}
 
 
 @router.get("")
@@ -980,7 +986,7 @@ async def list_trips(
     where_fuera_de_la_ventana = (
         "WHERE " + " AND ".join(f"NOT {c}" if c == ventana else c for c in filters) if ventana else None)
     offset = (page - 1) * limit
-    sort_col = sort_by if sort_by in _SORTABLE_COLUMNS else "planning_date"
+    sort_col = _SORT_EXPRESSIONS.get(sort_by) or (sort_by if sort_by in _SORTABLE_COLUMNS else "planning_date")
     sort_dir_sql = "ASC" if sort_dir == "asc" else "DESC"
     # Tie-break con status_reported_at (última vez que el TMS reportó el
     # viaje), no t.updated_at — ese campo se pisa también con ediciones

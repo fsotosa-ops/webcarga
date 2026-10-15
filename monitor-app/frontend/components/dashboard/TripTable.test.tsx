@@ -494,4 +494,20 @@ describe('TripTable — vista rápida (D4, C10)', () => {
     expect(onOpenQuickView).toHaveBeenLastCalledWith({ kind: 'asset', id: 'a1', label: 'HFVP14' })
     expect(onSelect).not.toHaveBeenCalled()
   })
+
+  // Monitor 15/10 (pedido del usuario): orden de columnas y Origen ordenable.
+  it('las columnas van Estado · Fecha · TMS · ID Viaje · Patente · Conductor · Origen · Destinos · Temp · EETT', () => {
+    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
+    const encabezados = screen.getAllByRole('columnheader').map(h => h.textContent?.trim())
+    // Estado lleva además un texto para el lector de pantalla ("Estado, Abrir detalle").
+    expect(encabezados.map(t => t?.replace(/\s+/g, ' ').split(',')[0])).toEqual(
+      ['Estado', 'Fecha', 'TMS', 'ID Viaje', 'Patente', 'Conductor', 'Origen · Carga', 'Destinos', 'Temp', 'EETT'])
+  })
+
+  it('"Origen · Carga" ordena por el origen', () => {
+    const onSort = vi.fn()
+    render(<TripTable trips={[makeTrip('t1')]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={onSort} />)
+    fireEvent.click(screen.getByRole('columnheader', { name: /Origen · Carga/ }))
+    expect(onSort).toHaveBeenCalledWith('origin')
+  })
 })

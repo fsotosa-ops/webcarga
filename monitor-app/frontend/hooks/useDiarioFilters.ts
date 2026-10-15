@@ -5,13 +5,13 @@ import type { AlertSignalId } from '@/lib/utils/alertSignals'
 
 export type Tab = 'en_curso' | 'historial'
 
-/** Columnas ordenables de la tabla principal — mismos 7 alias que expone
- *  `_TRIP_SELECT` en el backend (trips.py), único allow-list real del
- *  `ORDER BY` server-side (2026-08-02). */
+/** Columnas ordenables de la tabla principal — el allow-list del `ORDER BY`
+ *  server-side en el backend (trips.py: `_SORTABLE_COLUMNS` y, para el
+ *  origen, `_SORT_EXPRESSIONS`). */
 export type SortKey =
   | 'planning_date' | 'tractor_plate' | 'driver_name' | 'carrier_name'
   | 'client_name' | 'current_status' | 'source_system_trip_id'
-  | 'status_reported_at'
+  | 'status_reported_at' | 'origin'
 
 export interface DiarioFilters {
   tab:            Tab

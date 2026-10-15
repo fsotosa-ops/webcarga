@@ -376,6 +376,21 @@ def test_list_trips_ignores_invalid_sort_by_falls_back_to_planning_date():
     assert "some_unknown_column" not in query
 
 
+def test_list_trips_sort_by_origin_orders_by_the_origin_stop_name():
+    """Monitor 15/10: "Origen · Carga" se ordena alfabéticamente, por la misma
+    definición del origen que usa el resto de la API."""
+    from app.services.origen_del_viaje import origen_del_viaje
+    pool = AsyncMock()
+    pool.fetchval.return_value = 0
+    pool.fetch.return_value = []
+    client = make_client(pool, router=trips_router)
+    res = client.get("/api/v1/trips/?view=historial&sort_by=origin&sort_dir=asc")
+    assert res.status_code == 200
+    query = pool.fetch.call_args_list[0].args[0]
+    # La definición única del origen (services/origen_del_viaje.py), no una copia.
+    assert f"ORDER BY {origen_del_viaje('t')} ASC NULLS LAST, status_reported_at DESC NULLS LAST" in query
+
+
 def test_list_trips_sort_by_status_reported_at_is_allowed():
     """Bug 5.6: Operaciones quiere el viaje más recientemente reportado por
     el TMS primero — status_reported_at pasa a ser sorteable y es también el

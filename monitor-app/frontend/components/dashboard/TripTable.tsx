@@ -351,10 +351,10 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                 <th onClick={() => onSort('source_system_trip_id')} className="px-2.5 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">ID Viaje<OrdenIcono activo={sortKey === 'source_system_trip_id'} direccion={sortDir} /></th>
                 <th onClick={() => onSort('tractor_plate')} className="px-2.5 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Patente<OrdenIcono activo={sortKey === 'tractor_plate'} direccion={sortDir} /></th>
                 <th onClick={() => onSort('driver_name')} className="px-2.5 py-2.5 text-left w-[168px] cursor-pointer select-none hover:bg-gray-50 transition-colors">Conductor<OrdenIcono activo={sortKey === 'driver_name'} direccion={sortDir} /></th>
-                <th onClick={() => onSort('carrier_name')} className="px-2.5 py-2.5 text-left w-[162px] cursor-pointer select-none hover:bg-gray-50 transition-colors">EETT<OrdenIcono activo={sortKey === 'carrier_name'} direccion={sortDir} /></th>
-                <th className="px-2.5 py-2.5 text-left w-[124px]">Origen · Carga</th>
+                <th onClick={() => onSort('origin')} className="px-2.5 py-2.5 text-left w-[124px] cursor-pointer select-none hover:bg-gray-50 transition-colors">Origen · Carga<OrdenIcono activo={sortKey === 'origin'} direccion={sortDir} /></th>
                 <th className="px-2.5 py-2.5 text-left">Destinos</th>
                 <th className="px-2.5 py-2.5 text-center w-[64px]">Temp</th>
+                <th onClick={() => onSort('carrier_name')} className="px-2.5 py-2.5 text-left w-[162px] cursor-pointer select-none hover:bg-gray-50 transition-colors">EETT<OrdenIcono activo={sortKey === 'carrier_name'} direccion={sortDir} /></th>
               </tr>
             </thead>
             <tbody>
@@ -560,25 +560,6 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                       )}
                     </td>
 
-                    {/* EETT */}
-                    <td className="px-2.5 py-2.5">
-                      {trip.carrier_id ? (
-                        <>
-                          <span onClick={onOpenQuickView ? e => e.stopPropagation() : undefined}
-                                className="text-dato font-medium text-text-primary leading-snug block line-clamp-2 max-w-[146px]">
-                            <EntityCell kind="carrier" id={trip.carrier_id} label={trip.carrier_name} onOpen={onOpenQuickView} />
-                          </span>
-                          <div className="flex items-center gap-1 mt-0.5">
-                            <InsuranceAlertBadge alert={trip.insurance_alert} />
-                            <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_has_critical_alert} label="Empresa" />
-                          </div>
-                        </>
-                      ) : (
-                        <span className="text-etiqueta text-gray-400 italic">sin vincular</span>
-                      )}
-                    </td>
-
-
                     {/* ORIGEN · CARGA */}
                     <td className="px-2.5 py-2.5">
                       <p className="text-etiqueta text-gray-500 truncate max-w-[110px]">
@@ -609,6 +590,24 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                           ? <span className={`rounded-full px-2 py-0.5 text-dato font-medium ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
                           : <span className="text-gray-400 text-dato">—</span>
                       })()}
+                    </td>
+
+                    {/* EETT */}
+                    <td className="px-2.5 py-2.5">
+                      {trip.carrier_id ? (
+                        <>
+                          <span onClick={onOpenQuickView ? e => e.stopPropagation() : undefined}
+                                className="text-dato font-medium text-text-primary leading-snug block line-clamp-2 max-w-[146px]">
+                            <EntityCell kind="carrier" id={trip.carrier_id} label={trip.carrier_name} onOpen={onOpenQuickView} />
+                          </span>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <InsuranceAlertBadge alert={trip.insurance_alert} />
+                            <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_has_critical_alert} label="Empresa" />
+                          </div>
+                        </>
+                      ) : (
+                        <span className="text-etiqueta text-gray-400 italic">sin vincular</span>
+                      )}
                     </td>
                   </tr>
                 )
