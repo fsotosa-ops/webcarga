@@ -5,8 +5,6 @@ import { useQuery } from '@tanstack/react-query'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronRight, Plus } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
-import { taxonomiesApi } from '@/lib/api/config'
-import { taxonomyKey } from '@/lib/queries/taxonomies'
 import { CABECERA, EncabezadoOrdenable } from '@/components/ui/tabla/EncabezadoOrdenable'
 import { useOrden } from '@/components/ui/tabla/useOrden'
 import { ChipsDeFiltro } from '@/components/ui/ChipsDeFiltro'
@@ -20,6 +18,8 @@ import { BarraDelBorrador } from './BarraDelBorrador'
 import { camposCambiados, editar, valorDe, type Borrador, type Edicion } from './borrador'
 import { MarcaDeRevision, SIN_REVISAR, useChipDeRevision, useRevisiones } from './revision'
 import { celdaSeExigeA } from '@/components/compliance/requirements/frase-de-la-regla'
+import { esMensual, tieneCondicion } from '@/components/compliance/requirements/requirementFilters'
+import { useRequirementVocabulary } from '@/components/compliance/requirements/useRequirementVocabulary'
 import { INPUT, LoadState } from './shared'
 import type { RequirementOption } from '@/lib/types'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
@@ -30,14 +30,6 @@ const ENTIDAD: Record<string, { texto: string; clase: string }> = {
   DRIVER:  { texto: 'CONDUCTOR', clase: 'bg-emerald-50 text-emerald-700' },
 }
 
-
-function esMensual(r: RequirementOption): boolean {
-  return r.expiration_policy === 'CALENDAR_PERIOD'
-}
-
-function tieneCondicion(r: RequirementOption): boolean {
-  return Boolean(r.applies_to_fleet_service_type_ids?.length || r.applies_to_management_types?.length)
-}
 
 /** El catálogo de documentos exigidos, como tabla que se edita en el lugar.
  *
@@ -53,18 +45,7 @@ export function CondicionesTabla() {
     queryKey: ['compliance-requirements'],
     queryFn: () => complianceApi.listRequirements(),
   })
-  const tax = useQuery({
-    queryKey: taxonomyKey('FLEET_SERVICE_TYPE'),
-    queryFn: () => taxonomiesApi.list('FLEET_SERVICE_TYPE'),
-  })
-  // Los tipos de gestión salen del MISMO catálogo que los subtipos, no de una
-  // lista escrita al lado. Estaban copiados en tres lugares del frontend
-  // (acá, el panel y la frase) más la función de Postgres: renombrar uno en
-  // Configuración dejaba las cuatro copias diciendo cosas distintas.
-  const gestionesTax = useQuery({
-    queryKey: taxonomyKey('WEBCARGA_OPERATION_TYPE'),
-    queryFn: () => taxonomiesApi.list('WEBCARGA_OPERATION_TYPE'),
-  })
+  const { subtipos, gestiones, vocabulario, tax, gestionesTax } = useRequirementVocabulary()
   const { orden, ordenarPor, comparar } = useOrden({ columna: 'entidad', direccion: 'asc' })
   // El filtro llega puesto cuando se entra desde la portada por "N sin
   // revisar": el número es el camino corto a resolverlo, no un adorno.
@@ -109,45 +90,6 @@ export function CondicionesTabla() {
     if (code) router.push(destino)
     else router.replace(destino)
   }, [router, pathname, searchParams])
-
-  // Los subtipos vigentes, en la forma que usan la frase y el panel. Su
-  // cantidad es el TOTAL contra el que se enuncia una regla de varios
-  // subtipos: "9 de 10", no "sólo 9".
-  const subtipos = useMemo(
-    () => (tax.data ?? []).map(t => ({ id: t.id, label: t.label })),
-    [tax.data],
-  )
-
-  const etiquetaSubtipo = useMemo(() => {
-    const mapa = new Map((tax.data ?? []).map(s => [s.id, s.label]))
-    // Un subtipo desactivado desaparece del catalogo pero su id sigue en la
-    // regla: sin este respaldo la frase diria "Solo undefined".
-    return (id: string) => mapa.get(id) ?? 'un subtipo dado de baja'
-  }, [tax.data])
-
-  // Los tipos de gestión se identifican por su CÓDIGO, no por su nombre
-  // visible: es el mismo código que guardan las reglas y `carriers`, y es lo
-  // que permite renombrar la etiqueta sin cambiar a quién alcanza nada.
-  const gestiones = useMemo(
-    () => (gestionesTax.data ?? [])
-      .filter(g => g.code)
-      .map(g => ({ id: g.code as string, label: g.label })),
-    [gestionesTax.data],
-  )
-
-  const etiquetaGestion = useMemo(() => {
-    const mapa = new Map(gestiones.map(g => [g.id, g.label]))
-    return (code: string) => mapa.get(code) ?? 'un tipo de gestión que ya no existe'
-  }, [gestiones])
-
-  // Las dos dimensiones de la condición, en una sola forma: la frase no
-  // necesita saber cuál de las dos está mirando.
-  const vocabulario = useMemo(() => ({
-    subtipo: etiquetaSubtipo,
-    totalSubtipos: subtipos.length,
-    gestion: etiquetaGestion,
-    totalGestiones: gestiones.length,
-  }), [etiquetaSubtipo, subtipos.length, etiquetaGestion, gestiones.length])
 
   const todos = useMemo(() => req.data ?? [], [req.data])
 

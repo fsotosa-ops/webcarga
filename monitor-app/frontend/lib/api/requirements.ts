@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { EfectoDelLote, ExigibleOn, LotePublicado, RequirementAlias, RequirementConditions, RequirementConditionsPatchResult, RequirementOption, RecalcPreview, RecalcResult, VistaPreviaDeVigencia } from '@/lib/types'
+import type { EfectoDelLote, ExigibleOn, LotePublicado, RequirementAlias, RequirementConditions, RequirementConditionsPatchResult, RequirementDetail, RequirementOption, RecalcPreview, RecalcResult, VistaPreviaDeVigencia } from '@/lib/types'
 import type { Vigencia } from '@/lib/vigencia'
 
 const BASE = '/api/v1/compliance-requirements'
@@ -17,6 +17,9 @@ export type CambiosDeRequisito = Partial<Pick<RequirementConditions,
 export type CambioEnLote = { requirement_id: string; patch: CambiosDeRequisito }
 
 export const requirementsApi = {
+  /** La ficha de un documento: fila del catálogo + estados + historial de la regla. */
+  get: (id: string) => apiFetch<RequirementDetail>(`${BASE}/${id}`),
+
   /** Cambia la regla, NO los registros: aplicarla es POST /recalc, un acto
    *  aparte. `null` no es un valor válido para `is_active` (columna NOT
    *  NULL) — el backend lo rechaza con 422. */

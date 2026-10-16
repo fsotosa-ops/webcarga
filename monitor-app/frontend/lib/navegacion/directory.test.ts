@@ -37,6 +37,7 @@ describe('returnLink', () => {
     expect(returnLink('/dashboard/carriers/t1?tab=conductores')?.label).toBe('Volver a la empresa')
     expect(returnLink('/dashboard/clients?vista=inactivos')?.label).toBe('Volver a Clientes')
     expect(returnLink('/dashboard/clients/s1?tab=empresas')?.label).toBe('Volver al cliente')
+    expect(returnLink('/dashboard/compliance/requirements?state=sin-vigencia')?.label).toBe('Volver a Documentos exigidos')
   })
 })
 

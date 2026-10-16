@@ -115,3 +115,12 @@ export function renovacionDe(v: Vigencia): Renovacion {
       return v.frequency_months === 1 ? 'mes' : 'otra'
   }
 }
+
+/** Qué tan exigido es, en la palabra de la planilla. */
+export function nivelDe(level: RequirementOption['requirement_level']): string {
+  switch (level) {
+    case 'LEGAL_MANDATORY': return 'Obligatorio'
+    case 'CONDITIONAL_OPTIONAL': return 'Opcional'
+    case 'SHIPPER_REQUIRED': return 'Lo exige el cliente'
+  }
+}

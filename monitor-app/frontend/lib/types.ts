@@ -1886,6 +1886,22 @@ export type RequirementOption = {
    *  no viene es real y dura minutos. Ausente significa "no sé", y la celda lo
    *  distingue de "no tiene ninguno", que es un problema de verdad. */
   aliases?:                          string[]
+  /** "Cumplen n de m" (Certificación › Documentos exigidos): registros al día
+   *  de quienes están en alcance, de `exigidos` (= `alcance.alcanzadas`).
+   *  Opcionales por la ventana entre despliegues de API y frontend. */
+  cumplen?:                          number
+  exigidos?:                         number
+}
+
+/** Una versión de la regla base de un documento; `vigente_desde` null es la
+ *  original ("desde siempre"). */
+export type VersionDeRegla = ReglaDeVigencia & { vigente_desde: string | null }
+
+/** La ficha de un documento exigido: su fila del catálogo, sus registros por
+ *  estado y el historial de la regla base, de la más nueva a la más vieja. */
+export type RequirementDetail = RequirementOption & {
+  estados: { vencidos: number; por_vencer: number; al_dia: number; falta: number }
+  reglas:  VersionDeRegla[]
 }
 
 /** La condición de un requisito, sin lo que no hace falta para editarla: un

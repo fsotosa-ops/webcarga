@@ -72,11 +72,16 @@ const CATALOG_LIFECYCLE: Record<string, StateStyle> = {
   ACTIVE:   { label: 'Activo',   tone: 'resolved', icon: CircleCheck },
   INACTIVE: { label: 'Inactivo', tone: 'neutral',  icon: Ban },
 }
+/** Un documento exigido está vigente (se le exige a quien alcanza) o no. */
+const REQUIREMENT_LIFECYCLE: Record<string, StateStyle> = {
+  ACTIVE:   { label: 'Vigente',      tone: 'resolved', icon: CircleCheck },
+  INACTIVE: { label: 'Sin vigencia', tone: 'neutral',  icon: Ban },
+}
 const LIFECYCLE_BY_KIND: Record<EntityKind | CatalogKind, Record<string, StateStyle>> = {
   carrier: CARRIER_LIFECYCLE, driver: FLEET_LIFECYCLE, asset: FLEET_LIFECYCLE,
-  shipper: CATALOG_LIFECYCLE, location: CATALOG_LIFECYCLE,
+  shipper: CATALOG_LIFECYCLE, location: CATALOG_LIFECYCLE, requirement: REQUIREMENT_LIFECYCLE,
 }
-export type CatalogKind = 'shipper' | 'location'
+export type CatalogKind = 'shipper' | 'location' | 'requirement'
 
 export function lifecycleStyle(kind: EntityKind | CatalogKind, status: string): StateStyle {
   return LIFECYCLE_BY_KIND[kind][status] ?? { label: status, tone: 'neutral', icon: CircleDashed }

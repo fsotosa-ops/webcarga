@@ -214,7 +214,7 @@ describe('Sidebar — Certificación se abre en Empresas y Por asignar', () => {
   // Pendientes vuelve como tercer trabajo de Certificación (spec 2026-10-11,
   // decisión D1): "qué documentos se deben y quién los debe". La aserción
   // vieja de que NO existía quedó contradicha por esa decisión.
-  it('Certificación tiene Empresas, Por asignar y Pendientes, en ese orden', async () => {
+  it('Certificación tiene Empresas, Por asignar, Pendientes y Documentos exigidos, en ese orden', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     setup()
     fireEvent.click(await screen.findByRole('button', { name: /certificación/i }))
@@ -227,6 +227,7 @@ describe('Sidebar — Certificación se abre en Empresas y Por asignar', () => {
       ['Empresas', '/dashboard/compliance'],
       ['Por asignar', '/dashboard/compliance/inbox'],
       ['Pendientes', '/dashboard/compliance/pending'],
+      ['Documentos exigidos', '/dashboard/compliance/requirements'],
     ])
   })
 })

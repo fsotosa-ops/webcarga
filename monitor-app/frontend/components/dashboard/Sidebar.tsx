@@ -79,6 +79,7 @@ const NAV_GROUPS: NavGroupDef[] = [
       { href: '/dashboard/compliance',       label: 'Empresas' },
       { href: '/dashboard/compliance/inbox', label: 'Por asignar', badge: 'inbox' },
       { href: '/dashboard/compliance/pending', label: 'Pendientes', badge: 'requests' },
+      { href: '/dashboard/compliance/requirements', label: 'Documentos exigidos' },
     ],
   },
   // Seguros (Seguros E2, 15/10): un submódulo por objeto de trabajo, como

@@ -5,16 +5,14 @@ import { destinoSeguro } from '@/lib/auth/destino'
 import { CIERRE } from './cierre'
 import { MONITOR } from './viaje'
 import { INSTALLMENTS, POLICIES } from './insurance'
+import { REQUIREMENTS } from './compliance'
+import { withReturn } from './retorno'
 
 const CARRIERS = '/dashboard/carriers'
 const DRIVERS = '/dashboard/drivers'
 const ASSETS = '/dashboard/assets'
 export const CLIENTS = '/dashboard/clients'
 
-function withReturn(url: string, returnTo?: string): string {
-  if (!returnTo) return url
-  return `${url}${url.includes('?') ? '&' : '?'}next=${encodeURIComponent(returnTo)}`
-}
 
 export const carrierHref = (id: string, returnTo?: string) => withReturn(`${CARRIERS}/${id}`, returnTo)
 export const driverHref = (id: string, returnTo?: string) => withReturn(`${DRIVERS}/${id}`, returnTo)
@@ -43,6 +41,7 @@ export function returnLink(next: string | null | undefined): { href: string; lab
     : href.startsWith(ASSETS) ? 'Volver a Equipos'
     : href.startsWith(`${CLIENTS}/`) ? 'Volver al cliente'
     : href.startsWith(CLIENTS) ? 'Volver a Clientes'
+    : href.startsWith(REQUIREMENTS) ? 'Volver a Documentos exigidos'
     : href.startsWith(INSTALLMENTS) ? 'Volver a Cuotas'
     : href.startsWith(`${POLICIES}/policies/`) ? 'Volver a la póliza'
     : href.startsWith(POLICIES) ? 'Volver a Pólizas'

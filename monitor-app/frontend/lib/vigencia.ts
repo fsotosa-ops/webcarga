@@ -152,3 +152,10 @@ export function resumenDeVigencia(v: Vigencia): string {
     }
   }
 }
+
+/** Con cuánta anticipación se avisa: `null` si el documento no vence. Sin días
+ *  propios rige el aviso general (Configuración › Alertas de vencimiento). */
+export function resumenDeAviso(v: Vigencia): string | null {
+  if (v.politica === 'NONE') return null
+  return v.warning_days != null ? `${v.warning_days} días` : 'General'
+}
