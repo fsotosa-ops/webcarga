@@ -205,9 +205,10 @@ def test_el_permiso_de_cada_seccion_dice_lo_mismo_en_python_y_en_typescript():
         / "admin" / "settings" / "secciones.ts"
     ).read_text(encoding="utf-8")
     bloque = fuente.split("export const PERMISO_DE_SECCION")[1].split("}")[0]
-    en_typescript = dict(re.findall(r"'([\w-]+)':\s*'([\w.]+)'", bloque))
+    # Clave `area/section`: "expiry-alerts" existe en Certificación y en Seguros.
+    en_typescript = dict(re.findall(r"'([\w-]+/[\w-]+)':\s*'([\w.]+)'", bloque))
     for r in REVISABLES:
-        assert en_typescript.get(r.seccion) == r.permiso.value, f"{r.dominio}/{r.seccion}"
+        assert en_typescript.get(f"{r.dominio}/{r.seccion}") == r.permiso.value, f"{r.dominio}/{r.seccion}"
 
 
 def test_confirmar_una_seccion_inventada_es_422():
@@ -284,9 +285,10 @@ async def test_integracion_revisar_dos_veces_no_cuenta_dos(conexion_revertida):
 
 
 def test_el_mapa_de_taxonomias_dice_lo_mismo_en_python_y_en_typescript():
-    """`TaxonomyTab` es un solo componente que sirve a los cinco vocabularios,
-    asi que necesita saber en que seccion esta parado — y el backend necesita
-    lo mismo para registrar la revision al guardar. Son dos copias del mismo
+    """`vocabularySource` es una sola fuente que sirve a los siete vocabularios
+    (settings-sources.tsx, registro VOCABULARIOS), asi que necesita saber en que
+    seccion esta parado — y el backend necesita lo mismo para registrar la
+    revision al guardar. Son dos copias del mismo
     mapa, en dos lenguajes, y este test es lo unico que impide que se separen.
 
     Es la misma red que ya existe para el union de dominios de TypeScript
@@ -297,13 +299,13 @@ def test_el_mapa_de_taxonomias_dice_lo_mismo_en_python_y_en_typescript():
 
     fuente = (
         Path(__file__).resolve().parents[3] / "frontend" / "app" / "dashboard"
-        / "admin" / "settings" / "dominios.ts"
+        / "admin" / "settings" / "settings-sources.tsx"
     ).read_text(encoding="utf-8")
-    bloque = fuente.split("export const SECCION_DE_TAXONOMIA")[1].split("}")[0]
+    bloque = fuente.split("const VOCABULARIOS")[1].split("\n}\n")[0]
     en_typescript = {
         vocabulario: (dominio, seccion)
         for vocabulario, dominio, seccion in re.findall(
-            r"(\w+):\s*\['([\w-]+)',\s*'([\w-]+)'\]", bloque
+            r"(\w+):\s*\{\s*area:\s*'([\w-]+)',\s*section:\s*'([\w-]+)'", bloque
         )
     }
 

@@ -83,7 +83,8 @@ describe('la escala tipografica', () => {
     // 158 -> 130 el 2026-10-15: Seguros con el kit; se retiraron el modal de pólizas y sus piezas (Seguros E2).
     // 130 -> 128 el 2026-10-15: PolicyCreateForm sin 9-10px (menores de la revisión final de Seguros E2).
     // 128 -> 117 el 2026-10-16: Configuración con la lista + panel (Parte 1, tarea 5).
-    const DEUDA = 117
+    // 117 -> 112 el 2026-10-16: parámetros de Configuración con la lista + panel (Parte 1, tarea 6).
+    const DEUDA = 112
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

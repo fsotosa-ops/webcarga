@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { DOMINIOS, dominioPorClave, puedeVerDominio } from './dominios'
 import { SECCION_DE_TAXONOMIA } from './settings-sources'
+import { PERMISO_DE_SECCION } from './secciones'
 
 describe('registro de dominios', () => {
   it('las claves de dominio son unicas', () => {
@@ -55,6 +56,7 @@ describe('registro de dominios', () => {
         'tms-clients', 'tms-statuses', 'unassigned-reasons', 'void-reasons',
       ],
       fleet:    ['operation-types', 'subtypes'],
+      insurance: ['expiry-alerts'],
       people:   ['roles', 'users'],
       billing:  [],
     })
@@ -69,9 +71,12 @@ describe('registro de dominios', () => {
     expect(SECCION_DE_TAXONOMIA.TRIP_VOID_REASON).toEqual(['operations', 'void-reasons'])
   })
 
-  it('las claves de seccion no se repiten entre dominios', () => {
-    const todas = DOMINIOS.flatMap(d => d.secciones.map(s => s.clave))
-    expect(new Set(todas).size).toBe(todas.length)
+  // "Alertas de vencimiento" existe en Certificación y en Seguros: lo único que no
+  // se repite es `area/section`, que es la clave del permiso (secciones.ts).
+  it('cada sección tiene su permiso declarado con la clave area/section', () => {
+    for (const d of DOMINIOS) for (const s of d.secciones) {
+      expect(PERMISO_DE_SECCION, `${d.clave}/${s.clave}`).toHaveProperty([`${d.clave}/${s.clave}`])
+    }
   })
 })
 

@@ -119,7 +119,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 1084 -> 962 el 2026-10-15: Seguros con el kit; se retiraron el modal de pólizas y sus piezas (Seguros E2).
     // 962 -> 954 el 2026-10-15: PolicyCreateForm con tokens (menores de la revisión final de Seguros E2).
     // 954 -> 911 el 2026-10-16: Configuración con la lista + panel; fuera los formularios por fila (Parte 1, tarea 5).
-    const DEUDA = 911
+    // 911 -> 891 el 2026-10-16: umbrales, rangos y reglas del Monitor como lista + panel (Parte 1, tarea 6).
+    const DEUDA = 891
 
     const total = usosDeColorCrudo()
     expect(

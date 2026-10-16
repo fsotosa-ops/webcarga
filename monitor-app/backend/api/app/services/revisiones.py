@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from fastapi import HTTPException
 
 from ..authz.permissions import Permission
-from .vencimientos import GLOBAL_ALERT_THRESHOLD
+from .vencimientos import GLOBAL_ALERT_THRESHOLD, POLIZA_POR_VENCER
 
 
 @dataclass(frozen=True)
@@ -106,6 +106,11 @@ REVISABLES: tuple[Revisable, ...] = (
               Permission.OPERATIONS_CONFIGURE),
 
     _taxonomia("fleet", "subtypes", "FLEET_SERVICE_TYPE"),
+    # El plazo de "póliza por vencer" (Seguros E1): lo edita Seguros (Configuración, Parte 1).
+    Revisable("insurance", "expiry-alerts",
+              "SELECT doc_type AS id, label, label || ' ' || doc_type AS buscable, "
+              f"doc_type AS abre FROM app.alert_thresholds WHERE doc_type = '{POLIZA_POR_VENCER}'",
+              Permission.INSURANCE_CONFIGURE),
     _taxonomia("fleet", "operation-types", "WEBCARGA_OPERATION_TYPE"),
 )
 

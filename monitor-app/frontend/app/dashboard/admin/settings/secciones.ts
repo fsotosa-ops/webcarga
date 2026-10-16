@@ -10,27 +10,27 @@ import { usePermiso } from '@/lib/authz/PermisosProvider'
  *  Vive aparte de dominios.ts porque las pestañas lo importan y dominios.ts
  *  importa las pestañas. */
 export const PERMISO_DE_SECCION = {
-  'conditions':           'certification.configure',
-  // Reglas de vencimiento de documentos: Certificación (spec RBAC §4).
-  'expiry-alerts':        'certification.configure',
-  'tms-statuses':         'operations.configure',
-  'operational-statuses': 'operations.configure',
-  'equipment-statuses':   'operations.configure',
-  'alert-thresholds':     'operations.configure',
-  'temperature-ranges':   'operations.configure',
-  'driver-reasons':       'operations.configure',
-  'unassigned-reasons':   'operations.configure',
-  'void-reasons':         'operations.configure',
-  // Un origen es una ubicación marcada como origen: PATCH /locations.
-  'origins':              'commercial.edit',
-  // La correspondencia cliente del TMS → cliente del directorio: PUT /tms-clients.
-  'tms-clients':          'commercial.edit',
-  'subtypes':             'operations.configure',
-  'operation-types':      'operations.configure',
-  'users':                'users.manage',
-  'roles':                'roles.manage',
+  'certification/conditions':        'certification.configure',
+  'certification/expiry-alerts':     'certification.configure',
+  'operations/tms-statuses':         'operations.configure',
+  'operations/operational-statuses': 'operations.configure',
+  'operations/equipment-statuses':   'operations.configure',
+  'operations/alert-thresholds':     'operations.configure',
+  'operations/temperature-ranges':   'operations.configure',
+  'operations/driver-reasons':       'operations.configure',
+  'operations/unassigned-reasons':   'operations.configure',
+  'operations/void-reasons':         'operations.configure',
+  'operations/origins':              'commercial.edit',
+  'operations/tms-clients':          'commercial.edit',
+  'fleet/subtypes':                  'operations.configure',
+  'fleet/operation-types':           'operations.configure',
+  'insurance/expiry-alerts':         'insurance.configure',
+  'people/users':                    'users.manage',
+  'people/roles':                    'roles.manage',
 } as const satisfies Record<string, PermissionCode>
 
+/** `area/section`: la misma sección corta (p. ej. `expiry-alerts`) existe en más de
+ *  un área (Certificación y Seguros). */
 export type ClaveDeSeccion = keyof typeof PERMISO_DE_SECCION
 
 export function usePuedeEditarSeccion(seccion: ClaveDeSeccion): boolean {

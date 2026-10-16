@@ -60,8 +60,9 @@ describe('BuscadorConfig', () => {
     await waitFor(() => expect(screen.getByRole('option', { name: /cámara de frío/i }))
       .toHaveAttribute('href',
         '/dashboard/admin/settings/certification?section=conditions&doc=MANTENCION_FRIO'))
+    // Los rangos de temperatura ya son lista + panel (Parte 1): el resultado abre el rango.
     expect(screen.getByRole('option', { name: /^frío/i }))
-      .toHaveAttribute('href', '/dashboard/admin/settings/operations?section=temperature-ranges')
+      .toHaveAttribute('href', '/dashboard/admin/settings/operations?section=temperature-ranges&item=FRIO')
   })
 
   // Con un caracter el resultado son casi todos los ajustes de la app: lo

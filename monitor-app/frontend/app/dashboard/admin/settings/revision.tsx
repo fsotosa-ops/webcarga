@@ -22,10 +22,10 @@ export const SIN_REVISAR = 'sin-revisar'
  *  El mecanismo es común a todas las secciones; lo único propio de cada una es
  *  qué elementos enumera, y eso lo declara el backend. Acá no hay ni un `if`
  *  por dominio: si alguna vez hace falta, el diseño se rompió. */
-export function useRevisiones(dominio: string, seccion: ClaveDeSeccion) {
+export function useRevisiones(dominio: string, seccion: string) {
   const qc = useQueryClient()
   // Confirmar exige lo mismo que editar la sección (la API también).
-  const puedeConfirmar = usePuedeEditarSeccion(seccion)
+  const puedeConfirmar = usePuedeEditarSeccion(`${dominio}/${seccion}` as ClaveDeSeccion)
   const clave = ['config-revisiones', dominio, seccion]
 
   const q = useQuery({

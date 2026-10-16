@@ -37,7 +37,7 @@ function fuente(over: Partial<SettingsSource<Row>> = {}): SettingsSource<Row> {
       { header: 'Motivo', cell: r => r.label },
       { header: 'Qué significa', cell: r => (r.group === 'no_trabajando' ? 'No trabajó' : 'Trabajó') },
     ],
-    fields: [
+    fields: () => [
       { key: 'label', label: 'Nombre', kind: 'text' },
       { key: 'group', label: 'Qué significa', kind: 'select',
         options: [{ id: 'no_trabajando', label: 'No trabajó' }, { id: 'trabajando_sin_asignacion', label: 'Trabajó' }] },
@@ -46,7 +46,7 @@ function fuente(over: Partial<SettingsSource<Row>> = {}): SettingsSource<Row> {
     save: vi.fn().mockResolvedValue({}),
     filters: () => [{ id: 'no_trabajando', label: 'No trabajó', match: r => r.group === 'no_trabajando' }],
     create: { noun: 'motivo', run: vi.fn().mockResolvedValue({}) },
-    deactivate: vi.fn().mockResolvedValue({ en_uso_por: 0 }),
+    deactivate: { label: 'Desactivar', confirm: 'Sí, desactivar', run: vi.fn().mockResolvedValue({ en_uso_por: 0 }) },
     emptyText: 'No hay motivos todavía',
     ...over,
   }
@@ -115,13 +115,13 @@ describe('SettingsList: una lista de lectura y un panel', () => {
 
   it('desactivar se confirma dentro del panel y avisa si algo lo usaba', async () => {
     search = 'item=a'
-    const src = fuente({ deactivate: vi.fn().mockResolvedValue({ en_uso_por: 2 }) })
+    const src = fuente({ deactivate: { label: 'Desactivar', confirm: 'Sí, desactivar', run: vi.fn().mockResolvedValue({ en_uso_por: 2 }) } })
     renderLista(src)
     const panel = await screen.findByRole('dialog')
     fireEvent.click(within(panel).getByRole('button', { name: 'Desactivar' }))
-    expect(src.deactivate).not.toHaveBeenCalled()
+    expect(src.deactivate!.run).not.toHaveBeenCalled()
     fireEvent.click(within(panel).getByRole('button', { name: 'Sí, desactivar' }))
-    await waitFor(() => expect(src.deactivate).toHaveBeenCalledWith(ROWS[0]))
+    await waitFor(() => expect(src.deactivate!.run).toHaveBeenCalledWith(ROWS[0]))
     expect(await screen.findByRole('status')).toHaveTextContent('2 reglas de documento')
   })
 
@@ -194,5 +194,25 @@ describe('SettingsList: una lista de lectura y un panel', () => {
     fireEvent.click(within(panel).getByRole('button', { name: 'Sí, desactivar' }))
     await waitFor(() => expect(replace).toHaveBeenCalled())
     expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('una validación de la fuente impide guardar y lo dice antes de enviar', async () => {
+    search = 'item=a'
+    const src = fuente({ validate: v => (String(v.label).length < 3 ? 'El nombre es muy corto.' : null) })
+    renderLista(src)
+    const panel = await screen.findByRole('dialog')
+    fireEvent.change(within(panel).getByRole('textbox', { name: 'Nombre' }), { target: { value: 'Pa' } })
+    expect(within(panel).getByText('El nombre es muy corto.')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Guardar' })).toBeDisabled()
+    expect(src.save).not.toHaveBeenCalled()
+  })
+
+  it('las reglas que se revisan como un formulario muestran la misma revisión en cada fila', async () => {
+    vi.mocked(revisionesApi.list).mockResolvedValue([
+      { element_id: 'reglas', reviewed_by: 'Ana', reviewed_at: '2026-10-01T12:00:00Z' },
+    ] as never)
+    renderLista(fuente({ revisionId: () => 'reglas' }))
+    const filtros = await screen.findByRole('group', { name: 'Filtrar' })
+    await waitFor(() => expect(within(filtros).getByRole('button', { name: /Sin revisar/ })).toHaveTextContent('0'))
   })
 })

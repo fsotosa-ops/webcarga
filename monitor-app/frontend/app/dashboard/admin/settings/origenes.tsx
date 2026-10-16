@@ -29,7 +29,7 @@ export function OrigenesTab() {
   const { errors, saving, run } = useRowFeedback()
   // Marcar un origen es PATCH /locations (commercial.edit): sin ese permiso,
   // la lista se ve sin acciones.
-  const puedeEditar = usePuedeEditarSeccion('origins')
+  const puedeEditar = usePuedeEditarSeccion('operations/origins')
 
   const [agregando, setAgregando] = useState(false)
   const [generadorId, setGeneradorId] = useState('')

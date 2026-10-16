@@ -70,3 +70,9 @@ def test_get_devuelve_los_umbrales_del_registro():
     assert "doc_type = ANY($1" in sql
     assert sorted(args[0]) == sorted(UMBRALES)
 
+
+def test_seguros_es_una_seccion_revisable_con_su_permiso():
+    from app.services.revisiones import POR_SECCION
+    seccion = POR_SECCION[("insurance", "expiry-alerts")]
+    assert seccion.permiso.value == "insurance.configure"
+    assert POLIZA_POR_VENCER in seccion.sql

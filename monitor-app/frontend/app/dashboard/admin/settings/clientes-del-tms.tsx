@@ -21,7 +21,7 @@ export function ClientesDelTmsTab() {
   // Solo clientes activos: el backend rechaza vincular uno inactivo.
   const directorio = directorioQuery.items.filter(s => s.status === 'ACTIVE')
   const { errors, saving, run } = useRowFeedback()
-  const puedeEditar = usePuedeEditarSeccion('tms-clients')
+  const puedeEditar = usePuedeEditarSeccion('operations/tms-clients')
   const [aplicados, setAplicados] = useState<Set<string>>(new Set())
   // Un cambio sobre un cliente ya vinculado mueve todos sus viajes: se confirma
   // en la fila antes de escribir (revisión final, Importante 5).

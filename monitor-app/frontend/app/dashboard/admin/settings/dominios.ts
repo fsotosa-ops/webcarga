@@ -1,26 +1,24 @@
 import type { ComponentType } from 'react'
 import {
-  ShieldCheck, LayoutDashboard, Truck, Users, Receipt, type LucideIcon,
+  Shield, ShieldCheck, LayoutDashboard, Truck, Users, Receipt, type LucideIcon,
 } from 'lucide-react'
-import {
-  AlertasVencimientoTab, RangosTemperaturaTab, AlertasMonitorTab,
-} from './umbrales-tabs'
 import { CondicionesTabla } from './condiciones-tabla'
 import {
   EstadosDelTableroPanel, EstadosOperacionalesPanel, EstadosDeEquipoPanel, MotivosDeConductorPanel,
   MotivosDeNoAsignacionPanel, MotivosDeAnulacionPanel, SubtiposPanel, TiposDeOperacionPanel,
-  SECCIONES_CON_LISTA,
+  SECCIONES_CON_LISTA, AlertasDeDocumentosPanel, AlertasDePolizasPanel, RangosDeTemperaturaPanel,
+  UmbralesDelMonitorPanel,
 } from './paneles'
 import { UsuariosTab } from './usuarios-tab'
 import { RolesTab } from './roles-tab'
 import type { PermissionCode } from '@/lib/authz/permisos.generated'
-import type { ClaveDeSeccion } from './secciones'
 import { OrigenesTab } from './origenes'
 import { ClientesDelTmsTab } from './clientes-del-tms'
 
 export interface Seccion {
-  /** Tipada contra PERMISO_DE_SECCION: una sección sin permiso declarado no compila. */
-  clave:     ClaveDeSeccion
+  /** La parte corta de la URL; `area/clave` tiene que estar en PERMISO_DE_SECCION
+   *  (secciones.ts): dominios.test.ts falla si falta. */
+  clave:     string
   titulo:    string
   /** Una linea que dice a que pregunta responde la seccion. */
   proposito: string
@@ -67,7 +65,7 @@ export const DOMINIOS: Dominio[] = [
       { clave: 'conditions', titulo: 'Condiciones de documentos',
         proposito: 'A quién se le exige cada documento', Panel: CondicionesTabla },
       { clave: 'expiry-alerts', titulo: 'Alertas de vencimiento',
-        proposito: 'Con cuántos días de anticipación avisar', Panel: AlertasVencimientoTab },
+        proposito: 'Con cuántos días de anticipación avisar', Panel: AlertasDeDocumentosPanel },
     ],
   },
   {
@@ -83,9 +81,9 @@ export const DOMINIOS: Dominio[] = [
       { clave: 'equipment-statuses', titulo: 'Estados de equipo',
         proposito: 'El motivo cuando un equipo no sale', Panel: EstadosDeEquipoPanel },
       { clave: 'alert-thresholds', titulo: 'Umbrales de alerta',
-        proposito: 'Cuándo el monitor considera que algo va mal', Panel: AlertasMonitorTab },
+        proposito: 'Cuándo el monitor considera que algo va mal', Panel: UmbralesDelMonitorPanel },
       { clave: 'temperature-ranges', titulo: 'Rangos de temperatura',
-        proposito: 'Qué rango corresponde a cada tipo de carga', Panel: RangosTemperaturaTab },
+        proposito: 'Qué rango corresponde a cada tipo de carga', Panel: RangosDeTemperaturaPanel },
       { clave: 'driver-reasons', titulo: 'Motivos de conductor',
         proposito: 'Por qué un conductor no está disponible', Panel: MotivosDeConductorPanel },
       { clave: 'unassigned-reasons', titulo: 'Motivos de no asignación',
@@ -108,6 +106,16 @@ export const DOMINIOS: Dominio[] = [
         proposito: 'Furgón congelado, sider, rampla plana', Panel: SubtiposPanel },
       { clave: 'operation-types', titulo: 'Tipos de operación',
         proposito: 'Tractoreo y equipo completo', Panel: TiposDeOperacionPanel },
+    ],
+  },
+  {
+    clave: 'insurance',
+    icono: Shield,
+    titulo: 'Seguros',
+    proposito: 'Cuándo una póliza está por vencer',
+    secciones: [
+      { clave: 'expiry-alerts', titulo: 'Alertas de vencimiento',
+        proposito: 'Con cuántos días de anticipación una póliza pasa a "Por vencer"', Panel: AlertasDePolizasPanel },
     ],
   },
   {

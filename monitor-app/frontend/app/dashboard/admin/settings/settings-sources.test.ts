@@ -16,8 +16,8 @@ beforeEach(() => vi.clearAllMocks())
 describe('boardStatusSource (estados del tablero)', () => {
   it('se edita el nombre visible y la columna; el orden se mueve; no se crea ni se desactiva', async () => {
     const src = boardStatusSource
-    expect(src.fields.map(f => f.key)).toEqual(['label', 'group'])
-    const columna = src.fields.find(f => f.key === 'group')!
+    expect(src.fields(undefined).map(f => f.key)).toEqual(['label', 'group'])
+    const columna = src.fields(undefined).find(f => f.key === 'group')!
     expect(columna.kind === 'select' && columna.options.map(o => o.id)).toContain('pendiente_cierre_tms')
     await src.save(ESTADO as never, { group: 'problema' })
     expect(configApi.patchStatus).toHaveBeenCalledWith('VIAJE EN PREDIO', { group: 'problema' })
@@ -31,22 +31,22 @@ describe('boardStatusSource (estados del tablero)', () => {
 describe('vocabularySource', () => {
   it('Motivos de conductor ofrece "Qué significa" con sus dos opciones y crea con el grupo', async () => {
     const src = vocabularySource('DRIVER_REASON')
-    const grupo = src.fields.find(f => f.key === 'group')!
+    const grupo = src.fields(undefined).find(f => f.key === 'group')!
     expect(grupo.label).toBe('Qué significa')
     expect(grupo.kind === 'select' && grupo.options.map(o => o.label)).toEqual(['No trabajó', 'Trabajó sin asignación'])
     await src.create!.run({ label: 'Licencia', group: 'no_trabajando' })
     expect(taxonomiesApi.create).toHaveBeenCalledWith({ domain: 'DRIVER_REASON', label: 'Licencia', group: 'no_trabajando' })
-    await src.deactivate!(MOTIVO as never)
+    await src.deactivate!.run(MOTIVO as never)
     expect(taxonomiesApi.deactivate).toHaveBeenCalledWith('m1')
   })
 
   it('Estados operacionales eligen la columna del tablero', () => {
-    const grupo = vocabularySource('OPERATIONAL_STATE').fields.find(f => f.key === 'group')!
+    const grupo = vocabularySource('OPERATIONAL_STATE').fields(undefined).find(f => f.key === 'group')!
     expect(grupo.label).toBe('Columna del tablero')
   })
 
   it('Motivos de anulación no tienen grupo', () => {
-    expect(vocabularySource('TRIP_VOID_REASON').fields.map(f => f.key)).toEqual(['label'])
+    expect(vocabularySource('TRIP_VOID_REASON').fields(undefined).map(f => f.key)).toEqual(['label'])
   })
 
   it('ninguna fuente envía colores', async () => {

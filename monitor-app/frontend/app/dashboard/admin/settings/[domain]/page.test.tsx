@@ -17,11 +17,10 @@ vi.mock('../paneles', () => ({
   MotivosDeAnulacionPanel: () => <div>panel motivos de anulacion</div>,
   SubtiposPanel: () => <div>panel subtipos</div>,
   TiposDeOperacionPanel: () => <div>panel tipos de operacion</div>,
-}))
-vi.mock('../umbrales-tabs', () => ({
-  AlertasVencimientoTab: () => <div>panel vencimientos</div>,
-  RangosTemperaturaTab: () => <div>panel temperaturas</div>,
-  AlertasMonitorTab: () => <div>panel umbrales</div>,
+  AlertasDeDocumentosPanel: () => <div>panel vencimientos</div>,
+  AlertasDePolizasPanel: () => <div>panel polizas</div>,
+  RangosDeTemperaturaPanel: () => <div>panel temperaturas</div>,
+  UmbralesDelMonitorPanel: () => <div>panel umbrales</div>,
 }))
 vi.mock('../condiciones-tabla', () => ({
   CondicionesTabla: () => <div>panel condiciones</div>,

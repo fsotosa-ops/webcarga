@@ -2,7 +2,10 @@
 
 import type { ComponentType } from 'react'
 import { SettingsList } from './SettingsList'
-import { SECCION_DE_TAXONOMIA, boardStatusSource, vocabularySource, type SettingsSource } from './settings-sources'
+import {
+  SECCION_DE_TAXONOMIA, boardStatusSource, monitorRulesSource, temperatureRangeSource, thresholdSource, vocabularySource,
+  type SettingsSource,
+} from './settings-sources'
 
 /** El panel de una sección hecho desde su fuente: todas se dibujan con
  *  `SettingsList` (Configuración, Parte 1). */
@@ -14,7 +17,7 @@ function porFuente<Row extends { id: string }>(source: SettingsSource<Row>, nomb
 
 /** Las secciones que se dibujan con `SettingsList`: abren un elemento con `?item=`. */
 export const SECCIONES_CON_LISTA: string[] = [
-  boardStatusSource.section,
+  boardStatusSource.section, monitorRulesSource.section, temperatureRangeSource.section, 'expiry-alerts',
   ...Object.values(SECCION_DE_TAXONOMIA).map(([, seccion]) => seccion),
 ]
 
@@ -26,3 +29,7 @@ export const MotivosDeNoAsignacionPanel = porFuente(vocabularySource('TRIP_UNASS
 export const MotivosDeAnulacionPanel = porFuente(vocabularySource('TRIP_VOID_REASON'), 'MotivosDeAnulacionPanel')
 export const SubtiposPanel = porFuente(vocabularySource('FLEET_SERVICE_TYPE'), 'SubtiposPanel')
 export const TiposDeOperacionPanel = porFuente(vocabularySource('WEBCARGA_OPERATION_TYPE'), 'TiposDeOperacionPanel')
+export const AlertasDeDocumentosPanel = porFuente(thresholdSource('documento_por_vencer'), 'AlertasDeDocumentosPanel')
+export const AlertasDePolizasPanel = porFuente(thresholdSource('poliza_por_vencer'), 'AlertasDePolizasPanel')
+export const RangosDeTemperaturaPanel = porFuente(temperatureRangeSource, 'RangosDeTemperaturaPanel')
+export const UmbralesDelMonitorPanel = porFuente(monitorRulesSource, 'UmbralesDelMonitorPanel')
