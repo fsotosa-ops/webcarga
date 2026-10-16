@@ -43,6 +43,11 @@ en su ficha, con las mismas piezas que el resto de la app.
 | S14 | Cuotas: seleccionar varias y "Marcar pagadas…" llama a `POST /installments/pay` con la fecha elegida; lo que falla se dice por cuota | `app/dashboard/insurance/installments/page.test.tsx` |
 | S15 | La contracción borra las columnas viejas y no quedan lectores (`grep` de `payment_status`, `policy_health`, `total_installments`, `expiration_alert_days`, `insurance-overview` vacío fuera de migraciones) | `tests/test_seguros_sin_campos_viejos.py` (guarda) |
 
+| S16 | Una póliza con sucesora es `RENEWED`, no hace "Vencida" a su empresa ni dispara la alerta del Monitor, y sus cuotas impagas siguen contando | `tests/test_insurance_status_integration.py` |
+| S17 | Extender vigencia guarda `policy_term_changes` (valid_to anterior/nuevo, endoso, quién) y el estado se recalcula | `tests/test_insurance_status_integration.py` |
+| S18 | Agregar cuotas tras extender las numera a continuación y rechaza (422) las que caen fuera de la nueva vigencia | `tests/test_policies.py` |
+| S19 | La propuesta de enlace para pólizas ya cargadas no enlaza nada hasta que alguien confirma | `components/insurance/PolicyProfile.test.tsx` |
+
 ## Contratos
 
 ### Rutas y menú
@@ -73,6 +78,19 @@ en su ficha, con las mismas piezas que el resto de la app.
 - Se borran `InsurancePolicyModal.tsx`, `InstallmentRow.tsx`, `InsuranceSummaryCard.tsx` y sus tests (el
   comportamiento que valga se porta a los tests nuevos, nombrándolo).
 
+### Renovación y extensión (a validar con Pablo; los dos habilitados)
+- Migración `…_insurance_renewals_and_term_changes.sql` (solo agrega): `insurance_policies.renews_policy_id uuid`
+  (FK a la misma tabla, único: una póliza tiene a lo sumo una sucesora) y `public.policy_term_changes (id, policy_id,
+  previous_valid_to, new_valid_to, endorsement_number, endorsement_date, changed_by, changed_at)`. Las dos vistas
+  suman `RENEWED` (tiene sucesora) y `app.carrier_insurance_summary` excluye las `RENEWED` del peor estado y de la
+  alerta, pero no de las cuotas impagas.
+- API: `POST /policies/{id}/renew` (crea la sucesora con los datos precargados), `POST /policies/{id}/renewed-by`
+  (`{ successor_id }`, para las ya cargadas), `GET /policies/{id}/renewal-candidates` (otra póliza de la empresa que
+  empieza dentro de 30 días del fin de esta), `POST /policies/{id}/extend` (`{ valid_to, endorsement_number,
+  endorsement_date }`), `POST /policies/{id}/installments/append` (`{ count, amount_uf, first_due_date }`).
+- Ficha: ⋯ con "Renovar" y "Extender vigencia"; aviso "¿La reemplazó X?" con "Sí, enlazar" cuando hay candidata;
+  "Historial de vigencia" en el costado.
+
 ### Contracción (al final de la entrega)
 - Migración `…_insurance_retire_stored_states.sql`: copia a `public.audit_log` y borra `insurance_policies.status`,
   `insurance_policies.expiration_alert_days`, `insurance_installments.payment_status`, `.total_installments`, `.paid_at`;
@@ -96,11 +114,12 @@ en su ficha, con las mismas piezas que el resto de la app.
    `PoliciesTable carrierId`; `InsuranceLine` de Detalles lee `GET /carriers/{id}/policies`): S8 y S10.
 6. **Borrar lo viejo y la guarda** (`InsurancePolicyModal`, `InstallmentRow`, `InsuranceSummaryCard`,
    `lib/insurance.tsx`; `lib/api/policies.ts` y `lib/api/carriers.ts` sin los métodos viejos): S11.
-7. **Contracción** (migración + backend): S15. Antes de borrar columnas, confirmar con `mage-agent` (solo lectura:
+7. **Renovación y extensión** (migración que solo agrega + API + ficha): S16-S19.
+8. **Contracción** (migración + backend): S15. Antes de borrar columnas, confirmar con `mage-agent` (solo lectura:
    listar pipelines y buscar `insurance_policies` / `insurance_installments` en sus bloques) que ninguno escribe estas
    tablas: los datos vinieron de una carga de prueba desde Mage (usuario, 15/10). Ensayo en copia local y `ROLLBACK` en
    la real; **se aplica con autorización**, y se despliega API y frontend en la misma ventana.
-8. **Verificación:** vitest completo + tsc + build (se tocan `lib/states.ts` y el menú, que son compartidos), humo con
+9. **Verificación:** vitest completo + tsc + build (se tocan `lib/states.ts` y el menú, que son compartidos), humo con
    S12, trinquetes, capturas a 1440 y 390 de Pólizas (los dos agrupamientos), ficha de póliza, Cuotas y la pestaña
    Seguros de la empresa; recorrido en dev con sesión, solo lectura.
 

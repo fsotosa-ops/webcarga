@@ -49,7 +49,8 @@ La pantalla solo pinta lo que manda la API, con el glosario de `lib/states.ts`.
 `app.insurance_status` reemplaza a `app.carrier_insurance_status` (se borran la vista materializada, sus 4 triggers y
 `public.refresh_insurance_view`):
 
-- **Póliza** (`policy_state`): `CANCELLED` si `cancelled_at` · `EXPIRED` si `valid_to < hoy` · `EXPIRING` si
+- **Póliza** (`policy_state`): `CANCELLED` si `cancelled_at` · `RENEWED` si otra póliza la renueva (ver
+  "Renovación y extensión") · `EXPIRED` si `valid_to < hoy` · `EXPIRING` si
   `valid_to <= hoy + poliza_por_vencer` · `VALID` en otro caso · `NO_DATES` si falta `valid_to`.
 - **Cuota** (`installment_state`): `PAID` si `paid` · `OVERDUE` si `due_date < hoy` · `PENDING`. Más
   `outside_validity` (`due_date` fuera de `valid_from..valid_to`) como señal aparte, no como estado.
@@ -138,6 +139,30 @@ de trabajo):
 | S10 | La pestaña Seguros de la empresa es la misma tabla de Pólizas filtrada | vitest |
 | S11 | Ninguna pantalla recalcula un estado de Seguros (guarda contra `due_date <` y `toISOString` en el código) | vitest |
 | S12 | Humo: Pólizas → ficha → marcar una cuota pagada en la copia local | Playwright |
+
+## Renovación y extensión (agregado el 15/10; los dos habilitados, a validar con Pablo)
+
+**Por qué:** en la base real, 6 de las 7 empresas "Vencida" tienen además una póliza vigente. Una es una renovación
+evidente (HDI terminó el 23/03/2026 y Chubb empezó ese día): la empresa nunca estuvo sin seguro, pero Seguros dice
+"Vencida" y el Monitor avisa "Póliza vencida". La regla del peor estado cuenta todas las pólizas no canceladas, también
+las ya reemplazadas. Ninguna póliza se renovó con el mismo número: las renovaciones se cargaron como pólizas nuevas.
+
+- **Renovar** (⋯ de la ficha de póliza): crea la póliza nueva con los datos de la anterior precargados y
+  `renews_policy_id` apuntando a ella. La anterior queda `RENEWED` (estado calculado: tiene una sucesora), sigue en el
+  historial y **no cuenta** para el peor estado de la empresa; sus cuotas impagas **sí** cuentan (son deudas).
+  Para las pólizas ya cargadas, la ficha propone el enlace cuando la empresa tiene otra póliza que empieza dentro de
+  los 30 días del fin de esta, y una persona lo confirma (`POST /policies/{id}/renewed-by`); nada se enlaza solo.
+- **Extender vigencia** (⋯ de la ficha de póliza): nueva fecha de término, N° de endoso y fecha del endoso. Se guarda
+  en `public.policy_term_changes` (hecho: póliza, `valid_to` anterior y nuevo, endoso, quién y cuándo), y la ficha lo
+  muestra como historial. Permite **agregar cuotas** dentro de la vigencia extendida (`POST
+  /policies/{id}/installments/append`), numeradas a continuación de las existentes.
+- **Sin interruptores:** las dos son acciones del menú. Si Pablo confirma que una no aplica, se quita la acción; el
+  dato queda vacío y no hay que migrar nada.
+
+Criterios agregados: **S16** una póliza con sucesora es `RENEWED` y no hace "Vencida" a su empresa (ni la alerta del
+Monitor), pero sus cuotas impagas siguen contando · **S17** extender guarda el cambio con su endoso y recalcula el
+estado · **S18** agregar cuotas tras una extensión las numera a continuación y rechaza las que caen fuera de la nueva
+vigencia · **S19** la propuesta de enlace para las pólizas ya cargadas no enlaza nada sin confirmación.
 
 ## Fuera de alcance
 
