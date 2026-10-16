@@ -241,7 +241,8 @@ async def patch_alert_threshold(
     doc_type: str,
     body: AlertThresholdPatch,
     pool=Depends(get_pool),
-    usuario=Depends(get_current_user),
+    # Base: leer la configuración; el permiso del umbral se exige adentro (exigir).
+    usuario=Depends(require(Permission.REFERENCE_READ)),
 ):
     # Cada umbral lo edita su área: documentos, Certificación; pólizas, Seguros.
     umbral = UMBRALES.get(doc_type)
