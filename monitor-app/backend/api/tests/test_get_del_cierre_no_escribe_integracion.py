@@ -17,7 +17,7 @@ _CONTADORES = "SELECT coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0) FROM p
 @pytest.mark.parametrize("leer", [
     lambda pool, f: get_daily_closure_status(fecha=f, pool=pool, _=None),
     lambda pool, f: get_equipment_closure_status(fecha=f, pool=pool, _=None),
-    lambda pool, f: get_status_report(fecha=f, shipper_id=None, pool=pool, _=None),
+    lambda pool, f: get_status_report(fecha=f, shipper_id=[], pool=pool, _=None),
     lambda pool, f: cierre_viajes(fecha=f, pool=pool, _=None),
 ])
 async def test_leer_el_cierre_no_escribe_ninguna_fila(conexion_revertida, leer):

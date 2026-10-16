@@ -2,6 +2,8 @@ import type { FleetDriverGapRow, ClosureScope, OperationTypeReport, ReasonRow } 
 import { COLUMNAS_DE_ZONA, arbolDeAsignados, filasDelArbol, type Cifras } from './arbolDeAsignados'
 import { sumar } from './sumar'
 import { TIPOS_DE_OPERACION } from './tiposDeOperacion'
+import { REPORT_SECTIONS, type ReportSection } from './secciones'
+import { tripCodes } from '@/lib/tripRefs'
 
 type Valor = string | number | null
 type Celda = Valor | { value: string | number; fontWeight: 'bold' }
@@ -68,10 +70,21 @@ function asignados(r: OperationTypeReport): Fila[] {
   ]
 }
 
+/** Los conductores de Asignados con sus viajes del día (D8): la hoja de Asignados se
+ *  queda como el CSV de Pablo, hasta la empresa, y los Nº de viaje van aquí. */
+function conductores(r: OperationTypeReport): Fila[] {
+  return [
+    negrita(['Cliente', 'Origen', 'Empresa', 'Conductor', 'Patente', 'Nº viaje']),
+    ...r.assigned.rows.flatMap(f => f.vehicles.map(v =>
+      [f.client_name, f.origin, f.carrier_name, v.driver_name, v.tractor_plate, tripCodes(v.trips).join(', ') || null])),
+  ]
+}
+
 function segundasVueltas(r: OperationTypeReport): Fila[] {
   return [
-    negrita(['Patente', 'Empresa', 'Conductor', 'Origen del viaje', 'Tipo de destino', 'Vueltas']),
-    ...r.second_legs.map(v => [v.tractor_plate, v.carrier_name, v.driver_name, v.origin, v.destination_zone, v.legs]),
+    negrita(['Patente', 'Empresa', 'Conductor', 'Nº viaje', 'Origen del viaje', 'Tipo de destino', 'Vueltas']),
+    ...r.second_legs.map(v => [v.tractor_plate, v.carrier_name, v.driver_name, tripCodes(v.trips).join(', ') || null,
+                               v.origin, v.destination_zone, v.legs]),
   ]
 }
 
@@ -92,21 +105,26 @@ function empresas(r: OperationTypeReport): Fila[] {
   ]
 }
 
-const SECCIONES: { nombre: string; filas: (r: OperationTypeReport, clave: ClosureScope) => Fila[] }[] = [
-  { nombre: 'Resumen', filas: resumen },
-  { nombre: 'Asignados', filas: asignados },
-  { nombre: 'Segundas vueltas', filas: segundasVueltas },
-  { nombre: 'No trabajaron', filas: noTrabajaron },
-  { nombre: 'Empresas', filas: empresas },
-]
+type Hoja = { nombre: string; filas: (r: OperationTypeReport, clave: ClosureScope) => Fila[] }
+const nombre = (id: ReportSection) => REPORT_SECTIONS.find(s => s.id === id)!.label
 
-/** El reporte del día como hojas de Excel. Trae los dos tipos aunque se esté
- *  viendo uno, porque Operaciones lo cruza con su planilla (spec 2026-10-11, §4). */
+/** Las hojas de cada sección del informe, por tipo (Dotación es una sola, aparte). */
+const HOJAS: Record<Exclude<ReportSection, 'staffing'>, Hoja[]> = {
+  summary: [{ nombre: nombre('summary'), filas: resumen }],
+  assigned: [{ nombre: nombre('assigned'), filas: asignados }, { nombre: 'Conductores', filas: conductores }],
+  second_legs: [{ nombre: nombre('second_legs'), filas: segundasVueltas }],
+  not_working: [{ nombre: nombre('not_working'), filas: noTrabajaron }],
+  carriers: [{ nombre: nombre('carriers'), filas: empresas }],
+}
+const corta = (clave: ClosureScope) => TIPOS_DE_OPERACION.find(t => t.clave === clave)!.corta
+
+/** "Todo el día": el reporte como hojas de Excel, los dos tipos aunque se esté viendo
+ *  uno, porque Operaciones lo cruza con su planilla (spec 2026-10-11, §4). */
 export function hojasDelReporte(
   porTipo: Record<ClosureScope, OperationTypeReport>, dotacion: FleetDriverGapRow[] | undefined,
 ): HojaDeExcel[] {
-  const hojas: HojaDeExcel[] = SECCIONES.flatMap(s => TIPOS_DE_OPERACION.map(t => ({
-    sheet: `${s.nombre} · ${t.corta}`, data: s.filas(porTipo[t.clave], t.clave),
+  const hojas: HojaDeExcel[] = Object.values(HOJAS).flat().flatMap(h => TIPOS_DE_OPERACION.map(t => ({
+    sheet: `${h.nombre} · ${t.corta}`, data: h.filas(porTipo[t.clave], t.clave),
   })))
   hojas.push({
     sheet: 'Dotación',
@@ -118,11 +136,32 @@ export function hojasDelReporte(
   return hojas
 }
 
-/** Baja el reporte como .xlsx (minuta 09/10, ítem 15). La librería se carga recién
- *  al hacer clic: no pesa en la pantalla para quien no exporta. */
-export async function descargarReporteExcel(
-  porTipo: Record<ClosureScope, OperationTypeReport>, fecha: string, dotacion: FleetDriverGapRow[] | undefined,
-): Promise<void> {
+/** "Lo que estás viendo" de una sección del informe (C13): sus hojas del alcance a la
+ *  vista, con el recorte escrito arriba. */
+export function hojasDeLaSeccion(
+  seccion: Exclude<ReportSection, 'staffing'>, reporte: OperationTypeReport, clave: ClosureScope, recorte: string,
+): HojaDeExcel[] {
+  return HOJAS[seccion].map(h => ({ sheet: `${h.nombre} · ${corta(clave)}`, data: [[recorte], [], ...h.filas(reporte, clave)] }))
+}
+
+/** "Lo que estás viendo" de una tabla del kit (C13): sus columnas visibles en su
+ *  orden y sus filas tal como pasan la vista, con el recorte escrito arriba. */
+export function hojaDeLaTabla(
+  sheet: string, recorte: string, columnas: { header: string; numeric?: boolean }[], filas: (string | null)[][],
+): HojaDeExcel {
+  return {
+    sheet: sheet.slice(0, 31),
+    data: [
+      [recorte], [],
+      negrita(columnas.map(c => c.header)),
+      ...filas.map(f => f.map((v, i) => (columnas[i].numeric && v !== null && v !== '' ? Number(v) : v))),
+    ],
+  }
+}
+
+/** Baja hojas como .xlsx (minuta 09/10, ítem 15). La librería se carga recién al hacer
+ *  clic: no pesa en la pantalla para quien no exporta. */
+export async function descargarExcel(hojas: HojaDeExcel[], archivo: string): Promise<void> {
   const { default: escribirExcel } = await import('write-excel-file/browser')
-  await escribirExcel(hojasDelReporte(porTipo, dotacion)).toFile(`reporte_estatus_${fecha}.xlsx`)
+  await escribirExcel(hojas).toFile(archivo)
 }

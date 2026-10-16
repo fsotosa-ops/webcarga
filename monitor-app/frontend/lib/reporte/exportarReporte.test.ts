@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ClosureScope, OperationTypeReport } from '@/lib/types'
-import { hojasDelReporte } from './exportarReporte'
+import { hojaDeLaTabla, hojasDeLaSeccion, hojasDelReporte } from './exportarReporte'
 
 function reporte(over: Partial<OperationTypeReport> = {}): OperationTypeReport {
   return {
@@ -11,7 +11,7 @@ function reporte(over: Partial<OperationTypeReport> = {}): OperationTypeReport {
     assigned: {
       rows: [
         { client_name: 'Walmart', origin: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', rm: 1, z0: 0, region: 0, unclassified: 0, total: 1,
-          vehicles: [{ tractor_plate: 'ABCD12', driver_name: 'Juan Pérez', zone: 'rm' }] },
+          vehicles: [{ tractor_plate: 'ABCD12', driver_name: 'Juan Pérez', zone: 'rm', trips: [{ id: 't1', code: '2033000' }, { id: 't2', code: '2033001' }] }] },
         { client_name: 'Walmart', origin: 'CD Quilicura', carrier_name: 'Norte Spa', rm: 0, z0: 1, region: 0, unclassified: 0, total: 1,
           vehicles: [{ tractor_plate: 'EFGH34', driver_name: 'Ana Soto', zone: 'z0' }] },
       ],
@@ -35,6 +35,7 @@ describe('hojasDelReporte', () => {
     expect(hojasDelReporte(POR_TIPO, []).map(h => h.sheet)).toEqual([
       'Resumen · Tractoreo', 'Resumen · Eq. Completo',
       'Asignados · Tractoreo', 'Asignados · Eq. Completo',
+      'Conductores · Tractoreo', 'Conductores · Eq. Completo',
       'Segundas vueltas · Tractoreo', 'Segundas vueltas · Eq. Completo',
       'No trabajaron · Tractoreo', 'No trabajaron · Eq. Completo',
       'Empresas · Tractoreo', 'Empresas · Eq. Completo',
@@ -80,5 +81,32 @@ describe('hojasDelReporte', () => {
       { carrier_id: 'c1', business_name: 'Transportes Sur', n_tractos: 3, n_conductores: 1, gap: 2 },
     ]).find(h => h.sheet === 'Dotación')!
     expect(hoja.data.map(f => f.map(valor))).toContainEqual(['Transportes Sur', 3, 1, 2])
+  })
+
+  it('los Nº de viaje entran al Excel: Conductores (de Asignados) y Segundas vueltas (C14)', () => {
+    const conVueltas = { ...POR_TIPO, tractoreo: reporte({ second_legs: [{ tractor_plate: 'ABCD12', carrier_name: 'Transportes Sur',
+      driver_name: 'Juan Pérez', origin: 'CD Lo Aguirre', destination_zone: 'RM', legs: 2,
+      trips: [{ id: 't1', code: '2033000' }, { id: 't2', code: '2033001' }] }] }) }
+    const hojas = hojasDelReporte(conVueltas, [])
+    const conductores = hojas.find(h => h.sheet === 'Conductores · Tractoreo')!.data.map(f => f.map(valor))
+    expect(conductores[0]).toEqual(['Cliente', 'Origen', 'Empresa', 'Conductor', 'Patente', 'Nº viaje'])
+    expect(conductores).toContainEqual(['Walmart', 'CD Lo Aguirre', 'Transportes Sur', 'Juan Pérez', 'ABCD12', '2033000, 2033001'])
+    const vueltas = hojas.find(h => h.sheet === 'Segundas vueltas · Tractoreo')!.data.map(f => f.map(valor))
+    expect(vueltas[0]).toContain('Nº viaje')
+    expect(vueltas[1]).toContain('2033000, 2033001')
+  })
+})
+
+describe('lo que estás viendo (C13)', () => {
+  it('una sección del informe: sus hojas del alcance a la vista, y arriba el recorte', () => {
+    const hojas = hojasDeLaSeccion('assigned', POR_TIPO.tractoreo, 'tractoreo', 'Recorte: Tractoreo · Cliente: Walmart')
+    expect(hojas.map(h => h.sheet)).toEqual(['Asignados · Tractoreo', 'Conductores · Tractoreo'])
+    for (const h of hojas) expect(valor(h.data[0][0])).toBe('Recorte: Tractoreo · Cliente: Walmart')
+  })
+
+  it('una tabla: sus columnas visibles en su orden y sus filas, con el recorte arriba', () => {
+    const hoja = hojaDeLaTabla('Segundas vueltas', 'Recorte: Tractoreo · 1 fila',
+      [{ header: 'Patente' }, { header: 'Vueltas', numeric: true }], [['ABCD12', '2']])
+    expect(hoja.data.map(f => f.map(valor))).toEqual([['Recorte: Tractoreo · 1 fila'], [], ['Patente', 'Vueltas'], ['ABCD12', 2]])
   })
 })

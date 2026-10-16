@@ -29,6 +29,7 @@ import { GRUPOS_DE_VIAJES, closureTrips } from '@/lib/cierre/gruposDeViajes'
 import { scopeSummary } from '@/lib/cierre/dayFleet'
 import { useClosureNotices } from '@/hooks/useClosureNotices'
 import { inScope } from '@/lib/cierre/scope'
+import { REPORT_CLIENT_FILTER, reportSectionOf, type ReportSection } from '@/lib/reporte/secciones'
 import { SCOPE_LABEL } from '@/lib/states'
 import { useDayFleet } from '@/hooks/useDayFleet'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -132,6 +133,11 @@ function ClosuresCenterPageInner() {
   function setTab(next: TabId) {
     setTabState(next)
     router.replace(urlDelCierre(searchParams, { tab: next }))
+  }
+  // La sección del Reporte, en la URL (?section=): cambiarla deja atrás los filtros de su
+  // tabla, salvo el Cliente, que vale para todo el Reporte.
+  function setSeccionDelReporte(section: ReportSection) {
+    router.replace(urlDelCierre(searchParams, { section }, { keepFilters: [REPORT_CLIENT_FILTER] }))
   }
   // Qué se cierra (D1): uno para las cuatro pestañas, en la URL (?scope=).
   const alcance = url.scope
@@ -439,7 +445,10 @@ function ClosuresCenterPageInner() {
           {tab === 'pending' && (
             <PreCierrePendingSection fecha={fecha} alcance={alcance} tripHref={id => urlDelViaje(id, urlDeEsteCierre())} />
           )}
-          {tab === 'report' && <StatusReportSection fecha={fecha} />}
+          {tab === 'report' && (
+            <StatusReportSection fecha={fecha} alcance={alcance} section={reportSectionOf(url.section)}
+              onSectionChange={setSeccionDelReporte} tripHref={id => urlDelViaje(id, urlDeEsteCierre())} />
+          )}
         </div>
 
         <div className="border-t border-border bg-gray-50/60 p-5 sm:p-6 space-y-3 rounded-b-2xl">

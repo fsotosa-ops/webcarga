@@ -159,6 +159,7 @@ const NO_DEPENDEN_DEL_DIRECTORIO = new Set([
   'compliance-pending-drawer',                                         // invalidada en CondicionPanel, ninguna consulta la lee
   'driver-contacts',                                                   // la invalida su propio panel
   'insurance',                                                        // Seguros (E2): no cambia con el maestro; el nombre de la empresa se relee al abrir
+  'table-preferences',                                                // qué columnas ve cada persona (Cierre con un solo patrón): no es del maestro
   'carrier-shippers',                                                  // la escribe solo su modal de clientes, que la invalida (D2)
   'carrier-deactivation-impact',                                       // se pide fresca al abrir la baja (staleTime 0, D2)
   'tarifario-all', 'tarifario-pending',                                // Comercial

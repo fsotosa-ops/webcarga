@@ -1,4 +1,4 @@
-import type { AssignedRow } from '@/lib/types'
+import type { AssignedRow, TripRef } from '@/lib/types'
 import { sumar } from './sumar'
 
 export type Cifras = Pick<AssignedRow, 'rm' | 'z0' | 'region' | 'unclassified' | 'total'>
@@ -12,14 +12,15 @@ export const COLUMNAS_DE_ZONA = [
   { clave: 'total', etiqueta: 'Total' },
 ] as const satisfies readonly { clave: keyof Cifras; etiqueta: string }[]
 
-type NodoConductor = { etiqueta: string; cifras: Cifras }
+type NodoConductor = { etiqueta: string; cifras: Cifras; trips: TripRef[] }
 type NodoEmpresa = { clave: string; carrier_name: string; cifras: Cifras; conductores: NodoConductor[] }
 type NodoOrigen = { clave: string; origin: string; cifras: Cifras; empresas: NodoEmpresa[] }
 type NodoCliente = { clave: string; client_name: string; cifras: Cifras; origenes: NodoOrigen[] }
 export type ArbolDeAsignados = { clientes: NodoCliente[]; total: Cifras }
 
 export type NivelPlegable = 0 | 1 | 2
-export type FilaDelArbol = { nivel: 0 | 1 | 2 | 3; clave: string; etiqueta: string; cifras: Cifras; plegable: boolean }
+/** Una fila del árbol; `trips` solo en la del conductor (sus viajes del día, D8). */
+export type FilaDelArbol = { nivel: 0 | 1 | 2 | 3; clave: string; etiqueta: string; cifras: Cifras; plegable: boolean; trips: TripRef[] }
 
 const CERO: Cifras = { rm: 0, z0: 0, region: 0, unclassified: 0, total: 0 }
 
@@ -58,6 +59,7 @@ export function arbolDeAsignados(rows: AssignedRow[]): ArbolDeAsignados {
         conductores: f.vehicles.map(v => ({
           etiqueta: `${v.driver_name ?? 'Sin conductor'} · ${v.tractor_plate ?? 'sin patente'}`,
           cifras: { ...CERO, [v.zone]: 1, total: 1 },
+          trips: v.trips ?? [],
         })),
       })),
     })),
@@ -73,17 +75,17 @@ export function filasDelArbol(
 ): FilaDelArbol[] {
   const filas: FilaDelArbol[] = []
   for (const c of arbol.clientes) {
-    filas.push({ nivel: 0, clave: c.clave, etiqueta: c.client_name, cifras: c.cifras, plegable: true })
+    filas.push({ nivel: 0, clave: c.clave, etiqueta: c.client_name, cifras: c.cifras, plegable: true, trips: [] })
     if (!estaAbierto(c.clave, 0)) continue
     for (const o of c.origenes) {
-      filas.push({ nivel: 1, clave: o.clave, etiqueta: o.origin, cifras: o.cifras, plegable: true })
+      filas.push({ nivel: 1, clave: o.clave, etiqueta: o.origin, cifras: o.cifras, plegable: true, trips: [] })
       if (!estaAbierto(o.clave, 1)) continue
       for (const e of o.empresas) {
         const plegable = e.conductores.length > 0
-        filas.push({ nivel: 2, clave: e.clave, etiqueta: e.carrier_name, cifras: e.cifras, plegable })
+        filas.push({ nivel: 2, clave: e.clave, etiqueta: e.carrier_name, cifras: e.cifras, plegable, trips: [] })
         if (!plegable || !estaAbierto(e.clave, 2)) continue
         e.conductores.forEach((c, i) => {
-          filas.push({ nivel: 3, clave: `${e.clave}\u0000${i}`, etiqueta: c.etiqueta, cifras: c.cifras, plegable: false })
+          filas.push({ nivel: 3, clave: `${e.clave}\u0000${i}`, etiqueta: c.etiqueta, cifras: c.cifras, plegable: false, trips: c.trips })
         })
       }
     }

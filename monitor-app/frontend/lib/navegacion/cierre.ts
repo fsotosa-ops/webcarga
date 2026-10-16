@@ -1,5 +1,5 @@
 import { PESTANAS_DE_VIAJES } from '@/lib/cierre/gruposDeViajes'
-import { EMPTY_VIEW, writeView } from '@/lib/table/viewInUrl'
+import { EMPTY_VIEW, readView, writeView } from '@/lib/table/viewInUrl'
 import type { ClosureScope } from '@/lib/types'
 
 /** La URL del Cierre del Día, en un solo lugar (spec 2026-10-11). Claves y
@@ -17,6 +17,8 @@ export type EstadoDeLaUrlDelCierre = {
   tab:   PestanaDelCierre | null
   /** Qué se cierra (D1): uno para las cuatro pestañas; Tractoreo si la URL no dice. */
   scope: ClosureScope
+  /** La sección del Reporte (Resumen, Asignados…); la valida el Reporte. */
+  section: string | null
 }
 
 type Parametros = Pick<URLSearchParams, 'get' | 'toString'>
@@ -39,6 +41,7 @@ export function leerUrlDelCierre(params: Parametros): EstadoDeLaUrlDelCierre {
     date: params.get('date') ?? params.get('fecha'),
     tab: pestanaDe(params.get('tab')),
     scope: ALCANCES.includes(scope as ClosureScope) ? scope as ClosureScope : 'tractoreo',
+    section: params.get('section'),
   }
 }
 
@@ -48,21 +51,31 @@ export function esUrlVieja(params: Parametros): boolean {
 }
 
 /** La URL del Cierre con `cambios` aplicados. Conserva los parámetros ajenos y
- *  siempre escribe la forma en inglés. Cambiar de pestaña deja atrás la vista de la
- *  tabla anterior (sus filtros son de OTRA tabla); cambiar de alcance la conserva y
- *  la sección decide qué filtros siguen aplicando (C7). */
-export function urlDelCierre(params: Parametros, cambios: Partial<EstadoDeLaUrlDelCierre>): string {
+ *  siempre escribe la forma en inglés. Cambiar de pestaña o de sección del Reporte
+ *  deja atrás la vista de la tabla anterior (sus filtros son de OTRA tabla), salvo
+ *  `keepFilters`: los que valen para toda la pestaña (el Cliente del Reporte).
+ *  Cambiar de alcance la conserva y la sección decide qué filtros siguen (C7). */
+export function urlDelCierre(
+  params: Parametros, cambios: Partial<EstadoDeLaUrlDelCierre>, { keepFilters = [] }: { keepFilters?: string[] } = {},
+): string {
   const antes = leerUrlDelCierre(params)
-  const estado = { ...antes, ...cambios }
   const cambiaDePestana = cambios.tab !== undefined && cambios.tab !== antes.tab
+  const cambiaDeSeccion = cambios.section !== undefined && cambios.section !== antes.section
+  // Otra pestaña no tiene secciones del Reporte.
+  const estado = { ...antes, ...(cambiaDePestana ? { section: null } : {}), ...cambios }
   let salida = new URLSearchParams(params.toString())
   // La sub-pestaña vieja de Viajes pasa a ser el filtro de su columna Situación.
   const viejaDeViajes = PESTANAS_DE_VIAJES.find(p => p.id === params.get('trips'))
-  if (cambiaDePestana) salida = writeView(salida, EMPTY_VIEW)
-  for (const c of [...CLAVES_VIEJAS, 'date', 'tab', 'scope']) salida.delete(c)
+  if (cambiaDePestana || cambiaDeSeccion) {
+    const vista = readView(new URLSearchParams(params.toString()))
+    const quedan = Object.fromEntries(Object.entries(vista.filters).filter(([id]) => keepFilters.includes(id)))
+    salida = writeView(salida, { ...EMPTY_VIEW, filters: quedan })
+  }
+  for (const c of [...CLAVES_VIEJAS, 'date', 'tab', 'scope', 'section']) salida.delete(c)
   if (estado.date) salida.set('date', estado.date)
   if (estado.tab) salida.set('tab', estado.tab)
   if (estado.scope !== 'tractoreo') salida.set('scope', estado.scope)
+  if (estado.section) salida.set('section', estado.section)
   if (viejaDeViajes && !cambiaDePestana) {
     salida = writeView(salida, { ...EMPTY_VIEW, filters: { situation: [viejaDeViajes.etiqueta] } })
   }

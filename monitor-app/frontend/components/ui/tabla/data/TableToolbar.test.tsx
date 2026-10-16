@@ -65,4 +65,23 @@ describe('TableToolbar', () => {
     fireEvent.change(screen.getByRole('searchbox', { name: 'Buscar' }), { target: { value: 'be' } })
     await waitFor(() => expect(screen.getByTestId('filas')).toHaveTextContent(/^Beto$/))
   })
+
+  it('un filtro del servidor se dice con su etiqueta, entra por "+ Filtro", y la barra puede ir sin buscador ni Columnas', () => {
+    const cliente: DataColumn<Fila> = {
+      id: 'client', header: 'Cliente', value: () => null, server: true,
+      options: ['s1', 's2'], count: () => 1, label: v => (v === 's1' ? 'Walmart' : 'Sodimac'),
+    }
+    function SoloCliente() {
+      const [view, setView] = useState<TableView>({ ...EMPTY_VIEW, filters: { client: ['s1'] } })
+      const model = useDataTable({ rows: [] as Fila[], columns: [cliente], getRowId: r => r.id, view, onViewChange: setView })
+      return <TableToolbar model={model} />
+    }
+    render(<SoloCliente />)
+    expect(screen.getByText('Cliente: Walmart')).toBeInTheDocument()
+    expect(screen.queryByRole('searchbox')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Columnas' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar filtro' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Cliente' }))
+    expect(screen.getByRole('checkbox', { name: 'Sodimac, 1' })).toBeInTheDocument()
+  })
 })

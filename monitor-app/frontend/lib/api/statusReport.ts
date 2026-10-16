@@ -2,10 +2,10 @@ import type { StatusReport } from '@/lib/types'
 import { apiFetch } from './client'
 
 export const statusReportApi = {
-  /** `shipperId`: el id del cliente del directorio (spec 2026-10-11). */
-  get: (fecha: string, shipperId?: string) => {
+  /** `shipperIds`: los ids de los clientes del directorio (spec 2026-10-11); vacío = todos. */
+  get: (fecha: string, shipperIds: string[] = []) => {
     const params = new URLSearchParams({ fecha })
-    if (shipperId) params.set('shipper_id', shipperId)
+    for (const id of shipperIds) params.append('shipper_id', id)
     return apiFetch<StatusReport>(`/api/v1/status-report?${params.toString()}`)
   },
 }

@@ -113,15 +113,25 @@ def test_con_un_cliente_elegido_solo_quedan_los_equipos_con_un_viaje_suyo():
         _row(asset_id="a2", carrier_id="c2", shipper_id="s3", client_name="Sodimac"),
         _row(asset_id="a3", carrier_id="c1", con_carga=False, client_name=None, shipper_id=None, category="NO_TRABAJANDO"),
     ]
-    assert [r["asset_id"] for r in _filter_by_client(rows, "s1")] == ["a1"]
-    assert _filter_by_client(rows, None) == rows
+    assert [r["asset_id"] for r in _filter_by_client(rows, ["s1"])] == ["a1"]
+    assert _filter_by_client(rows, []) == rows
+
+
+def test_con_dos_clientes_elegidos_quedan_los_equipos_de_cualquiera_de_los_dos():
+    """El Cliente del Reporte es un filtro como los demás del Cierre (spec D3): admite varios."""
+    rows = [
+        _row(asset_id="a1", shipper_id="s1"),
+        _row(asset_id="a2", shipper_id="s3", client_name="Sodimac"),
+        _row(asset_id="a3", shipper_id="s4", client_name="Iansa"),
+    ]
+    assert [r["asset_id"] for r in _filter_by_client(rows, ["s1", "s3"])] == ["a1", "a2"]
 
 
 def test_el_filtro_compara_ids_y_no_nombres():
     """Dos clientes con el mismo nombre visible no se confunden: manda el id."""
     rows = [_row(asset_id="a1", shipper_id="s1", client_name="Walmart"),
             _row(asset_id="a2", shipper_id="s9", client_name="Walmart")]
-    assert [r["asset_id"] for r in _filter_by_client(rows, "s1")] == ["a1"]
+    assert [r["asset_id"] for r in _filter_by_client(rows, ["s1"])] == ["a1"]
 
 
 def test_los_clientes_del_dia_son_los_que_cargaron_con_su_cantidad():
@@ -518,6 +528,9 @@ def test_el_filtro_de_cliente_deja_solo_sus_viajes_y_devuelve_los_clientes_del_d
          patch.object(modulo, "_no_trabajaron_por_conductor", wraps=modulo._no_trabajaron_por_conductor) as espia:
         body = _cliente_http(pool).get("/api/v1/status-report?fecha=2026-08-02&shipper_id=00000000-0000-0000-0000-0000000000a1").json()
         todos = _cliente_http(pool).get("/api/v1/status-report?fecha=2026-08-02").json()
+        dos = _cliente_http(pool).get(
+            "/api/v1/status-report?fecha=2026-08-02"
+            "&shipper_id=00000000-0000-0000-0000-0000000000a1&shipper_id=00000000-0000-0000-0000-0000000000a3").json()
 
     resumen = body["by_operation_type"]["tractoreo"]["summary"]
     assert (resumen["total"], resumen["assigned"]) == (1, 1)
@@ -528,6 +541,9 @@ def test_el_filtro_de_cliente_deja_solo_sus_viajes_y_devuelve_los_clientes_del_d
     # Con "Todos los clientes", lo que no trabajó sí está.
     assert todos["by_operation_type"]["tractoreo"]["summary"]["total"] == 3
     assert [f["carrier_id"] for f in todos["fleet_driver_gap"]] == ["c1"]
+    # Dos clientes: los viajes de los dos, y el filtro devuelto los nombra.
+    assert dos["by_operation_type"]["tractoreo"]["summary"]["assigned"] == 2
+    assert dos["client_filter"] == ["00000000-0000-0000-0000-0000000000a1", "00000000-0000-0000-0000-0000000000a3"]
 
 
 def test_resumen_cuenta_los_viajes_de_varios_dias_por_dias_atras():

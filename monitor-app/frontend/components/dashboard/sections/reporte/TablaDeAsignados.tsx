@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { AssignedRow } from '@/lib/types'
+import { TripCodeLinks } from '@/components/dashboard/TripCodeLinks'
 import {
   COLUMNAS_DE_ZONA, arbolDeAsignados, filasDelArbol, type FilaDelArbol, type NivelPlegable,
 } from '@/lib/reporte/arbolDeAsignados'
@@ -41,8 +42,10 @@ export function usePlegado(): Plegado {
 }
 
 /** Asignados como tabla dinámica: Cliente → Origen del viaje → Empresa →
- *  Conductor, con subtotales. */
-export function TablaDeAsignados({ rows, plegado }: { rows: AssignedRow[]; plegado: Plegado }) {
+ *  Conductor, con subtotales. Cada conductor con sus Nº de viaje del día (D8). */
+export function TablaDeAsignados({ rows, plegado, tripHref }: {
+  rows: AssignedRow[]; plegado: Plegado; tripHref: (tripId: string) => string
+}) {
   const arbol = useMemo(() => arbolDeAsignados(rows), [rows])
   const { estaAbierto } = plegado
 
@@ -52,6 +55,7 @@ export function TablaDeAsignados({ rows, plegado }: { rows: AssignedRow[]; plega
         <thead>
           <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
             <th className="text-left px-3 py-2">Cliente › Origen › Empresa › Conductor</th>
+            <th className="text-left px-3 py-2">Nº viaje</th>
             {COLUMNAS_DE_ZONA.map(z => <th key={z.clave} className="text-right px-3 py-2">{z.etiqueta}</th>)}
           </tr>
         </thead>
@@ -69,6 +73,7 @@ export function TablaDeAsignados({ rows, plegado }: { rows: AssignedRow[]; plega
                     </button>
                   ) : f.etiqueta}
                 </td>
+                <td className="px-3 py-2">{f.nivel === 3 && <TripCodeLinks trips={f.trips} href={tripHref} />}</td>
                 {COLUMNAS_DE_ZONA.map(z => (
                   <td key={z.clave} className={`px-3 py-2 text-right ${z.clave === 'total' ? 'font-bold' : ''}`}>
                     {f.cifras[z.clave]}
@@ -81,6 +86,7 @@ export function TablaDeAsignados({ rows, plegado }: { rows: AssignedRow[]; plega
         <tfoot>
           <tr className="border-t-2 border-border font-bold bg-gray-50">
             <td className="px-3 py-2">Total</td>
+            <td className="px-3 py-2" />
             {COLUMNAS_DE_ZONA.map(z => <td key={z.clave} className="px-3 py-2 text-right">{arbol.total[z.clave]}</td>)}
           </tr>
         </tfoot>

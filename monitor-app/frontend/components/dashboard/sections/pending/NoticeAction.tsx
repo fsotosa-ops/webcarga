@@ -1,13 +1,14 @@
 'use client'
 
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { NewCarrierPanel } from '../../NewCarrierPanel'
 import { AltaDeFlota } from '@/components/dashboard/AltaDeFlota'
 import { VincularConductorPropuesto } from '../VincularConductorPropuesto'
 import type { Notice } from '@/lib/cierre/closureNotices'
-import type { DirectoryChange } from '@/lib/queries/directorio'
+import { invalidateDirectory, type DirectoryChange } from '@/lib/queries/directorio'
 
 const ENLACE = 'text-etiqueta font-semibold text-accion hover:underline'
 
@@ -16,10 +17,16 @@ const ENLACE = 'text-etiqueta font-semibold text-accion hover:underline'
  *  endpoint (bloque 0, 0.3): crear, vincular y dar de alta piden directory.edit;
  *  activar una empresa en onboarding también, y reactivar una dada de baja es un
  *  cambio de estado que pide directory.delete. */
-export function NoticeAction({ notice, onChanged }: {
-  notice: Notice
-  onChanged: (change: DirectoryChange) => Promise<void>
-}) {
+export function NoticeAction({ notice, fecha }: { notice: Notice; fecha: string }) {
+  const queryClient = useQueryClient()
+  async function onChanged(change: DirectoryChange) {
+    await invalidateDirectory(queryClient, change)
+    // Esta pantalla ES el Cierre: se relee ya, para traer `pendiente_desde` y que el
+    // aviso y la relectura de 15 s arranquen (0.6). Desde otras pantallas el Cierre
+    // solo queda marcado viejo (R9).
+    await queryClient.invalidateQueries({ queryKey: ['daily-closure', fecha] })
+    await queryClient.invalidateQueries({ queryKey: ['equipment-closures', fecha] })
+  }
   const canEditDirectory = usePermiso('directory.edit')
   const canChangeCarrierStatus = usePermiso('directory.delete')
   const noPermission = <p className="text-etiqueta text-informativo">Lo resuelve un supervisor desde el Directorio.</p>

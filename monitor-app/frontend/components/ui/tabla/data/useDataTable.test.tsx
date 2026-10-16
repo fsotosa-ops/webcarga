@@ -106,4 +106,20 @@ describe('useDataTable', () => {
     expect(result.current.valuesOf('viajes')).toEqual(['30', '31'])
     expect(result.current.facetCount('viajes', '31')).toBe(2)
   })
+
+  it('un filtro que aplica el servidor (el cliente del Reporte): no filtra filas ni es columna, y sus valores y cifras llegan de afuera', () => {
+    const cliente: DataColumn<Fila> = {
+      id: 'client', header: 'Cliente', value: () => null, server: true,
+      options: ['s1', 's2'], count: v => (v === 's1' ? 31 : 4), label: v => (v === 's1' ? 'Walmart' : 'Sodimac'),
+    }
+    const { result } = renderHook(() => {
+      const [view, setView] = useState<TableView>({ ...EMPTY_VIEW, filters: { client: ['s1'] } })
+      return useDataTable({ rows: FILAS, columns: [...COLUMNAS, cliente], getRowId: r => r.id, view, onViewChange: setView })
+    })
+    expect(result.current.rows).toHaveLength(4)
+    expect(result.current.valuesOf('client')).toEqual(['s1', 's2'])
+    expect(result.current.facetCount('client', 's1')).toBe(31)
+    expect(result.current.visibleColumns.map(c => c.id)).not.toContain('client')
+    expect(result.current.orderedColumns.map(e => e.column.id)).not.toContain('client')
+  })
 })

@@ -32,15 +32,17 @@ export function useDataTable<T>({
   rows, columns, getRowId, view, onViewChange, search, columnPrefs = null, pageSize = 50,
 }: UseDataTableOptions<T>) {
   const porId = useMemo(() => new Map(columns.map(c => [c.id, c])), [columns])
+  // Las columnas de la tabla; un filtro del servidor no es columna (ver `DataColumn.server`).
+  const enTabla = useMemo(() => columns.filter(c => !c.server), [columns])
 
-  const defs = useMemo<ColumnDef<T, string | null>[]>(() => columns.map(c => ({
+  const defs = useMemo<ColumnDef<T, string | null>[]>(() => enTabla.map(c => ({
     id: c.id,
     accessorFn: (row: T) => c.value(row),
     filterFn: (row: Row<T>, _id: string, selected: string[]) => cellMatches(c, row.original, selected),
     sortingFn: (a: Row<T>, b: Row<T>) => compareCells(c.value(a.original), c.value(b.original), 'asc'),
     enableSorting: c.sortable !== false,
     enableHiding: c.hideable !== false,
-  })), [columns])
+  })), [enTabla])
 
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize })
   // Cualquier cambio de la vista vuelve a la primera página: la página 3 de otro filtro no existe.
@@ -49,26 +51,31 @@ export function useDataTable<T>({
 
   const visibility = useMemo(() => {
     const v: Record<string, boolean> = {}
-    for (const c of columns) v[c.id] = !c.defaultHidden
+    for (const c of enTabla) v[c.id] = !c.defaultHidden
     for (const p of columnPrefs ?? []) {
-      const c = porId.get(p.id)
+      const c = enTabla.find(x => x.id === p.id)
       // Una preferencia vieja de una columna que ya no existe se ignora; la fija nunca se oculta.
       if (c) v[p.id] = c.hideable === false ? true : !p.hidden
     }
     return v
-  }, [columns, columnPrefs, porId])
+  }, [enTabla, columnPrefs])
 
   const order = useMemo(() => {
-    const guardado = (columnPrefs ?? []).map(p => p.id).filter(id => porId.has(id))
-    return [...guardado, ...columns.map(c => c.id).filter(id => !guardado.includes(id))]
-  }, [columns, columnPrefs, porId])
+    const ids = enTabla.map(c => c.id)
+    const guardado = (columnPrefs ?? []).map(p => p.id).filter(id => ids.includes(id))
+    return [...guardado, ...ids.filter(id => !guardado.includes(id))]
+  }, [enTabla, columnPrefs])
 
   const table = useReactTable<T>({
     data: rows,
     columns: defs,
     getRowId,
     state: {
-      columnFilters: Object.entries(view.filters).map(([id, value]) => ({ id, value })),
+      // Solo los de columnas de esta tabla: el del servidor ya llegó aplicado, y uno de
+      // otra tabla (un enlace viejo, otra sección) no tiene con qué filtrar.
+      columnFilters: Object.entries(view.filters)
+        .filter(([id]) => porId.has(id) && !porId.get(id)!.server)
+        .map(([id, value]) => ({ id, value })),
       globalFilter: view.q,
       sorting: view.sort ? [{ id: view.sort.column, desc: view.sort.dir === 'desc' }] : [],
       columnVisibility: visibility,
@@ -103,6 +110,7 @@ export function useDataTable<T>({
   function facetCount(columnId: string, value: string): number {
     const c = porId.get(columnId)
     if (!c) return 0
+    if (c.count) return c.count(value)
     return facetRows(columnId).filter(r => cellMatches(c, r, [value])).length
   }
 
@@ -111,6 +119,7 @@ export function useDataTable<T>({
     if (!c) return []
     if (c.filter === 'presence') return [PRESENT, ABSENT]
     const fijos = c.options ?? []
+    if (c.server) return [...fijos, ...(view.filters[columnId] ?? []).filter(v => !fijos.includes(v))]
     const presentes = new Set<string>()
     for (const r of facetRows(columnId)) for (const v of cellValues(c, r)) if (v) presentes.add(v)
     for (const v of view.filters[columnId] ?? []) presentes.add(v)
@@ -137,6 +146,8 @@ export function useDataTable<T>({
     visibleColumns: table.getVisibleLeafColumns().map(c => porId.get(c.id)!),
     /** Todas las columnas en el orden de la persona, con si se ven (para "Columnas"). */
     orderedColumns: order.map(id => ({ column: porId.get(id)!, visible: visibility[id] !== false })),
+    /** Los filtros que aplica el servidor: van por "+ Filtro" y como chip, no como columna. */
+    serverFilters: columns.filter(c => c.server),
     facetCount,
     /** Cuántas filas pasan todos los filtros menos el de esta columna (el "Todos" de un recuadro). */
     facetTotal: (columnId: string) => facetRows(columnId).length,

@@ -8,6 +8,7 @@ import { Popover } from '@/components/ui/Popover'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { ColumnFilter } from './ColumnFilter'
 import { ColumnsMenu } from './ColumnsMenu'
+import { filterChipText } from './viewExport'
 import type { DataTableModel } from './useDataTable'
 import type { TablePreferences } from './useTablePreferences'
 
@@ -16,8 +17,10 @@ import type { TablePreferences } from './useTablePreferences'
  *  "Limpiar", "Columnas" y las acciones propias de la pantalla al final. */
 export function TableToolbar<T>({ model, searchPlaceholder, preferences, actions }: {
   model: DataTableModel<T>
-  searchPlaceholder: string
-  preferences: TablePreferences
+  /** Sin él, la barra no busca (una sección sin filas propias, como un resumen). */
+  searchPlaceholder?: string
+  /** Sin ellas, no hay "Columnas" (no hay columnas que elegir). */
+  preferences?: TablePreferences
   actions?: ReactNode
 }) {
   const { view } = model
@@ -31,26 +34,28 @@ export function TableToolbar<T>({ model, searchPlaceholder, preferences, actions
   const [eligiendo, setEligiendo] = useState<string | null>(null)
   const agregar = useRef<HTMLButtonElement>(null)
 
-  const filtrables = model.orderedColumns.map(e => e.column).filter(c => c.filter !== false)
+  // Las de la tabla en el orden de la persona, y después los filtros del servidor.
+  const filtrables = [
+    ...model.orderedColumns.map(e => e.column),
+    ...model.serverFilters,
+  ].filter(c => c.filter !== false)
   const activos = Object.entries(view.filters).filter(([, v]) => v.length)
   const hayAlgo = activos.length > 0 || view.q !== ''
   const columna = eligiendo ? model.columnById(eligiendo) : undefined
 
-  const texto = (columnId: string, valores: string[]) => {
-    const c = model.columnById(columnId)
-    return `${c?.header ?? columnId}: ${valores.map(v => valueLabel(c, v)).join(', ')}`
-  }
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-white px-3 py-2">
-      <SearchInput value={q} onChange={setQ} label="Buscar" placeholder={searchPlaceholder} className="w-64 max-w-full shrink-0" />
+      {searchPlaceholder && (
+        <SearchInput value={q} onChange={setQ} label="Buscar" placeholder={searchPlaceholder} className="w-64 max-w-full shrink-0" />
+      )}
 
       {activos.map(([columnId, valores]) => {
         const c = model.columnById(columnId)
         const quitar = () => model.setFilter(columnId, [])
         return (
           <span key={columnId} className="inline-flex items-center gap-1 rounded-full border border-border bg-bg-main py-0.5 pl-2.5 pr-1 text-dato text-text-primary">
-            {texto(columnId, valores)}
+            {filterChipText(model, columnId, valores)}
             <button type="button" aria-label={`Quitar filtro ${c?.header ?? columnId}`} onClick={quitar}
               onKeyDown={e => { if (e.key === 'Backspace' || e.key === 'Delete') quitar() }}
               className="rounded-full p-0.5 text-informativo hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
@@ -81,7 +86,7 @@ export function TableToolbar<T>({ model, searchPlaceholder, preferences, actions
         {columna && (
           <ColumnFilter anchor={agregar} onClose={() => setEligiendo(null)}
             header={columna.header} kind={columna.filter === 'presence' ? 'presence' : 'values'}
-            values={model.valuesOf(columna.id)} selected={view.filters[columna.id] ?? []}
+            values={model.valuesOf(columna.id)} label={v => valueLabel(columna, v)} selected={view.filters[columna.id] ?? []}
             count={v => model.facetCount(columna.id, v)} onChange={v => model.setFilter(columna.id, v)} />
         )}
       </span>
@@ -95,7 +100,7 @@ export function TableToolbar<T>({ model, searchPlaceholder, preferences, actions
 
       <span className="ml-auto flex items-center gap-2">
         {actions}
-        <ColumnsMenu columns={model.orderedColumns} onChange={preferences.save} onReset={preferences.reset} />
+        {preferences && <ColumnsMenu columns={model.orderedColumns} onChange={preferences.save} onReset={preferences.reset} />}
       </span>
     </div>
   )

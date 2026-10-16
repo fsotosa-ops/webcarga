@@ -12,7 +12,11 @@ import type { SortDir } from '@/lib/table/viewInUrl'
  *    tiene: Acción, Comentario) o `false`.
  *  - `options`: valores que el filtro ofrece aunque ninguna fila los tenga hoy (el
  *    glosario de un estado, el catálogo de CD).
- *  - `hideable: false`: la columna que identifica la fila; no se oculta. */
+ *  - `hideable: false`: la columna que identifica la fila; no se oculta.
+ *  - `label`: cómo se dice un valor en el filtro y el chip, cuando el valor es un id.
+ *  - `server`: un filtro que aplica el servidor (el cliente del Reporte, que se
+ *    agrega allá): no es columna ni filtra filas aquí; sus valores son `options` y
+ *    sus cifras, `count`. Entra por "+ Filtro" y se ve como chip, igual que los demás. */
 export type DataColumn<T> = {
   id: string
   header: string
@@ -25,6 +29,9 @@ export type DataColumn<T> = {
   hideable?: boolean
   defaultHidden?: boolean
   align?: 'left' | 'right'
+  label?: (value: string) => string
+  server?: true
+  count?: (value: string) => number
 }
 
 /** Los dos valores de un filtro `presence` y cómo se dicen (filtro y chip). */
@@ -34,6 +41,7 @@ export const PRESENCE_LABEL: Record<string, string> = { [PRESENT]: 'Tiene', [ABS
 
 /** Cómo se dice un valor de una columna en el filtro y en su chip. */
 export function valueLabel<T>(column: DataColumn<T> | undefined, value: string): string {
+  if (column?.label) return column.label(value)
   return column?.filter === 'presence' ? PRESENCE_LABEL[value] ?? value : value
 }
 

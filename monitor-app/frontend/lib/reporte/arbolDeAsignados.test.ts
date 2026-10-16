@@ -61,4 +61,12 @@ describe('arbolDeAsignados', () => {
     expect(arbol.clientes).toEqual([])
     expect(arbol.total.total).toBe(0)
   })
+
+  it('cada conductor trae sus viajes del día; los subtotales no (D8)', () => {
+    const conViajes: AssignedRow = { ...fila('Walmart', 'CD Lo Aguirre', 'Norte Spa', 1),
+      vehicles: [{ tractor_plate: 'RM0', driver_name: 'Ana', zone: 'rm', trips: [{ id: 't1', code: '30' }, { id: 't2', code: '31' }] }] }
+    const filas = filasDelArbol(arbolDeAsignados([conViajes]))
+    expect(filas.find(f => f.nivel === 3)!.trips.map(t => t.code)).toEqual(['30', '31'])
+    expect(filas.filter(f => f.nivel < 3).every(f => f.trips.length === 0)).toBe(true)
+  })
 })

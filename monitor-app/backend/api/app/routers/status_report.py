@@ -38,7 +38,7 @@ from collections.abc import Iterable
 from datetime import date as _date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import get_current_user
 from ..authz import Permission, require
@@ -319,10 +319,12 @@ def _clientes_de_la_fila(fila: dict) -> list[str]:
     return []
 
 
-def _filter_by_client(rows: list[dict], shipper_id: str | None) -> list[dict]:
-    if not shipper_id:
+def _filter_by_client(rows: list[dict], shipper_ids: list[str]) -> list[dict]:
+    """Las filas de cualquiera de los clientes elegidos; sin ninguno, todas. Varios,
+    porque en el Cierre el Cliente es un filtro como los demás (spec D3)."""
+    if not shipper_ids:
         return rows
-    return [r for r in rows if shipper_id in _clientes_de_la_fila(r)]
+    return [r for r in rows if any(s in shipper_ids for s in _clientes_de_la_fila(r))]
 
 
 def _clientes_del_dia(rows: list[dict]) -> list[dict]:
@@ -570,16 +572,19 @@ def _reporte_del_tipo(rows: list[dict], *, no_trabajaron: dict, catalogo_sin_asi
 
 
 @router.get("")
-async def get_status_report(fecha: str, shipper_id: UUID | None = None, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
+async def get_status_report(
+    fecha: str, shipper_id: list[UUID] = Query(default=[]),
+    pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ)),
+):
     business_date = _parse_business_date(fecha)
     # UUID en la firma: un id mal formado es 422; de acá en adelante, texto.
-    shipper_id = str(shipper_id) if shipper_id else None
+    shipper_ids = [str(s) for s in shipper_id]
     all_rows = await _build_asset_rows(pool, business_date)
-    rows = _filter_by_client(all_rows, shipper_id)
+    rows = _filter_by_client(all_rows, shipper_ids)
     por_tipo = {clave: [r for r in rows if codigo in r["categories"]] for clave, codigo in _TIPOS.items()}
     # Conductores y faltante de dotación, con la misma regla de pertenencia.
-    driver_rows = _filter_by_client(await _build_driver_rows(pool, business_date), shipper_id)
-    faltantes = _filter_by_client(await compute_fleet_driver_gap(pool), shipper_id)
+    driver_rows = _filter_by_client(await _build_driver_rows(pool, business_date), shipper_ids)
+    faltantes = _filter_by_client(await compute_fleet_driver_gap(pool), shipper_ids)
     catalogo_no_trabajo = [r["label"] for r in await pool.fetch(_SQL_MOTIVOS_DEL_GRUPO, GRUPO_NO_TRABAJANDO)]
     catalogo_sin_asignacion = [
         r["label"] for r in await pool.fetch(_SQL_MOTIVOS_DEL_GRUPO, GRUPO_TRABAJANDO_SIN_ASIGNACION)
@@ -593,7 +598,7 @@ async def get_status_report(fecha: str, shipper_id: UUID | None = None, pool=Dep
     }
     return {
         "business_date": business_date.isoformat(),
-        "client_filter": shipper_id,
+        "client_filter": shipper_ids,
         "clients": _clientes_del_dia(all_rows),
         # El faltante de dotación con el mismo filtro: lo leen la pestaña Dotación,
         # el PDF y el Excel, para que todas las cifras digan lo mismo.

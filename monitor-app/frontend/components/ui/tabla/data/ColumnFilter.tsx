@@ -4,16 +4,17 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { ListFilter } from 'lucide-react'
 import { Popover } from '@/components/ui/Popover'
 import { SearchInput } from '@/components/ui/SearchInput'
-import { PRESENCE_LABEL } from './columns'
 
 /** El filtro de una columna (Cierre con un solo patrón, spec §4.1): lista de
  *  valores con su cifra facetada, buscador que filtra al tipear, selección
  *  múltiple, "Seleccionar todo" y "Limpiar". Se abre desde su embudo o, con
  *  `anchor`, desde otro botón ("+ Filtro" de la barra). */
-export function ColumnFilter({ header, kind, values, selected, count, onChange, anchor, onClose }: {
+export function ColumnFilter({ header, kind, values, label, selected, count, onChange, anchor, onClose }: {
   header: string
   kind: 'values' | 'presence'
   values: string[]
+  /** Cómo se dice cada valor (`valueLabel` de su columna). */
+  label: (value: string) => string
   selected: string[]
   count: (value: string) => number
   onChange: (values: string[]) => void
@@ -32,7 +33,7 @@ export function ColumnFilter({ header, kind, values, selected, count, onChange, 
     if (abierto) (buscador.current ?? lista.current?.querySelector<HTMLInputElement>('input'))?.focus()
   }, [abierto])
 
-  const etiqueta = (v: string) => (kind === 'presence' ? PRESENCE_LABEL[v] ?? v : v)
+  const etiqueta = label
   const visibles = values.filter(v => etiqueta(v).toLowerCase().includes(q.trim().toLowerCase()))
 
   function cerrar() {

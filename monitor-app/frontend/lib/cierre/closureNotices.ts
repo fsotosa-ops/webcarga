@@ -27,10 +27,13 @@ const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno
 /** El desbalance de dotación de una empresa en una frase: lo dicen Pendientes y
  *  Reporte › Dotación con las mismas palabras. */
 export function describeFleetGap(g: FleetDriverGapRow): string {
-  const cuanto = g.gap > 0
-    ? `Faltan ${plural(g.gap, 'conductor', 'conductores')}`
-    : `${plural(Math.abs(g.gap), 'conductor', 'conductores')} de más`
-  return `${cuanto} · ${plural(g.n_tractos, 'tracto', 'tractos')} / ${plural(g.n_conductores, 'conductor', 'conductores')}`
+  return `${fleetGapShortfall(g)} · ${plural(g.n_tractos, 'tracto', 'tractos')} / ${plural(g.n_conductores, 'conductor', 'conductores')}`
+}
+
+/** Cuánto le falta o le sobra a una empresa: "Falta 1 conductor", "2 conductores de más". */
+export function fleetGapShortfall(g: FleetDriverGapRow): string {
+  if (g.gap === 1) return 'Falta 1 conductor'
+  return g.gap > 1 ? `Faltan ${g.gap} conductores` : `${plural(Math.abs(g.gap), 'conductor', 'conductores')} de más`
 }
 
 export function buildNotices(esc: PreCierreEscalations, gap: FleetDriverGapRow[] | undefined): Notice[] {

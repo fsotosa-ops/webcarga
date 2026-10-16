@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { ColumnFilter } from './ColumnFilter'
+import { PRESENCE_LABEL } from './columns'
 
 function montar(props: Partial<Parameters<typeof ColumnFilter>[0]> = {}) {
   const onChange = vi.fn()
@@ -9,7 +10,7 @@ function montar(props: Partial<Parameters<typeof ColumnFilter>[0]> = {}) {
       <ColumnFilter
         header="Empresa" kind="values" values={['Hasa Spa', 'Huemul', 'Hueraman y Cía.']} selected={[]}
         count={v => ({ 'Hasa Spa': 4, 'Huemul': 2, 'Hueraman y Cía.': 0 } as Record<string, number>)[v] ?? 0}
-        onChange={onChange} {...props}
+        label={v => (props.kind === 'presence' ? PRESENCE_LABEL[v] : v)} onChange={onChange} {...props}
       />
     </div>,
   )

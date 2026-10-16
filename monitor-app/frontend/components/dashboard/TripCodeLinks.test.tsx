@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { TripCodeLinks, tripCodes } from './TripCodeLinks'
+import { TripCodeLinks } from './TripCodeLinks'
+import { tripCodes } from '@/lib/tripRefs'
 
 describe('TripCodeLinks', () => {
   it('lista todos los viajes de la fila, cada uno con su enlace (D8)', () => {

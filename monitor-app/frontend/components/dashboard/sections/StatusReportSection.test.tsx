@@ -11,9 +11,14 @@ vi.mock('write-excel-file/browser', () => ({ default: escribirExcel }))
 vi.mock('@/lib/api/statusReport', () => ({
   statusReportApi: { get: vi.fn() },
 }))
-vi.mock('@/lib/api/carriers', () => ({
-  carriersApi: { fleetDriverGap: vi.fn().mockResolvedValue({ rows: [{ carrier_id: 'c1', business_name: 'Transportes Sur', n_tractos: 3, n_conductores: 2, gap: 1 }] }) },
+// La vista (Cliente, filtros) vive en la URL (spec §4.2): una URL en memoria.
+vi.mock('next/navigation', async () => (await import('@/lib/testing/inMemoryNavigation')).nextNavigation)
+vi.mock('@/lib/api/tablePreferences', () => ({
+  tablePreferencesApi: { get: vi.fn().mockResolvedValue(null), save: vi.fn(), reset: vi.fn() },
 }))
+import { memoryUrl } from '@/lib/testing/inMemoryNavigation'
+import { readView } from '@/lib/table/viewInUrl'
+import type { ReportSection } from '@/lib/reporte/secciones'
 
 const VACIO: OperationTypeReport = {
   summary: { total: 0, assigned: 0, not_working: 0, utilization_pct: 0, by_client: [], by_home_origin: [],
@@ -36,7 +41,7 @@ const TRACTOREO: OperationTypeReport = {
     rows: [
       { client_name: 'Walmart', origin: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', rm: 3, z0: 1, region: 0, unclassified: 0, total: 4,
         vehicles: [
-          { tractor_plate: 'AAAA11', driver_name: 'Ana Soto', zone: 'rm' }, { tractor_plate: 'BBBB22', driver_name: 'Luis Rojas', zone: 'rm' },
+          { tractor_plate: 'AAAA11', driver_name: 'Ana Soto', zone: 'rm', trips: [{ id: 't1', code: '2033000' }] }, { tractor_plate: 'BBBB22', driver_name: 'Luis Rojas', zone: 'rm' },
           { tractor_plate: 'CCCC33', driver_name: 'Pía Díaz', zone: 'rm' }, { tractor_plate: 'DDDD44', driver_name: null, zone: 'z0' },
         ] },
       { client_name: 'Walmart', origin: 'CD Quilicura', carrier_name: 'Norte Spa', rm: 0, z0: 0, region: 2, unclassified: 0, total: 2,
@@ -48,7 +53,11 @@ const TRACTOREO: OperationTypeReport = {
     reasons: ['Se retira sin carga'],
     rows: [{ origin: 'CD Lo Aguirre', carrier_name: 'Transportes Sur', counts: { 'Se retira sin carga': 2 }, total: 2 }],
   },
-  second_legs: [{ tractor_plate: 'ABCD12', carrier_name: 'Transportes Sur', driver_name: 'Ana Soto', origin: 'CD Lo Aguirre', destination_zone: 'RM', legs: 2 }],
+  second_legs: [
+    { tractor_plate: 'ABCD12', carrier_name: 'Transportes Sur', driver_name: 'Ana Soto', origin: 'CD Lo Aguirre', destination_zone: 'RM', legs: 2,
+      trips: [{ id: 't7', code: '2033100' }, { id: 't8', code: '2033101' }] },
+    { tractor_plate: 'WXYZ98', carrier_name: 'Norte Spa', driver_name: 'Eva Ríos', origin: 'CD Quilicura', destination_zone: 'Región', legs: 3 },
+  ],
   not_working: {
     reasons: ['Panne', 'Sin conductor'],
     by_reason: [
@@ -77,7 +86,7 @@ const EQUIPO_COMPLETO: OperationTypeReport = {
 
 const REPORT: StatusReport = {
   business_date: '2026-08-02',
-  client_filter: null,
+  client_filter: [],
   clients: [
     { shipper_id: 's1', client_name: 'Walmart', assigned: 33, by_operation_type: { tractoreo: 29, equipo_completo: 4 } },
     { shipper_id: 's2', client_name: 'Iansa', assigned: 3, by_operation_type: { tractoreo: 0, equipo_completo: 3 } },
@@ -86,15 +95,39 @@ const REPORT: StatusReport = {
   by_operation_type: { tractoreo: TRACTOREO, equipo_completo: EQUIPO_COMPLETO },
 }
 
-function renderSection(props: Partial<Parameters<typeof StatusReportSection>[0]> = {}) {
+type Props = Parameters<typeof StatusReportSection>[0]
+let rerenderSection: (p: Partial<Props>) => void = () => {}
+
+/** La sección del Reporte la elige la página (va en la URL); aquí, un estado. */
+function renderSection(props: Partial<Props> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(
+  let actual: Partial<Props> = props
+  let seccion: ReportSection = props.section ?? 'summary'
+  const ui = () => (
     <QueryClientProvider client={client}>
-      <StatusReportSection fecha="2026-08-02" {...props} />
-    </QueryClientProvider>,
+      <StatusReportSection fecha="2026-08-02" alcance="tractoreo" tripHref={id => `/viaje/${id}`}
+        onSectionChange={s => { seccion = s; utils.rerender(ui()) }} {...actual} section={seccion} />
+    </QueryClientProvider>
   )
+  const utils = render(ui())
+  rerenderSection = p => { actual = { ...actual, ...p }; utils.rerender(ui()) }
   // El resumen imprimible duplica textos fuera de pantalla: las aserciones van acá.
   return within(screen.getByTestId('report-body'))
+}
+const cambiarAlcance = (alcance: Props['alcance']) => rerenderSection({ alcance })
+
+/** Elige un cliente como en cualquier tabla del Cierre: "+ Filtro" › Cliente. */
+function elegirCliente(body: ReturnType<typeof renderSection>, nombre: RegExp) {
+  fireEvent.click(body.getByRole('button', { name: 'Agregar filtro' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Cliente' }))
+  fireEvent.click(screen.getByRole('checkbox', { name: nombre }))
+}
+const opcionesDeCliente = (body: ReturnType<typeof renderSection>) => {
+  fireEvent.click(body.getByRole('button', { name: 'Agregar filtro' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Cliente' }))
+  const nombres = within(screen.getByRole('dialog', { name: 'Filtrar por Cliente' })).queryAllByRole('checkbox').map(c => c.getAttribute('aria-label'))
+  fireEvent.keyDown(screen.getByRole('dialog', { name: 'Filtrar por Cliente' }), { key: 'Escape' })
+  return nombres
 }
 
 /** La tarjeta de una cifra del resumen: los mismos números se repiten en otras tablas. */
@@ -107,6 +140,7 @@ async function abrir(body: ReturnType<typeof renderSection>, seccion: string) {
 }
 
 beforeEach(() => {
+  memoryUrl.reset('/dashboard/operations/closures?date=2026-08-02&tab=report')
   vi.mocked(statusReportApi.get).mockReset().mockResolvedValue(REPORT)
 })
 
@@ -127,10 +161,11 @@ describe('StatusReportSection', () => {
     expect(body.getByText('2 equipos — 2 días')).toBeInTheDocument()
   })
 
-  it('el selector cambia todas las secciones al otro tipo', async () => {
+  it('el alcance del Cierre manda en todas las secciones: el Reporte ya no tiene selector propio (D1)', async () => {
     const body = renderSection()
     await body.findByText('Equipos activos')
-    fireEvent.click(body.getByRole('button', { name: 'Equipo Completo' }))
+    expect(body.queryByRole('button', { name: 'Equipo Completo' })).toBeNull()
+    cambiarAlcance('equipo_completo')
     expect(cifra(body, 'Equipos activos')).toHaveTextContent('10')
     fireEvent.click(body.getByRole('button', { name: 'Empresas' }))
     expect(body.getByText('Equipos Sur')).toBeInTheDocument()
@@ -159,17 +194,17 @@ describe('StatusReportSection', () => {
     const body = renderSection()
     await abrir(body, 'Asignados')
     const cliente = body.getByRole('button', { name: 'Walmart' }).closest('tr')!
-    expect(within(cliente).getAllByRole('cell').map(c => c.textContent)).toEqual(['Walmart', '3', '1', '2', '0', '6'])
+    expect(within(cliente).getAllByRole('cell').map(c => c.textContent)).toEqual(['Walmart', '', '3', '1', '2', '0', '6'])
     const pie = within(body.getAllByRole('table')[0]).getAllByRole('row').at(-1)!
-    expect(within(pie).getAllByRole('cell').map(c => c.textContent)).toEqual(['Total', '3', '1', '2', '0', '6'])
+    expect(within(pie).getAllByRole('cell').map(c => c.textContent)).toEqual(['Total', '', '3', '1', '2', '0', '6'])
   })
 
   it('lo plegado sigue plegado al cambiar de tipo y volver', async () => {
     const body = renderSection()
     await abrir(body, 'Asignados')
     fireEvent.click(body.getByRole('button', { name: 'Walmart' }))
-    fireEvent.click(body.getByRole('button', { name: 'Equipo Completo' }))
-    fireEvent.click(body.getByRole('button', { name: 'Tractoreo' }))
+    cambiarAlcance('equipo_completo')
+    cambiarAlcance('tractoreo')
     expect(body.getByRole('button', { name: 'Walmart' })).toHaveAttribute('aria-expanded', 'false')
   })
 
@@ -185,7 +220,7 @@ describe('StatusReportSection', () => {
   it('un tipo sin asignados lo dice, en vez de dibujar una tabla vacía', async () => {
     const body = renderSection()
     await body.findByText('Equipos activos')
-    fireEvent.click(body.getByRole('button', { name: 'Equipo Completo' }))
+    cambiarAlcance('equipo_completo')
     fireEvent.click(body.getByRole('button', { name: 'Asignados' }))
     // Sin "Hoy": el cierre casi siempre se mira para el día anterior.
     expect(body.getByText('No hubo equipos de Equipo Completo asignados')).toBeInTheDocument()
@@ -200,6 +235,18 @@ describe('StatusReportSection', () => {
     expect(within(fila).getByText('2')).toBeInTheDocument()
   })
 
+  it('Segundas vueltas es una tabla del kit con sus Nº de viaje, cada uno con su enlace, y filtra (C9, C14)', async () => {
+    const body = renderSection()
+    await abrir(body, 'Segundas vueltas')
+    const fila = body.getByText('ABCD12').closest('tr')!
+    expect(within(fila).getByRole('link', { name: 'Ver viaje 2033100' })).toHaveAttribute('href', '/viaje/t7')
+    expect(within(fila).getByRole('link', { name: 'Ver viaje 2033101' })).toBeInTheDocument()
+    fireEvent.click(body.getByRole('button', { name: 'Filtrar por Nº viaje' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: '2033101, 1' }))
+    expect(body.queryByText('WXYZ98')).toBeNull()
+    expect(body.getByRole('button', { name: 'Quitar filtro Nº viaje' })).toBeInTheDocument()
+  })
+
   it('Asignados abre una empresa en sus conductores, con la patente', async () => {
     const body = renderSection()
     await abrir(body, 'Asignados')
@@ -210,6 +257,9 @@ describe('StatusReportSection', () => {
     fireEvent.click(empresa)
     expect(body.getByText('Ana Soto · AAAA11')).toBeInTheDocument()
     expect(body.getByText('Sin conductor · DDDD44')).toBeInTheDocument()
+    // Cada conductor con su Nº de viaje (C14).
+    const ana = body.getByText('Ana Soto · AAAA11').closest('tr')!
+    expect(within(ana).getByRole('link', { name: 'Ver viaje 2033000' })).toHaveAttribute('href', '/viaje/t1')
   })
 
   it('No trabajaron es una sola tabla por motivo: cada fila se abre en sus conductores', async () => {
@@ -235,7 +285,7 @@ describe('StatusReportSection', () => {
   it('en Equipo Completo la fila se abre en los equipos', async () => {
     const body = renderSection()
     await abrir(body, 'No trabajaron')
-    fireEvent.click(body.getByRole('button', { name: 'Equipo Completo' }))
+    cambiarAlcance('equipo_completo')
     fireEvent.click(body.getByRole('button', { name: /Equipos Sur/ }))
     expect(body.getByText('EQUI01')).toBeInTheDocument()
   })
@@ -247,14 +297,15 @@ describe('StatusReportSection', () => {
     expect(within(tabla).getAllByRole('columnheader').map(c => c.textContent)).toEqual(['Origen › Empresa', 'Panne', 'Sin conductor', 'Total'])
   })
 
-  it('Dotación muestra las inconsistencias de dotación', async () => {
+  it('Dotación es una tabla del kit, con la diferencia dicha como en Pendientes', async () => {
     const body = renderSection()
     await abrir(body, 'Dotación')
-    expect(await body.findByText('1 empresa con desbalance de dotación')).toBeInTheDocument()
+    const fila = (await body.findByText('Solo Iansa Spa')).closest('tr')!
+    expect(within(fila).getByText('Falta 1 conductor')).toBeInTheDocument()
   })
 
   it('con un backend anterior al rediseño avisa que se está actualizando', async () => {
-    vi.mocked(statusReportApi.get).mockResolvedValue({ business_date: '2026-08-02', client_filter: null })
+    vi.mocked(statusReportApi.get).mockResolvedValue({ business_date: '2026-08-02', client_filter: [] })
     const body = renderSection()
     expect(await body.findByText('Actualizando el reporte…')).toBeInTheDocument()
   })
@@ -267,44 +318,43 @@ describe('StatusReportSection', () => {
     expect(statusReportApi.get).toHaveBeenCalledTimes(2)
   })
 
-  it('la lista de clientes es la del día, con su cantidad, y elegir uno vuelve a pedir el reporte', async () => {
+  it('Cliente es un filtro como los demás: sus valores son los del día con su cifra, y elegir uno vuelve a pedir (C9)', async () => {
     const body = renderSection()
     await body.findByText('Equipos activos')
-    const filtro = body.getByRole('combobox', { name: 'Filtrar por cliente' })
-    expect(within(filtro).getAllByRole('option').map(o => o.textContent))
-      .toEqual(['Todos los clientes', 'Walmart (29)', 'Iansa (0)'])
-    fireEvent.change(filtro, { target: { value: 's2' } })
-    // Por id del cliente del directorio (spec 2026-10-11); se ve el nombre.
-    expect(statusReportApi.get).toHaveBeenCalledWith('2026-08-02', 's2')
-    expect(within(filtro).getAllByRole('option').map(o => o.getAttribute('value'))).toEqual(['', 's1', 's2'])
+    expect(opcionesDeCliente(body)).toEqual(['Walmart, 29', 'Iansa, 0'])
+    elegirCliente(body, /^Iansa/)
+    // Por id del cliente del directorio (spec 2026-10-11); se ve el nombre, como chip.
+    await waitFor(() => expect(statusReportApi.get).toHaveBeenLastCalledWith('2026-08-02', ['s2']))
+    expect(body.getByText('Cliente: Iansa')).toBeInTheDocument()
+    expect(readView(memoryUrl.params()).filters.client).toEqual(['s2'])
   })
 
-  it('la cantidad de cada cliente es la del tipo a la vista, la misma de las tarjetas', async () => {
-    const body = renderSection()
+  it('la cifra de cada cliente es la del alcance a la vista, la misma de las tarjetas', async () => {
+    const body = renderSection({ alcance: 'equipo_completo' })
     await body.findByText('Equipos activos')
-    fireEvent.click(body.getByRole('button', { name: 'Equipo Completo' }))
-    expect(within(body.getByRole('combobox', { name: 'Filtrar por cliente' })).getAllByRole('option')
-      .map(o => o.textContent)).toEqual(['Todos los clientes', 'Walmart (4)', 'Iansa (3)'])
+    expect(opcionesDeCliente(body)).toEqual(['Walmart, 4', 'Iansa, 3'])
   })
 
-  it('el cliente elegido se conserva aunque el reporte nuevo no lo traiga, con (0)', async () => {
+  it('el cliente elegido se conserva aunque el reporte nuevo no lo traiga, con 0', async () => {
     const body = renderSection()
     await body.findByText('Equipos activos')
     vi.mocked(statusReportApi.get).mockResolvedValue({ ...REPORT, clients: [{ shipper_id: 's1', client_name: 'Walmart', assigned: 32, by_operation_type: { tractoreo: 28, equipo_completo: 4 } }] })
-    fireEvent.change(body.getByRole('combobox', { name: 'Filtrar por cliente' }), { target: { value: 's2' } })
-    // La lista nueva (Walmart 28) ya llegó, y el elegido sigue, por nombre, con (0).
-    await waitFor(() => expect(within(body.getByRole('combobox', { name: 'Filtrar por cliente' }))
-      .getAllByRole('option').map(o => o.textContent)).toEqual(['Todos los clientes', 'Walmart (28)', 'Iansa (0)']))
+    elegirCliente(body, /^Iansa/)
+    // Primero que llegue el reporte nuevo; abrir el filtro dentro de un waitFor lo
+    // reabriría con cada cambio del DOM.
+    await waitFor(() => expect(statusReportApi.get).toHaveBeenLastCalledWith('2026-08-02', ['s2']))
+    await body.findByText('Equipos activos')
+    expect(opcionesDeCliente(body)).toEqual(['Walmart, 28', 'Iansa, 0'])
+    expect(body.getByText('Cliente: Iansa')).toBeInTheDocument()
   })
 
-  it('mientras llega el reporte de otro cliente no muestra las cifras del anterior, pero la lista sigue', async () => {
+  it('mientras llega el reporte de otro cliente no muestra las cifras del anterior, pero el filtro sigue', async () => {
     const body = renderSection()
     await body.findByText('Equipos activos')
     vi.mocked(statusReportApi.get).mockReturnValue(new Promise(() => {}))
-    fireEvent.change(body.getByRole('combobox', { name: 'Filtrar por cliente' }), { target: { value: 's2' } })
+    elegirCliente(body, /^Iansa/)
     await waitFor(() => expect(body.queryByText('Equipos activos')).toBeNull())
-    expect(within(body.getByRole('combobox', { name: 'Filtrar por cliente' })).getAllByRole('option')
-      .map(o => o.textContent)).toEqual(['Todos los clientes', 'Walmart (29)', 'Iansa (0)'])
+    expect(opcionesDeCliente(body)).toEqual(['Walmart, 29', 'Iansa, 0'])
     expect(body.getByRole('button', { name: /Descargar Excel/ })).toBeDisabled()
   })
 
@@ -320,9 +370,9 @@ describe('StatusReportSection', () => {
     // tuvo viaje se ve solo con "Todos los clientes".
     const body = renderSection()
     await body.findByText('Equipos activos')
-    fireEvent.change(body.getByRole('combobox', { name: 'Filtrar por cliente' }), { target: { value: 's1' } })
+    elegirCliente(body, /^Walmart/)
     await body.findByText('Equipos activos')
-    const aviso = 'Lo que no tuvo viaje no es de ningún cliente. Elige «Todos los clientes» para verlo.'
+    const aviso = 'Lo que no tuvo viaje no es de ningún cliente. Quita el filtro de Cliente para verlo.'
     fireEvent.click(body.getByRole('button', { name: 'No trabajaron' }))
     expect(await body.findByText(aviso)).toBeInTheDocument()
     fireEvent.click(body.getByRole('button', { name: 'Dotación' }))
@@ -337,12 +387,11 @@ describe('StatusReportSection', () => {
     expect(body.getByText('No hay empresas con desbalance de dotación')).toBeInTheDocument()
   })
 
-  it('con un backend que todavía no manda clients, la lista solo ofrece Todos los clientes', async () => {
+  it('con un backend que todavía no manda clients, el filtro de Cliente no ofrece nada', async () => {
     vi.mocked(statusReportApi.get).mockResolvedValue({ ...REPORT, clients: undefined })
     const body = renderSection()
     await body.findByText('Equipos activos')
-    expect(within(body.getByRole('combobox', { name: 'Filtrar por cliente' })).getAllByRole('option')
-      .map(o => o.textContent)).toEqual(['Todos los clientes'])
+    expect(opcionesDeCliente(body)).toEqual([])
   })
 
   it('el link "Ver histórico" apunta a /dashboard/operations/closures/history', async () => {
@@ -367,15 +416,48 @@ describe('StatusReportSection', () => {
     expect(within(impreso).getByText('Equipo Completo')).toBeInTheDocument()
   })
 
-  it('"Descargar Excel" baja los dos tipos aunque se vea uno', async () => {
+  it('"Descargar Excel" ofrece lo que estás viendo (marcado, con su recorte) y todo el día (C13)', async () => {
+    const toFile = vi.fn().mockResolvedValue(undefined)
+    escribirExcel.mockReset().mockReturnValue({ toFile })
+    const body = renderSection()
+    await abrir(body, 'Segundas vueltas')
+    fireEvent.click(body.getByRole('button', { name: 'Filtrar por Empresa' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Norte Spa, 1' }))
+    fireEvent.keyDown(screen.getByRole('dialog', { name: 'Filtrar por Empresa' }), { key: 'Escape' })
+
+    fireEvent.click(body.getByRole('button', { name: /Descargar Excel/ }))
+    const viendo = screen.getByRole('radio', { name: /Lo que estás viendo/ })
+    expect(viendo).toBeChecked()
+    expect(viendo.closest('label')).toHaveTextContent('Tractoreo · Segundas vueltas · Empresa: Norte Spa · 1 fila')
+    fireEvent.click(screen.getByRole('button', { name: 'Descargar' }))
+    await waitFor(() => expect(toFile).toHaveBeenCalled())
+    const [hoja] = escribirExcel.mock.calls[0][0] as { sheet: string; data: unknown[][] }[]
+    const valor = (v: unknown) => (typeof v === 'object' && v !== null ? (v as { value: unknown }).value : v)
+    expect(hoja.data[0]).toEqual(['Recorte: Tractoreo · Segundas vueltas · Empresa: Norte Spa · 1 fila'])
+    // Las columnas de la tabla en pantalla, en su orden, y solo sus filas.
+    expect(hoja.data[2].map(valor)).toEqual(['Patente', 'Empresa', 'Conductor', 'Nº viaje', 'Origen del viaje', 'Tipo de destino', 'Vueltas'])
+    expect(hoja.data.slice(3).map(f => valor(f[0]))).toEqual(['WXYZ98'])
+
+    fireEvent.click(body.getByRole('button', { name: /Descargar Excel/ }))
+    fireEvent.click(screen.getByRole('radio', { name: /Todo el día/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Descargar' }))
+    await waitFor(() => expect(toFile).toHaveBeenLastCalledWith('reporte_estatus_2026-08-02.xlsx'))
+    const hojas = (escribirExcel.mock.calls[1][0] as { sheet: string }[]).map(h => h.sheet)
+    expect(hojas).toEqual(expect.arrayContaining(['Asignados · Tractoreo', 'Asignados · Eq. Completo', 'Dotación']))
+  })
+
+  it('"Todo el día" baja el día completo aunque haya un cliente elegido', async () => {
     const toFile = vi.fn().mockResolvedValue(undefined)
     escribirExcel.mockReset().mockReturnValue({ toFile })
     const body = renderSection()
     await body.findByText('Equipos activos')
+    elegirCliente(body, /^Walmart/)
+    await body.findByText('Equipos activos')
     fireEvent.click(body.getByRole('button', { name: /Descargar Excel/ }))
-    await waitFor(() => expect(toFile).toHaveBeenCalledWith('reporte_estatus_2026-08-02.xlsx'))
-    const hojas = (escribirExcel.mock.calls[0][0] as { sheet: string }[]).map(h => h.sheet)
-    expect(hojas).toEqual(expect.arrayContaining(['Asignados · Tractoreo', 'Asignados · Eq. Completo', 'Dotación']))
+    fireEvent.click(screen.getByRole('radio', { name: /Todo el día/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Descargar' }))
+    await waitFor(() => expect(toFile).toHaveBeenCalled())
+    expect(statusReportApi.get).toHaveBeenCalledWith('2026-08-02', [])
   })
 
   it('"Copiar estatus" copia la sección y el tipo a la vista, sin lo plegado', async () => {

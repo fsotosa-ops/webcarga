@@ -1679,7 +1679,8 @@ export type OperationTypeReport = {
 
 export type StatusReport = {
   business_date: string
-  client_filter: string | null
+  /** Los clientes elegidos (ids del directorio); vacío = todos. */
+  client_filter: string[]
   /** Las opciones del filtro: los clientes que cargaron ese día, con cuántos
    *  equipos en total y por tipo. La pantalla muestra el del tipo a la vista, así
    *  el número del filtro es el de las tarjetas. Opcional: backend y frontend se

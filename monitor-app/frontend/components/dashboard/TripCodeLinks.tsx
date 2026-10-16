@@ -1,12 +1,6 @@
 import Link from 'next/link'
 import type { TripRef } from '@/lib/types'
 
-/** Los Nº de viaje de una fila (D8): uno por viaje. Es el valor de la columna "Nº
- *  viaje" para filtrar y contar, y lo que entra al Excel. */
-export function tripCodes(trips: TripRef[] | undefined): string[] {
-  return (trips ?? []).map(t => t.code ?? t.id)
-}
-
 /** La celda "Nº viaje" de una fila con viajes: todos los de la fila, cada uno abre
  *  su viaje con la vuelta a la pantalla de origen (la que arma `href`). */
 export function TripCodeLinks({ trips, href }: { trips: TripRef[] | undefined; href: (tripId: string) => string }) {

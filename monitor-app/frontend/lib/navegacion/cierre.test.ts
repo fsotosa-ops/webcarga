@@ -6,18 +6,18 @@ const p = (q: string) => new URLSearchParams(q)
 describe('URL del Cierre', () => {
   it('lee la forma en inglés', () => {
     expect(leerUrlDelCierre(p('date=2026-10-10&tab=trips&scope=equipo_completo')))
-      .toEqual({ date: '2026-10-10', tab: 'trips', scope: 'equipo_completo' })
+      .toEqual({ date: '2026-10-10', tab: 'trips', scope: 'equipo_completo', section: null })
   })
 
   it('lee los enlaces viejos en español, para no romper marcadores ni el ?next= del detalle', () => {
-    expect(leerUrlDelCierre(p('fecha=2026-10-07&tab=viajes'))).toEqual({ date: '2026-10-07', tab: 'trips', scope: 'tractoreo' })
+    expect(leerUrlDelCierre(p('fecha=2026-10-07&tab=viajes'))).toEqual({ date: '2026-10-07', tab: 'trips', scope: 'tractoreo', section: null })
     expect(leerUrlDelCierre(p('tab=flota')).tab).toBe('fleet')
     expect(leerUrlDelCierre(p('tab=pendientes')).tab).toBe('pending')
     expect(leerUrlDelCierre(p('tab=reporte')).tab).toBe('report')
   })
 
   it('lo que no reconoce lo deja en null, sin inventar', () => {
-    expect(leerUrlDelCierre(p('tab=xyz&scope=foo'))).toEqual({ date: null, tab: null, scope: 'tractoreo' })
+    expect(leerUrlDelCierre(p('tab=xyz&scope=foo'))).toEqual({ date: null, tab: null, scope: 'tractoreo', section: null })
   })
 
   it('escribe siempre en inglés, y borra las claves viejas', () => {
@@ -43,5 +43,14 @@ describe('URL del Cierre', () => {
     // Cambiar de alcance conserva los filtros: la sección decide cuáles siguen aplicando (C7).
     expect(urlDelCierre(conFiltros, { scope: 'equipo_completo' }))
       .toBe('/dashboard/operations/closures?f.carrier=Hasa&q=ana&sort=primary%3Aasc&date=2026-10-07&tab=fleet&scope=equipo_completo')
+  })
+
+  it('la sección del Reporte vive en la URL; cambiarla deja atrás los filtros de su tabla salvo los que valen para todo el Reporte', () => {
+    const conFiltros = p('date=2026-10-07&tab=report&section=second_legs&f.client=s1&f.carrier=Hasa&q=ab')
+    expect(leerUrlDelCierre(conFiltros).section).toBe('second_legs')
+    expect(urlDelCierre(conFiltros, { section: 'carriers' }, { keepFilters: ['client'] }))
+      .toBe('/dashboard/operations/closures?f.client=s1&date=2026-10-07&tab=report&section=carriers')
+    // Cambiar de pestaña deja atrás también la sección.
+    expect(urlDelCierre(conFiltros, { tab: 'fleet' })).toBe('/dashboard/operations/closures?date=2026-10-07&tab=fleet')
   })
 })

@@ -151,7 +151,7 @@ export function TablaDeMotivos({ reasons, rows }: { reasons: string[]; rows: Rea
   )
 }
 
-export function SeccionAsignados({ reporte, tipo }: Props) {
+export function SeccionAsignados({ reporte, tipo, tripHref }: Props & { tripHref: (tripId: string) => string }) {
   const { rows, other_origin } = reporte.assigned
   const sinAsignacion = reporte.worked_without_assignment
   const plegado = usePlegado()
@@ -161,7 +161,7 @@ export function SeccionAsignados({ reporte, tipo }: Props) {
       <p className="text-dato text-gray-500">Por el origen real del viaje.</p>
       {rows.length === 0
         ? <Vacio>No hubo equipos de {tipo.etiqueta} asignados</Vacio>
-        : <TablaDeAsignados rows={rows} plegado={plegado} />}
+        : <TablaDeAsignados rows={rows} plegado={plegado} tripHref={tripHref} />}
       {sinAsignacion.rows.length > 0 && (
         <div>
           <Titulo>Trabajaron sin asignación</Titulo>
@@ -195,35 +195,6 @@ export function SeccionAsignados({ reporte, tipo }: Props) {
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-export function SeccionSegundasVueltas({ reporte, tipo }: Props) {
-  if (reporte.second_legs.length === 0) return <Vacio>Ningún equipo de {tipo.etiqueta} hizo una segunda vuelta</Vacio>
-  return (
-    <div className="bg-white rounded-xl border border-border overflow-x-auto">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className={CABECERA}>
-            <th className={`text-left ${TH}`}>Patente</th><th className={`text-left ${TH}`}>Empresa</th>
-            <th className={`text-left ${TH}`}>Conductor</th><th className={`text-left ${TH}`}>Origen del viaje</th>
-            <th className={`text-left ${TH}`}>Tipo de destino</th><th className={`text-right ${TH}`}>Vueltas</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border/60">
-          {reporte.second_legs.map(v => (
-            <tr key={v.tractor_plate}>
-              <td className="px-3 py-2 font-mono font-medium">{v.tractor_plate}</td>
-              <td className="px-3 py-2">{v.carrier_name}</td>
-              <td className="px-3 py-2">{v.driver_name ?? '—'}</td>
-              <td className="px-3 py-2 text-gray-500">{v.origin ?? '—'}</td>
-              <td className="px-3 py-2 text-gray-500">{v.destination_zone ?? '—'}</td>
-              <td className="px-3 py-2 text-right font-bold text-accent">{v.legs}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   )
 }
@@ -314,34 +285,6 @@ export function SeccionNoTrabajaron({ reporte, tipo }: Props) {
         Por motivo. Abre una empresa para ver {porConductor ? 'sus conductores' : 'sus equipos'}.
       </p>
       <TablaDeNoTrabajaron reporte={reporte} porConductor={porConductor} />
-    </div>
-  )
-}
-
-export function SeccionEmpresas({ reporte, tipo }: Props) {
-  if (reporte.carriers.length === 0) return <Vacio>No hay empresas de {tipo.etiqueta} enroladas</Vacio>
-  return (
-    <div className="bg-white rounded-xl border border-border overflow-x-auto">
-      <table className="w-full text-xs">
-        <thead>
-          <tr className={CABECERA}>
-            <th className={`text-left ${TH}`}>Empresa</th><th className={`text-right ${TH}`}>Enrolados</th>
-            <th className={`text-right ${TH}`}>Asignados</th><th className={`text-right ${TH}`}>No asignados</th>
-            <th className={`text-right ${TH}`}>% utilización</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border/60">
-          {reporte.carriers.map(r => (
-            <tr key={r.carrier_name}>
-              <td className="px-3 py-2 font-medium">{r.carrier_name}</td>
-              <td className="px-3 py-2 text-right">{r.enrolled}</td>
-              <td className="px-3 py-2 text-right text-green-700">{r.assigned}</td>
-              <td className="px-3 py-2 text-right text-gray-400">{r.unassigned}</td>
-              <td className="px-3 py-2 text-right font-bold text-accent">{r.utilization_pct}%</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   )
 }

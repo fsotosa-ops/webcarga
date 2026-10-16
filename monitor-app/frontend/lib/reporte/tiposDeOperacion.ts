@@ -1,3 +1,4 @@
+import { SCOPE_LABEL } from '@/lib/states'
 import type { ClosureScope } from '@/lib/types'
 
 export type TipoDeOperacion = { clave: ClosureScope; etiqueta: string; corta: string }
@@ -5,6 +6,6 @@ export type TipoDeOperacion = { clave: ClosureScope; etiqueta: string; corta: st
 /** Los dos cortes del reporte, en el orden del selector. `corta` es para los
  *  nombres de hoja del Excel, que no pueden pasar de 31 caracteres. */
 export const TIPOS_DE_OPERACION: TipoDeOperacion[] = [
-  { clave: 'tractoreo', etiqueta: 'Tractoreo', corta: 'Tractoreo' },
-  { clave: 'equipo_completo', etiqueta: 'Equipo Completo', corta: 'Eq. Completo' },
+  { clave: 'tractoreo', etiqueta: SCOPE_LABEL.tractoreo, corta: 'Tractoreo' },
+  { clave: 'equipo_completo', etiqueta: SCOPE_LABEL.equipo_completo, corta: 'Eq. Completo' },
 ]

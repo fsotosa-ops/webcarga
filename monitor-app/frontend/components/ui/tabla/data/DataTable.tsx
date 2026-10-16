@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { CABECERA } from '../EncabezadoOrdenable'
 import { OrdenIcono } from '../OrdenIcono'
 import { ColumnFilter } from './ColumnFilter'
+import { valueLabel } from './columns'
 import type { DataTableModel } from './useDataTable'
 
 /** El dibujo de una tabla de datos del kit (Cierre con un solo patrón, spec §4.1):
@@ -64,7 +65,7 @@ export function DataTable<T>({ model, label, empty, selection, pageSizes, isRowA
                       {c.filter !== false && (
                         <ColumnFilter
                           header={c.header} kind={c.filter === 'presence' ? 'presence' : 'values'}
-                          values={model.valuesOf(c.id)} selected={view.filters[c.id] ?? []}
+                          values={model.valuesOf(c.id)} label={v => valueLabel(c, v)} selected={view.filters[c.id] ?? []}
                           count={v => model.facetCount(c.id, v)} onChange={v => model.setFilter(c.id, v)}
                         />
                       )}
@@ -101,7 +102,8 @@ export function DataTable<T>({ model, label, empty, selection, pageSizes, isRowA
         {rows.length === 0 && <p className="px-4 py-8 text-center text-dato text-informativo">{empty}</p>}
       </div>
       {rows.length > 0 && (
-        <div className="flex items-center justify-between gap-3 text-etiqueta text-informativo">
+        // Fuera de lo que se copia ("Copiar estatus" pega la tabla, no sus controles).
+        <div data-no-copy className="flex items-center justify-between gap-3 text-etiqueta text-informativo">
           <span className="inline-flex items-center gap-2.5">
             {rows.length === 1 ? '1 resultado' : `${rows.length} resultados`}
             {pageSizes && (

@@ -1,10 +1,10 @@
 'use client'
 
 import { useMemo } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Info } from 'lucide-react'
 import { Estado } from '@/components/ui/Estado'
-import { TripCodeLinks, tripCodes } from '@/components/dashboard/TripCodeLinks'
+import { TripCodeLinks } from '@/components/dashboard/TripCodeLinks'
+import { tripCodes } from '@/lib/tripRefs'
 import type { DataColumn } from '@/components/ui/tabla/data/columns'
 import { useDataTable } from '@/components/ui/tabla/data/useDataTable'
 import { useUrlView } from '@/components/ui/tabla/data/useUrlView'
@@ -15,7 +15,6 @@ import { useClosureNotices } from '@/hooks/useClosureNotices'
 import type { Notice } from '@/lib/cierre/closureNotices'
 import { NOTICE_TYPE_LABEL } from '@/lib/states'
 import type { ClosureScope } from '@/lib/types'
-import { invalidateDirectory, type DirectoryChange } from '@/lib/queries/directorio'
 import { NoticeAction } from './pending/NoticeAction'
 
 const TABLE_KEY = 'closure.pending'
@@ -33,19 +32,9 @@ interface Props {
  *  aviso" filtrable y la acción de cada uno en su fila. El desbalance de dotación es
  *  un tipo más. Los avisos salen de `useClosureNotices`, lo mismo que cuenta la pestaña. */
 export function PreCierrePendingSection({ fecha, alcance, tripHref }: Props) {
-  const queryClient = useQueryClient()
   const [view, setView] = useUrlView()
   const preferencias = useTablePreferences(TABLE_KEY)
   const { notices, autoResolved, closed } = useClosureNotices(fecha, alcance)
-
-  async function afterChange(change: DirectoryChange) {
-    await invalidateDirectory(queryClient, change)
-    // Esta pantalla ES el Cierre: se relee ya, para traer `pendiente_desde` y que el
-    // aviso y la relectura de 15 s arranquen (0.6). Desde otras pantallas el Cierre
-    // solo queda marcado viejo (R9).
-    await queryClient.invalidateQueries({ queryKey: ['daily-closure', fecha] })
-    await queryClient.invalidateQueries({ queryKey: ['equipment-closures', fecha] })
-  }
 
   const columnas = useMemo<DataColumn<Notice>[]>(() => [
     { id: 'type', header: 'Tipo de aviso', value: n => NOTICE_TYPE_LABEL[n.type] },
@@ -57,7 +46,7 @@ export function PreCierrePendingSection({ fecha, alcance, tripHref }: Props) {
     { id: 'detail', header: 'Detalle', filter: false, sortable: false, value: n => n.detail,
       render: n => <span className="text-text-primary">{n.detail}</span> },
     { id: 'action', header: 'Acción', filter: false, sortable: false, hideable: false, value: () => null,
-      render: n => <NoticeAction notice={n} onChanged={afterChange} /> },
+      render: n => <NoticeAction notice={n} fecha={fecha} /> },
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [tripHref, fecha])
 
