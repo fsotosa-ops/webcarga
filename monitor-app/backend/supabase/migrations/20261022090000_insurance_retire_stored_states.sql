@@ -16,6 +16,11 @@ DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM information_schema.columns
                WHERE table_schema = 'public' AND table_name = 'insurance_policies' AND column_name = 'status') THEN
+        -- La copia llega a las cuotas por su póliza: una cuota sin póliza perdería
+        -- sus valores sin aviso. En la real eran 0 de 294 (15/10); si aparece alguna, se frena.
+        IF EXISTS (SELECT 1 FROM public.insurance_installments WHERE policy_id IS NULL) THEN
+            RAISE EXCEPTION 'Hay cuotas sin póliza: la copia en audit_log no las alcanza';
+        END IF;
         INSERT INTO public.audit_log (actor, entity_type, entity_id, action, field, old_value, new_value, source)
         SELECT NULL, 'INSURANCE_POLICY', p.id, 'delete', 'retired_columns',
                jsonb_build_object(

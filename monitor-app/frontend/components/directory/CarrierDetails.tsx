@@ -4,6 +4,8 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Check, Loader2 } from 'lucide-react'
 import { StatusChip } from '@/components/ui/StatusChip'
+import { carrierInsuranceStyle } from '@/lib/states'
+import type { CarrierInsuranceRow } from '@/lib/api/insurance'
 
 const LABEL = 'text-etiqueta font-semibold text-informativo'
 const INPUT = 'w-full rounded-lg border border-border bg-white px-3 py-1.5 text-dato focus:outline-none focus:ring-2 focus:ring-accent/30'
@@ -62,21 +64,22 @@ export function CarrierEditForm({ businessName, legacyAdminId, onSave, onClose }
   )
 }
 
-/** Los seguros de una empresa en una línea de Detalles: lo urgente si hay cuotas
- *  vencidas, "Sin pólizas registradas" si no tiene ninguna. El detalle vive en
- *  Seguros; esto no repite su tarjeta. */
-export function InsuranceLine({ policies, taxId }: {
-  policies: { overdue_installments: number }[] | undefined
+/** Los seguros de una empresa en una línea de Detalles: el estado de la empresa
+ *  que calcula la base (el mismo de Seguros › Pólizas por empresa; las canceladas y
+ *  renovadas no cuentan) y, si hay, sus cuotas vencidas. El detalle vive en Seguros. */
+export function InsuranceLine({ summary, taxId }: {
+  /** `undefined` mientras carga; `null` si la empresa no tiene pólizas. */
+  summary: CarrierInsuranceRow | null | undefined
   taxId: string
 }) {
-  if (!policies) return <span className="text-informativo">Cargando…</span>
-  if (policies.length === 0) return <span className="text-informativo">Sin pólizas registradas</span>
-  const overdue = policies.reduce((sum, p) => sum + p.overdue_installments, 0)
+  if (summary === undefined) return <span className="text-informativo">Cargando…</span>
+  if (summary === null || summary.worst_state === 'NO_POLICY') return <span className="text-informativo">Sin pólizas registradas</span>
+  const s = carrierInsuranceStyle(summary.worst_state)
+  const overdue = summary.overdue_installments
   return (
     <span className="flex flex-wrap items-center gap-2">
-      {overdue > 0
-        ? <StatusChip tone="urgent">{overdue === 1 ? '1 cuota vencida' : `${overdue} cuotas vencidas`}</StatusChip>
-        : <span>{policies.length === 1 ? '1 póliza al día' : `${policies.length} pólizas al día`}</span>}
+      <StatusChip tone={s.tone} icon={s.icon}>{s.label}</StatusChip>
+      {overdue > 0 && <StatusChip tone="urgent">{overdue === 1 ? '1 cuota vencida' : `${overdue} cuotas vencidas`}</StatusChip>}
       <Link href={`/dashboard/insurance?q=${encodeURIComponent(taxId)}`} prefetch={false} className="font-medium text-accion hover:underline">
         Ver en Seguros
       </Link>

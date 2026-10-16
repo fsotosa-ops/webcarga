@@ -129,6 +129,17 @@ function EmpresaDetailPageInner() {
   const assetsQuery  = useQuery({ queryKey: directoryKeys.carrierAssets(id), queryFn: () => carriersApi.listAssets(id) })
   // Las pólizas de la empresa con su estado calculado (Seguros E2): la misma tabla que Seguros › Pólizas.
   const policiesQuery = useQuery({ queryKey: ['insurance', 'carrier-policies', id], queryFn: () => insuranceApi.carrierPolicies(id) })
+  // El estado de la empresa en Seguros lo calcula la base (app.carrier_insurance_summary):
+  // se pide la misma fila que muestra Seguros › Pólizas por empresa.
+  const taxId = carrierQuery.data?.tax_id
+  const insuranceSummaryQuery = useQuery({
+    queryKey: ['insurance', 'carriers', { q: taxId }],
+    queryFn: () => insuranceApi.listCarriers({ q: taxId, limit: 50 }),
+    enabled: !!taxId,
+  })
+  const insuranceSummary = insuranceSummaryQuery.data
+    ? insuranceSummaryQuery.data.data.find(r => r.carrier_id === id) ?? null
+    : undefined
   const shippersQuery = useQuery({ queryKey: ['carrier-shippers', id], queryFn: () => carriersApi.listShippers(id) })
   const activeShippers = (shippersQuery.data ?? []).filter(s => s.status === 'ACTIVE')
   // D2 (P4): lo que toca la baja, recién al abrir la confirmación y siempre fresco.
@@ -324,7 +335,7 @@ function EmpresaDetailPageInner() {
         { label: 'Clientes', value: shippersQuery.data
           ? (activeShippers.length ? activeShippers.map(sh => sh.name).join(', ') : <span className="text-informativo">Sin clientes</span>)
           : <span className="text-informativo">Cargando…</span> },
-        { label: 'Seguros', value: <InsuranceLine policies={policiesQuery.data} taxId={carrier.tax_id} /> },
+        { label: 'Seguros', value: <InsuranceLine summary={insuranceSummary} taxId={carrier.tax_id} /> },
       ]}
       renderForm={close => (
         <CarrierEditForm
@@ -527,7 +538,11 @@ function EmpresaDetailPageInner() {
           </div>
         )}
 
-        {policies.length === 0 ? (
+        {policiesQuery.isError ? (
+          <Estado tipo="error" titulo="No se pudieron cargar las pólizas" detalle="Reintenta en unos segundos." />
+        ) : policiesQuery.isPending ? (
+          <Estado tipo="cargando" />
+        ) : policies.length === 0 ? (
           <Estado tipo="vacio" titulo="Sin pólizas registradas" />
         ) : (
           <PoliciesTable rows={policies} hideCarrier returnTo={`/dashboard/carriers/${id}?tab=seguros`} />

@@ -34,7 +34,10 @@ async function clickTab(name: RegExp) {
 
 vi.mock('next/navigation', () => ({ useParams: vi.fn(), useRouter: vi.fn(), useSearchParams: vi.fn() }))
 vi.mock('@/lib/supabase/client', () => ({ createClient: vi.fn() }))
-vi.mock('@/lib/api/insurance', () => ({ insuranceApi: { carrierPolicies: vi.fn().mockResolvedValue([]) } }))
+vi.mock('@/lib/api/insurance', () => ({ insuranceApi: {
+  carrierPolicies: vi.fn().mockResolvedValue([]),
+  listCarriers: vi.fn().mockResolvedValue({ group_by: 'carrier', data: [], count: 0, page: 1, limit: 50, facets: { total: 0 } }),
+} }))
 // Por defecto lo tiene todo; cada test niega lo que necesita.
 const permisos = vi.hoisted(() => ({ darDeBaja: true, negados: new Set<string>() }))
 vi.mock('@/lib/authz/PermisosProvider', () => ({
@@ -690,5 +693,30 @@ describe('ficha de empresa liviana', () => {
     expect(enlace.getAttribute('href')).toMatch(/^\/dashboard\/insurance\/policies\/p1\?next=/)
     expect(screen.queryByRole('columnheader', { name: 'Empresa' })).not.toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+  // Revisión final E2 (M2): la línea Seguros de Detalles dice el estado de la empresa
+  // que calcula la base, no cuenta pólizas canceladas o renovadas como "al día".
+  it('Detalles › Seguros dice el estado de la empresa, el mismo de Seguros por empresa', async () => {
+    const { insuranceApi } = await import('@/lib/api/insurance')
+    vi.mocked(insuranceApi.listCarriers).mockResolvedValueOnce({
+      group_by: 'carrier', count: 1, page: 1, limit: 50, facets: { total: 1 },
+      data: [{ carrier_id: 't1', carrier_name: 'Transportes Test', carrier_tax_id: '11111111-1', operational_status: 'ACTIVE',
+               policies: 6, worst_state: 'EXPIRED', unpaid_installments: 0, overdue_installments: 0, next_due_date: null, insurance_alert: 'EXPIRED' }],
+    } as never)
+    vi.mocked(insuranceApi.carrierPolicies).mockResolvedValueOnce(Array.from({ length: 6 }, (_, i) => ({ id: `p${i}`, overdue_installments: 0 })) as never)
+    renderPage()
+    const aside = await screen.findByRole('complementary')
+    expect(await within(aside).findByText('Vencida')).toBeInTheDocument()
+    expect(within(aside).queryByText(/al día/)).not.toBeInTheDocument()
+  })
+
+  // Revisión final E2 (M3): mientras las pólizas cargan, la pestaña no afirma que no hay.
+  it('la pestaña Seguros no dice "Sin pólizas registradas" mientras carga', async () => {
+    const { insuranceApi } = await import('@/lib/api/insurance')
+    vi.mocked(insuranceApi.carrierPolicies).mockReturnValueOnce(new Promise(() => {}))
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams({ tab: 'seguros' }) as unknown as ReturnType<typeof useSearchParams>)
+    renderPage()
+    await screen.findByRole('button', { name: /^Seguros/ })
+    expect(screen.queryByText('Sin pólizas registradas')).not.toBeInTheDocument()
   })
 })

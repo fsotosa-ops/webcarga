@@ -255,15 +255,22 @@ async def unpay_installments(conn, ids: list[str], *, actor: str) -> dict:
 
 
 async def cancel_policy(conn, policy_id: str, *, reason: str, actor: str) -> None:
-    updated = await conn.fetchval(
-        "UPDATE public.insurance_policies SET cancelled_at = now(), cancelled_reason = $2, updated_at = now() "
-        "WHERE id = $1 AND cancelled_at IS NULL RETURNING id",
+    # Cancelar una sucesora deshace la renovación: la anterior deja de ser RENEWED
+    # y se puede volver a renovar. El enlace queda en la auditoría.
+    updated = await conn.fetchrow(
+        "WITH antes AS (SELECT renews_policy_id FROM public.insurance_policies WHERE id = $1) "
+        "UPDATE public.insurance_policies SET cancelled_at = now(), cancelled_reason = $2, "
+        "renews_policy_id = NULL, updated_at = now() "
+        "WHERE id = $1 AND cancelled_at IS NULL RETURNING (SELECT renews_policy_id FROM antes) AS renewed",
         policy_id, reason,
     )
     if updated is None:
         raise LookupError("La póliza no existe o ya estaba cancelada")
     await log_change(conn, actor=actor, entity_type=AUDIT_ENTITY, entity_id=policy_id,
                      action="update", field="cancelled_at", new_value={"reason": reason})
+    if updated["renewed"] is not None:
+        await log_change(conn, actor=actor, entity_type=AUDIT_ENTITY, entity_id=policy_id, action="update",
+                         field="renews_policy_id", old_value=str(updated["renewed"]), new_value=None)
 
 
 def schedule_outside_validity(due_dates: list, valid_from, valid_to) -> list:

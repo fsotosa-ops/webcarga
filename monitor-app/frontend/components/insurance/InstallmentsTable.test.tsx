@@ -8,7 +8,7 @@ vi.mock('@/lib/api/insurance', () => ({ insuranceApi: { pay: vi.fn(), unpay: vi.
 vi.mock('@/lib/utils/datetime', async orig => ({ ...(await orig<object>()), hoyEnChile: () => '2026-10-15' }))
 
 import { insuranceApi } from '@/lib/api/insurance'
-import { InstallmentsTable } from './InstallmentsTable'
+import { InstallmentsTable, PayInstallmentsDialog } from './InstallmentsTable'
 
 const cuota = (id: string, n: number, over: Record<string, unknown> = {}) => ({
   id, policy_id: 'p1', carrier_id: 'c1', carrier_name: 'Aguilera', insurance_company: 'SURA', policy_number: '1',
@@ -27,6 +27,24 @@ function renderTable(rows = [cuota('i1', 1), cuota('i2', 2), cuota('i3', 3, { in
 beforeEach(() => vi.mocked(insuranceApi.pay).mockReset())
 
 describe('InstallmentsTable', () => {
+  it('el pago sin cuotas no se puede confirmar', () => {
+    render(<PayInstallmentsDialog rows={[]} onClose={vi.fn()} onDone={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Marcar 0 pagadas' })).toBeDisabled()
+  })
+
+  it('al cambiar de filtro, lo seleccionado que ya no está a la vista no cuenta ni se paga', async () => {
+    vi.mocked(insuranceApi.pay).mockResolvedValue({ paid: ['i2'], errors: [] })
+    const client = new QueryClient()
+    const { rerender } = render(<QueryClientProvider client={client}><InstallmentsTable rows={[cuota('i1', 1), cuota('i2', 2)] as never} /></QueryClientProvider>)
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar cuota 1' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar cuota 2' }))
+    rerender(<QueryClientProvider client={client}><InstallmentsTable rows={[cuota('i2', 2), cuota('i4', 4)] as never} /></QueryClientProvider>)
+    expect(screen.getByText(/^1 seleccionad/)).toBeInTheDocument()
+    rerender(<QueryClientProvider client={client}><InstallmentsTable rows={[cuota('i4', 4)] as never} /></QueryClientProvider>)
+    expect(screen.getByText('Ninguno seleccionado')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Marcar pagadas…' })).toBeNull()
+  })
+
   it('S14: marcar varias pagadas pide la fecha (hoy por defecto) y la manda a POST /installments/pay', async () => {
     vi.mocked(insuranceApi.pay).mockResolvedValue({ paid: ['i1', 'i2'], errors: [] })
     renderTable()

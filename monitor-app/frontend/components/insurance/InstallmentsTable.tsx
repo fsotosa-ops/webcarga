@@ -38,6 +38,9 @@ export function InstallmentsTable({ rows, showPolicy = false, returnTo }: {
     return next
   })
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['insurance'] })
+  // Lo seleccionado cuenta solo mientras está a la vista: al cambiar de filtro o
+  // de búsqueda la tabla sigue montada, y una selección vieja pagaría a ciegas.
+  const visibles = rows.filter(r => selected.has(r.id) && !r.paid)
 
   async function undo(r: InstallmentRow) {
     const res = await insuranceApi.unpay([r.id])
@@ -49,7 +52,7 @@ export function InstallmentsTable({ rows, showPolicy = false, returnTo }: {
     <div className="space-y-2">
       {canEdit && (
         <div className="overflow-hidden rounded-md border border-border">
-          <BarraDeSeleccion seleccionados={selected.size} ayuda="Marca las cuotas que se pagaron" onLimpiar={() => setSelected(new Set())}>
+          <BarraDeSeleccion seleccionados={visibles.length} ayuda="Marca las cuotas que se pagaron" onLimpiar={() => setSelected(new Set())}>
             <button type="button" onClick={() => setPaying(true)} className="inline-flex items-center gap-1.5 text-etiqueta font-semibold text-accion hover:underline">
               <CheckCheck size={13} aria-hidden="true" /> Marcar pagadas…
             </button>
@@ -118,7 +121,7 @@ export function InstallmentsTable({ rows, showPolicy = false, returnTo }: {
       </div>
       {paying && (
         <PayInstallmentsDialog
-          rows={rows.filter(r => selected.has(r.id))}
+          rows={visibles}
           onClose={() => setPaying(false)}
           onDone={async (errs) => {
             setErrors(errs.map(e => `Cuota ${rows.find(r => r.id === e.id)?.installment_number ?? '?'}: ${e.error}`))
@@ -159,7 +162,7 @@ export function PayInstallmentsDialog({ rows, onClose, onDone }: {
       pie={
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-md border border-border px-3 py-1.5 text-dato font-semibold text-informativo">Cancelar</button>
-          <button type="button" onClick={() => void confirm()} disabled={busy || !paidOn}
+          <button type="button" onClick={() => void confirm()} disabled={busy || !paidOn || rows.length === 0}
                   className="rounded-md bg-accent px-3 py-1.5 text-dato font-semibold text-white hover:bg-accent/90 disabled:opacity-50">
             Marcar {rows.length} pagada{rows.length === 1 ? '' : 's'}
           </button>

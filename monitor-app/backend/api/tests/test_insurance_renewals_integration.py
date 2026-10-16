@@ -65,6 +65,26 @@ async def test_una_poliza_no_se_renueva_dos_veces(conexion_revertida):
         await insurance.link_renewal(conn, vieja, b, actor=ACTOR)
 
 
+async def test_cancelar_la_sucesora_deshace_la_renovacion(conexion_revertida):
+    """Una renovación hecha por error y cancelada no deja la anterior trabada
+    como RENEWED: vuelve a su estado y se puede renovar de nuevo."""
+    from app.services import insurance
+
+    conn = conexion_revertida
+    today = await _today(conn)
+    carrier = await _carrier(conn)
+    vieja = await _policy(conn, carrier, valid_from=today - timedelta(days=400), valid_to=today - timedelta(days=30))
+    nueva = await insurance.renew_policy(conn, vieja, valid_from=today - timedelta(days=30),
+                                         valid_to=today + timedelta(days=335), policy_number="P-ERR", actor=ACTOR)
+    await insurance.cancel_policy(conn, nueva, reason="Renovación cargada por error", actor=ACTOR)
+
+    assert await _policy_state(conn, vieja) == "EXPIRED"
+    assert (await conn.fetchval("SELECT worst_state FROM app.carrier_insurance_summary WHERE carrier_id = $1", carrier)) == "EXPIRED"
+    otra = await insurance.renew_policy(conn, vieja, valid_from=today - timedelta(days=30),
+                                        valid_to=today + timedelta(days=335), policy_number="P-OK", actor=ACTOR)
+    assert await conn.fetchval("SELECT renews_policy_id FROM public.insurance_policies WHERE id = $1", otra) == vieja
+
+
 async def test_candidatas_a_renovacion_son_las_que_empiezan_cerca_del_fin(conexion_revertida):
     from app.services import insurance
 
