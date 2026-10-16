@@ -40,7 +40,7 @@ from ..services.edicion_catalogo import (
     contar_estados,
 )
 from ..services.catalogo import DocumentoYaExiste, crear_requisito
-from ..services.vencimientos import cubierto_predicate, in_scope_sql
+from ..services.vencimientos import cubierto_predicate, exigible_sql, in_scope_sql
 from ..services.vigencia import (
     PARAMETROS,
     SQL_HISTORIAL_REGLA_BASE,
@@ -131,18 +131,22 @@ SQL_CATALOGO = f"""
            COALESCE(al.aliases, ARRAY[]::text[]) AS aliases,
            {_columna("alcanzadas")},
            {_columna("universo")},
-           COALESCE(cum.cumplen, 0) AS cumplen
+           COALESCE(cum.cumplen, 0) AS cumplen,
+           COALESCE(cum.exigidos, 0) AS exigidos
     FROM public.compliance_requirements req
     LEFT JOIN (
         SELECT requirement_id, array_agg(alias ORDER BY priority DESC, alias) AS aliases
         FROM public.requirement_filename_aliases
         GROUP BY requirement_id
     ) al ON al.requirement_id = req.id
-    -- "Cumplen n de m": los registros al día de quienes están en alcance, con
-    -- los mismos predicados que Pendientes. Una agregación para todo el
-    -- catálogo, no una consulta por fila.
+    -- "Cumplen n de m": de los registros que se exigen hoy a quienes están en
+    -- alcance (m), cuántos están al día (n). Los dos de la misma población y
+    -- con los mismos predicados que Pendientes, así n <= m y "no cumplen" es
+    -- lo que Pendientes lista. Una agregación para todo el catálogo.
     LEFT JOIN (
-        SELECT cr.requirement_id, count(*) FILTER (WHERE {cubierto_predicate('cr')}) AS cumplen
+        SELECT cr.requirement_id,
+               count(*) FILTER (WHERE {cubierto_predicate('cr')}) AS cumplen,
+               count(*) FILTER (WHERE {exigible_sql('cr')})       AS exigidos
         FROM public.compliance_records cr
         WHERE cr.is_current AND {in_scope_sql('cr')}
         GROUP BY cr.requirement_id
@@ -185,9 +189,6 @@ def _fila_del_catalogo(row) -> dict:
     fila = dict(row)
     fila["alcance"] = {"alcanzadas": fila.pop("alcanzadas"),
                        "universo":   fila.pop("universo")}
-    # "Cumplen n de m": m es a quiénes alcanza la regla entre los que están en
-    # alcance, la misma cifra que `alcance.alcanzadas`.
-    fila["exigidos"] = fila["alcance"]["alcanzadas"]
     # jsonb llega como texto: el pool no registra un codec para jsonb.
     if fila["vigencia"] is not None:
         fila["vigencia"] = json.loads(fila["vigencia"])
@@ -201,17 +202,15 @@ async def get_compliance_requirement(
     _=Depends(require(Permission.CERTIFICATION_READ)),
 ):
     """La ficha de un documento (Certificación › Documentos exigidos): la fila
-    del catálogo, sus registros por estado y el historial de la regla base."""
+    del catálogo y el historial de la regla base."""
     async with pool.acquire() as conn:
         row = await conn.fetchrow(SQL_CATALOGO, None, requirement_id)
         if row is None:
             raise HTTPException(404, "El documento no existe.")
         fila = _fila_del_catalogo(row)
-        fila["estados"] = await contar_estados(conn, requirement_id)
         fila["reglas"] = [
-            # -infinity es la versión original: "desde siempre".
-            {**dict(r), "vigente_desde": r["vigente_desde"] if r["vigente_desde"] not in (date.min, date.max)
-             else None}
+            # -infinity (date.min en asyncpg) es la versión original: "desde siempre".
+            {**dict(r), "vigente_desde": None if r["vigente_desde"] == date.min else r["vigente_desde"]}
             for r in await conn.fetch(SQL_HISTORIAL_REGLA_BASE, requirement_id)
         ]
     return fila

@@ -154,6 +154,14 @@ describe('Certificación › Documentos exigidos (P2.1)', () => {
     expect(frio.getAttribute('href')).toBe('/dashboard/compliance/requirements/r2?next=%2Fdashboard%2Fcompliance%2Frequirements')
   })
 
+  it('si fallan las revisiones no inventa "Sin revisar"', async () => {
+    vi.mocked(revisionesApi.list).mockRejectedValue(new Error('500'))
+    renderPage()
+    expect(await screen.findByText('No se pudieron cargar los documentos')).toBeInTheDocument()
+    // Sin cifra: "Sin revisar 4" afirmaría algo que no se sabe.
+    expect(screen.getByRole('group', { name: 'Estado' }).querySelector('button[title="Sin revisar"]')).toHaveTextContent(/^Sin revisar$/)
+  })
+
   it('si la lista falla lo dice', async () => {
     vi.mocked(complianceApi.listRequirements).mockRejectedValue(new Error('500'))
     renderPage()

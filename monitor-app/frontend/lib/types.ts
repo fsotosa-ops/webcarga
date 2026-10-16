@@ -1869,8 +1869,9 @@ export type RequirementOption = {
    *  no viene es real y dura minutos. Ausente significa "no sé", y la celda lo
    *  distingue de "no tiene ninguno", que es un problema de verdad. */
   aliases?:                          string[]
-  /** "Cumplen n de m" (Certificación › Documentos exigidos): registros al día
-   *  de quienes están en alcance, de `exigidos` (= `alcance.alcanzadas`).
+  /** "Cumplen n de m" (Certificación › Documentos exigidos): de los registros
+   *  que se exigen hoy a quienes están en alcance (`exigidos`), cuántos están al
+   *  día. La población de Pendientes, no la de `alcance` (la condición).
    *  Opcionales por la ventana entre despliegues de API y frontend. */
   cumplen?:                          number
   exigidos?:                         number
@@ -1880,11 +1881,10 @@ export type RequirementOption = {
  *  original ("desde siempre"). */
 export type VersionDeRegla = ReglaDeVigencia & { vigente_desde: string | null }
 
-/** La ficha de un documento exigido: su fila del catálogo, sus registros por
- *  estado y el historial de la regla base, de la más nueva a la más vieja. */
+/** La ficha de un documento exigido: su fila del catálogo y el historial de
+ *  la regla base, de la más nueva a la más vieja. */
 export type RequirementDetail = RequirementOption & {
-  estados: ConteoDeEstados
-  reglas:  VersionDeRegla[]
+  reglas: VersionDeRegla[]
 }
 
 /** La condición de un requisito, sin lo que no hace falta para editarla: un

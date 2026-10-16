@@ -34,7 +34,6 @@ const FRIO: RequirementDetail = {
   tiene_versiones: true, exigible_on: 'ON_ENTITY_START', is_active: true,
   applies_to_fleet_service_type_ids: null, applies_to_management_types: null,
   alcance: { alcanzadas: 37, universo: 122 }, aliases: ['MANT CAMARA'], cumplen: 31, exigidos: 37,
-  estados: { vencidos: 4, por_vencer: 1, al_dia: 31, falta: 2 },
   reglas: [
     { vigente_desde: '2026-09-01', validity_months: 12, frequency_months: null, cutoff_day: null, period_offset_months: null, warning_days: null, grace_days: 0 },
     { vigente_desde: null, validity_months: 24, frequency_months: null, cutoff_day: null, period_offset_months: null, warning_days: null, grace_days: 0 },
@@ -131,6 +130,9 @@ describe('La ficha de un documento exigido (P2.3)', () => {
     vi.mocked(requirementsApi.get).mockResolvedValue({ ...FRIO, is_active: false })
     renderProfile()
     expect(await screen.findByText('Sin vigencia')).toBeInTheDocument()
+    // Apagado no se le exige a nadie, aunque su condición alcance a muchos.
+    expect(screen.getByText('Hoy no se le exige a nadie.')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /no cumplen/ })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Más acciones' }))
     expect(screen.getByRole('menuitem', { name: 'Poner en vigencia' })).toBeInTheDocument()
   })

@@ -63,7 +63,7 @@ function RequirementsList() {
   }, [doc, lista.data, router, searchParams])
 
   const buscados = useMemo(() => (lista.data ?? []).filter(r => matchesSearch(r, q)), [lista.data, q])
-  const listo = lista.data !== undefined && !revisiones.cargando && !catalogo.isPending
+  const listo = lista.data !== undefined && !revisiones.cargando && !revisiones.error && !catalogo.isPending
   const contar = (f: (r: RequirementOption) => boolean) => (listo ? formatCount(buscados.filter(f).length) : undefined)
   const deEntidad = (r: RequirementOption) => entidad === 'todos' || r.target_entity === entidad
   const filas = buscados.filter(r => deEntidad(r) && matchesState(r, estado, revisiones.sinRevisar))
@@ -124,7 +124,7 @@ function RequirementsList() {
         />
       </div>
 
-      {lista.isError || catalogo.isError ? (
+      {lista.isError || catalogo.isError || revisiones.error ? (
         <Estado tipo="error" titulo="No se pudieron cargar los documentos" />
       ) : !listo ? (
         <Estado tipo="cargando" />

@@ -112,7 +112,7 @@ export function RequirementProfile({ id }: { id: string }) {
         </AsidePanel>
         <AsidePanel title="Quiénes no cumplen">
           {noCumplen === undefined ? <p className="text-dato text-informativo">—</p>
-            : r.exigidos === 0 ? <p className="text-dato text-informativo">Hoy no se le exige a nadie.</p>
+            : !r.is_active || r.exigidos === 0 ? <p className="text-dato text-informativo">Hoy no se le exige a nadie.</p>
             : noCumplen === 0 ? <p className="text-dato text-text-primary">Todos cumplen.</p> : (
             <Link href={pendingDocumentHref(r.requirement_code)} prefetch={false}
               className="inline-flex items-center gap-1 text-dato font-medium text-accion hover:underline">

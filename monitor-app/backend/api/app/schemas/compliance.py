@@ -225,18 +225,11 @@ class RequirementOption(BaseModel):
     # FastAPI lo descartaba de la respuesta y "Se reconoce como" mostraba "—"
     # en todas las filas, aunque la consulta lo traía.
     aliases: list[str] = []
-    # "Cumplen n de m" (Certificación › Documentos exigidos): registros al día
-    # de quienes están en alcance, de cuántos alcanza la regla.
+    # "Cumplen n de m" (Certificación › Documentos exigidos): de los registros
+    # que se exigen hoy a quienes están en alcance, cuántos están al día. La
+    # población de Pendientes, no la de `alcance` (que mide la condición).
     cumplen: int = 0
     exigidos: int = 0
-
-
-class EstadosDelDocumento(BaseModel):
-    """Los registros vigentes de un documento por estado (contar_estados)."""
-    vencidos: int
-    por_vencer: int
-    al_dia: int
-    falta: int
 
 
 class VersionDeRegla(ReglaDeVigencia):
@@ -245,8 +238,7 @@ class VersionDeRegla(ReglaDeVigencia):
 
 
 class RequirementDetail(RequirementOption):
-    """La ficha de un documento: su fila del catálogo + estados + historial."""
-    estados: EstadosDelDocumento
+    """La ficha de un documento: su fila del catálogo + historial de la regla."""
     reglas: list[VersionDeRegla] = []
 
 

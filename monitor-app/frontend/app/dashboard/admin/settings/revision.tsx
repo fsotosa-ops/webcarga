@@ -73,6 +73,8 @@ export function useRevisiones(dominio: string, seccion: string) {
      *  mutación deja de cambiar a partir de la segunda confirmación. */
     datos: q.data,
     cargando: q.isPending,
+    /** Si no se pudieron leer, nadie está "sin revisar": no se sabe. */
+    error: q.isError,
     confirmar,
   }
 }

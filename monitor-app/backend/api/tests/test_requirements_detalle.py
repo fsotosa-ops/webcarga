@@ -72,13 +72,31 @@ async def test_la_lista_trae_cumplen_y_exigidos(conexion_revertida):
     filas = await list_compliance_requirements(target_entity=None, pool=PoolDeUnaConexion(conn), _=USER)
     fila = next(f for f in filas if f["id"] == req)
 
-    assert fila["cumplen"] == 1
-    assert fila["exigidos"] == fila["alcance"]["alcanzadas"]
+    # Los tres registros de empresas activas se exigen; uno está al día. La
+    # dada de baja no cuenta: la misma población que Pendientes.
+    assert (fila["cumplen"], fila["exigidos"]) == (1, 3)
     assert all("cumplen" in f and "exigidos" in f for f in filas)
+    assert all(f["cumplen"] <= f["exigidos"] for f in filas)
 
 
 @pytest.mark.integracion
-async def test_el_detalle_trae_estados_y_el_historial_de_la_regla(conexion_revertida):
+async def test_sin_registros_sembrados_no_se_exige_a_nadie(conexion_revertida):
+    """Una regla guardada y no aplicada, o un documento apagado, alcanza a
+    muchos por su condición pero todavía no se le exige a nadie: "0 de 0", no
+    "0 de 248" con 248 que Pendientes no lista."""
+    conn = conexion_revertida
+    req = await s.requirement(conn, entity="CARRIER", policy="REQUIRED")
+    await conn.execute("DELETE FROM public.compliance_records WHERE requirement_id = $1", req)
+
+    filas = await list_compliance_requirements(target_entity=None, pool=PoolDeUnaConexion(conn), _=USER)
+    fila = next(f for f in filas if f["id"] == req)
+
+    assert fila["alcance"]["alcanzadas"] > 0
+    assert (fila["cumplen"], fila["exigidos"]) == (0, 0)
+
+
+@pytest.mark.integracion
+async def test_el_detalle_trae_el_historial_de_la_regla(conexion_revertida):
     conn = conexion_revertida
     await s.thresholds(conn)
     req = await _documento_con_tres_empresas(conn)
@@ -90,10 +108,10 @@ async def test_el_detalle_trae_estados_y_el_historial_de_la_regla(conexion_rever
     detalle = await get_compliance_requirement(requirement_id=req, pool=PoolDeUnaConexion(conn), _=USER)
 
     assert detalle["id"] == req
-    assert detalle["cumplen"] == 1
-    assert detalle["estados"] == {"vencidos": 1, "por_vencer": 0, "al_dia": 1, "falta": 1}
+    assert (detalle["cumplen"], detalle["exigidos"]) == (1, 3)
     assert [(r["vigente_desde"], r["warning_days"]) for r in detalle["reglas"]] == [
         (date(2026, 1, 1), 20), (None, 10)]
+    assert "estados" not in detalle
     assert detalle["vigencia"]["warning_days"] == 20
 
 

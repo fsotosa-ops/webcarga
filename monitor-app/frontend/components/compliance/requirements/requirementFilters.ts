@@ -22,8 +22,9 @@ export const STATE_FILTERS: { id: StateFilter; label: string }[] = [
   { id: 'sin-vigencia', label: 'Sin vigencia' },
 ]
 
+/** Períodos de un mes (F30, cotizaciones): un trimestral no es mensual. */
 export function esMensual(r: RequirementOption): boolean {
-  return r.expiration_policy === 'CALENDAR_PERIOD'
+  return r.expiration_policy === 'CALENDAR_PERIOD' && r.vigencia?.frequency_months === 1
 }
 
 export function tieneCondicion(r: RequirementOption): boolean {
