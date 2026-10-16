@@ -1,6 +1,5 @@
-import type {
-  CoverageType, InsuranceInstallment, InsurancePolicy, PaymentStatus, PolicyStatus,
-} from '@/lib/types'
+import type { CoverageType } from '@/lib/types'
+import type { InstallmentRow, PolicyDetail } from './insurance'
 import { apiFetch } from './client'
 
 export type PolicyPatchBody = {
@@ -8,16 +7,10 @@ export type PolicyPatchBody = {
   policy_number?:          string
   valid_from?:             string
   valid_to?:               string
-  status?:                 PolicyStatus
   has_endorsement?:        boolean
   endorsement_number?:     string
   external_portal_url?:    string
   expected_updated_at?:    string
-}
-
-export type InstallmentPatchBody = {
-  payment_status?: PaymentStatus
-  paid_at?:        string
 }
 
 export type InstallmentScheduleGenerateBody = {
@@ -35,11 +28,8 @@ export type PolicyFileUploadResult = {
 }
 
 export const policiesApi = {
-  get: (id: string) =>
-    apiFetch<InsurancePolicy>(`/api/v1/policies/${id}`),
-
   patch: (id: string, body: PolicyPatchBody) =>
-    apiFetch<InsurancePolicy>(`/api/v1/policies/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    apiFetch<PolicyDetail>(`/api/v1/policies/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   delete: (id: string) =>
     apiFetch<{ ok: boolean }>(`/api/v1/policies/${id}`, { method: 'DELETE' }),
@@ -60,16 +50,8 @@ export const policiesApi = {
   unlinkAsset: (id: string, assetId: string) =>
     apiFetch<{ ok: boolean }>(`/api/v1/policies/${id}/assets/${assetId}`, { method: 'DELETE' }),
 
-  listInstallments: (id: string) =>
-    apiFetch<InsuranceInstallment[]>(`/api/v1/policies/${id}/installments`),
-
-  patchInstallment: (installmentId: string, body: InstallmentPatchBody) =>
-    apiFetch<InsuranceInstallment>(`/api/v1/policies/installments/${installmentId}`, {
-      method: 'PATCH', body: JSON.stringify(body),
-    }),
-
   generateInstallments: (id: string, body: InstallmentScheduleGenerateBody) =>
-    apiFetch<InsuranceInstallment[]>(`/api/v1/policies/${id}/installments/generate`, {
+    apiFetch<InstallmentRow[]>(`/api/v1/policies/${id}/installments/generate`, {
       method: 'POST', body: JSON.stringify(body),
     }),
 
@@ -82,7 +64,7 @@ export const policiesApi = {
   },
 
   deleteFile: (id: string, kind: 'document' | 'endorsement' = 'document') =>
-    apiFetch<InsurancePolicy>(`/api/v1/policies/${id}/file?kind=${kind}`, {
+    apiFetch<PolicyDetail>(`/api/v1/policies/${id}/file?kind=${kind}`, {
       method: 'DELETE',
     }),
 }

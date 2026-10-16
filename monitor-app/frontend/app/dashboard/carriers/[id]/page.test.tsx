@@ -46,7 +46,7 @@ vi.mock('@/lib/api/carriers', () => ({
     listDrivers: vi.fn(), assignDriver: vi.fn(), unassignDriver: vi.fn(),
     listAssets: vi.fn(), assignAsset: vi.fn(), unassignAsset: vi.fn(),
     createContact: vi.fn(),
-    listPolicies: vi.fn(), createPolicy: vi.fn(),
+    createPolicy: vi.fn(),
     listShippers: vi.fn(), exportDocuments: vi.fn(),
     list: vi.fn().mockResolvedValue({ data: [{ id: 'c2', business_name: 'Otra Empresa', tax_id: '2-2' }] }),
   },
@@ -127,7 +127,6 @@ beforeEach(() => {
   vi.mocked(carriersApi.get).mockReset().mockResolvedValue(CARRIER)
   vi.mocked(carriersApi.listDrivers).mockReset().mockResolvedValue(DRIVERS)
   vi.mocked(carriersApi.listAssets).mockReset().mockResolvedValue(ASSETS)
-  vi.mocked(carriersApi.listPolicies).mockReset().mockResolvedValue([])
   vi.mocked(carriersApi.listShippers).mockReset().mockResolvedValue([])
   vi.mocked(driversApi.listComplianceRecords).mockReset().mockResolvedValue([])
   vi.mocked(driversApi.listContacts).mockReset().mockResolvedValue([])

@@ -1172,110 +1172,13 @@ export type VehicleDriverAssignment = {
 
 // ── Seguros (public.insurance_* — M:N coberturas/activos) ──────────────────
 
-export type PolicyStatus   = 'ACTIVE' | 'EXPIRED' | 'CANCELLED'
-export type PaymentStatus  = 'PENDING' | 'PAID' | 'OVERDUE'
-/** Calculado por app.carrier_insurance_status, no una columna real. */
-export type PolicyHealth   = 'VALID' | 'EXPIRING_SOON' | 'EXPIRED' | 'CANCELLED'
-
+// Los tipos de póliza, cuota y estado viven en lib/api/insurance.ts y
+// lib/states.ts (Seguros E2): aquí solo queda el catálogo de coberturas.
 export type CoverageType = {
   id:          string
   code:        string
   name:        string
   description: string | null
-}
-
-/** Fila de GET /carriers/{id}/policies (vista app.carrier_insurance_status —
- *  coverage_names ya viene agregado como string, no la lista de ids). */
-export type CarrierPolicyListItem = {
-  id:                      string
-  insurance_company:       string
-  policy_number:           string | null
-  coverage_names:          string
-  total_assets_covered:    number
-  policy_expiration_date:  string | null
-  policy_health:           PolicyHealth
-  missing_physical_file:   boolean
-  total_installments:      number
-  paid_installments:       number
-  overdue_installments:    number
-  next_payment_date:       string | null
-}
-
-/** Fila de GET /carriers/insurance-overview — un carrier con sus pólizas
- *  agregadas (peor salud, cuotas vencidas totales, próximo pago), misma
- *  fuente real (app.carrier_insurance_status) que la tab Seguros de la
- *  ficha. worst_policy_health es null cuando el carrier no tiene pólizas. */
-export type CarrierInsuranceOverviewItem = {
-  carrier_id:                  string
-  business_name:               string
-  tax_id:                      string
-  operational_status:          CarrierOperationalStatus
-  total_policies:              number
-  total_overdue_installments:  number
-  next_payment_date:           string | null
-  worst_policy_health:         PolicyHealth | null
-}
-
-export type InsuranceOverviewFacets = {
-  expired:        number
-  expiring_soon:  number
-  valid:          number
-  cancelled:      number
-  no_policy:      number
-  total:          number
-}
-
-export type CarrierInsuranceOverviewResponse = {
-  data:   CarrierInsuranceOverviewItem[]
-  count:  number
-  page:   number
-  limit:  number
-  facets: InsuranceOverviewFacets
-}
-
-export type PolicyCoverage = {
-  coverage_type_id: string
-  code:             string
-  name:             string
-}
-
-export type PolicyAsset = {
-  asset_id:      string
-  license_plate: string
-  asset_type:    string
-}
-
-export type InsuranceInstallment = {
-  id:                  string
-  installment_number:  number
-  total_installments:  number
-  amount_uf:           number | null
-  due_date:            string | null
-  payment_status:      PaymentStatus
-  paid_at:             string | null
-}
-
-/** GET /policies/{id} — payload anidado (coverages/assets/installments M:N) */
-export type InsurancePolicy = {
-  id:                        string
-  carrier_id:                string
-  insurance_company:         string
-  policy_number:             string | null
-  valid_from:                string | null
-  valid_to:                  string | null
-  expiration_alert_days:     number
-  policy_document_url:       string | null
-  has_endorsement:           boolean
-  endorsement_number:        string | null
-  endorsement_document_url:  string | null
-  external_portal_url:       string | null
-  status:                    PolicyStatus
-  is_manual_override:        boolean
-  created_at:                string | null
-  updated_at:                string | null
-  coverages:                 PolicyCoverage[]
-  assets:                    PolicyAsset[]
-  installments:              InsuranceInstallment[]
 }
 
 export type Profile = Database['public']['Tables']['profiles']['Row'] & {

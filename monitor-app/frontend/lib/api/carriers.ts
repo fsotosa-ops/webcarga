@@ -3,14 +3,11 @@ import type {
   ManagementType,
   CarrierAssetRosterItem,
   CarrierDriverRosterItem,
-  CarrierInsuranceOverviewResponse,
   CarrierListResponse,
   CarrierOperationalStatus,
-  CarrierPolicyListItem,
   CarrierShipper, CarrierDeactivationImpact,
   Contact,
   FleetDriverGapRow,
-  PolicyStatus,
   Directorio,
   DirectorioBusqueda,
 } from '@/lib/types'
@@ -96,10 +93,8 @@ export type InsurancePolicyCreateResult = {
   policy_number:           string | null
   valid_from:              string | null
   valid_to:                string | null
-  expiration_alert_days:   number
   has_endorsement:         boolean
   endorsement_number:      string | null
-  status:                  PolicyStatus
   created_at:              string | null
 }
 
@@ -189,9 +184,6 @@ export const carriersApi = {
 
   // ── Pólizas de seguro (detalle/PATCH/M:N en lib/api/policies.ts) ──────
 
-  listPolicies: (id: string) =>
-    apiFetch<CarrierPolicyListItem[]>(`/api/v1/carriers/${id}/policies`),
-
   createPolicy: (id: string, body: Omit<InsurancePolicyCreateBody, 'carrier_id'>) =>
     apiFetch<InsurancePolicyCreateResult>(`/api/v1/carriers/${id}/policies`, {
       method: 'POST',
@@ -222,17 +214,4 @@ export const carriersApi = {
     apiFetch<{ released_drivers: number; released_assets: number }>(`/api/v1/carriers/${id}/reactivate`, {
       method: 'POST', body: JSON.stringify(body),
     }),
-
-  // ── Landing de Seguros — agregado por carrier (GET /carriers/insurance-overview) ──
-
-  listInsuranceOverview: (params?: { q?: string; health?: string; operational_status?: string; page?: number; limit?: number }) => {
-    const qs = new URLSearchParams()
-    if (params?.q)                  qs.set('q', params.q)
-    if (params?.health)             qs.set('health', params.health)
-    if (params?.operational_status) qs.set('operational_status', params.operational_status)
-    if (params?.page)               qs.set('page', String(params.page))
-    if (params?.limit)              qs.set('limit', String(params.limit))
-    const suffix = qs.toString() ? `?${qs}` : ''
-    return apiFetch<CarrierInsuranceOverviewResponse>(`/api/v1/carriers/insurance-overview${suffix}`)
-  },
 }
