@@ -1,5 +1,5 @@
 import { apiFetch, ApiError } from './client'
-import type { ColumnPrefs } from '@/components/ui/tabla/datos/useDataTable'
+import type { ColumnPrefs } from '@/components/ui/tabla/data/useDataTable'
 
 const BASE = '/api/v1/me/table-preferences'
 

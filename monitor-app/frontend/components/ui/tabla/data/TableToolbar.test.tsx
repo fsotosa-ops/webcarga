@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
-import { EMPTY_VIEW, type TableView } from '@/lib/tabla/vistaEnUrl'
-import type { DataColumn } from './columnas'
+import { EMPTY_VIEW, type TableView } from '@/lib/table/viewInUrl'
+import type { DataColumn } from './columns'
 import { useDataTable } from './useDataTable'
 import { TableToolbar } from './TableToolbar'
 

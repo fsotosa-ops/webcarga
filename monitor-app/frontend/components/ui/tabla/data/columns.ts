@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { SortDir } from '@/lib/tabla/vistaEnUrl'
+import type { SortDir } from '@/lib/table/viewInUrl'
 
 /** Una columna de una tabla de datos del kit, declarada UNA vez por tabla: de
  *  aquí salen su filtro, su chip, su orden y su casilla en "Columnas" (Cierre con

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Plus, X } from 'lucide-react'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { valueLabel } from './columnas'
+import { valueLabel } from './columns'
 import { Popover } from '@/components/ui/Popover'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { ColumnFilter } from './ColumnFilter'

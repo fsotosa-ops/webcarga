@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from app.routers.status_report import _asignados, _segundas_vueltas
-from app.services.alcance_del_cierre import OPERATION_TYPE_CODE, scope_of_code
+from app.services.closure_scope import OPERATION_TYPE_CODE, scope_of_code
 from tests.conftest import PoolDeUnaConexion
 from tests.test_cierre_viajes import FECHA_NEGOCIO, _crear_viaje
 
@@ -26,7 +26,7 @@ def test_el_codigo_del_tipo_de_operacion_se_escribe_en_un_solo_lugar():
         str(p.relative_to(APP)) for p in APP.rglob("*.py")
         if literal.search(p.read_text(encoding="utf-8")) and p.name != "common.py"
     )
-    assert con_literal == ["services/alcance_del_cierre.py"]
+    assert con_literal == ["services/closure_scope.py"]
 
 
 def test_del_codigo_al_alcance():

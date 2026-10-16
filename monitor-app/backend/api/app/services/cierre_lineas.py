@@ -29,7 +29,7 @@ from fastapi import HTTPException
 
 from .cliente_del_viaje import join_cliente, nombre_del_cliente
 from .audit import log_change
-from .alcance_del_cierre import is_scope_sql
+from .closure_scope import is_scope_sql
 from .cierre_viajes import SQL_VIAJES_DEL_DIA
 from .driver_roster import tractoreo_roster_cte
 from .pre_cierre import avisos_del_dia

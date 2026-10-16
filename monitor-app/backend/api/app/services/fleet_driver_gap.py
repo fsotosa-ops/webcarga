@@ -6,7 +6,7 @@ transportista), no una acción del sistema con estado propio que haya que
 'cerrar'. Equipo Completo queda fuera del cruce (la minuta lo excluye
 explícitamente: 'no aplica este control')."""
 
-from .alcance_del_cierre import is_scope_sql
+from .closure_scope import is_scope_sql
 
 
 _FLEET_DRIVER_GAP_SQL = f"""

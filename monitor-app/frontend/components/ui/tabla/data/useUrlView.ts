@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { readView, writeView, type TableView } from '@/lib/tabla/vistaEnUrl'
+import { readView, writeView, type TableView } from '@/lib/table/viewInUrl'
 
 /** La vista de la tabla de la pantalla, leída y escrita en la URL (spec §4.2).
  *  `replace` y no `push`: filtrar no es navegar, y "atrás" tiene que salir de la

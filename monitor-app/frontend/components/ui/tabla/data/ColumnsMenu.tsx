@@ -8,7 +8,7 @@ import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities'
 import { ChevronDown, ChevronUp, Columns3, GripVertical } from 'lucide-react'
 import { Popover } from '@/components/ui/Popover'
-import type { DataColumn } from './columnas'
+import type { DataColumn } from './columns'
 import type { ColumnPrefs } from './useDataTable'
 
 type Entrada<T> = { column: DataColumn<T>; visible: boolean }

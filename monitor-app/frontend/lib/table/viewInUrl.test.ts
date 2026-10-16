@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { EMPTY_VIEW, readView, writeView } from './vistaEnUrl'
+import { EMPTY_VIEW, readView, writeView } from './viewInUrl'
 
 describe('la vista de una tabla en la URL', () => {
   it('ida y vuelta: filtros con comas y tildes, búsqueda y orden', () => {

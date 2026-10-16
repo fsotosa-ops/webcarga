@@ -391,5 +391,5 @@ export const CATEGORY_LABEL: Record<CategoriaDeLinea, string> = {
   POR_REGULARIZAR: 'Por regularizar',
 }
 
-/** Qué se cierra: los mismos valores de la API (`services/alcance_del_cierre.py`). */
+/** Qué se cierra: los mismos valores de la API (`services/closure_scope.py`). */
 export const SCOPE_LABEL = { tractoreo: 'Tractoreo', equipo_completo: 'Equipo Completo' } as const

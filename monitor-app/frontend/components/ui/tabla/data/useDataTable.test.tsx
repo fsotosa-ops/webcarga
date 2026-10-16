@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useState } from 'react'
-import { EMPTY_VIEW, type TableView } from '@/lib/tabla/vistaEnUrl'
-import { compareCells, type DataColumn } from './columnas'
+import { EMPTY_VIEW, type TableView } from '@/lib/table/viewInUrl'
+import { compareCells, type DataColumn } from './columns'
 import { useDataTable } from './useDataTable'
 
 type Fila = { id: string; conductor: string; empresa: string | null; estado: string; viaje: string | null; nota: string | null }

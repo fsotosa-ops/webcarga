@@ -15,7 +15,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import date as _date
 
-from .alcance_del_cierre import scope_sql, tractor_scope_join
+from .closure_scope import scope_sql, tractor_scope_join
 
 
 def _single_value(values: list[str]) -> str | None:

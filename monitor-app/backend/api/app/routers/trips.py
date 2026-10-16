@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require, require_fields
 from ..db import get_pool
-from ..services.alcance_del_cierre import scope_sql, tractor_scope_join
+from ..services.closure_scope import scope_sql, tractor_scope_join
 from ..services.cliente_del_viaje import (
     SIN_VINCULAR, join_cliente, leer_filtro_de_cliente, nombre_del_cliente, resolver_cliente, texto_del_cliente_en_el_tms,
 )

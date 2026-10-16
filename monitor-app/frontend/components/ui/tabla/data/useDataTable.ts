@@ -5,8 +5,8 @@ import {
   getCoreRowModel, getFacetedRowModel, getFilteredRowModel, getPaginationRowModel, getSortedRowModel,
   useReactTable, type ColumnDef, type Row,
 } from '@tanstack/react-table'
-import type { SortDir, TableView } from '@/lib/tabla/vistaEnUrl'
-import { ABSENT, PRESENT, cellMatches, compareCells, type DataColumn } from './columnas'
+import type { SortDir, TableView } from '@/lib/table/viewInUrl'
+import { ABSENT, PRESENT, cellMatches, compareCells, type DataColumn } from './columns'
 
 /** Lo que cada persona eligió ver: columnas en orden y si están ocultas. */
 export type ColumnPrefs = { id: string; hidden: boolean }[]

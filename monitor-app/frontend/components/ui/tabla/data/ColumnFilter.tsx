@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import { ListFilter } from 'lucide-react'
 import { Popover } from '@/components/ui/Popover'
 import { SearchInput } from '@/components/ui/SearchInput'
-import { PRESENCE_LABEL } from './columnas'
+import { PRESENCE_LABEL } from './columns'
 
 /** El filtro de una columna (Cierre con un solo patrón, spec §4.1): lista de
  *  valores con su cifra facetada, buscador que filtra al tipear, selección

@@ -49,14 +49,14 @@ from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente
 from ..services.cierre_lineas import (
     GRUPO_NO_TRABAJANDO, GRUPO_TRABAJANDO_SIN_ASIGNACION, LINEAS_CONDUCTORES, LINEAS_TRACTOS, frescura_del_dia,
 )
-from ..services.alcance_del_cierre import EQUIPO_COMPLETO, OPERATION_TYPE_CODE, TRACTOREO
+from ..services.closure_scope import EQUIPO_COMPLETO, OPERATION_TYPE_CODE, TRACTOREO
 from ..services.driver_roster import TRACTOREO_ROSTER_CTE
 from .trips import _load_operation_type_buckets, _resolve_operation_type
 
 router = APIRouter(prefix="/status-report", tags=["status-report"])
 
 # Los dos tipos del reporte: clave de la API → código estable de la taxonomía
-# (services/alcance_del_cierre.py, el único lugar donde se escribe).
+# (services/closure_scope.py, el único lugar donde se escribe).
 _TIPOS = OPERATION_TYPE_CODE
 
 
