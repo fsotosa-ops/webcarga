@@ -2,7 +2,6 @@ import type { ComponentType } from 'react'
 import {
   Shield, ShieldCheck, LayoutDashboard, Truck, Users, Receipt, type LucideIcon,
 } from 'lucide-react'
-import { CondicionesTabla } from './condiciones-tabla'
 import {
   EstadosDelTableroPanel, EstadosOperacionalesPanel, EstadosDeEquipoPanel, MotivosDeConductorPanel,
   MotivosDeNoAsignacionPanel, MotivosDeAnulacionPanel, SubtiposPanel, TiposDeOperacionPanel,
@@ -12,6 +11,7 @@ import {
 import { UsuariosTab } from './usuarios-tab'
 import { RolesTab } from './roles-tab'
 import { LECTURA_DE_SECCION, PERMISO_DE_SECCION, type ClaveDeSeccion } from './secciones'
+import { REQUIREMENTS } from '@/lib/navegacion/compliance'
 
 export interface Seccion {
   /** La parte corta de la URL; `area/clave` tiene que estar en PERMISO_DE_SECCION
@@ -56,8 +56,6 @@ export const DOMINIOS: Dominio[] = [
     titulo: 'Certificación',
     proposito: 'Qué documentos se exigen, a quién, y con cuánta anticipación se avisa',
     secciones: [
-      { clave: 'conditions', titulo: 'Condiciones de documentos',
-        proposito: 'A quién se le exige cada documento', Panel: CondicionesTabla },
       { clave: 'expiry-alerts', titulo: 'Alertas de vencimiento',
         proposito: 'Con cuántos días de anticipación avisar', Panel: AlertasDeDocumentosPanel },
     ],
@@ -130,16 +128,29 @@ export const DOMINIOS: Dominio[] = [
   },
 ]
 
-/** Secciones que salieron de Configuración (Parte 3): un origen es un lugar del
- *  cliente y un nombre del TMS es cómo se llama el cliente, así que viven con él.
- *  Sus direcciones viejas llevan a su lugar nuevo. */
-const MUDADAS: Record<string, string> = {
-  'operations/origins':     '/dashboard/pricing?origen=1',
-  'operations/tms-clients': '/dashboard/clients?vista=sin-vincular',
+/** Secciones que salieron de Configuración. Un origen es un lugar del cliente y
+ *  un nombre del TMS es cómo se llama el cliente, así que viven con él (Parte 3);
+ *  los documentos exigidos son el catálogo de trabajo de Certificación (Parte 2).
+ *  Sus direcciones viejas llevan a su lugar nuevo; `param` es con qué abre el
+ *  elemento que el enlace viejo traía abierto (`?doc=` de Condiciones, por código). */
+const MUDADAS: Record<string, { destino: string; ubicacion: string; param?: string }> = {
+  'operations/origins':       { destino: '/dashboard/pricing?origen=1', ubicacion: 'Tarifario · Orígenes' },
+  'operations/tms-clients':   { destino: '/dashboard/clients?vista=sin-vincular', ubicacion: 'Directorio · Clientes' },
+  'certification/conditions': { destino: REQUIREMENTS, ubicacion: 'Certificación · Documentos exigidos', param: 'doc' },
 }
 
-export function destinoMudado(area: string, seccion: string | null): string | undefined {
-  return seccion ? MUDADAS[`${area}/${seccion}`] : undefined
+/** Adónde lleva una sección mudada; con `abre`, el elemento que traía abierto. */
+export function destinoMudado(area: string, seccion: string | null, abre?: string | null): string | undefined {
+  const m = seccion ? MUDADAS[`${area}/${seccion}`] : undefined
+  if (!m) return undefined
+  return m.param && abre
+    ? `${m.destino}${m.destino.includes('?') ? '&' : '?'}${m.param}=${encodeURIComponent(abre)}`
+    : m.destino
+}
+
+/** Dónde vive ahora una sección mudada, para rotular un resultado del buscador. */
+export function ubicacionMudada(area: string, seccion: string): string | undefined {
+  return MUDADAS[`${area}/${seccion}`]?.ubicacion
 }
 
 export function dominioPorClave(clave: string): Dominio | undefined {
@@ -147,12 +158,8 @@ export function dominioPorClave(clave: string): Dominio | undefined {
 }
 
 /** Con qué parámetro abre un elemento cada sección (lo usa el buscador): las de
- *  `SettingsList` abren con `?item=`; Condiciones, por código (`?doc=`), hasta que
- *  pase a Certificación (Parte 2). */
-export const PARAM_DE_SECCION: Record<string, string> = {
-  conditions: 'doc',
-  ...Object.fromEntries(SECCIONES_CON_LISTA.map(s => [s, 'item'])),
-}
+ *  `SettingsList` abren con `?item=`. */
+export const PARAM_DE_SECCION: Record<string, string> = Object.fromEntries(SECCIONES_CON_LISTA.map(s => [s, 'item']))
 
 
 /** Un área se ve si la persona tiene el permiso de alguna de sus secciones

@@ -7,7 +7,7 @@ import { destinoMudado, dominioPorClave, primeraEditable, puedeVerArea, rutaDeSe
 
 /** `/settings/[area]`: lleva a una sección (Configuración, Parte 1). Atiende los
  *  enlaces viejos `?section=<s>[&estado=<id>]`: la sección pasa a la ruta y el
- *  elemento abierto, a `?item=`; `?doc=` de Condiciones se conserva. Una sección
+ *  elemento abierto, a `?item=`. Una sección
  *  que se mudó fuera de Configuración (Parte 3) lleva a su lugar nuevo antes de
  *  mirar el área: quien la usaba puede ya no ver ninguna sección de esa área. */
 export default function AreaPage({ params }: { params: Promise<{ area: string }> }) {
@@ -19,7 +19,7 @@ function Redirigir({ clave }: { clave: string }) {
   const router = useRouter()
   const params = useSearchParams()
   const { permissions } = useAcceso()
-  const mudada = destinoMudado(clave, params.get('section'))
+  const mudada = destinoMudado(clave, params.get('section'), params.get('doc'))
   const area = dominioPorClave(clave)
   const visible = !!area && puedeVerArea(area, permissions)
   const destino = mudada ?? (visible ? destinoEnElArea(clave, params, area!, permissions) : null)

@@ -44,11 +44,11 @@ describe('/settings/[area] (P1.7)', () => {
     expect(noEncontrado).not.toHaveBeenCalled()
   })
 
-  it('?doc= de Condiciones se conserva', async () => {
+  it('P2.5: Condiciones se mudó a Certificación › Documentos exigidos y conserva el documento abierto', async () => {
     permisos = ['certification.configure']
     busqueda = 'section=conditions&doc=MANTENCION_FRIO'
     await montar('certification')
-    expect(reemplazar).toHaveBeenCalledWith('/dashboard/admin/settings/certification/conditions?doc=MANTENCION_FRIO')
+    expect(reemplazar).toHaveBeenCalledWith('/dashboard/compliance/requirements?doc=MANTENCION_FRIO')
   })
 
   it('sin sección, va a la primera del área', async () => {

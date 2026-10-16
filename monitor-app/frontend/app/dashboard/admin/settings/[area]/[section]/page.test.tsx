@@ -7,7 +7,9 @@ const reemplazar = vi.fn()
 vi.mock('next/navigation', () => ({
   notFound: () => { noEncontrado(); throw new Error('NEXT_NOT_FOUND') },
   useRouter: () => ({ replace: reemplazar }),
+  useSearchParams: () => new URLSearchParams(busqueda),
 }))
+let busqueda = ''
 let permisos: string[] = ['operations.configure']
 vi.mock('@/lib/authz/PermisosProvider', () => ({ useAcceso: () => ({ permissions: permisos }) }))
 vi.mock('../../paneles', () => ({
@@ -20,7 +22,6 @@ vi.mock('../../paneles', () => ({
   AlertasDeDocumentosPanel: () => null, AlertasDePolizasPanel: () => null,
   RangosDeTemperaturaPanel: () => null, UmbralesDelMonitorPanel: () => null,
 }))
-vi.mock('../../condiciones-tabla', () => ({ CondicionesTabla: () => null }))
 vi.mock('../../usuarios-tab', () => ({ UsuariosTab: () => null }))
 vi.mock('../../roles-tab', () => ({ RolesTab: () => null }))
 
@@ -32,7 +33,7 @@ async function montar(area: string, section: string) {
   })
 }
 
-beforeEach(() => { noEncontrado.mockClear(); reemplazar.mockClear(); permisos = ['operations.configure'] })
+beforeEach(() => { noEncontrado.mockClear(); reemplazar.mockClear(); permisos = ['operations.configure']; busqueda = '' })
 
 describe('/settings/[area]/[section]', () => {
   it('dibuja la sección: su título, su propósito y su panel', async () => {
@@ -52,6 +53,15 @@ describe('/settings/[area]/[section]', () => {
     expect(reemplazar).toHaveBeenCalledWith('/dashboard/pricing?origen=1')
     await montar('operations', 'tms-clients')
     expect(reemplazar).toHaveBeenCalledWith('/dashboard/clients?vista=sin-vincular')
+    expect(noEncontrado).not.toHaveBeenCalled()
+  })
+
+  it('P2.5: Condiciones de documentos se mudó a Certificación › Documentos exigidos', async () => {
+    await montar('certification', 'conditions')
+    expect(reemplazar).toHaveBeenCalledWith('/dashboard/compliance/requirements')
+    busqueda = 'doc=SOAP'
+    await montar('certification', 'conditions')
+    expect(reemplazar).toHaveBeenCalledWith('/dashboard/compliance/requirements?doc=SOAP')
     expect(noEncontrado).not.toHaveBeenCalled()
   })
 

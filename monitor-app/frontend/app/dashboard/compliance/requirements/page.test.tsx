@@ -17,7 +17,7 @@ vi.mock('@/lib/api/config', () => ({
 
 import RequirementsPage from './page'
 import { complianceApi } from '@/lib/api/compliance'
-import { revisionesApi } from '@/lib/api/config'
+import { revisionesApi, taxonomiesApi } from '@/lib/api/config'
 import type { ReglaDeVigencia, RequirementOption } from '@/lib/types'
 
 const REGLA: ReglaDeVigencia = {
@@ -131,6 +131,21 @@ describe('Certificación › Documentos exigidos (P2.1)', () => {
     expect(screen.queryByRole('button', { name: /Nuevo documento/ })).toBeNull()
   })
 
+  // Portados de condiciones-tabla.test.tsx (Parte 2): sin el catálogo de
+  // subtipos la frase "Se exige a" se inventaría.
+  it('mientras los subtipos cargan no dibuja ninguna fila', async () => {
+    vi.mocked(taxonomiesApi.list).mockReturnValueOnce(new Promise(() => {}))
+    renderPage()
+    expect(await screen.findByRole('status')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+
+  it('si fallan los subtipos lo dice, en vez de inventar la frase', async () => {
+    vi.mocked(taxonomiesApi.list).mockRejectedValueOnce(new Error('500'))
+    renderPage()
+    expect(await screen.findByText('No se pudieron cargar los documentos')).toBeInTheDocument()
+  })
+
   it('si la lista falla lo dice', async () => {
     vi.mocked(complianceApi.listRequirements).mockRejectedValue(new Error('500'))
     renderPage()
@@ -151,5 +166,17 @@ describe('P2.2: la fila abre la ficha con la lista para volver', () => {
     const fila = (await screen.findByRole('link', { name: /Revisión Técnica/ })).closest('tr')!
     fireEvent.click(fila)
     expect(push).toHaveBeenCalledWith('/dashboard/compliance/requirements/r1?next=%2Fdashboard%2Fcompliance%2Frequirements')
+  })
+})
+
+describe('P2.5: un enlace viejo de Configuración (?doc=CODIGO) abre la ficha', () => {
+  it('el código lleva a la ficha de ese documento', async () => {
+    renderPage('doc=MANTENCION_FRIO')
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard/compliance/requirements/r2'))
+  })
+
+  it('un código que no existe deja la lista, sin el parámetro', async () => {
+    renderPage('doc=NO_EXISTE&state=mensuales')
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard/compliance/requirements?state=mensuales', { scroll: false }))
   })
 })

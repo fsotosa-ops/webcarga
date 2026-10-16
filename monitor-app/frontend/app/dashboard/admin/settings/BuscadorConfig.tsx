@@ -5,26 +5,28 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { Search } from 'lucide-react'
 import { busquedaConfigApi } from '@/lib/api/config'
-import { DOMINIOS, PARAM_DE_SECCION, rutaDeSeccion } from './dominios'
+import { DOMINIOS, PARAM_DE_SECCION, destinoMudado, rutaDeSeccion, ubicacionMudada } from './dominios'
 import { INPUT } from './shared'
 
 /** Dónde vive un resultado, en el idioma de la pantalla. Sale del registro de
  *  dominios: si mañana entra Facturación, sus resultados se rotulan solos. */
 function ubicacion(dominio: string, seccion: string): string {
+  const mudada = ubicacionMudada(dominio, seccion)
+  if (mudada) return mudada
   const d = DOMINIOS.find(x => x.clave === dominio)
   const s = d?.secciones.find(x => x.clave === seccion)
   return d && s ? `${d.titulo} · ${s.titulo}` : `${dominio} · ${seccion}`
 }
 
 function enlace(dominio: string, seccion: string, abre: string): string {
+  // Una sección que salió de Configuración abre en su lugar nuevo.
+  const mudada = destinoMudado(dominio, seccion, abre)
+  if (mudada) return mudada
   const base = rutaDeSeccion(dominio, seccion)
-  // Dos secciones abren el elemento directo porque su panel viaja en la URL;
-  // el resto lleva a la sección, que es lo más cerca que se puede llegar sin
-  // inventarle un panel a una tabla que no lo tiene.
-  //
-  // Se usa `abre` y NO el id: Condiciones abre por CÓDIGO. Enlazar con el uuid
-  // dejaba un enlace que llevaba a la lista correcta y no abría nada — el
-  // click-through lo encontró.
+  // Las secciones con lista abren el elemento directo (`?item=`); el resto
+  // lleva a la sección, que es lo más cerca que se puede llegar sin inventarle
+  // un panel a una tabla que no lo tiene. Se usa `abre`, no el id: es con lo
+  // que cada sección abre (los documentos exigidos, por código).
   const param = PARAM_DE_SECCION[seccion]
   return param ? `${base}?${param}=${encodeURIComponent(abre)}` : base
 }

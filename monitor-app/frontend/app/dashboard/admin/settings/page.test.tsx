@@ -33,7 +33,7 @@ describe('/settings', () => {
   it('con solo certification.configure, la primera es de Certificación', () => {
     pantalla(true); permisos = ['certification.configure']
     render(<ConfiguracionPage />)
-    expect(reemplazar).toHaveBeenCalledWith('/dashboard/admin/settings/certification/conditions')
+    expect(reemplazar).toHaveBeenCalledWith('/dashboard/admin/settings/certification/expiry-alerts')
   })
 
   it('commercial.edit ya no edita nada aquí (Parte 3: sus secciones se mudaron al Directorio y al Tarifario)', () => {

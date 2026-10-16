@@ -45,7 +45,8 @@ describe('BuscadorConfig', () => {
     await vi.advanceTimersByTimeAsync(300)
 
     await waitFor(() => expect(screen.getByText('Mantención Cámara de Frío')).toBeInTheDocument())
-    expect(screen.getByText('Certificación · Condiciones de documentos')).toBeInTheDocument()
+    // Se mudó (Parte 2): el buscador sigue encontrándolo, y dice dónde vive ahora.
+    expect(screen.getByText('Certificación · Documentos exigidos')).toBeInTheDocument()
     expect(screen.getByText('Operaciones · Rangos de temperatura')).toBeInTheDocument()
   })
 
@@ -59,7 +60,7 @@ describe('BuscadorConfig', () => {
 
     await waitFor(() => expect(screen.getByRole('option', { name: /cámara de frío/i }))
       .toHaveAttribute('href',
-        '/dashboard/admin/settings/certification/conditions?doc=MANTENCION_FRIO'))
+        '/dashboard/compliance/requirements?doc=MANTENCION_FRIO'))
     // Los rangos de temperatura ya son lista + panel (Parte 1): el resultado abre el rango.
     expect(screen.getByRole('option', { name: /^frío/i }))
       .toHaveAttribute('href', '/dashboard/admin/settings/operations/temperature-ranges?item=FRIO')

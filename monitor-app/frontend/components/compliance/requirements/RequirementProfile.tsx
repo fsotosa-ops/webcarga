@@ -24,7 +24,7 @@ import { DetailsBlock } from '@/components/directory/DetailsBlock'
 import { thresholdSource } from '@/app/dashboard/admin/settings/settings-sources'
 import { MarcaDeRevision, useRevisiones } from '@/app/dashboard/admin/settings/revision'
 import { CondicionPanel, type RequirementSection } from './CondicionPanel'
-import { CeldaAlias } from './celdas-editables'
+import { CeldaAlias } from './CeldaAlias'
 import { celdaSeExigeA, nivelDe } from './frase-de-la-regla'
 import { OPCIONES_DE_EXIGIBILIDAD } from './SelectorExigibilidad'
 import { useRequirementVocabulary } from './useRequirementVocabulary'
@@ -53,10 +53,11 @@ export function RequirementProfile({ id }: { id: string }) {
 
   const doc = useQuery({ queryKey: ['compliance-requirements', 'detail', id], queryFn: () => requirementsApi.get(id), retry: false })
   const revisiones = useRevisiones('certification', 'conditions')
-  const { subtipos, gestiones, vocabulario } = useRequirementVocabulary()
+  const catalogo = useRequirementVocabulary()
+  const { subtipos, gestiones, vocabulario } = catalogo
   const general = useQuery({ queryKey: umbralGeneral.queryKey, queryFn: umbralGeneral.list })
 
-  if (doc.isError) {
+  if (doc.isError || catalogo.isError) {
     const notFound = doc.error instanceof ApiError && doc.error.status === 404
     return (
       <div className="p-4 md:p-6">
@@ -68,7 +69,7 @@ export function RequirementProfile({ id }: { id: string }) {
       </div>
     )
   }
-  if (doc.isPending) return <Estado tipo="cargando" />
+  if (doc.isPending || catalogo.isPending) return <Estado tipo="cargando" />
 
   const r = doc.data
   const vigencia = vigenciaDe(r)

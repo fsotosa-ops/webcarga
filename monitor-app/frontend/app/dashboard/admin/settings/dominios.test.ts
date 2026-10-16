@@ -48,7 +48,8 @@ describe('registro de dominios', () => {
     )
 
     expect(mapa).toEqual({
-      certification: ['conditions', 'expiry-alerts'],
+      // Condiciones de documentos se mudó a Certificación › Documentos exigidos (Parte 2): MUDADAS.
+      certification: ['expiry-alerts'],
       operations: [
         'alert-thresholds', 'driver-reasons', 'equipment-statuses',
         'operational-statuses', 'temperature-ranges',

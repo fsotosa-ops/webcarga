@@ -48,6 +48,11 @@ export function useRequirementVocabulary() {
     }
   }, [subtipos, gestiones])
 
-  // Las consultas, para quien muestre su carga o su error.
-  return { subtipos, gestiones, vocabulario, tax, gestionesTax }
+  // Sin el catálogo, la frase no se puede enunciar ("Sólo 2 subtipos" sin el
+  // total miente): quien la dibuja espera, y si falla lo dice.
+  return {
+    subtipos, gestiones, vocabulario,
+    isPending: tax.isPending || gestionesTax.isPending,
+    isError: tax.isError || gestionesTax.isError,
+  }
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
@@ -43,13 +43,27 @@ function RequirementsList() {
 
   const lista = useQuery({ queryKey: clavesCertificacion.requisitos(), queryFn: () => complianceApi.listRequirements() })
   const revisiones = useRevisiones('certification', 'conditions')
-  const { vocabulario } = useRequirementVocabulary()
+  const catalogo = useRequirementVocabulary()
+  const { vocabulario } = catalogo
 
   // La búsqueda va antes que los filtros, y cada control cuenta sobre lo que
   // dejan los demás: un número que promete filas que otro filtro ya descartó
   // lleva a "ningún documento".
+  // Un enlace viejo de Configuración trae el documento por código (`?doc=`):
+  // abre su ficha; si el código no existe, queda la lista sin el parámetro.
+  const doc = searchParams.get('doc')
+  useEffect(() => {
+    if (!doc || !lista.data) return
+    const elegido = lista.data.find(r => r.requirement_code === doc)
+    if (elegido) { router.replace(requirementHref(elegido.id)); return }
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('doc')
+    const s = params.toString()
+    router.replace(s ? `${REQUIREMENTS}?${s}` : REQUIREMENTS, { scroll: false })
+  }, [doc, lista.data, router, searchParams])
+
   const buscados = useMemo(() => (lista.data ?? []).filter(r => matchesSearch(r, q)), [lista.data, q])
-  const listo = lista.data !== undefined && !revisiones.cargando
+  const listo = lista.data !== undefined && !revisiones.cargando && !catalogo.isPending
   const contar = (f: (r: RequirementOption) => boolean) => (listo ? formatCount(buscados.filter(f).length) : undefined)
   const deEntidad = (r: RequirementOption) => entidad === 'todos' || r.target_entity === entidad
   const filas = buscados.filter(r => deEntidad(r) && matchesState(r, estado, revisiones.sinRevisar))
@@ -110,7 +124,7 @@ function RequirementsList() {
         />
       </div>
 
-      {lista.isError ? (
+      {lista.isError || catalogo.isError ? (
         <Estado tipo="error" titulo="No se pudieron cargar los documentos" />
       ) : !listo ? (
         <Estado tipo="cargando" />

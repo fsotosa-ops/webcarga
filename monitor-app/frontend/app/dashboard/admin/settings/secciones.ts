@@ -10,6 +10,8 @@ import { usePermiso } from '@/lib/authz/PermisosProvider'
  *  Vive aparte de dominios.ts porque las pestañas lo importan y dominios.ts
  *  importa las pestañas. */
 export const PERMISO_DE_SECCION = {
+  // Ya no es una sección de Configuración (Parte 2: Certificación › Documentos
+  // exigidos), pero sigue siendo la clave de su revisión, igual que en el backend.
   'certification/conditions':        'certification.configure',
   'certification/expiry-alerts':     'certification.configure',
   'operations/tms-statuses':         'operations.configure',

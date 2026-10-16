@@ -2,7 +2,7 @@
 
 import { use, useEffect } from 'react'
 import Link from 'next/link'
-import { notFound, useRouter } from 'next/navigation'
+import { notFound, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronLeft } from 'lucide-react'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { useAcceso } from '@/lib/authz/PermisosProvider'
@@ -15,7 +15,8 @@ export default function SectionPage({ params }: { params: Promise<{ area: string
   const { area: claveArea, section: claveSeccion } = use(params)
   const { permissions } = useAcceso()
   const router = useRouter()
-  const mudada = destinoMudado(claveArea, claveSeccion)
+  const query = useSearchParams()
+  const mudada = destinoMudado(claveArea, claveSeccion, query.get('doc'))
   useEffect(() => { if (mudada) router.replace(mudada) }, [router, mudada])
   if (mudada) return null
   const area = dominioPorClave(claveArea)

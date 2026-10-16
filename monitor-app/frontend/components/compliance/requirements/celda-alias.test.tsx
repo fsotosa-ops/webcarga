@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { RequirementOption } from '@/lib/types'
-import { CeldaAlias } from './celdas-editables'
+import { CeldaAlias } from './CeldaAlias'
 
 vi.mock('@/lib/api/requirements', () => ({
   requirementsApi: { addAlias: vi.fn(), removeAlias: vi.fn(), patchConditions: vi.fn() },

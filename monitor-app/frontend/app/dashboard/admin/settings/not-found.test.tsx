@@ -24,8 +24,10 @@ describe('sección de configuración no encontrada', () => {
   // tiene que poder ir a donde quería de un clic.
   it('lista las secciones que sí existen, sin el área reservada', () => {
     montar()
-    expect(screen.getByRole('link', { name: 'Condiciones de documentos' }))
-      .toHaveAttribute('href', '/dashboard/admin/settings/certification/conditions')
+    expect(screen.getByRole('link', { name: 'Motivos de conductor' }))
+      .toHaveAttribute('href', '/dashboard/admin/settings/operations/driver-reasons')
+    // Se mudó a Certificación › Documentos exigidos (Parte 2).
+    expect(screen.queryByRole('link', { name: 'Condiciones de documentos' })).toBeNull()
     expect(screen.queryByText('Facturación')).toBeNull()
   })
 })
