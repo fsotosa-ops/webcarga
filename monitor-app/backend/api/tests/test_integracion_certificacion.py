@@ -192,7 +192,7 @@ async def _alcance_del_catalogo(conn, requisito):
     Postgres. El router la arma interpolando las condiciones del servicio, así
     que un `AsyncMock` la ve siempre correcta: sólo Postgres dice si compila y
     si cuenta lo que dice contar."""
-    filas = await conn.fetch(SQL_CATALOGO, None)
+    filas = await conn.fetch(SQL_CATALOGO, None, None)
     return next(f for f in filas if f["id"] == str(requisito))
 
 

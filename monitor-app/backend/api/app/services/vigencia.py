@@ -46,6 +46,16 @@ SQL_REGLA_BASE_VIGENTE = f"""
 """
 
 
+# El historial de la regla base, de la más nueva a la más vieja: lo que la
+# ficha del documento muestra bajo "¿Cuándo vence?". `-infinity` es "desde
+# siempre" (la versión original, sembrada antes de que hubiera versiones).
+SQL_HISTORIAL_REGLA_BASE = f"""
+    SELECT vigente_desde, {_COLUMNAS}
+    FROM public.compliance_requirement_rules
+    WHERE requirement_id = $1 AND shipper_id IS NULL
+    ORDER BY vigente_desde DESC
+"""
+
 def regla_base_json_sql(req_alias: str) -> str:
     """La regla base vigente HOY de un requisito, como JSON con sus
     PARAMETROS. Correlacionada con `req_alias` (debe exponer `id`). La usan el

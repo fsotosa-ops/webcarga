@@ -157,7 +157,7 @@ async def test_c8_the_reach_counts_only_active_fleet(conexion_revertida):
         "AND c.operational_status = 'ACTIVE' WHERE af.entity_type = 'DRIVER'")
     every_driver = await conn.fetchval("SELECT count(*) FROM public.drivers")
 
-    rows = {r["id"]: r for r in await conn.fetch(SQL_CATALOGO, "DRIVER")}
+    rows = {r["id"]: r for r in await conn.fetch(SQL_CATALOGO, "DRIVER", None)}
 
     assert rows[requirement]["universo"] == active_universe
     assert active_universe < every_driver

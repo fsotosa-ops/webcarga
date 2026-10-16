@@ -7,6 +7,8 @@ para poder crecer con la configuración de condiciones y el recálculo sin
 seguir engordando ese archivo.
 """
 import json
+from datetime import date
+from uuid import UUID
 from contextlib import asynccontextmanager
 from typing import Literal, Optional
 
@@ -16,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
-from ..schemas.compliance import RequirementOption
+from ..schemas.compliance import RequirementDetail, RequirementOption
 from ..schemas.requirement import (
     LoteDeCambios,
     RecalcPreview,
@@ -40,7 +42,13 @@ from ..services.edicion_catalogo import (
     contar_estados,
 )
 from ..services.catalogo import DocumentoYaExiste, crear_requisito
-from ..services.vigencia import PARAMETROS, guardar_vigencia, regla_base_json_sql
+from ..services.vencimientos import cubierto_predicate, in_scope_sql
+from ..services.vigencia import (
+    PARAMETROS,
+    SQL_HISTORIAL_REGLA_BASE,
+    guardar_vigencia,
+    regla_base_json_sql,
+)
 
 requirements_router = APIRouter(prefix="/compliance-requirements", tags=["compliance"])
 
@@ -124,16 +132,27 @@ SQL_CATALOGO = f"""
            -- puede encontrar.
            COALESCE(al.aliases, ARRAY[]::text[]) AS aliases,
            {_columna("alcanzadas")},
-           {_columna("universo")}
+           {_columna("universo")},
+           COALESCE(cum.cumplen, 0) AS cumplen
     FROM public.compliance_requirements req
     LEFT JOIN (
         SELECT requirement_id, array_agg(alias ORDER BY priority DESC, alias) AS aliases
         FROM public.requirement_filename_aliases
         GROUP BY requirement_id
     ) al ON al.requirement_id = req.id
+    -- "Cumplen n de m": los registros al día de quienes están en alcance, con
+    -- los mismos predicados que Pendientes. Una agregación para todo el
+    -- catálogo, no una consulta por fila.
+    LEFT JOIN (
+        SELECT cr.requirement_id, count(*) FILTER (WHERE {cubierto_predicate('cr')}) AS cumplen
+        FROM public.compliance_records cr
+        WHERE cr.is_current AND {in_scope_sql('cr')}
+        GROUP BY cr.requirement_id
+    ) cum ON cum.requirement_id = req.id
     {"".join(_lateral(entidad, condicion)
              for entidad, condicion in SQL_CONDICION_DE_ENTIDAD.items())}
     WHERE ($1::text IS NULL OR req.target_entity = $1)
+      AND ($2::uuid IS NULL OR req.id = $2)
     ORDER BY req.target_entity, req.name
 """
 
@@ -159,17 +178,45 @@ async def list_compliance_requirements(
     leer uno sin el otro. El `pop` va sin valor por defecto a propósito — si
     la consulta dejara de traer una de las dos columnas, esto tiene que
     romperse, no devolver un cero inventado."""
-    rows = await pool.fetch(SQL_CATALOGO, target_entity)
-    catalogo = []
-    for row in rows:
-        fila = dict(row)
-        fila["alcance"] = {"alcanzadas": fila.pop("alcanzadas"),
-                           "universo":   fila.pop("universo")}
-        # jsonb llega como texto: el pool no registra un codec para jsonb.
-        if fila["vigencia"] is not None:
-            fila["vigencia"] = json.loads(fila["vigencia"])
-        catalogo.append(fila)
-    return catalogo
+    return [_fila_del_catalogo(row) for row in await pool.fetch(SQL_CATALOGO, target_entity, None)]
+
+
+def _fila_del_catalogo(row) -> dict:
+    """Una fila de SQL_CATALOGO con la forma de `RequirementOption`: la usan
+    la lista y la ficha, para que las dos digan lo mismo del mismo documento."""
+    fila = dict(row)
+    fila["alcance"] = {"alcanzadas": fila.pop("alcanzadas"),
+                       "universo":   fila.pop("universo")}
+    # "Cumplen n de m": m es a quiénes alcanza la regla entre los que están en
+    # alcance, la misma cifra que `alcance.alcanzadas`.
+    fila["exigidos"] = fila["alcance"]["alcanzadas"]
+    # jsonb llega como texto: el pool no registra un codec para jsonb.
+    if fila["vigencia"] is not None:
+        fila["vigencia"] = json.loads(fila["vigencia"])
+    return fila
+
+
+@requirements_router.get("/{requirement_id}", response_model=RequirementDetail)
+async def get_compliance_requirement(
+    requirement_id: UUID,
+    pool=Depends(get_pool),
+    _=Depends(require(Permission.CERTIFICATION_READ)),
+):
+    """La ficha de un documento (Certificación › Documentos exigidos): la fila
+    del catálogo, sus registros por estado y el historial de la regla base."""
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(SQL_CATALOGO, None, requirement_id)
+        if row is None:
+            raise HTTPException(404, "El documento no existe.")
+        fila = _fila_del_catalogo(row)
+        fila["estados"] = await contar_estados(conn, requirement_id)
+        fila["reglas"] = [
+            # -infinity es la versión original: "desde siempre".
+            {**dict(r), "vigente_desde": r["vigente_desde"] if r["vigente_desde"] not in (date.min, date.max)
+             else None}
+            for r in await conn.fetch(SQL_HISTORIAL_REGLA_BASE, requirement_id)
+        ]
+    return fila
 
 
 # Los mensajes de la base, legibles. La coherencia de la vigencia la valida
