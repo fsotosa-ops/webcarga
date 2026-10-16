@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
+import { StatusChip } from '@/components/ui/StatusChip'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, Loader2 } from 'lucide-react'
@@ -90,18 +91,11 @@ function cuando(iso: string): string {
  *  decidir, no algo que está mal. */
 export function MarcaDeRevision({ revision }: { revision: Revision | null | undefined }) {
   if (revision === undefined) {
-    return <span className="inline-block w-20 h-3 bg-gray-100 rounded animate-pulse align-middle" />
+    return <span className="inline-block w-20 h-3 bg-bg-main rounded animate-pulse align-middle" />
   }
-  if (!revision) {
-    return (
-      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5
-                       text-[10px] font-semibold text-amber-700">
-        Sin revisar
-      </span>
-    )
-  }
+  if (!revision) return <StatusChip tone="warning">Sin revisar</StatusChip>
   return (
-    <span className="text-[11px] text-gray-400">
+    <span className="text-etiqueta text-informativo">
       {revision.reviewed_by ? `${revision.reviewed_by} · ` : ''}{cuando(revision.reviewed_at)}
     </span>
   )
@@ -125,8 +119,8 @@ export function BotonConfirmar({
       type="button"
       onClick={onConfirmar}
       disabled={pendiente}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5
-                 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50
+      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5
+                 text-dato font-semibold text-text-primary hover:bg-bg-main disabled:opacity-50
                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
     >
       {pendiente ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}

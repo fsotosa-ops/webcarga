@@ -82,7 +82,8 @@ describe('la escala tipografica', () => {
     // 163 -> 158 el 2026-10-15: fichas en dos columnas, flota de la empresa en tabla, Seguros y Requisito con el kit.
     // 158 -> 130 el 2026-10-15: Seguros con el kit; se retiraron el modal de pólizas y sus piezas (Seguros E2).
     // 130 -> 128 el 2026-10-15: PolicyCreateForm sin 9-10px (menores de la revisión final de Seguros E2).
-    const DEUDA = 128
+    // 128 -> 117 el 2026-10-16: Configuración con la lista + panel (Parte 1, tarea 5).
+    const DEUDA = 117
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

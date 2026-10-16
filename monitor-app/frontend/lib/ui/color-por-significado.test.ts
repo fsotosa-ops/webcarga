@@ -15,21 +15,12 @@ function recorrer(dir: string): string[] {
   })
 }
 
-/** Lo que reemplaza la Tarea 5 (la lista + panel de Configuración). Esta lista
- *  solo puede achicarse; vacía, la guarda es total. */
-const PENDIENTES = new Set([
-  'app/dashboard/admin/settings/EstadoPanel.tsx',
-  'app/dashboard/admin/settings/estados-tabla.tsx',
-  'app/dashboard/admin/settings/estados-tabs.tsx',
-  'app/dashboard/admin/settings/shared.tsx',
-  'lib/api/config.ts',
-])
 
 describe('El color sale del significado', () => {
   it('P1.6: ningún archivo lee bg_color ni text_color', () => {
     const hallazgos = ['app', 'components', 'lib'].flatMap(d => recorrer(join(RAIZ, d)))
       .filter(ruta => /\b\w*(bg_color|text_color)\b/.test(readFileSync(ruta, 'utf8')))
       .map(ruta => relative(RAIZ, ruta))
-    expect(hallazgos.filter(r => !PENDIENTES.has(r))).toEqual([])
+    expect(hallazgos).toEqual([])
   })
 })

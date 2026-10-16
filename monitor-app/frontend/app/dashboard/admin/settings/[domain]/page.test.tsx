@@ -7,13 +7,16 @@ const acceso = vi.hoisted(() => ({ permissions: ['users.manage'] as string[] }))
 vi.mock('@/lib/authz/PermisosProvider', () => ({ useAcceso: () => acceso }))
 
 // Los paneles reales piden datos; acá sólo importa el marco del dominio.
-vi.mock('../estados-tabs', () => ({
-  EstadosOperacionalesTab: () => <div>panel operacionales</div>,
-  EstadosEquipoTab: () => <div>panel equipo</div>,
-  TaxonomyTab: () => <div>panel taxonomia</div>,
-}))
-vi.mock('../estados-tabla', () => ({
-  EstadosTabla: () => <div>panel estados tms</div>,
+vi.mock('../paneles', () => ({
+  SECCIONES_CON_LISTA: [],
+  EstadosDelTableroPanel: () => <div>panel estados tms</div>,
+  EstadosOperacionalesPanel: () => <div>panel operacionales</div>,
+  EstadosDeEquipoPanel: () => <div>panel equipo</div>,
+  MotivosDeConductorPanel: () => <div>panel motivos</div>,
+  MotivosDeNoAsignacionPanel: () => <div>panel motivos no asignacion</div>,
+  MotivosDeAnulacionPanel: () => <div>panel motivos de anulacion</div>,
+  SubtiposPanel: () => <div>panel subtipos</div>,
+  TiposDeOperacionPanel: () => <div>panel tipos de operacion</div>,
 }))
 vi.mock('../umbrales-tabs', () => ({
   AlertasVencimientoTab: () => <div>panel vencimientos</div>,
@@ -22,13 +25,6 @@ vi.mock('../umbrales-tabs', () => ({
 }))
 vi.mock('../condiciones-tabla', () => ({
   CondicionesTabla: () => <div>panel condiciones</div>,
-}))
-vi.mock('../flota-tabs', () => ({
-  SubtiposVehiculoTab: () => <div>panel subtipos</div>,
-  TiposOperacionTab: () => <div>panel tipos de operacion</div>,
-  MotivosConductorTab: () => <div>panel motivos</div>,
-  MotivosNoAsignacionTab: () => <div>panel motivos no asignacion</div>,
-  MotivosAnulacionTab: () => <div>panel motivos de anulacion</div>,
 }))
 vi.mock('../usuarios-tab', () => ({ UsuariosTab: () => <div>panel usuarios</div> }))
 vi.mock('../roles-tab', () => ({ RolesTab: () => <div>panel roles</div> }))

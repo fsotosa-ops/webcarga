@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { DOMINIOS, SECCION_DE_TAXONOMIA, dominioPorClave, puedeVerDominio } from './dominios'
+import { DOMINIOS, dominioPorClave, puedeVerDominio } from './dominios'
+import { SECCION_DE_TAXONOMIA } from './settings-sources'
 
 describe('registro de dominios', () => {
   it('las claves de dominio son unicas', () => {

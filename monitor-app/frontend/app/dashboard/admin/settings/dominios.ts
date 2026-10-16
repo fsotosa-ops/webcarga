@@ -3,16 +3,14 @@ import {
   ShieldCheck, LayoutDashboard, Truck, Users, Receipt, type LucideIcon,
 } from 'lucide-react'
 import {
-  EstadosOperacionalesTab, EstadosEquipoTab,
-} from './estados-tabs'
-import {
   AlertasVencimientoTab, RangosTemperaturaTab, AlertasMonitorTab,
 } from './umbrales-tabs'
 import { CondicionesTabla } from './condiciones-tabla'
-import { EstadosTabla } from './estados-tabla'
 import {
-  SubtiposVehiculoTab, TiposOperacionTab, MotivosConductorTab, MotivosNoAsignacionTab, MotivosAnulacionTab,
-} from './flota-tabs'
+  EstadosDelTableroPanel, EstadosOperacionalesPanel, EstadosDeEquipoPanel, MotivosDeConductorPanel,
+  MotivosDeNoAsignacionPanel, MotivosDeAnulacionPanel, SubtiposPanel, TiposDeOperacionPanel,
+  SECCIONES_CON_LISTA,
+} from './paneles'
 import { UsuariosTab } from './usuarios-tab'
 import { RolesTab } from './roles-tab'
 import type { PermissionCode } from '@/lib/authz/permisos.generated'
@@ -79,21 +77,21 @@ export const DOMINIOS: Dominio[] = [
     proposito: 'Cómo se ve el tablero, cuándo avisa, y qué temperatura corresponde',
     secciones: [
       { clave: 'tms-statuses', titulo: 'Estados del tablero',
-        proposito: 'Colores y columna de cada estado del TMS', Panel: EstadosTabla },
+        proposito: 'Colores y columna de cada estado del TMS', Panel: EstadosDelTableroPanel },
       { clave: 'operational-statuses', titulo: 'Estados operacionales',
-        proposito: 'El vocabulario que usa el equipo', Panel: EstadosOperacionalesTab },
+        proposito: 'El vocabulario que usa el equipo', Panel: EstadosOperacionalesPanel },
       { clave: 'equipment-statuses', titulo: 'Estados de equipo',
-        proposito: 'El motivo cuando un equipo no sale', Panel: EstadosEquipoTab },
+        proposito: 'El motivo cuando un equipo no sale', Panel: EstadosDeEquipoPanel },
       { clave: 'alert-thresholds', titulo: 'Umbrales de alerta',
         proposito: 'Cuándo el monitor considera que algo va mal', Panel: AlertasMonitorTab },
       { clave: 'temperature-ranges', titulo: 'Rangos de temperatura',
         proposito: 'Qué rango corresponde a cada tipo de carga', Panel: RangosTemperaturaTab },
       { clave: 'driver-reasons', titulo: 'Motivos de conductor',
-        proposito: 'Por qué un conductor no está disponible', Panel: MotivosConductorTab },
+        proposito: 'Por qué un conductor no está disponible', Panel: MotivosDeConductorPanel },
       { clave: 'unassigned-reasons', titulo: 'Motivos de no asignación',
-        proposito: 'Por qué WebCarga no tomó una carga que le ofrecieron', Panel: MotivosNoAsignacionTab },
+        proposito: 'Por qué WebCarga no tomó una carga que le ofrecieron', Panel: MotivosDeNoAsignacionPanel },
       { clave: 'void-reasons', titulo: 'Motivos de anulación',
-        proposito: 'Por qué se anula un viaje cargado en la app', Panel: MotivosAnulacionTab },
+        proposito: 'Por qué se anula un viaje cargado en la app', Panel: MotivosDeAnulacionPanel },
       { clave: 'origins', titulo: 'Orígenes',
         proposito: 'Los lugares desde los que sale carga', Panel: OrigenesTab },
       { clave: 'tms-clients', titulo: 'Clientes del TMS',
@@ -107,9 +105,9 @@ export const DOMINIOS: Dominio[] = [
     proposito: 'El vocabulario de vehículos que comparten Certificación y Operaciones',
     secciones: [
       { clave: 'subtypes', titulo: 'Subtipos de vehículo',
-        proposito: 'Furgón congelado, sider, rampla plana', Panel: SubtiposVehiculoTab },
+        proposito: 'Furgón congelado, sider, rampla plana', Panel: SubtiposPanel },
       { clave: 'operation-types', titulo: 'Tipos de operación',
-        proposito: 'Tractoreo y equipo completo', Panel: TiposOperacionTab },
+        proposito: 'Tractoreo y equipo completo', Panel: TiposDeOperacionPanel },
     ],
   },
   {
@@ -139,33 +137,14 @@ export function dominioPorClave(clave: string): Dominio | undefined {
   return DOMINIOS.find(d => d.clave === clave)
 }
 
-/** Cómo abre un elemento cada sección que sabe abrirlo.
- *
- *  Sólo dos: Condiciones y Estados del tablero tienen panel, y su panel viaja
- *  en la URL. Las demás secciones se editan en la propia fila, así que no hay
- *  a qué apuntar más allá de la sección — y el buscador lleva ahí, en vez de
- *  inventarle un panel a una tabla que no lo tiene. */
+/** Con qué parámetro abre un elemento cada sección (lo usa el buscador): las de
+ *  `SettingsList` abren con `?item=`; Condiciones, por código (`?doc=`), hasta que
+ *  pase a Certificación (Parte 2). */
 export const PARAM_DE_SECCION: Record<string, string> = {
-  conditions:     'doc',
-  'tms-statuses': 'estado',
+  conditions: 'doc',
+  ...Object.fromEntries(SECCIONES_CON_LISTA.map(s => [s, 'item'])),
 }
 
-/** Dónde vive cada vocabulario de `app.status_taxonomies`.
- *
- *  `TaxonomyTab` es un solo componente que sirve a los cinco, así que no sabe
- *  en qué sección está parado — y el registro de revisión necesita saberlo. Es
- *  el mismo mapa que el backend tiene en `services/revisiones.py`; las dos
- *  copias tienen que decir lo mismo, y hay un test que las compara contra la
- *  base para que no se separen en silencio. */
-export const SECCION_DE_TAXONOMIA: Record<string, [dominio: string, seccion: ClaveDeSeccion]> = {
-  OPERATIONAL_STATE:       ['operations', 'operational-statuses'],
-  EQUIPMENT_STATE:         ['operations', 'equipment-statuses'],
-  DRIVER_REASON:           ['operations', 'driver-reasons'],
-  TRIP_UNASSIGNED_REASON:  ['operations', 'unassigned-reasons'],
-  TRIP_VOID_REASON:        ['operations', 'void-reasons'],
-  FLEET_SERVICE_TYPE:      ['fleet', 'subtypes'],
-  WEBCARGA_OPERATION_TYPE: ['fleet', 'operation-types'],
-}
 
 export function puedeVerDominio(d: Dominio, permisos: readonly string[]): boolean {
   return !d.permiso || permisos.includes(d.permiso)

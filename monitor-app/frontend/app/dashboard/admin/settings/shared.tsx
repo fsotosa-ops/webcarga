@@ -1,49 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BOARD_COLUMNS } from '@/lib/states'
-import { Check, Loader2, RefreshCw, ChevronUp, ChevronDown } from 'lucide-react'
-
-// ── Vocabulario compartido ────────────────────────────────────────────────────
-
-/** Qué significa el grupo de un valor, por vocabulario. Un vocabulario que no
- *  está acá no tiene grupo, y la columna no se dibuja. El backend valida los
- *  mismos ids (schemas/status_taxonomy.py, GRUPOS_POR_DOMINIO). */
-export const GRUPOS_POR_DOMINIO: Partial<Record<string, {
-  titulo:     string
-  ayuda:      string
-  porDefecto: string
-  opciones:   { id: string; label: string }[]
-}>> = {
-  OPERATIONAL_STATE: {
-    titulo:     'Columna del tablero',
-    ayuda:      'Define en qué columna del tablero aparecen los viajes con este estado',
-    porDefecto: 'otro',
-    opciones:   BOARD_COLUMNS,
-  },
-  // Decide en qué tile del cierre del día cae el conductor, y si el motivo
-  // puede arrastrarse a los días siguientes (Solicitud de Operaciones, 16/09).
-  DRIVER_REASON: {
-    titulo:     'Qué significa',
-    ayuda:      'Define si el conductor cuenta como No asignado (trabajó sin carga) o como No trabajando en el cierre del día',
-    porDefecto: 'no_trabajando',
-    opciones:   [
-      { id: 'no_trabajando',             label: 'No trabajó' },
-      { id: 'trabajando_sin_asignacion', label: 'Trabajó sin asignación' },
-    ],
-  },
-}
-
-export const COLOR_PALETTE = [
-  { bg: '#eff6ff', text: '#1d4ed8', label: 'Azul'     },
-  { bg: '#f0fdf4', text: '#166534', label: 'Verde'    },
-  { bg: '#fef9c3', text: '#854d0e', label: 'Amarillo' },
-  { bg: '#fff7ed', text: '#c2410c', label: 'Naranja'  },
-  { bg: '#fef2f2', text: '#b91c1c', label: 'Rojo'     },
-  { bg: '#f5f3ff', text: '#6d28d9', label: 'Violeta'  },
-  { bg: '#ecfdf5', text: '#065f46', label: 'Teal'     },
-  { bg: '#f3f4f6', text: '#374151', label: 'Gris'     },
-]
+import { Check, Loader2, RefreshCw } from 'lucide-react'
 
 export const INPUT = 'text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all'
 
@@ -141,57 +99,5 @@ export function SaveRowButton({
       {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
       Guardar
     </button>
-  )
-}
-
-// ── Selector de color por swatches (único sistema del módulo) ─────────────────
-
-export function SwatchPicker({
-  bg, text, onPick, name,
-}: {
-  bg: string; text: string; onPick: (c: { bg: string; text: string }) => void; name: string
-}) {
-  return (
-    <div className="flex items-center gap-1" role="radiogroup" aria-label={`Color de ${name}`}>
-      {COLOR_PALETTE.map(c => {
-        const active = c.bg === bg && c.text === text
-        return (
-          <button
-            key={c.label}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            aria-label={c.label}
-            title={c.label}
-            onClick={() => onPick({ bg: c.bg, text: c.text })}
-            className={`w-5 h-5 rounded-full border-2 transition-all ${active ? 'border-accent scale-110' : 'border-transparent hover:scale-105'}`}
-            style={{ backgroundColor: c.bg }}
-          >
-            <span className="block w-1.5 h-1.5 rounded-full mx-auto" style={{ backgroundColor: c.text }} />
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── Flechas de orden (sort_order editable) ────────────────────────────────────
-
-export function SortArrows({
-  onUp, onDown, disabledUp, disabledDown, name,
-}: {
-  onUp: () => void; onDown: () => void; disabledUp: boolean; disabledDown: boolean; name: string
-}) {
-  return (
-    <div className="flex flex-col">
-      <button type="button" onClick={onUp} disabled={disabledUp} aria-label={`Subir ${name}`}
-        className="text-gray-300 hover:text-accent disabled:opacity-30 disabled:hover:text-gray-300">
-        <ChevronUp size={13} />
-      </button>
-      <button type="button" onClick={onDown} disabled={disabledDown} aria-label={`Bajar ${name}`}
-        className="text-gray-300 hover:text-accent disabled:opacity-30 disabled:hover:text-gray-300">
-        <ChevronDown size={13} />
-      </button>
-    </div>
   )
 }
