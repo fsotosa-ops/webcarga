@@ -8,8 +8,10 @@ const TONO: Record<Tone, string> = {
 }
 
 export type ShortcutTile = {
-  /** El valor de la columna que el recuadro escribe; `null` = "Todos" (quita el filtro). */
-  value: string | null
+  /** El o los valores de la columna que el recuadro escribe; `null` = "Todos" (quita el filtro).
+   *  Varios valores cuando el recuadro agrupa categorías ("No asignados" = Sin motivo + Trabajando
+   *  sin asignación): el chip los nombra con las mismas palabras de la columna. */
+  value: string | readonly string[] | null
   label: string
   tone?: Tone
 }
@@ -26,16 +28,21 @@ export function ShortcutTiles<T>({ model, columnId, tiles, loading = false }: {
   loading?: boolean
 }) {
   const elegidos = model.view.filters[columnId] ?? []
-  const marcado = (t: ShortcutTile) => (t.value === null ? elegidos.length === 0 : elegidos.length === 1 && elegidos[0] === t.value)
+  const marcado = (t: ShortcutTile) => {
+    const valores = valuesOf(t)
+    return valores.length === elegidos.length && valores.every(v => elegidos.includes(v))
+  }
 
   return (
     <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${tiles.length}, minmax(0, 1fr))` }}>
       {tiles.map(t => {
-        const n = loading ? null : (t.value === null ? model.facetTotal(columnId) : model.facetCount(columnId, t.value))
+        const n = loading ? null
+          : t.value === null ? model.facetTotal(columnId)
+          : valuesOf(t).reduce((suma, v) => suma + model.facetCount(columnId, v), 0)
         return (
-          <button key={t.value ?? '__todos'} type="button" aria-pressed={marcado(t)}
+          <button key={t.label} type="button" aria-pressed={marcado(t)}
             aria-label={n === null ? t.label : `${t.label}, ${n}`}
-            onClick={() => model.setFilter(columnId, t.value === null ? [] : [t.value])}
+            onClick={() => model.setFilter(columnId, valuesOf(t))}
             className={`rounded-xl border px-3.5 py-2.5 text-left transition-colors ${
               marcado(t) ? 'border-accent bg-accent/5 ring-1 ring-accent/20' : 'border-border bg-white hover:bg-bg-main'}`}>
             <p className={`text-xl font-bold leading-none tabular-nums ${TONO[t.tone ?? 'neutral']}`}>
@@ -47,4 +54,8 @@ export function ShortcutTiles<T>({ model, columnId, tiles, loading = false }: {
       })}
     </div>
   )
+}
+
+function valuesOf(t: ShortcutTile): string[] {
+  return t.value === null ? [] : typeof t.value === 'string' ? [t.value] : [...t.value]
 }

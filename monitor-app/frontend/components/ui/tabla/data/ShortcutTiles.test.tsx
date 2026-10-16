@@ -12,6 +12,8 @@ const FILAS: Fila[] = [
   { id: '1', empresa: 'Hasa', estado: 'Asignado' },
   { id: '2', empresa: 'Hasa', estado: 'No trabajando' },
   { id: '3', empresa: 'Huemul', estado: 'No trabajando' },
+  { id: '4', empresa: 'Huemul', estado: 'Sin motivo' },
+  { id: '5', empresa: 'Huemul', estado: 'Trabajando sin asignación' },
 ]
 const COLUMNAS: DataColumn<Fila>[] = [
   { id: 'empresa', header: 'Empresa', value: r => r.empresa },
@@ -20,6 +22,7 @@ const COLUMNAS: DataColumn<Fila>[] = [
 const TILES = [
   { value: null, label: 'Todos' },
   { value: 'Asignado', label: 'Asignados', tone: 'resolved' as const },
+  { value: ['Sin motivo', 'Trabajando sin asignación'], label: 'No asignados' },
   { value: 'No trabajando', label: 'No trabajando' },
 ]
 
@@ -38,19 +41,19 @@ describe('ShortcutTiles (C1, C3)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'No trabajando, 2' }))
     expect(screen.getByText('Estado: No trabajando')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'No trabajando, 2' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: 'Todos, 3' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Todos, 5' })).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('el filtro puesto desde el embudo marca su recuadro; quitar el chip lo desmarca', () => {
     render(<Pantalla inicial={{ ...EMPTY_VIEW, filters: { estado: ['Asignado'] } }} />)
     expect(screen.getByRole('button', { name: 'Asignados, 1' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: 'Quitar filtro Estado' }))
-    expect(screen.getByRole('button', { name: 'Todos, 3' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Todos, 5' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('"Todos" quita el filtro de la columna', () => {
     render(<Pantalla inicial={{ ...EMPTY_VIEW, filters: { estado: ['Asignado'] } }} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Todos, 3' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Todos, 5' }))
     expect(screen.queryByText('Estado: Asignado')).toBeNull()
   })
 
@@ -68,5 +71,12 @@ describe('ShortcutTiles (C1, C3)', () => {
   it('mientras carga no hay cifras', () => {
     render(<Pantalla cargando />)
     expect(screen.getByRole('button', { name: 'Todos' })).not.toHaveTextContent(/\d/)
+  })
+
+  it('un recuadro de varios valores escribe todos, y el chip los nombra', () => {
+    render(<Pantalla />)
+    fireEvent.click(screen.getByRole('button', { name: 'No asignados, 2' }))
+    expect(screen.getByText('Estado: Sin motivo, Trabajando sin asignación')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'No asignados, 2' })).toHaveAttribute('aria-pressed', 'true')
   })
 })

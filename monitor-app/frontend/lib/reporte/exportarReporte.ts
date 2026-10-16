@@ -1,4 +1,4 @@
-import type { FleetDriverGapRow, OperationTypeKey, OperationTypeReport, ReasonRow } from '@/lib/types'
+import type { FleetDriverGapRow, ClosureScope, OperationTypeReport, ReasonRow } from '@/lib/types'
 import { COLUMNAS_DE_ZONA, arbolDeAsignados, filasDelArbol, type Cifras } from './arbolDeAsignados'
 import { sumar } from './sumar'
 import { TIPOS_DE_OPERACION } from './tiposDeOperacion'
@@ -75,7 +75,7 @@ function segundasVueltas(r: OperationTypeReport): Fila[] {
   ]
 }
 
-function noTrabajaron(r: OperationTypeReport, clave: OperationTypeKey): Fila[] {
+function noTrabajaron(r: OperationTypeReport, clave: ClosureScope): Fila[] {
   const nw = r.not_working
   const detalle = clave === 'tractoreo'
     ? [negrita(['Conductor', 'Empresa', 'Origen habitual', 'Motivo', 'Tracto habitual']),
@@ -92,7 +92,7 @@ function empresas(r: OperationTypeReport): Fila[] {
   ]
 }
 
-const SECCIONES: { nombre: string; filas: (r: OperationTypeReport, clave: OperationTypeKey) => Fila[] }[] = [
+const SECCIONES: { nombre: string; filas: (r: OperationTypeReport, clave: ClosureScope) => Fila[] }[] = [
   { nombre: 'Resumen', filas: resumen },
   { nombre: 'Asignados', filas: asignados },
   { nombre: 'Segundas vueltas', filas: segundasVueltas },
@@ -103,7 +103,7 @@ const SECCIONES: { nombre: string; filas: (r: OperationTypeReport, clave: Operat
 /** El reporte del día como hojas de Excel. Trae los dos tipos aunque se esté
  *  viendo uno, porque Operaciones lo cruza con su planilla (spec 2026-10-11, §4). */
 export function hojasDelReporte(
-  porTipo: Record<OperationTypeKey, OperationTypeReport>, dotacion: FleetDriverGapRow[] | undefined,
+  porTipo: Record<ClosureScope, OperationTypeReport>, dotacion: FleetDriverGapRow[] | undefined,
 ): HojaDeExcel[] {
   const hojas: HojaDeExcel[] = SECCIONES.flatMap(s => TIPOS_DE_OPERACION.map(t => ({
     sheet: `${s.nombre} · ${t.corta}`, data: s.filas(porTipo[t.clave], t.clave),
@@ -121,7 +121,7 @@ export function hojasDelReporte(
 /** Baja el reporte como .xlsx (minuta 09/10, ítem 15). La librería se carga recién
  *  al hacer clic: no pesa en la pantalla para quien no exporta. */
 export async function descargarReporteExcel(
-  porTipo: Record<OperationTypeKey, OperationTypeReport>, fecha: string, dotacion: FleetDriverGapRow[] | undefined,
+  porTipo: Record<ClosureScope, OperationTypeReport>, fecha: string, dotacion: FleetDriverGapRow[] | undefined,
 ): Promise<void> {
   const { default: escribirExcel } = await import('write-excel-file/browser')
   await escribirExcel(hojasDelReporte(porTipo, dotacion)).toFile(`reporte_estatus_${fecha}.xlsx`)

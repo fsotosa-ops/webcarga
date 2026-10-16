@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { OperationTypeKey, OperationTypeReport } from '@/lib/types'
+import type { ClosureScope, OperationTypeReport } from '@/lib/types'
 import { hojasDelReporte } from './exportarReporte'
 
 function reporte(over: Partial<OperationTypeReport> = {}): OperationTypeReport {
@@ -26,7 +26,7 @@ function reporte(over: Partial<OperationTypeReport> = {}): OperationTypeReport {
   }
 }
 
-const POR_TIPO: Record<OperationTypeKey, OperationTypeReport> = { tractoreo: reporte(), equipo_completo: reporte() }
+const POR_TIPO: Record<ClosureScope, OperationTypeReport> = { tractoreo: reporte(), equipo_completo: reporte() }
 const negrita = (v: unknown) => typeof v === 'object' && v !== null && (v as { fontWeight?: string }).fontWeight === 'bold'
 const valor = (v: unknown) => (typeof v === 'object' && v !== null ? (v as { value: unknown }).value : v)
 

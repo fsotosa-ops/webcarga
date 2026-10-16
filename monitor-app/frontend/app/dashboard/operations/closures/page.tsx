@@ -1,11 +1,10 @@
 'use client'
 
 import { Suspense, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ChevronRight, ClipboardCheck, Truck, AlertTriangle, FileBarChart2, Route, Loader2, UserX, CheckCircle2, LockOpen,
+  ClipboardCheck, Truck, Loader2, UserX, CheckCircle2, LockOpen,
 } from 'lucide-react'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { dailyClosuresApi } from '@/lib/api/dailyClosures'
@@ -26,9 +25,14 @@ import { AvisoDeActualizacion, refetchWhilePending } from '@/components/dashboar
 import { Estado } from '@/components/ui/Estado'
 import { urlDelViaje } from '@/lib/navegacion/viaje'
 import { esUrlVieja, leerUrlDelCierre, urlDelCierre } from '@/lib/navegacion/cierre'
-import type { PestanaDeViajes } from '@/lib/cierre/gruposDeViajes'
+import { GRUPOS_DE_VIAJES, closureTrips } from '@/lib/cierre/gruposDeViajes'
+import { scopeSummary } from '@/lib/cierre/dayFleet'
+import { SCOPE_LABEL } from '@/lib/states'
+import { useDayFleet } from '@/hooks/useDayFleet'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { Tabs } from '@/components/ui/Tabs'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
-import type { PeriodoDeCierre, TripsMeta } from '@/lib/types'
+import type { ClosureScope, PeriodoDeCierre, TripsMeta } from '@/lib/types'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { EntityQuickView } from '@/components/dashboard/EntityQuickView'
 import { useQuickView, type QuickViewTarget } from '@/lib/quickView'
@@ -38,14 +42,15 @@ function todayISO() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date())
 }
 
+// Los id viajan en la URL (?tab=): en inglés, como las rutas. La etiqueta, en español.
 const TABS = [
-  // Los id viajan en la URL (?tab=): en inglés, como las rutas. La etiqueta, en español.
-  { id: 'fleet',   label: 'Flota del día',  icon: Truck },
-  { id: 'trips',   label: 'Viajes',         icon: Route },
-  { id: 'pending', label: 'Pendientes',     icon: AlertTriangle },
-  { id: 'report',  label: 'Reporte',        icon: FileBarChart2 },
+  { id: 'fleet',   label: 'Flota del día' },
+  { id: 'trips',   label: 'Viajes' },
+  { id: 'pending', label: 'Pendientes' },
+  { id: 'report',  label: 'Reporte' },
 ] as const
 type TabId = (typeof TABS)[number]['id']
+const ALCANCES: ClosureScope[] = ['tractoreo', 'equipo_completo']
 
 export default function ClosuresCenterPage() {
   return (
@@ -126,10 +131,10 @@ function ClosuresCenterPageInner() {
     setTabState(next)
     router.replace(urlDelCierre(searchParams, { tab: next }))
   }
-  // La pestaña de Viajes también vive en la URL (?trips=), por el mismo motivo
-  // que ?tab=: volver del detalle de un viaje deja todo donde estaba.
-  function setPestanaDeViajes(next: PestanaDeViajes) {
-    router.replace(urlDelCierre(searchParams, { trips: next }))
+  // Qué se cierra (D1): uno para las cuatro pestañas, en la URL (?scope=).
+  const alcance = url.scope
+  function setAlcance(next: ClosureScope) {
+    router.replace(urlDelCierre(searchParams, { scope: next }))
   }
   // Un enlace viejo (?fecha=, ?tab=viajes) se lee igual y se reescribe en inglés,
   // sin entrada nueva en el historial.
@@ -196,15 +201,26 @@ function ClosuresCenterPageInner() {
   }, [])
 
 
-  // Paso "Viajes" (Tarea 6) — sólo se pide mientras esa pestaña está activa;
-  // las demás pestañas no la necesitan y el tab bar ya renderiza sólo la
-  // sección activa.
+  // Paso "Viajes": se pide al abrir la página (no solo con la pestaña): su número va en la pestaña (D4).
   const cierreViajesQuery = useQuery({
     queryKey: ['cierre-viajes', fecha],
     queryFn: () => tripsApi.cierreViajes(fecha),
-    enabled: tab === 'trips',
     refetchInterval: refetchWhilePending,
   })
+  // El resumen del alcance, de las mismas filas que dibuja la Flota del día.
+  const flota = useDayFleet(fecha)
+  const resumen = flota.drivers && flota.equipment ? scopeSummary(flota.drivers, flota.equipment, alcance) : null
+  // Lo que falta hacer en cada pestaña, dentro del alcance (D4): Por resolver y avisos.
+  const enAlcance = (scope: ClosureScope | null | undefined) => !scope || scope === alcance
+  const porResolver = cierreViajesQuery.data
+    ? closureTrips(cierreViajesQuery.data.grupos)
+      .filter(v => GRUPOS_DE_VIAJES[v.grupo].pestana === 'to_resolve' && enAlcance(v.scope)).length
+    : null
+  const escalaciones = cierreQuery.data?.pre_cierre?.escalations
+  const avisos = escalaciones
+    ? Object.values(escalaciones).flat().filter(a => enAlcance(a.scope)).length || null
+    : null
+
   const motivosViajesQuery = useQuery({
     queryKey: taxonomyKey('TRIP_UNASSIGNED_REASON'),
     queryFn: () => taxonomiesApi.list('TRIP_UNASSIGNED_REASON'),
@@ -313,28 +329,32 @@ function ClosuresCenterPageInner() {
 
   return (
     <div className="p-6 space-y-4">
-      <div className="flex items-center gap-1.5 text-xs text-gray-400">
-        <Link href="/dashboard/operations/monitor" className="hover:text-accent">Operaciones</Link>
-        <ChevronRight size={12} />
-        <span className="font-semibold text-text-primary">Centro de Cierre</span>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-border shadow-sm p-5 sm:p-6 flex items-center justify-between gap-4 flex-wrap">
-        <EncabezadoDePagina
-          titulo="Centro de Cierre del Día"
-          icono={<ClipboardCheck size={20} className="text-accent" />}
-          bajada="Revisa pendientes, cierra los conductores y los tractos del día, y comparte el reporte — todo en un solo lugar."
-        />
-        <label className="flex items-center gap-2 text-etiqueta text-gray-500">
+      <EncabezadoDePagina titulo="Cierre del día" bajada="Revisa la flota, resuelve los viajes y firma el día.">
+        <label className="flex items-center gap-2 text-etiqueta text-informativo">
           Fecha
           <input
             type="date"
             aria-label="Fecha del cierre"
             value={fecha}
             onChange={e => setFecha(e.target.value)}
-            className="text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40"
+            className="rounded-lg border border-border bg-white px-2.5 py-1.5 text-dato focus:outline-none focus:ring-2 focus:ring-accent/20"
           />
         </label>
+      </EncabezadoDePagina>
+
+      {/* Qué se cierra (D1): una vez, arriba de las pestañas, y vale para las cuatro. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-etiqueta text-informativo">Qué se cierra</span>
+        <SegmentedControl label="Qué se cierra" value={alcance} onChange={setAlcance}
+          options={ALCANCES.map(a => ({ id: a, label: SCOPE_LABEL[a] }))} />
+        {resumen && (
+          <span className="text-dato text-text-primary">
+            {resumen.assigned} asignados · {resumen.unassigned} sin asignar · {String(resumen.utilizationPct).replace('.', ',')} % de utilización
+            {resumen.blocking ? (
+              <span className="text-status-incidente"> · {resumen.blocking} sin motivo {resumen.blocking === 1 ? 'bloquea' : 'bloquean'} la firma</span>
+            ) : null}
+          </span>
+        )}
       </div>
 
       <HistorialDeFirmas firmas={firmasQuery.data?.signatures ?? []} />
@@ -352,41 +372,24 @@ function ClosuresCenterPageInner() {
           esquinas las redondean ahora la barra de pestanas y el pie, que son
           los dos unicos hijos con fondo propio. */}
       <div className="bg-white rounded-2xl border border-border shadow-sm">
-        <div role="tablist" className="flex items-center gap-1 bg-gray-50 border-b border-border px-3 py-2 overflow-x-auto rounded-t-2xl">
-          {TABS.map(t => {
-            const Icon = t.icon
-            const isActive = tab === t.id
-            return (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                // El número de la pestaña dice qué cuenta: "Viajes 12" a secas no lo dice.
-                aria-label={t.id === 'trips' && ajustes.length > 0
-                  ? `Viajes, ${ajustes.length} ${ajustes.length === 1 ? 'ajuste posterior' : 'ajustes posteriores'} al cierre`
-                  : undefined}
-                onClick={() => setTab(t.id)}
-                className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl whitespace-nowrap transition-colors ${
-                  isActive ? 'bg-white text-accent shadow-sm' : 'text-gray-500 hover:text-text-primary hover:bg-white/60'
-                }`}
-              >
-                <Icon size={14} className="shrink-0" />
-                {t.label}
-                {t.id === 'trips' && ajustes.length > 0 && (
-                  <span className="ml-0.5 rounded-full bg-gray-200 px-1.5 text-[10px] font-bold tabular-nums text-text-secondary">
-                    {ajustes.length}
-                  </span>
-                )}
-              </button>
-            )
-          })}
+        <div className="rounded-t-2xl border-b border-border px-3 py-2">
+          <Tabs label="Secciones del cierre" value={tab} onChange={setTab} tabs={[
+            { id: 'fleet', label: 'Flota del día' },
+            // El número dice qué falta hacer (D4): con el día firmado, los ajustes posteriores.
+            diaCerrado
+              ? { id: 'trips', label: 'Viajes', count: ajustes.length || null,
+                  ariaLabel: ajustes.length ? `Viajes, ${ajustes.length} ${ajustes.length === 1 ? 'ajuste posterior' : 'ajustes posteriores'} al cierre` : undefined }
+              : { id: 'trips', label: 'Viajes', count: porResolver, urgent: !!porResolver },
+            { id: 'pending', label: 'Pendientes', count: avisos },
+            { id: 'report', label: 'Reporte' },
+          ]} />
         </div>
 
         <div className="p-5 sm:p-6">
           {tab === 'fleet' && (
             <FlotaDelDiaSection
               fecha={fecha}
+              alcance={alcance}
               unassignedReasons={tripsMeta?.unassigned_reasons ?? []}
               onSelectTrip={handleSelectTrip}
               onOpenQuickView={puedeVerDirectorio ? openQuickView : undefined}
@@ -415,9 +418,10 @@ function ClosuresCenterPageInner() {
               </Estado>
             ) : (
               <PasoViajesSection
-                // Otro día, otra selección, búsqueda y pestaña inicial.
+                // Otro día, otra selección y situación inicial.
                 key={fecha}
                 fecha={fecha}
+                alcance={alcance}
                 grupos={cierreViajesQuery.data?.grupos}
                 bloquean={cierreViajesQuery.data?.bloquean}
                 tripHref={id => urlDelViaje(id, urlDeEsteCierre())}
@@ -431,8 +435,6 @@ function ClosuresCenterPageInner() {
                 // Mientras no se sabe si el día está firmado, nada se declara: las
                 // acciones que escriben esperan la información de la que dependen.
                 soloLectura={diaCerrado || cierreQuery.isLoading}
-                pestana={url.trips}
-                onCambiarPestana={setPestanaDeViajes}
               />
             )}
           </>)}

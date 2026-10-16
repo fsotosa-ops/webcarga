@@ -102,10 +102,6 @@ export const GRUPOS_DE_VIAJES: Record<GrupoDelCierre, Presentacion> = {
 
 const GRUPOS = Object.keys(GRUPOS_DE_VIAJES) as GrupoDelCierre[]
 
-export function esPestanaDeViajes(v: string | null): v is PestanaDeViajes {
-  return PESTANAS_DE_VIAJES.some(p => p.id === v)
-}
-
 /** Los viajes de una pestaña, de la planificación más antigua a la más nueva y, a
  *  igual fecha, por Nº de viaje. `Partial`: backend y frontend se despliegan por
  *  separado, y un grupo puede no llegar todavía. */
@@ -117,6 +113,17 @@ export function filasDePestana(
     .flatMap(g => (grupos[g] ?? []).map(v => ({ ...v, grupo: g })))
     .sort((a, b) => a.planning_date.localeCompare(b.planning_date)
       || (a.source_system_trip_id ?? a.trip_id).localeCompare(b.source_system_trip_id ?? b.trip_id, 'es', { numeric: true }))
+}
+
+/** Todos los viajes del Cierre en una lista, por pestaña (Por resolver, En
+ *  seguimiento, Resueltos) y, dentro, en el orden de `filasDePestana`. */
+export function closureTrips(grupos: Partial<Record<GrupoDelCierre, ViajeDelCierre[]>>): FilaDeViaje[] {
+  return PESTANAS_DE_VIAJES.flatMap(p => filasDePestana(grupos, p.id))
+}
+
+/** La palabra de la pestaña de un viaje: el valor de la columna Situación. */
+export function situationOf(f: FilaDeViaje): string {
+  return PESTANAS_DE_VIAJES.find(p => p.id === GRUPOS_DE_VIAJES[f.grupo].pestana)!.etiqueta
 }
 
 export function pestanaInicial(grupos: Partial<Record<GrupoDelCierre, ViajeDelCierre[]>>): PestanaDeViajes {

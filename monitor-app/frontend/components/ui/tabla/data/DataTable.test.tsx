@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { useState } from 'react'
 import { EMPTY_VIEW, type TableView } from '@/lib/table/viewInUrl'
 import type { DataColumn } from './columns'
@@ -16,10 +16,10 @@ const COLUMNAS: DataColumn<Fila>[] = [
   { id: 'accion', header: 'Acción', value: r => r.accion, filter: false, sortable: false, render: () => <button>Ver</button> },
 ]
 
-function Tabla({ inicial = EMPTY_VIEW, filas = FILAS, activa }: { inicial?: TableView; filas?: Fila[]; activa?: string }) {
+function Tabla({ inicial = EMPTY_VIEW, filas = FILAS, columnas = COLUMNAS, activa }: { inicial?: TableView; filas?: Fila[]; columnas?: DataColumn<Fila>[]; activa?: string }) {
   const [view, setView] = useState(inicial)
   const [elegidas, setElegidas] = useState<Set<string>>(new Set())
-  const model = useDataTable({ rows: filas, columns: COLUMNAS, getRowId: r => r.id, view, onViewChange: setView, pageSize: 20 })
+  const model = useDataTable({ rows: filas, columns: columnas, getRowId: r => r.id, view, onViewChange: setView, pageSize: 20 })
   return (<>
     <DataTable model={model} label="Conductores" empty="Nadie coincide" pageSizes={[20, 50, 100]}
       isRowActive={r => r.id === activa}
@@ -58,6 +58,31 @@ describe('DataTable', () => {
     expect(screen.getByText('25 resultados')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Página siguiente' }))
     expect(screen.getAllByRole('row')).toHaveLength(1 + 5)
+  })
+
+  it('la página elegida sobrevive a que lleguen las filas de nuevo (un guardado que refresca)', async () => {
+    const { rerender } = render(<Tabla />)
+    fireEvent.click(screen.getByRole('button', { name: 'Página siguiente' }))
+    rerender(<Tabla filas={[...FILAS]} />)
+    await act(async () => {})
+    expect(screen.getByText('2 de 2')).toBeInTheDocument()
+    expect(screen.getAllByRole('row')).toHaveLength(1 + 5)
+  })
+
+  it('la página elegida sobrevive a que las columnas se rearmen (llega un catálogo)', async () => {
+    const { rerender } = render(<Tabla />)
+    fireEvent.click(screen.getByRole('button', { name: 'Página siguiente' }))
+    rerender(<Tabla columnas={[...COLUMNAS]} />)
+    await act(async () => {})
+    expect(screen.getByText('2 de 2')).toBeInTheDocument()
+  })
+
+  it('si la página elegida deja de existir, muestra la última que queda', async () => {
+    const { rerender } = render(<Tabla />)
+    fireEvent.click(screen.getByRole('button', { name: 'Página siguiente' }))
+    rerender(<Tabla filas={FILAS.slice(0, 15)} />)
+    await act(async () => {})
+    expect(screen.getAllByRole('row')).toHaveLength(1 + 15)
   })
 
   it('sin filas que pasen la vista, lo dice en vez de una tabla vacía', () => {

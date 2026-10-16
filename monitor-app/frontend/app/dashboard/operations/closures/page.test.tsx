@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ClosuresCenterPage from './page'
 import type { DailyClosureStatus, EquipmentClosureStatus } from '@/lib/types'
@@ -12,13 +12,17 @@ const EMPTY_PRE_CIERRE = {
   },
 }
 
-const push = vi.fn()
-const replace = vi.fn()
-let consulta = 'date=2026-08-04'
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push, replace }),
-  useSearchParams: () => new URLSearchParams(consulta),
+// La vista vive en la URL (spec §4.2): una URL en memoria que se vuelve a dibujar.
+vi.mock('next/navigation', async () => (await import('@/lib/testing/inMemoryNavigation')).nextNavigation)
+vi.mock('@/lib/api/tablePreferences', () => ({
+  tablePreferencesApi: { get: vi.fn().mockResolvedValue(null), save: vi.fn(), reset: vi.fn() },
 }))
+import { memoryUrl } from '@/lib/testing/inMemoryNavigation'
+const RUTA = '/dashboard/operations/closures'
+const abrirEn = (consulta: string) => memoryUrl.reset(`${RUTA}?${consulta}`)
+/** Las pestañas del Cierre son las del kit (`Tabs`): botones con aria-pressed en un grupo. */
+const pestana = (nombre: string | RegExp) =>
+  within(screen.getByRole('group', { name: 'Secciones del cierre' })).getByRole('button', { name: nombre })
 
 vi.mock('@/lib/supabase/client', () => ({
   createClient: () => ({
@@ -99,6 +103,12 @@ const CERRADO: DailyClosureStatus = {
   },
 }
 
+const VIAJES_VACIOS = {
+  grupos: { hoy: [], rezago: [], oferta_sin_declarar: [], abandonado: [], en_curso: [], pendiente_cierre_tms: [],
+            con_motivo: [], incomplete_assignment: [] },
+  bloquean: 0,
+}
+
 beforeEach(async () => {
   const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
   const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
@@ -109,8 +119,9 @@ beforeEach(async () => {
   vi.mocked(closuresApi.reabrir).mockReset()
   vi.mocked(isCierrePendienteError).mockReset().mockReturnValue(false)
   permisos.dados = new Set(['closures.declare', 'closures.sign'])
-  push.mockReset(); replace.mockReset()
-  consulta = 'date=2026-08-04'
+  const { tripsApi } = await import('@/lib/api/trips')
+  vi.mocked(tripsApi.cierreViajes).mockReset().mockResolvedValue(VIAJES_VACIOS)
+  abrirEn('date=2026-08-04')
 })
 
 describe('ClosuresCenterPage', () => {
@@ -122,13 +133,13 @@ describe('ClosuresCenterPage', () => {
       ...EMPTY_STATUS, closed: true, cierre: { total_trips_al_firmar: 3, ajustes: [ajuste, { ...ajuste, trip_id: 'b' }] },
     })
     renderPage()
-    expect(await screen.findByRole('button', { name: /2 ajustes posteriores al cierre/i })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^2 ajustes posteriores al cierre/i })).toBeInTheDocument()
     // El número dice qué cuenta: "Viajes 2" a secas no lo dice para un lector de pantalla.
-    expect(screen.getByRole('tab', { name: /viajes.*2 ajustes posteriores/i })).toBeInTheDocument()
+    expect(pestana(/viajes.*2 ajustes posteriores/i)).toBeInTheDocument()
     expect(screen.queryByText(/después de la firma/i)).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: /2 ajustes posteriores al cierre/i }))
-    expect(screen.getByRole('tab', { name: /viajes/i })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByRole('button', { name: /^2 ajustes posteriores al cierre/i }))
+    expect(pestana(/viajes/i)).toHaveAttribute('aria-pressed', 'true')
     expect(await screen.findByText(/después de la firma/i)).toBeInTheDocument()
   })
 
@@ -144,7 +155,7 @@ describe('ClosuresCenterPage', () => {
       ...EMPTY_STATUS, closed: true, cierre: { total_trips_al_firmar: 3, ajustes: [ajuste] },
     })
     renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: /1 ajuste posterior al cierre/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /^1 ajuste posterior al cierre/i }))
     await waitFor(() => expect(scroll).toHaveBeenCalled())
   })
 
@@ -157,11 +168,11 @@ describe('ClosuresCenterPage', () => {
       ...EMPTY_STATUS, cierre: { total_trips_al_firmar: null, ajustes: [ajuste] },
     })
     renderPage()
-    fireEvent.click(await screen.findByRole('tab', { name: 'Viajes' }))
+    fireEvent.click(await Promise.resolve(pestana(/^Viajes/)))
     await waitFor(() => expect(dailyClosuresApi.get).toHaveBeenCalled())
     // Si la sección apareciera, sería con los datos ya llegados: se espera un poco.
     await expect(screen.findByText(/después de la firma/i, {}, { timeout: 600 })).rejects.toThrow()
-    expect(screen.getByRole('tab', { name: 'Viajes' })).toBeInTheDocument()
+    expect(pestana(/^Viajes/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /ajustes posteriores/i })).toBeNull()
   })
 
@@ -180,27 +191,27 @@ describe('ClosuresCenterPage', () => {
 
   it('muestra las 4 tabs, con "Flota del día" activa por defecto', () => {
     renderPage()
-    const tabs = screen.getAllByRole('tab')
-    expect(tabs.map(t => t.textContent)).toEqual(['Flota del día', 'Viajes', 'Pendientes', 'Reporte'])
-    expect(screen.getByRole('tab', { name: 'Flota del día' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('tab', { name: 'Viajes' })).toHaveAttribute('aria-selected', 'false')
-    expect(screen.getByRole('tab', { name: 'Pendientes' })).toHaveAttribute('aria-selected', 'false')
+    const tabs = within(screen.getByRole('group', { name: 'Secciones del cierre' })).getAllByRole('button')
+    expect(tabs.map(t => t.textContent?.replace(/\d+$/, ''))).toEqual(['Flota del día', 'Viajes', 'Pendientes', 'Reporte'])
+    expect(pestana('Flota del día')).toHaveAttribute('aria-pressed', 'true')
+    expect(pestana(/^Viajes/)).toHaveAttribute('aria-pressed', 'false')
+    expect(pestana(/^Pendientes/)).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('clickear una tab la activa — solo un lienzo, sin scroll por anclas', () => {
     renderPage()
-    expect(screen.getByRole('tab', { name: 'Pendientes' })).toHaveAttribute('aria-selected', 'false')
+    expect(pestana(/^Pendientes/)).toHaveAttribute('aria-pressed', 'false')
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Pendientes' }))
+    fireEvent.click(pestana(/^Pendientes/))
 
-    expect(screen.getByRole('tab', { name: 'Pendientes' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('tab', { name: 'Flota del día' })).toHaveAttribute('aria-selected', 'false')
+    expect(pestana(/^Pendientes/)).toHaveAttribute('aria-pressed', 'true')
+    expect(pestana('Flota del día')).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('la pestaña activa queda en la URL, para volver a ella desde el detalle de un viaje', () => {
     renderPage()
-    fireEvent.click(screen.getByRole('tab', { name: 'Viajes' }))
-    expect(replace).toHaveBeenCalledWith('/dashboard/operations/closures?date=2026-08-04&tab=trips')
+    fireEvent.click(pestana(/^Viajes/))
+    expect(memoryUrl.current()).toBe(`${RUTA}?date=2026-08-04&tab=trips`)
   })
 
   it('mientras no se sabe si el día está firmado, Viajes no deja declarar', async () => {
@@ -215,7 +226,7 @@ describe('ClosuresCenterPage', () => {
         incomplete_assignment: [] },
       bloquean: 1,
     })
-    consulta = 'date=2026-08-04&tab=trips'
+    abrirEn('date=2026-08-04&tab=trips')
     renderPage()
     expect(await screen.findByText('2032999')).toBeInTheDocument()
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
@@ -223,28 +234,28 @@ describe('ClosuresCenterPage', () => {
   })
 
   it('un enlace viejo en español abre donde decía y se reescribe en inglés', async () => {
-    consulta = 'fecha=2026-08-04&tab=reporte'
+    abrirEn('fecha=2026-08-04&tab=reporte')
     renderPage()
-    expect(screen.getByRole('tab', { name: 'Reporte' })).toHaveAttribute('aria-selected', 'true')
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard/operations/closures?date=2026-08-04&tab=report'))
+    expect(pestana('Reporte')).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => expect(memoryUrl.current()).toBe(`${RUTA}?date=2026-08-04&tab=report`))
   })
 
   it('abre en la pestaña que dice la URL', () => {
-    consulta = 'date=2026-08-04&tab=report'
+    abrirEn('date=2026-08-04&tab=report')
     renderPage()
-    expect(screen.getByRole('tab', { name: 'Reporte' })).toHaveAttribute('aria-selected', 'true')
+    expect(pestana('Reporte')).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('una pestaña que no existe en la URL abre la de siempre', () => {
-    consulta = 'date=2026-08-04&tab=inventada'
+    abrirEn('date=2026-08-04&tab=inventada')
     renderPage()
-    expect(screen.getByRole('tab', { name: 'Flota del día' })).toHaveAttribute('aria-selected', 'true')
+    expect(pestana('Flota del día')).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('lee la fecha del query param y se la pasa a FlotaDelDiaSection', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     renderPage()
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Centro de Cierre del Día')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Cierre del día')
     expect(screen.getByLabelText('Fecha del cierre')).toHaveValue('2026-08-04')
 
     await waitFor(() => expect(dailyClosuresApi.get).toHaveBeenCalledWith('2026-08-04'))
@@ -263,7 +274,7 @@ describe('ClosuresCenterPage', () => {
     renderPage()
     expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Reporte' }))
+    fireEvent.click(pestana('Reporte'))
 
     expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeInTheDocument()
   })
@@ -334,7 +345,7 @@ describe('ClosuresCenterPage', () => {
 
     fireEvent.change(screen.getByLabelText('Fecha del cierre'), { target: { value: '2026-08-05' } })
 
-    expect(replace).toHaveBeenCalledWith(expect.stringContaining('date=2026-08-05'))
+    expect(memoryUrl.params().get('date')).toBe('2026-08-05')
   })
 
   // Firmar el dia es un acto con nombre y hora. El boton solo miraba `closing`,
@@ -403,16 +414,17 @@ describe('ClosuresCenterPage', () => {
   // devuelve ese recorte, la barra se rompe otra vez y en silencio.
   it('el lienzo del cierre no recorta a sus hijos, para que un sticky pueda pegarse', async () => {
     const { container } = renderPage()
-    await waitFor(() => expect(screen.getByText('Centro de Cierre del Día')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Cierre del día'))
 
-    // El lienzo se identifica por ser el PADRE de la barra de pestanas, no por
-    // sus clases: `.rounded-2xl.shadow-sm` agarraba otra card anterior del DOM
-    // y el test pasaba con el bug puesto. Verificado por mutacion.
-    const tablist = container.querySelector('[role="tablist"]')!
-    const lienzo = tablist.parentElement!
+    // El lienzo se identifica por ser el abuelo de las pestañas, no por sus
+    // clases: `.rounded-2xl.shadow-sm` agarraba otra card anterior del DOM y el
+    // test pasaba con el bug puesto. Verificado por mutacion.
+    const barra = screen.getByRole('group', { name: 'Secciones del cierre' }).parentElement!
+    const lienzo = barra.parentElement!
+    expect(container.contains(lienzo)).toBe(true)
     expect(lienzo.className).toContain('rounded-2xl')
     expect(lienzo.className).not.toContain('overflow-hidden')
     // Las esquinas las redondean ahora sus dos hijos con fondo propio.
-    expect(tablist.className).toContain('rounded-t-2xl')
+    expect(barra.className).toContain('rounded-t-2xl')
   })
 })

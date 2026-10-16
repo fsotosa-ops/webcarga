@@ -1,6 +1,6 @@
-import type { OperationTypeKey } from '@/lib/types'
+import type { ClosureScope } from '@/lib/types'
 
-export type TipoDeOperacion = { clave: OperationTypeKey; etiqueta: string; corta: string }
+export type TipoDeOperacion = { clave: ClosureScope; etiqueta: string; corta: string }
 
 /** Los dos cortes del reporte, en el orden del selector. `corta` es para los
  *  nombres de hoja del Excel, que no pueden pasar de 31 caracteres. */

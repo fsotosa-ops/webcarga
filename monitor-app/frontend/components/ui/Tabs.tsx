@@ -5,6 +5,8 @@ export type TabOption<T extends string> = {
   count?: number | null
   /** El conteo en rojo: lo que falta o está vencido. */
   urgent?: boolean
+  /** Qué cuenta el número, para el lector de pantalla ("Viajes, 2 ajustes posteriores"). */
+  ariaLabel?: string
 }
 
 /** Las pestañas de una ficha: una sección visible a la vez, cero scroll entre
@@ -27,6 +29,7 @@ export function Tabs<T extends string>({ label, tabs, value, onChange }: {
             type="button"
             onClick={() => onChange(t.id)}
             aria-pressed={active}
+            aria-label={t.ariaLabel}
             className={`shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
               active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}

@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { FlotaDelDiaSection } from './FlotaDelDiaSection'
-import type {
-  CategoriaDeLinea, DailyClosureStatus, EquipmentClosureStatus, EquipmentDayStatusRow, UnassignedReasonMeta,
-} from '@/lib/types'
+import type { DailyClosureStatus, EquipmentClosureStatus, EquipmentDayStatusRow } from '@/lib/types'
+import {
+  DRIVERS_STATUS, EQUIPMENT_STATUS, LINE, REASONS, driverRow, equipmentRow,
+} from '@/lib/cierre/dayFleet.fixtures'
 
 vi.mock('@/lib/api/dailyClosures', () => ({
   dailyClosuresApi: { get: vi.fn(), setReason: vi.fn(), setReasonBatch: vi.fn() },
@@ -18,6 +19,13 @@ vi.mock('@/lib/api/locations', () => ({
   locationsApi: { list: vi.fn() },
 }))
 
+// La vista vive en la URL (spec §4.2): una URL en memoria que se vuelve a dibujar.
+vi.mock('next/navigation', async () => (await import('@/lib/testing/inMemoryNavigation')).nextNavigation)
+vi.mock('@/lib/api/tablePreferences', () => ({
+  tablePreferencesApi: { get: vi.fn().mockResolvedValue(null), save: vi.fn(), reset: vi.fn() },
+}))
+import { memoryUrl } from '@/lib/testing/inMemoryNavigation'
+
 // La forma real de locationsApi.list (LocationListResponse en lib/api/locations.ts),
 // copiada y no inferida del nombre.
 const CATALOGO_DE_CDS = ['CD EL PEÑON', 'CD LO AGUIRRE', 'CD QUILICURA']
@@ -28,121 +36,25 @@ function respuestaDeCds(nombres = CATALOGO_DE_CDS) {
   }
 }
 
-const REASONS: UnassignedReasonMeta[] = [
-  { id: 'pana', label: 'Pana', group: 'no_trabajando' },
-  { id: 'esperando', label: 'Esperando carga', group: 'trabajando_sin_asignacion' },
-]
-
-/** La categoría la calcula el backend; en las filas de ejemplo se deriva con
- *  la misma regla, y un test puede fijarla a mano. */
-function categoria(fila: { status: string; unassigned_reason_id: string | null }): CategoriaDeLinea {
-  if (fila.status === 'ASSIGNED') return 'ASIGNADO'
-  if (fila.status === 'MISMATCH') return 'POR_REGULARIZAR'
-  if (!fila.unassigned_reason_id) return 'SIN_RESOLVER'
-  return fila.unassigned_reason_id === 'esperando' ? 'TRABAJANDO_SIN_ASIGNACION' : 'NO_TRABAJANDO'
-}
-
-function driverRow(overrides: Partial<DailyClosureStatus['drivers'][number]> = {}) {
-  const base = {
-    driver_id: 'd1', full_name: 'Juan Pérez', tax_id: '11111111-1', carrier_id: 'c1', carrier_name: 'Transportes Sur',
-    status: 'UNASSIGNED' as const, unassigned_reason_id: null, unassigned_reason_label: null,
-    resolved_by: null, resolved_at: null, client_names: [], driver_pending_docs_critical: null,
-    suggested_reason_id: null, trip_id: null, today_trip_id: null, today_trip_code: null, today_trip_origin: null, comentario: null, last_known_tractor_plate: null, last_known_operation_type: null,
-    home_cd_id: null, home_cd_name: null,
-    valid_until: null,
-    ...overrides,
-  }
-  return { ...base, category: overrides.category ?? categoria(base) }
-}
-
-function equipmentRow(overrides: Partial<EquipmentDayStatusRow> = {}): EquipmentDayStatusRow {
-  const base: EquipmentDayStatusRow = {
-    asset_id: 'a1', tractor_plate: 'XYZ111', carrier_id: 'c2', carrier_name: 'RPS Logística',
-    fleet_service_type_label: null,  
-    status: 'UNASSIGNED', requires_motivo: false, unassigned_reason_id: null, unassigned_reason_label: null,
-    resolved_by: null, resolved_at: null, driver_id: null, driver_name: null,
-    trip_id: null, trip_driver_id: null, trip_driver_name: null,
-    today_trip_code: null, today_trip_origin: null, today_trip_client: null, comentario: null,
-    home_cd_id: null, home_cd_name: null,
-    valid_until: null, category: 'SIN_RESOLVER',
-    ...overrides,
-  }
-  return { ...base, category: overrides.category ?? categoria(base) }
-}
-
-const DRIVERS_STATUS: DailyClosureStatus = {
-  business_date: '2026-08-04', closed: false, closure: null,
-  total_drivers: 4, assigned_count: 1, unassigned_count: 2, mismatch_count: 1, pending_count: 2,
-  pre_cierre: {
-    auto_resolved: [],
-    escalations: {
-      PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
-      EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [],
-    },
-  },
-  drivers: [
-    driverRow({ driver_id: 'd1', full_name: 'Ana Soto', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', last_known_tractor_plate: 'ABCD12', last_known_operation_type: 'Tractoreo' }),
-    driverRow({ driver_id: 'd2', full_name: 'Luis Rojas', carrier_name: 'Transportes Norte', status: 'MISMATCH', trip_id: 't1' }),
-    driverRow({ driver_id: 'd3', full_name: 'Juan Pérez', carrier_name: 'Transportes Sur', status: 'ASSIGNED', today_trip_id: 't3', today_trip_code: '2045490', today_trip_origin: 'CD LO AGUIRRE' }),
-    driverRow({ driver_id: 'd4', full_name: 'Carla Díaz', carrier_name: 'Transportes Sur', status: 'UNASSIGNED', unassigned_reason_id: 'pana', unassigned_reason_label: 'Pana' }),
-  ],
-}
-
-const EQUIPMENT_STATUS: EquipmentClosureStatus = {
-  business_date: '2026-08-04', closed: false, closure: null,
-  // Reproduce en chico lo que el 03-09 traia en grande: tractos ASSIGNED con
-  // conductor y tractos UNASSIGNED sin motivo. Los 43 de ese dia llegaban aca
-  // y no los mostraba ninguna pestana.
-  tractoreo: {
-    summary: { total: 3, assigned: 2, unassigned: 1, utilization_pct: 66.7 },
-    pending_count: 1,
-    equipment: [
-      equipmentRow({
-        asset_id: 'tr1', tractor_plate: 'FCCP42', carrier_name: 'Dankar Logistic Spa',
-        status: 'ASSIGNED', requires_motivo: true, trip_id: 'tt1',
-        driver_id: 'h1', driver_name: 'Brian Celis (habitual)',
-        trip_driver_id: 'v1', trip_driver_name: 'Celis Huerta Brian',
-      }),
-      equipmentRow({
-        asset_id: 'tr2', tractor_plate: 'HKXW55', carrier_name: 'Comercializadora De Los Rios Ltda',
-        status: 'ASSIGNED', requires_motivo: true, trip_id: 'tt2',
-      }),
-      equipmentRow({
-        asset_id: 'tr3', tractor_plate: 'DTBY52', carrier_id: 'cf', carrier_name: 'Transportes La Fortaleza Spa',
-        status: 'UNASSIGNED', requires_motivo: true,
-      }),
-    ],
-  },
-  equipos_completos: {
-    summary: { total: 2, assigned: 1, unassigned: 1, utilization_pct: 50.0 },
-    by_carrier: [],
-    equipment: [
-      equipmentRow({
-        asset_id: 'a1', tractor_plate: 'XYZ111', carrier_name: 'RPS Logística', status: 'ASSIGNED',
-        driver_id: 'e1', driver_name: 'Pedro Pérez', trip_id: 't2',
-      }),
-      equipmentRow({
-        asset_id: 'a2', tractor_plate: 'XYZ222', carrier_name: 'Equipos Sur', status: 'UNASSIGNED',
-        driver_id: null, driver_name: null,
-      }),
-    ],
-  },
-}
-
-function renderSection(props: Partial<Parameters<typeof FlotaDelDiaSection>[0]> = {}) {
+type SectionProps = Parameters<typeof FlotaDelDiaSection>[0]
+function renderSection(props: Partial<SectionProps> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  const ui = (p: Partial<SectionProps>) => (
     <QueryClientProvider client={client}>
       <FlotaDelDiaSection
-        fecha="2026-08-04" unassignedReasons={REASONS}
+        fecha="2026-08-04" alcance="tractoreo" unassignedReasons={REASONS}
         onSelectTrip={vi.fn()} onCreateManualTrip={vi.fn()}
-        {...props}
+        {...p}
       />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
+  const utils = render(ui(props))
+  // El alcance lo elige la página (D1): cambiarlo es volver a dibujar con otra prop.
+  return { ...utils, setAlcance: (alcance: SectionProps['alcance']) => utils.rerender(ui({ ...props, alcance })) }
 }
 
 beforeEach(async () => {
+  memoryUrl.reset('/dashboard/operations/closures?date=2026-08-04')
   const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
   const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
   const { locationsApi } = await import('@/lib/api/locations')
@@ -171,17 +83,17 @@ describe('FlotaDelDiaSection', () => {
   it('la columna 2 siempre se llama "Conductor" y la 4 "Patente", en los dos ejes', async () => {
     // Desde la fusión (HU-D1, 06/10) la unidad de la fila es la patente en las
     // dos vistas; un conductor sin tracto dice que no lo tiene.
-    renderSection()
+    const { setAlcance } = renderSection()
     await screen.findByText('Ana Soto')
-    expect(screen.getByRole('columnheader', { name: 'Conductor' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Patente' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /^Conductor/ })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /^Patente/ })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /Equipo Completo/ }))
+    setAlcance('equipo_completo')
 
-    expect(await screen.findByRole('columnheader', { name: 'Conductor' })).toBeInTheDocument()
+    expect(await screen.findByRole('columnheader', { name: /^Conductor/ })).toBeInTheDocument()
     // En el eje tractos la unidad de la fila ES la patente, no un "equipo
     // habitual" del conductor: el encabezado dice lo que la columna contiene.
-    expect(screen.getByRole('columnheader', { name: 'Patente' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /^Patente/ })).toBeInTheDocument()
   })
 
   it('por defecto muestra Conductores con el roster completo', async () => {
@@ -200,7 +112,7 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(screen.getByText('No asignados'))
+    fireEvent.click(screen.getByRole('button', { name: /^No asignados/ }))
 
     expect(screen.getByText('Ana Soto')).toBeInTheDocument()
     expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
@@ -219,12 +131,12 @@ describe('FlotaDelDiaSection', () => {
   })
 
   it('el toggle Equipo Completo muestra el nombre del conductor habitual (o "Sin conductor habitual")', async () => {
-    renderSection()
+    const { setAlcance } = renderSection()
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(screen.getByRole('button', { name: /Equipo Completo/ }))
+    setAlcance('equipo_completo')
     await screen.findByText('Sin conductor habitual')
-    fireEvent.click(screen.getByText('Total'))
+    fireEvent.click(screen.getByRole('button', { name: /^Todos/ }))
 
     expect(await screen.findByText('Pedro Pérez')).toBeInTheDocument()
     expect(screen.getByText('Sin conductor habitual')).toBeInTheDocument()
@@ -235,10 +147,10 @@ describe('FlotaDelDiaSection', () => {
 
   it('en Equipo Completo, "Asignado" con trip_id muestra "Ver viaje" y llama onSelectTrip', async () => {
     const onSelectTrip = vi.fn()
-    renderSection({ onSelectTrip })
-    fireEvent.click(await screen.findByRole('button', { name: /Equipo Completo/ }))
+    const { setAlcance } = renderSection({ onSelectTrip })
+    setAlcance('equipo_completo')
     await screen.findByText('Sin conductor habitual')
-    fireEvent.click(screen.getByText('Total'))
+    fireEvent.click(screen.getByRole('button', { name: /^Todos/ }))
     await screen.findByText('Pedro Pérez')
 
     fireEvent.click(screen.getByRole('button', { name: 'Ver viaje' }))
@@ -250,8 +162,8 @@ describe('FlotaDelDiaSection', () => {
     const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
   const { locationsApi } = await import('@/lib/api/locations')
   vi.mocked(locationsApi.list).mockReset().mockResolvedValue(respuestaDeCds())
-    renderSection()
-    fireEvent.click(await screen.findByRole('button', { name: /Equipo Completo/ }))
+    const { setAlcance } = renderSection()
+    setAlcance('equipo_completo')
     await screen.findByText('Sin conductor habitual')
 
     const row = screen.getByText('Sin conductor habitual').closest('tr')!
@@ -263,8 +175,8 @@ describe('FlotaDelDiaSection', () => {
   })
 
   it('en Equipo Completo, "Crear viaje manual" solo aparece si se conoce el conductor habitual', async () => {
-    renderSection()
-    fireEvent.click(await screen.findByRole('button', { name: /Equipo Completo/ }))
+    const { setAlcance } = renderSection()
+    setAlcance('equipo_completo')
     await screen.findByText('Sin conductor habitual')
 
     // a2 no tiene driver_id — no debe ofrecer "Crear viaje manual"
@@ -276,7 +188,7 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(screen.getByText('Total'))
+    fireEvent.click(screen.getByRole('button', { name: /^Todos/ }))
 
     expect(screen.getByText('Juan Pérez')).toBeInTheDocument()
     expect(screen.getByText('Carla Díaz')).toBeInTheDocument()
@@ -285,23 +197,23 @@ describe('FlotaDelDiaSection', () => {
   it('el buscador filtra por conductor, empresa o tracto en Conductores', async () => {
     renderSection()
     await screen.findByText('Ana Soto')
-    fireEvent.click(screen.getByText('Total'))
+    fireEvent.click(screen.getByRole('button', { name: /^Todos/ }))
     expect(screen.getByText('Juan Pérez')).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Buscar'), { target: { value: 'Norte' } })
 
+    await waitFor(() => expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument())
     expect(screen.getByText('Luis Rojas')).toBeInTheDocument()
-    expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
     expect(screen.queryByText('Ana Soto')).not.toBeInTheDocument()
   })
 
   it('el checkbox de selección masiva aparece en filas UNASSIGNED, en todos los ejes', async () => {
-    renderSection()
+    const { setAlcance } = renderSection()
     await screen.findByText('Ana Soto')
     expect(screen.getByRole('checkbox', { name: /Ana Soto/ })).toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: /Luis Rojas/ })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /Equipo Completo/ }))
+    setAlcance('equipo_completo')
     await screen.findByText('Sin conductor habitual')
 
     expect(screen.getByRole('checkbox', { name: /Sin conductor habitual/ })).toBeInTheDocument()
@@ -328,8 +240,8 @@ describe('FlotaDelDiaSection', () => {
     const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
   const { locationsApi } = await import('@/lib/api/locations')
   vi.mocked(locationsApi.list).mockReset().mockResolvedValue(respuestaDeCds())
-    renderSection()
-    fireEvent.click(await screen.findByRole('button', { name: /Equipo Completo/ }))
+    const { setAlcance } = renderSection()
+    setAlcance('equipo_completo')
     await screen.findByText('Sin conductor habitual')
 
     fireEvent.click(screen.getByRole('checkbox', { name: /Sin conductor habitual/ }))
@@ -370,7 +282,7 @@ describe('FlotaDelDiaSection', () => {
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
       drivers: [
-        driverRow({ driver_id: 'd2', full_name: 'Luis Rojas', carrier_id: 'c9', status: 'MISMATCH', trip_id: null }),
+        driverRow({ ...LINE.toRegularize, driver_id: 'd2', full_name: 'Luis Rojas', carrier_id: 'c9', trip_id: null }),
       ],
     })
     renderSection()
@@ -384,7 +296,7 @@ describe('FlotaDelDiaSection', () => {
     await soloConductores()
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     const many = Array.from({ length: 25 }, (_, i) =>
-      driverRow({ driver_id: `p${i}`, full_name: `Conductor ${String(i).padStart(2, '0')}`, status: 'UNASSIGNED' }),
+      driverRow({ ...LINE.withoutReason, driver_id: `p${i}`, full_name: `Conductor ${String(i).padStart(2, '0')}` }),
     )
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS, drivers: many, pending_count: 25,
@@ -392,11 +304,11 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Conductor 00')
 
-    expect(screen.getByText('Página 1 de 2')).toBeInTheDocument()
+    expect(screen.getByText('1 de 2')).toBeInTheDocument()
     expect(screen.getByText('Conductor 19')).toBeInTheDocument()
     expect(screen.queryByText('Conductor 20')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /Siguiente/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Página siguiente' }))
 
     expect(await screen.findByText('Conductor 24')).toBeInTheDocument()
     expect(screen.queryByText('Conductor 00')).not.toBeInTheDocument()
@@ -406,7 +318,7 @@ describe('FlotaDelDiaSection', () => {
     // Con 10 fijas y 81 tractos, revisar el día eran nueve saltos de página.
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     const many = Array.from({ length: 25 }, (_, i) =>
-      driverRow({ driver_id: `p${i}`, full_name: `Conductor ${String(i).padStart(2, '0')}`, status: 'UNASSIGNED' }),
+      driverRow({ ...LINE.withoutReason, driver_id: `p${i}`, full_name: `Conductor ${String(i).padStart(2, '0')}` }),
     )
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS, drivers: many, pending_count: 25,
@@ -418,7 +330,7 @@ describe('FlotaDelDiaSection', () => {
     fireEvent.change(screen.getByLabelText('Filas por página'), { target: { value: '50' } })
 
     expect(await screen.findByText('Conductor 24')).toBeInTheDocument()
-    expect(screen.queryByText(/Página 1 de/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Página siguiente' })).not.toBeInTheDocument()
   })
 
   it('pagina Equipo Completo de a 20', async () => {
@@ -426,20 +338,20 @@ describe('FlotaDelDiaSection', () => {
   const { locationsApi } = await import('@/lib/api/locations')
   vi.mocked(locationsApi.list).mockReset().mockResolvedValue(respuestaDeCds())
     const many = Array.from({ length: 25 }, (_, i) =>
-      equipmentRow({ asset_id: `e${i}`, tractor_plate: `PLT${String(i).padStart(2, '0')}`, status: 'UNASSIGNED' }),
+      equipmentRow({ ...LINE.withoutReason, asset_id: `e${i}`, tractor_plate: `PLT${String(i).padStart(2, '0')}` }),
     )
     vi.mocked(equipmentClosuresApi.get).mockResolvedValue({
       ...EQUIPMENT_STATUS,
       equipos_completos: { ...EQUIPMENT_STATUS.equipos_completos, equipment: many },
     })
-    renderSection()
-    fireEvent.click(await screen.findByRole('button', { name: /Equipo Completo/ }))
+    const { setAlcance } = renderSection()
+    setAlcance('equipo_completo')
     await screen.findByText('PLT00')
 
-    expect(screen.getByText('Página 1 de 2')).toBeInTheDocument()
+    expect(screen.getByText('1 de 2')).toBeInTheDocument()
     expect(screen.queryByText('PLT24')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /Siguiente/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Página siguiente' }))
 
     expect(await screen.findByText('PLT24')).toBeInTheDocument()
   })
@@ -458,10 +370,11 @@ describe('FlotaDelDiaSection', () => {
     expect(screen.getByText('HKXW55')).toBeInTheDocument()
     expect(screen.getByText('DTBY52')).toBeInTheDocument()
     // Ningún conductor desaparece: los que no son habituales de un tracto van
-    // en su grupo, después de los tractos.
-    const grupo = screen.getByText('Otros conductores del día')
-    expect(grupo.compareDocumentPosition(screen.getByText('Ana Soto')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(screen.getByText('DTBY52').compareDocumentPosition(grupo) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // después de los tractos, y su grupo es un valor del filtro Grupo.
+    expect(screen.getByText('DTBY52').compareDocumentPosition(screen.getByText('Ana Soto')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar filtro' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Grupo' }))
+    expect(screen.getByRole('checkbox', { name: /^Otro conductor del día, / })).toBeInTheDocument()
   })
 
   it('un tracto con motivo heredado del conductor dice de quién lo heredó (punto 5, 01/10)', async () => {
@@ -470,19 +383,14 @@ describe('FlotaDelDiaSection', () => {
       ...EQUIPMENT_STATUS,
       tractoreo: {
         ...EQUIPMENT_STATUS.tractoreo,
-        equipment: [equipmentRow({
-          asset_id: 'tr9', tractor_plate: 'BDLC92', status: 'UNASSIGNED', requires_motivo: true,
+        equipment: [equipmentRow({ ...LINE.notWorking,
+          asset_id: 'tr9', tractor_plate: 'BDLC92', requires_motivo: true,
           driver_id: 'h9', driver_name: 'Villegas Ruiz Rafael David',
-          unassigned_reason_id: 'pana', unassigned_reason_label: 'Pana',
-          reason_from_driver_name: 'Villegas Ruiz Rafael David',
-        })],
+          reason_from_driver_name: 'Villegas Ruiz Rafael David' })],
       },
     })
     renderSection()
     await screen.findByText('Ana Soto')
-
-    fireEvent.click(screen.getByRole('button', { name: /Tractoreo · Tractos/ }))
-    fireEvent.click(await screen.findByText('Total'))
 
     const fila = (await screen.findByText('BDLC92')).closest('tr')!
     expect(within(fila).getByText('Heredado de Villegas Ruiz Rafael David')).toBeInTheDocument()
@@ -494,17 +402,12 @@ describe('FlotaDelDiaSection', () => {
       ...EQUIPMENT_STATUS,
       tractoreo: {
         ...EQUIPMENT_STATUS.tractoreo,
-        equipment: [equipmentRow({
-          asset_id: 'tr9', tractor_plate: 'BDLC92', status: 'UNASSIGNED', requires_motivo: true,
-          unassigned_reason_id: 'pana', unassigned_reason_label: 'Pana', reason_from_driver_name: null,
-        })],
+        equipment: [equipmentRow({ ...LINE.notWorking,
+          asset_id: 'tr9', tractor_plate: 'BDLC92', requires_motivo: true, reason_from_driver_name: null })],
       },
     })
     renderSection()
     await screen.findByText('Ana Soto')
-
-    fireEvent.click(screen.getByRole('button', { name: /Tractoreo · Tractos/ }))
-    fireEvent.click(await screen.findByText('Total'))
 
     const fila = (await screen.findByText('BDLC92')).closest('tr')!
     expect(within(fila).queryByText(/Heredado de/)).not.toBeInTheDocument()
@@ -514,9 +417,6 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(screen.getByRole('button', { name: /Tractoreo · Tractos/ }))
-    fireEvent.click(await screen.findByText('Total'))
-
     const fila = (await screen.findByText('FCCP42')).closest('tr')!
     expect(within(fila).getByText('Celis Huerta Brian')).toBeInTheDocument()
     expect(within(fila).queryByText('Brian Celis (habitual)')).not.toBeInTheDocument()
@@ -525,9 +425,6 @@ describe('FlotaDelDiaSection', () => {
   it('un tracto asignado sin conductor por ninguna vía lo dice, en vez de fingir que el viaje va vacío', async () => {
     renderSection()
     await screen.findByText('Ana Soto')
-
-    fireEvent.click(screen.getByRole('button', { name: /Tractoreo · Tractos/ }))
-    fireEvent.click(await screen.findByText('Total'))
 
     const fila = (await screen.findByText('HKXW55')).closest('tr')!
     expect(within(fila).getByText('El TMS no reportó conductor')).toBeInTheDocument()
@@ -543,16 +440,15 @@ describe('FlotaDelDiaSection', () => {
     const { equipmentClosuresApi } = await import('@/lib/api/equipmentClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
-      drivers: [driverRow({ driver_id: 'h7', full_name: 'Rafael Villegas', status: 'UNASSIGNED' })],
+      drivers: [driverRow({ ...LINE.withoutReason, driver_id: 'h7', full_name: 'Rafael Villegas' })],
     })
     vi.mocked(equipmentClosuresApi.get).mockResolvedValue({
       ...EQUIPMENT_STATUS,
       tractoreo: {
         ...EQUIPMENT_STATUS.tractoreo,
-        equipment: [equipmentRow({
-          asset_id: 'tr7', tractor_plate: 'BDLC92', status: 'UNASSIGNED', requires_motivo: true,
-          driver_id: 'h7', driver_name: 'Rafael Villegas', ...extraTracto,
-        })],
+        equipment: [equipmentRow({ ...LINE.withoutReason,
+          asset_id: 'tr7', tractor_plate: 'BDLC92', requires_motivo: true,
+          driver_id: 'h7', driver_name: 'Rafael Villegas', ...extraTracto })],
       },
     })
   }
@@ -566,7 +462,6 @@ describe('FlotaDelDiaSection', () => {
     const fila = (await screen.findByText('BDLC92')).closest('tr')!
     expect(within(fila).getByText('Rafael Villegas')).toBeInTheDocument()
     expect(screen.getAllByText('Rafael Villegas')).toHaveLength(1)
-    expect(screen.queryByText('Otros conductores del día')).not.toBeInTheDocument()
 
     fireEvent.change(within(fila).getByRole('combobox', { name: 'Motivo de Rafael Villegas' }),
                      { target: { value: 'pana' } })
@@ -597,10 +492,9 @@ describe('FlotaDelDiaSection', () => {
     await conTractoYConductorSinCarga({ status: 'ASSIGNED', trip_id: 'tt7', trip_driver_name: 'Otro Conductor' })
     renderSection()
 
-    await screen.findByText('Otros conductores del día')
-    const filaConductor = screen.getByText('Rafael Villegas').closest('tr')!
+    const filaConductor = (await screen.findByText('Rafael Villegas')).closest('tr')!
     expect(within(filaConductor).getByText('BDLC92')).toBeInTheDocument()
-    expect(within(filaConductor).getByText('No asignado')).toBeInTheDocument()
+    expect(within(filaConductor).getByText('Sin motivo')).toBeInTheDocument()
   })
 
   it('quien salió del roster aparece arriba, en su grupo, y cuenta para la firma (0.4)', async () => {
@@ -609,38 +503,28 @@ describe('FlotaDelDiaSection', () => {
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
       drivers: [
-        driverRow({ driver_id: 'd1', full_name: 'Ana Soto', status: 'ASSIGNED', today_trip_id: 't1', in_roster: true }),
-        driverRow({ driver_id: 'd9', full_name: 'Pedro Fuera', status: 'UNASSIGNED', in_roster: false }),
+        driverRow({ ...LINE.assigned, driver_id: 'd1', full_name: 'Ana Soto', today_trip_id: 't1', in_roster: true }),
+        driverRow({ ...LINE.withoutReason, driver_id: 'd9', full_name: 'Pedro Fuera', in_roster: false }),
       ],
     })
     renderSection()
 
-    const titulo = await screen.findByText('Ya no están en el roster')
-    const filas = screen.getAllByRole('row')
-    const iGrupo = filas.findIndex(f => f.contains(titulo))
-    // El grupo va primero (antes de cualquier otra fila de datos) porque bloquea.
-    expect(iGrupo).toBe(1)
-    expect(within(filas[iGrupo + 1]).getByText('Pedro Fuera')).toBeInTheDocument()
-    // Se resuelve igual que siempre: con su motivo.
+    await screen.findByText('Pedro Fuera')
+    // Va primero (antes de cualquier otra fila de datos) porque bloquea.
+    expect(within(screen.getAllByRole('row')[1]).getByText('Pedro Fuera')).toBeInTheDocument()
+    // Se resuelve igual que siempre: con su motivo; y su grupo es un valor del filtro Grupo.
     expect(screen.getByRole('combobox', { name: 'Motivo de Pedro Fuera' })).toBeInTheDocument()
-    // Y la tarjeta cuenta lo mismo que la firma.
-    expect(screen.getByText('1 sin motivo — bloquean el cierre')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar filtro' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Grupo' }))
+    expect(screen.getByRole('checkbox', { name: 'Ya no está en el roster, 1' })).toBeInTheDocument()
   })
 
   it('sin la marca (backend anterior) no aparece el grupo', async () => {
     renderSection()
     await screen.findByText('Ana Soto')
-    expect(screen.queryByText('Ya no están en el roster')).not.toBeInTheDocument()
-  })
-
-  it('la tarjeta de Tractoreo cuenta lo que bloquea el cierre en tractos y conductores', async () => {
-    // DTBY52 (tracto sin motivo) y Ana Soto (conductor sin tracto, sin motivo).
-    renderSection()
-    await screen.findByText('Ana Soto')
-
-    expect(
-      screen.getByRole('button', { name: /2 sin motivo — bloquean el cierre/ }),
-    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar filtro' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Grupo' }))
+    expect(screen.queryByRole('checkbox', { name: /^Ya no está en el roster/ })).toBeNull()
   })
 
   it('el motivo de un tracto Tractoreo se escribe por equipmentClosuresApi, no por el de conductores', async () => {
@@ -650,8 +534,6 @@ describe('FlotaDelDiaSection', () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     renderSection()
     await screen.findByText('Ana Soto')
-
-    fireEvent.click(screen.getByRole('button', { name: /Tractoreo · Tractos/ }))
     const fila = (await screen.findByText('DTBY52')).closest('tr')!
     fireEvent.change(within(fila).getByRole('combobox'), { target: { value: 'pana' } })
 
@@ -666,7 +548,7 @@ describe('FlotaDelDiaSection', () => {
     const onSelectTrip = vi.fn()
     renderSection({ onSelectTrip })
     await screen.findByText('Ana Soto')
-    fireEvent.click(screen.getByText('Total'))
+    fireEvent.click(screen.getByRole('button', { name: /^Todos/ }))
 
     const fila = (await screen.findByText('Juan Pérez')).closest('tr')!
     // trip_id es null en esta fila (no hay mismatch) y aun asi hay link.
@@ -690,8 +572,8 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    const noAsignados = screen.getByText('No asignados').closest('button')!
-    const noTrabajando = screen.getByText('No trabajando').closest('button')!
+    const noAsignados = screen.getByRole('button', { name: /^No asignados/ }).closest('button')!
+    const noTrabajando = screen.getByRole('button', { name: /^No trabajando/ }).closest('button')!
     // Ana Soto y Carla Díaz están No asignadas; sólo Carla tiene motivo.
     expect(within(noAsignados).getByText('1')).toBeInTheDocument()
     expect(within(noTrabajando).getByText('1')).toBeInTheDocument()
@@ -701,7 +583,7 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(screen.getByText('No trabajando'))
+    fireEvent.click(screen.getByRole('button', { name: /^No trabajando/ }))
 
     expect(await screen.findByText('Carla Díaz')).toBeInTheDocument()
     expect(screen.queryByText('Ana Soto')).not.toBeInTheDocument()
@@ -713,7 +595,7 @@ describe('FlotaDelDiaSection', () => {
 
     expect(screen.getByRole('columnheader', { name: /Nº viaje/ })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /Local de origen/ })).toBeInTheDocument()
-    fireEvent.click(screen.getByText('Total'))
+    fireEvent.click(screen.getByRole('button', { name: /^Todos/ }))
     expect(await screen.findByText('2045490')).toBeInTheDocument()
     expect(screen.getByText('CD LO AGUIRRE')).toBeInTheDocument()
   })
@@ -722,34 +604,35 @@ describe('FlotaDelDiaSection', () => {
     await soloConductores()
     renderSection()
     await screen.findByText('Ana Soto')
-    fireEvent.click(screen.getByText('Total'))
+    fireEvent.click(screen.getByRole('button', { name: /^Todos/ }))
     await screen.findByText('Juan Pérez')
 
     const nombres = () => screen.getAllByRole('row').slice(1)
       .map(f => f.querySelectorAll('td')[1]?.textContent ?? '')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ordenar por Conductor' }))
+    const ordenar = () => within(screen.getByRole('columnheader', { name: /^Conductor/ })).getByRole('button', { name: 'Conductor' })
+    fireEvent.click(ordenar())
     expect(nombres()[0]).toBe('Ana Soto')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ordenar por Conductor' }))
+    fireEvent.click(ordenar())
     expect(nombres()[0]).toBe('Luis Rojas')
   })
 
   it('el filtro de una columna acepta varios valores a la vez', async () => {
     renderSection()
     await screen.findByText('Ana Soto')
-    fireEvent.click(screen.getByText('Total'))
+    fireEvent.click(screen.getByRole('button', { name: /^Todos/ }))
     await screen.findByText('Juan Pérez')
 
     fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Empresa' }))
-    fireEvent.click(await screen.findByLabelText('Transportes Norte'))
+    fireEvent.click(await screen.findByRole('checkbox', { name: /^Transportes Norte, / }))
 
     // Con un solo valor elegido, sólo queda quien pertenece a esa empresa.
     expect(screen.getByText('Luis Rojas')).toBeInTheDocument()
     expect(screen.queryByText('Ana Soto')).not.toBeInTheDocument()
 
     // Y el filtro es MÚLTIPLE: al sumar la segunda empresa vuelven los suyos.
-    fireEvent.click(screen.getByLabelText('Transportes Sur'))
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Transportes Sur, / }))
     expect(await screen.findByText('Ana Soto')).toBeInTheDocument()
     expect(screen.getByText('Luis Rojas')).toBeInTheDocument()
   })
@@ -760,19 +643,21 @@ describe('FlotaDelDiaSection', () => {
     // lección del click-through de agosto.
     renderSection()
     await screen.findByText('Ana Soto')
-    fireEvent.click(screen.getByText('Total'))
+    fireEvent.click(screen.getByRole('button', { name: /^Todos/ }))
     await screen.findByText('Juan Pérez')
 
     fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Empresa' }))
 
-    expect(await screen.findByText('2 valores')).toBeInTheDocument()
+    const filtro = await screen.findByRole('dialog', { name: 'Filtrar por Empresa' })
+    expect(within(filtro).getAllByRole('checkbox').map(c => c.getAttribute('aria-label')?.split(',')[0]))
+      .toEqual(['Transportes Norte', 'Transportes Sur'])
   })
 
   it('el comentario se guarda al salir del campo, y sólo si cambió', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     renderSection()
     await screen.findByText('Ana Soto')
-    fireEvent.click(screen.getByText('No trabajando'))
+    fireEvent.click(screen.getByRole('button', { name: /^No trabajando/ }))
     await screen.findByText('Carla Díaz')
 
     const campo = screen.getByLabelText('Comentario de Carla Díaz')
@@ -795,12 +680,12 @@ describe('FlotaDelDiaSection', () => {
   it('el comentario es una columna propia, no un renglón bajo el motivo', async () => {
     renderSection()
     await screen.findByText('Ana Soto')
-    fireEvent.click(screen.getByText('No trabajando'))
+    fireEvent.click(screen.getByRole('button', { name: /^No trabajando/ }))
 
     const fila = (await screen.findByText('Carla Díaz')).closest('tr')!
     const celdas = fila.querySelectorAll('td')
     // La última celda es la del comentario; la del motivo es la anterior.
-    expect(screen.getByRole('columnheader', { name: 'Comentario' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /^Comentario/ })).toBeInTheDocument()
     expect(within(celdas[celdas.length - 1] as HTMLElement)
       .getByLabelText('Comentario de Carla Díaz')).toBeInTheDocument()
     expect(within(celdas[celdas.length - 2] as HTMLElement)
@@ -833,7 +718,7 @@ describe('FlotaDelDiaSection', () => {
     // también se explica con palabras.
     renderSection()
     await screen.findByText('Ana Soto')
-    fireEvent.click(screen.getByText('Total'))
+    fireEvent.click(screen.getByRole('button', { name: /^Todos/ }))
 
     const fila = screen.getByText('Juan Pérez').closest('tr')!
     expect(within(fila).getByText('Asignado')).toBeInTheDocument()
@@ -847,7 +732,9 @@ describe('FlotaDelDiaSection', () => {
     await screen.findByText('Ana Soto')
 
     expect(screen.getByRole('columnheader', { name: /Generador de carga/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Ordenar por Generador de carga' })).toBeInTheDocument()
+    const columna = screen.getByRole('columnheader', { name: /Generador de carga/ })
+    expect(within(columna).getByRole('button', { name: 'Generador de carga' })).toBeInTheDocument()
+    expect(within(columna).getByRole('button', { name: 'Filtrar por Generador de carga' })).toBeInTheDocument()
   })
 
   it('la pantalla abre en "Total": el número de arriba es el de las filas de abajo', async () => {
@@ -858,26 +745,26 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    const total = screen.getByRole('button', { name: /Total/ })
-    expect(total.className).toContain('border-accent')
+    expect(screen.getByRole('button', { name: /^Todos, / })).toHaveAttribute('aria-pressed', 'true')
     // Los cuatro conductores del fixture, no un recorte silencioso.
     expect(screen.getByText('Juan Pérez')).toBeInTheDocument()
     expect(screen.getByText('Carla Díaz')).toBeInTheDocument()
   })
 
-  it('al cambiar de eje vuelve a "Total", no a una categoría sin tile', async () => {
+  it('al cambiar de alcance conserva el recuadro elegido, porque el estado sigue aplicando (C7)', async () => {
+    // Hasta el 16/10 volvía a "Total". Con un solo filtro para todo el Cierre,
+    // un filtro que aplica en el otro alcance se conserva; solo se quitan (y se
+    // avisan) los valores que el otro alcance no tiene.
     await soloConductores()
-    renderSection()
+    const { setAlcance } = renderSection()
     await screen.findByText('Ana Soto')
-    fireEvent.click(screen.getByText('No trabajando'))
-    expect(screen.getByRole('button', { name: /No trabajando/ }).className).toContain('border-accent')
+    fireEvent.click(screen.getByRole('button', { name: /^No trabajando/ }))
+    expect(screen.getByRole('button', { name: /^No trabajando/ })).toHaveAttribute('aria-pressed', 'true')
 
-    // Tractoreo ya es la vista de entrada: el cambio de eje es a Equipo Completo.
-    fireEvent.click(screen.getByRole('button', { name: /Equipo Completo/ }))
+    setAlcance('equipo_completo')
 
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Total/ }).className).toContain('border-accent')
-    })
+    await waitFor(() => expect(screen.getByRole('button', { name: /^No trabajando/ })).toHaveAttribute('aria-pressed', 'true'))
+    expect(screen.queryByText(/^Se quitó/)).toBeNull()
   })
 
   // ── Solicitud de Cambios Diario 2.0 (16/09) ─────────────────────────────
@@ -887,18 +774,18 @@ describe('FlotaDelDiaSection', () => {
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
       drivers: [
-        driverRow({ driver_id: 'd1', full_name: 'Ana Soto', unassigned_reason_id: 'esperando' }),
-        driverRow({ driver_id: 'd4', full_name: 'Carla Díaz', unassigned_reason_id: 'pana' }),
+        driverRow({ ...LINE.workingUnassigned, driver_id: 'd1', full_name: 'Ana Soto' }),
+        driverRow({ ...LINE.notWorking, driver_id: 'd4', full_name: 'Carla Díaz' }),
       ],
     })
     renderSection()
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(screen.getByText('No asignados'))
+    fireEvent.click(screen.getByRole('button', { name: /^No asignados/ }))
     expect(screen.getByText('Ana Soto')).toBeInTheDocument()
     expect(screen.queryByText('Carla Díaz')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByText('No trabajando'))
+    fireEvent.click(screen.getByRole('button', { name: /^No trabajando/ }))
     expect(await screen.findByText('Carla Díaz')).toBeInTheDocument()
     expect(screen.queryByText('Ana Soto')).not.toBeInTheDocument()
   })
@@ -908,13 +795,13 @@ describe('FlotaDelDiaSection', () => {
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
       drivers: [
-        driverRow({ driver_id: 'd1', full_name: 'Ana Soto', unassigned_reason_id: 'esperando' }),
-        driverRow({ driver_id: 'd4', full_name: 'Carla Díaz', unassigned_reason_id: 'pana' }),
+        driverRow({ ...LINE.workingUnassigned, driver_id: 'd1', full_name: 'Ana Soto' }),
+        driverRow({ ...LINE.notWorking, driver_id: 'd4', full_name: 'Carla Díaz' }),
       ],
     })
     renderSection()
     await screen.findByText('Ana Soto')
-    fireEvent.click(screen.getByText('Total'))
+    fireEvent.click(screen.getByRole('button', { name: /^Todos/ }))
 
     expect(screen.queryByLabelText('Vigencia del motivo de Ana Soto')).not.toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Vigencia del motivo de Carla Díaz'), { target: { value: '2026-08-10' } })
@@ -952,18 +839,17 @@ describe('FlotaDelDiaSection', () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
-      drivers: [driverRow({
-        driver_id: 'dx', full_name: 'Ana Soto', status: 'ASSIGNED',
-        home_cd_name: 'CD EL PEÑON', today_trip_origin: 'CD QUILICURA',
-      })],
+      drivers: [driverRow({ ...LINE.assigned,
+        driver_id: 'dx', full_name: 'Ana Soto',
+        home_cd_name: 'CD EL PEÑON', today_trip_origin: 'CD QUILICURA' })],
     })
     renderSection()
     await screen.findByText('Ana Soto')
 
     // Son dos preguntas distintas: de quién es la asistencia, y de dónde salió
     // la carga de hoy. Fundirlas sería un campo con dos significados.
-    expect(screen.getByRole('columnheader', { name: 'Origen habitual' })).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Local de origen' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /^Origen habitual/ })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /^Local de origen/ })).toBeInTheDocument()
     const fila = screen.getByText('Ana Soto').closest('tr')!
     expect(within(fila).getByText('CD EL PEÑON')).toBeInTheDocument()
     expect(within(fila).getByText('CD QUILICURA')).toBeInTheDocument()
@@ -978,21 +864,20 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(within(screen.getByRole('columnheader', { name: 'Origen habitual' })).getByRole('button', { name: /filtr/i }))
+    fireEvent.click(within(screen.getByRole('columnheader', { name: /^Origen habitual/ })).getByRole('button', { name: /filtr/i }))
 
     // Nadie está hoy en Lo Aguirre, y aun así se puede pedir su asistencia.
-    await waitFor(() => expect(screen.getByLabelText('CD LO AGUIRRE')).toBeInTheDocument())
-    expect(screen.getByLabelText('CD EL PEÑON')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'CD LO AGUIRRE, 0' })).toBeInTheDocument())
+    expect(screen.getByRole('checkbox', { name: 'CD EL PEÑON, 1' })).toBeInTheDocument()
   })
 
   it('una fila sin viaje no tiene cliente, aunque su empresa opere para varios', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
-      drivers: [driverRow({
-        driver_id: 'dx', full_name: 'Ana Soto', status: 'UNASSIGNED', client_names: [],
-        carrier_shipper_names: ['IANSA', 'Sodimac'],
-      } as never)],
+      drivers: [driverRow({ ...LINE.withoutReason,
+        driver_id: 'dx', full_name: 'Ana Soto', client_names: [],
+        carrier_shipper_names: ['IANSA', 'Sodimac'] } as never)],
     })
     renderSection()
     await screen.findByText('Ana Soto')
@@ -1009,23 +894,22 @@ describe('FlotaDelDiaSection', () => {
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
       drivers: [
-        driverRow({ driver_id: 'p1', full_name: 'Ana Soto', status: 'ASSIGNED', home_cd_name: 'CD EL PEÑON' }),
-        driverRow({ driver_id: 'p2', full_name: 'Luis Rojas', status: 'ASSIGNED', home_cd_name: 'CD EL PEÑON' }),
-        driverRow({ driver_id: 'q1', full_name: 'Carla Díaz', status: 'ASSIGNED', home_cd_name: 'CD QUILICURA' }),
+        driverRow({ ...LINE.assigned, driver_id: 'p1', full_name: 'Ana Soto', home_cd_name: 'CD EL PEÑON' }),
+        driverRow({ ...LINE.assigned, driver_id: 'p2', full_name: 'Luis Rojas', home_cd_name: 'CD EL PEÑON' }),
+        driverRow({ ...LINE.assigned, driver_id: 'q1', full_name: 'Carla Díaz', home_cd_name: 'CD QUILICURA' }),
       ],
     })
     renderSection()
     await screen.findByText('Ana Soto')
 
-    const total = () => screen.getByRole('button', { name: /Total/ })
-    expect(within(total()).getByText('3')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Todos, 3' })).toBeInTheDocument()
 
-    fireEvent.click(within(screen.getByRole('columnheader', { name: 'Origen habitual' })).getByRole('button', { name: /filtr/i }))
-    fireEvent.click(await screen.findByLabelText('CD EL PEÑON'))
+    fireEvent.click(within(screen.getByRole('columnheader', { name: /^Origen habitual/ })).getByRole('button', { name: /filtr/i }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: /^CD EL PEÑON, / }))
 
     // Sin esto, elegir un CD mostraba sus filas pero dejaba arriba el número
     // del día completo, y la asistencia por CD había que contarla a mano.
-    await waitFor(() => expect(within(total()).getByText('2')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Todos, 2' })).toBeInTheDocument())
   })
 
   it('sin origen habitual en nadie, lo dice y ofrece dónde arreglarlo', async () => {
@@ -1087,10 +971,8 @@ describe('FlotaDelDiaSection', () => {
     })
     vi.mocked(equipmentClosuresApi.get).mockResolvedValue({
       ...EQUIPMENT_STATUS,
-      tractoreo: { ...EQUIPMENT_STATUS.tractoreo, equipment: [equipmentRow({
-        asset_id: 'tx', tractor_plate: 'RRMM11', carrier_id: 'cTractor', carrier_name: 'Empresa del tracto',
-        status: 'UNASSIGNED', requires_motivo: true, driver_id: 'dx', driver_name: 'Rita Mora',
-      })] },
+      tractoreo: { ...EQUIPMENT_STATUS.tractoreo, equipment: [equipmentRow({ ...LINE.withoutReason,
+        asset_id: 'tx', tractor_plate: 'RRMM11', carrier_id: 'cTractor', carrier_name: 'Empresa del tracto', requires_motivo: true, driver_id: 'dx', driver_name: 'Rita Mora' })] },
     })
     const onOpenQuickView = vi.fn()
     renderSection({ onOpenQuickView })

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, History, Printer, FileDown, Copy, Check, RotateCw } from 'lucide-react'
 import { statusReportApi } from '@/lib/api/statusReport'
-import type { OperationTypeKey } from '@/lib/types'
+import type { ClosureScope } from '@/lib/types'
 import { FleetDriverGapCard } from '../FleetDriverGapCard'
 import { descargarReporteExcel } from '@/lib/reporte/exportarReporte'
 import { TIPOS_DE_OPERACION } from '@/lib/reporte/tiposDeOperacion'
@@ -50,7 +50,7 @@ interface Props {
  *  elegido arriba; seis secciones; solo lectura. El botón "Confirmar cierre"
  *  vive en la página, no acá. */
 export function StatusReportSection({ fecha }: Props) {
-  const [tipo, setTipo] = useState<OperationTypeKey>('tractoreo')
+  const [tipo, setTipo] = useState<ClosureScope>('tractoreo')
   const [seccion, setSeccion] = useState<Seccion>('resumen')
   // El cliente elegido, por id del directorio (spec 2026-10-11), con su nombre
   // para mostrarlo aunque el reporte de otro día no lo traiga.

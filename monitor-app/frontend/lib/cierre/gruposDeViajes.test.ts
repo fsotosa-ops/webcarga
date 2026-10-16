@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { ViajeDelCierre } from '@/lib/types'
 import {
-  GRUPOS_DE_VIAJES, PESTANAS_DE_VIAJES, diasAtras, esPestanaDeViajes, filasDePestana, pestanaInicial, viajesPorPatente,
+  GRUPOS_DE_VIAJES, PESTANAS_DE_VIAJES, diasAtras, filasDePestana, pestanaInicial, viajesPorPatente,
 } from './gruposDeViajes'
 
 const viaje = (id: string, nro: string, extra: Partial<ViajeDelCierre> = {}): ViajeDelCierre => ({
@@ -96,12 +96,6 @@ describe('gruposDeViajes', () => {
   it('una patente con más de un viaje en la pestaña se marca con sus números', () => {
     const repetidas = viajesPorPatente(filasDePestana(GRUPOS, 'tracking'))
     expect([...repetidas.entries()]).toEqual([['PYST91', ['881496', '885613']]])
-  })
-
-  it('reconoce solo las pestañas que existen', () => {
-    expect(esPestanaDeViajes('resolved')).toBe(true)
-    expect(esPestanaDeViajes('xyz')).toBe(false)
-    expect(esPestanaDeViajes(null)).toBe(false)
   })
 })
 

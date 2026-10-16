@@ -1247,32 +1247,40 @@ export type PreCierreAutoResolved = {
   type:    string
   message: string
 }
+/** Qué se cierra (Cierre con un solo patrón, D1): el tipo de operación del tracto, con
+ *  los mismos valores que usa la API (`scope`, `by_operation_type`). */
+export type ClosureScope = 'tractoreo' | 'equipo_completo'
+
+/** El alcance de un aviso del pre-cierre (D6): el del tracto; `null` en los de empresa
+ *  (se ven en los dos). Opcional: backend y frontend se despliegan por separado. */
+type ScopedNotice = { scope?: ClosureScope | null }
+
 export type PreCierreEscalations = {
   /** No bloquea el cierre desde el 01/10 (requirements-bug-12.md, RF-01 /
    *  CA-01): se informa con su acción y el día se puede firmar igual.
    *  `tms_carrier_name` es la empresa que el TMS informa para esa patente
    *  (GPRZ30: Transporte Vicente Bugarin); null si calla o nombra a varias.
    *  Opcional porque backend y frontend se despliegan por separado. */
-  PATENTE_NO_REGISTRADA:   { tractor_plate: string; reason: string; tms_carrier_name?: string | null }[]
+  PATENTE_NO_REGISTRADA:   ({ tractor_plate: string; reason: string; tms_carrier_name?: string | null } & ScopedNotice)[]
   /** `directory_carrier_id` viaja desde el 2026-08-27: es la empresa que el
    *  directorio tiene para esa patente, y con ella el panel enlaza derecho a
    *  la ficha donde se corrige. Opcional porque backend y frontend se
    *  despliegan por separado. */
-  EMPRESA_NO_RECONOCIDA:   { tractor_plate: string; tms_carrier_name: string; directory_carrier_name: string; directory_carrier_id?: string }[]
+  EMPRESA_NO_RECONOCIDA:   ({ tractor_plate: string; tms_carrier_name: string; directory_carrier_name: string; directory_carrier_id?: string } & ScopedNotice)[]
   /** `driver_name_tms` viaja desde el 2026-08-27 para que el panel del Cierre
    *  pueda ofrecer el alta con el nombre ya escrito; es null cuando los viajes
    *  de ese RUT traen nombres distintos (proponer uno sería inventar).
    *  `reason` sólo aparece cuando el TMS informó algo que ni siquiera es un
    *  RUT: ahí no hay a quién dar de alta. */
-  CONDUCTOR_NO_REGISTRADO: { driver_rut: string; driver_name_tms?: string | null; reason?: string }[]
-  EMPRESA_ONBOARDING:      { carrier_id: string; carrier_name: string; operational_status?: string }[]
+  CONDUCTOR_NO_REGISTRADO: ({ driver_rut: string; driver_name_tms?: string | null; reason?: string } & ScopedNotice)[]
+  EMPRESA_ONBOARDING:      ({ carrier_id: string; carrier_name: string; operational_status?: string } & ScopedNotice)[]
   /** Tracto activo sin Tractoreo/Equipo Completo. Trae la patente porque la
    *  acción es clasificar UN vehículo, y una empresa con cuatro tractos no
    *  dice cuál. Y sí bloquea el cierre, aunque no esté en
    *  `_ESCALACIONES_QUE_BLOQUEAN`: esa lista gobierna el cierre de
    *  CONDUCTORES; sin clasificar cuenta como Tractoreo en el de TRACTOS y
    *  exige motivo. Son dos cierres distintos, no una contradicción. */
-  SIN_TIPO_OPERACION:      { carrier_id: string; carrier_name: string; tractor_plate?: string | null }[]
+  SIN_TIPO_OPERACION:      ({ carrier_id: string; carrier_name: string; tractor_plate?: string | null } & ScopedNotice)[]
   /** El conductor manejó el tracto de una empresa y no tiene ninguna asignada.
    *  El backend lo PROPONE —nunca lo escribe— y sólo cuando el padrón está en
    *  silencio y todos sus viajes apuntan a la misma empresa. Confirmar desde
@@ -1281,10 +1289,10 @@ export type PreCierreEscalations = {
    *
    *  Opcional porque backend y frontend se despliegan por separado, y un
    *  `.map` sobre `undefined` rompe la sección entera. */
-  CONDUCTOR_SIN_EMPRESA?: {
+  CONDUCTOR_SIN_EMPRESA?: ({
     driver_id: string; driver_name: string
     carrier_id: string; carrier_name: string; viajes: number
-  }[]
+  } & ScopedNotice)[]
 }
 export type PreCierreResult = {
   auto_resolved: PreCierreAutoResolved[]
@@ -1549,6 +1557,9 @@ export type ViajeDelCierre = {
   carrier_id?:             string | null
   driver_id?:              string | null
   tractor_asset_id?:       string | null
+  /** El alcance del Cierre (D6): el del tracto resuelto; `null` sin tracto (se ve en
+   *  los dos). Opcional: backend y frontend se despliegan por separado. */
+  scope?:                  ClosureScope | null
 }
 
 /** Una pieza de la flota del viaje que no está resuelta contra el directorio. */
@@ -1580,8 +1591,6 @@ export type CarrierUtilizationRow = {
   unassigned:       number
   utilization_pct:  number
 }
-
-export type OperationTypeKey = 'tractoreo' | 'equipo_completo'
 
 /** Una hoja del árbol de Asignados: cliente × origen real del viaje × empresa. */
 export type AssignedRow = {
@@ -1669,7 +1678,7 @@ export type StatusReport = {
     shipper_id:         string
     client_name:        string
     assigned:           number
-    by_operation_type?: Record<OperationTypeKey, number>
+    by_operation_type?: Record<ClosureScope, number>
   }[]
   /** El faltante de dotación con el mismo filtro de cliente que el resto del
    *  reporte. Opcional por el mismo motivo. */
@@ -1679,7 +1688,7 @@ export type StatusReport = {
   calculado_a?:     string | null
   pendiente_desde?: string | null
   /** Opcional: un backend anterior al rediseño no lo manda (despliegues separados). */
-  by_operation_type?: Record<OperationTypeKey, OperationTypeReport>
+  by_operation_type?: Record<ClosureScope, OperationTypeReport>
 }
 
 // ── Bandeja de documentos sin clasificar (HU-01) ──────────────────────────

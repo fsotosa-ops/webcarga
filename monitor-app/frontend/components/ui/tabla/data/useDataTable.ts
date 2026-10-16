@@ -78,6 +78,10 @@ export function useDataTable<T>({
     globalFilterFn: (row, _id, q: string) => !q || !search || search(row.original, q.trim().toLowerCase()),
     getColumnCanGlobalFilter: () => true,
     onPaginationChange: setPagination,
+    // La página la gobierna el kit (vuelve a la primera con un cambio de vista y se ajusta si
+    // deja de existir). La de TanStack vuelve a la primera cada vez que se rearman filas o
+    // columnas, y un guardado o un catálogo que llega te sacaba de la página 2.
+    autoResetPageIndex: false,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getFacetedRowModel: getFacetedRowModel(),
@@ -85,6 +89,11 @@ export function useDataTable<T>({
     getPaginationRowModel: getPaginationRowModel(),
     manualFiltering: false,
   })
+  // Si las filas se achican (un guardado que refresca, otro filtro) y la página elegida ya no
+  // existe, se muestra la última que queda en vez de una página vacía. Ajuste en el render, no
+  // en un efecto, para que no se pinte nunca la página vacía.
+  const ultima = Math.max(0, table.getPageCount() - 1)
+  if (pagination.pageIndex > ultima) setPagination(p => ({ ...p, pageIndex: ultima }))
 
   function facetRows(columnId: string): T[] {
     const col = table.getColumn(columnId)
