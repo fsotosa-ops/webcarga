@@ -88,9 +88,9 @@ export const DOMINIOS: Dominio[] = [
     clave: 'fleet',
     icono: Truck,
     titulo: 'Flota',
-    proposito: 'El vocabulario de vehículos que comparten Certificación y Operaciones',
+    proposito: 'El vocabulario de equipos que comparten Certificación y Operaciones',
     secciones: [
-      { clave: 'subtypes', titulo: 'Subtipos de vehículo',
+      { clave: 'subtypes', titulo: 'Subtipos de equipo',
         proposito: 'Furgón congelado, sider, rampla plana', Panel: SubtiposPanel },
       { clave: 'operation-types', titulo: 'Tipos de operación',
         proposito: 'Tractoreo y equipo completo', Panel: TiposDeOperacionPanel },

@@ -24,7 +24,7 @@ export default function ConfiguracionPage() {
     <div className="space-y-4 md:hidden">
       <EncabezadoDePagina titulo="Configuración" bajada="Elige qué quieres ajustar. Los cambios no requieren un despliegue." />
       <BuscadorConfig />
-      <SettingsIndex />
+      <SettingsIndex variante="portada" />
     </div>
   )
 }

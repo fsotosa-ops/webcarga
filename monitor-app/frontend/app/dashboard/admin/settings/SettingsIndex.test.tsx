@@ -11,10 +11,10 @@ vi.mock('@/lib/api/config', () => ({ inventarioApi: { get: vi.fn() } }))
 import { inventarioApi } from '@/lib/api/config'
 import { SettingsIndex } from './SettingsIndex'
 
-function montar() {
+function montar(variante?: 'menu' | 'portada') {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <SettingsIndex />
+      <SettingsIndex variante={variante} />
     </QueryClientProvider>,
   )
 }
@@ -71,5 +71,36 @@ describe('SettingsIndex (P1.1)', () => {
     montar()
     expect(screen.queryByText('Personas y accesos')).toBeNull()
   })
-})
 
+  // 16/10: "se ve muy tosca… no se entiende lo que hace". El índice dice dónde
+  // se está, qué hace cada ajuste y qué es el número.
+  it('el número dice qué es: lo que falta revisar', async () => {
+    montar()
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Motivos de conductor, 21 sin revisar' })).toBeInTheDocument())
+    expect(screen.getByText('El número es lo que falta revisar.')).toBeInTheDocument()
+  })
+
+  it('sin nada por revisar no explica un número que no está', async () => {
+    vi.mocked(inventarioApi.get).mockResolvedValue({
+      operations: { pares: [], revision: { total: 60, sin_revisar: 0 }, secciones: {} },
+    } as never)
+    montar()
+    await waitFor(() => expect(inventarioApi.get).toHaveBeenCalled())
+    expect(screen.queryByText('El número es lo que falta revisar.')).toBeNull()
+  })
+
+  it('en el menú: se titula Configuración y cada ajuste dice qué hace al pasar el mouse', () => {
+    montar()
+    expect(screen.getByRole('heading', { name: 'Configuración' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Motivos de conductor/ }))
+      .toHaveAttribute('title', 'Por qué un conductor no está disponible')
+  })
+
+  it('en la portada (el teléfono): cada ajuste dice qué hace, debajo de su nombre', () => {
+    montar('portada')
+    expect(within(screen.getByRole('link', { name: /Motivos de conductor/ }))
+      .getByText('Por qué un conductor no está disponible')).toBeInTheDocument()
+    // La portada ya tiene su encabezado de página: el índice no repite el título.
+    expect(screen.queryByRole('heading', { name: 'Configuración' })).toBeNull()
+  })
+})
