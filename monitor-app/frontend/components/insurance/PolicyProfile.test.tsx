@@ -90,4 +90,10 @@ describe('Ficha de póliza', () => {
     fireEvent.click(within(aviso).getByRole('button', { name: /enlaz/i }))
     expect(insuranceApi.renewedBy).toHaveBeenCalledTimes(1)
   })
+
+  it('Detalles › Endoso distingue "sin endoso" de "con endoso, sin número" (el número puede venir vacío)', async () => {
+    vi.mocked(insuranceApi.get).mockResolvedValue({ ...DETALLE, has_endorsement: true, endorsement_number: '' } as never)
+    renderProfile()
+    expect(await screen.findByText('Con endoso, sin número')).toBeInTheDocument()
+  })
 })

@@ -102,4 +102,11 @@ describe('InstallmentsTable', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar cuota 1' }))
     expect(screen.getByRole('button', { name: 'Marcar pagadas…' })).toBeDisabled()
   })
+
+  it('los chips de estado van en una línea: la fila no mide el doble con "Fuera de vigencia"', () => {
+    renderTable([cuota('i1', 1, { outside_validity: true })])
+    const celda = screen.getByText('Fuera de vigencia').closest('span.flex') as HTMLElement
+    expect(celda).not.toHaveClass('flex-wrap')
+    expect(screen.getByRole('columnheader', { name: 'Estado' })).not.toHaveClass('w-64')
+  })
 })

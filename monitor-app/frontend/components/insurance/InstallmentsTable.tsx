@@ -88,7 +88,7 @@ export function InstallmentsTable({ rows, showPolicy = false, returnTo, empty, b
               <th scope="col" className={`${CABECERA} w-28`}>Cuota</th>
               <th scope="col" className={`${CABECERA} w-28`}>Vence</th>
               <th scope="col" className={`${CABECERA} w-28`}>Monto</th>
-              <th scope="col" className={`${CABECERA} w-64`}>Estado</th>
+              <th scope="col" className={CABECERA}>Estado</th>
             </tr>
           </thead>
           <tbody>
@@ -116,7 +116,7 @@ export function InstallmentsTable({ rows, showPolicy = false, returnTo, empty, b
                   <td className="px-3 py-2.5 tabular-nums text-informativo">{r.due_date ? fechaCorta(r.due_date) : '—'}</td>
                   <td className="px-3 py-2.5 tabular-nums">{uf(r.amount_uf)}</td>
                   <td className="px-3 py-2.5">
-                    <span className="flex flex-wrap items-center gap-1.5">
+                    <span className="flex items-center gap-1.5">
                       <StatusChip tone={s.tone} icon={s.icon}>{s.label}</StatusChip>
                       {r.outside_validity && <StatusChip tone={OUTSIDE_VALIDITY_STYLE.tone} icon={OUTSIDE_VALIDITY_STYLE.icon}>{OUTSIDE_VALIDITY_STYLE.label}</StatusChip>}
                       {canEdit && r.paid && (

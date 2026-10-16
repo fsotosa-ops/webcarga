@@ -101,7 +101,9 @@ export function PolicyProfile({ id }: { id: string }) {
       ? `${p.valid_from ? fechaCorta(p.valid_from) : '…'} – ${p.valid_to ? fechaCorta(p.valid_to) : '…'}`
       : <span className="text-informativo">Sin fechas</span> },
     { label: 'Empresa', value: <EntityCell kind="carrier" id={p.carrier_id} label={p.carrier_name} /> },
-    { label: 'Endoso', value: p.endorsement_number ?? <span className="text-informativo">Sin endoso</span> },
+    // El número puede venir vacío ('' en la carga inicial): sin número no es lo mismo que sin endoso.
+    { label: 'Endoso', value: p.endorsement_number?.trim()
+        || <span className="text-informativo">{p.has_endorsement ? 'Con endoso, sin número' : 'Sin endoso'}</span> },
     { label: 'Portal', value: p.external_portal_url
       ? <a href={p.external_portal_url} target="_blank" rel="noreferrer" className="text-accion hover:underline">Abrir</a>
       : <span className="text-informativo">Sin enlace</span> },
@@ -204,7 +206,7 @@ export function PolicyProfile({ id }: { id: string }) {
               <PolicyFileRow label="Póliza" url={p.policy_document_url} canEdit={canEdit}
                              onUpload={f => act(() => policiesApi.uploadFile(id, f, 'document'))}
                              onDelete={() => act(() => policiesApi.deleteFile(id, 'document'))} />
-              <PolicyFileRow label="Endoso" detail={p.endorsement_number ?? undefined} url={p.endorsement_document_url} canEdit={canEdit}
+              <PolicyFileRow label="Endoso" detail={p.endorsement_number?.trim() || undefined} url={p.endorsement_document_url} canEdit={canEdit}
                              onUpload={f => act(() => policiesApi.uploadFile(id, f, 'endorsement'))}
                              onDelete={() => act(() => policiesApi.deleteFile(id, 'endorsement'))} />
             </div>
