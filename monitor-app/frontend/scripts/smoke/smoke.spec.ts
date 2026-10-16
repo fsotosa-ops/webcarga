@@ -400,8 +400,9 @@ test('Seguros: póliza nueva → su ficha → marcar una cuota pagada → aparec
   const dia = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString().slice(0, 10)
   const numero = `SMK-${Date.now()}`
   await login(page, 'seg@sim.local')
-  // Una empresa activa sin póliza: el sujeto lo crea el test.
-  await page.goto('/dashboard/insurance?group=carrier&state=NO_POLICY')
+  // Una empresa activa cualquiera (todas admiten otra póliza): la póliza la crea el
+  // test. Elegir "sin póliza" se agotaba, porque cada corrida le crea una a alguna.
+  await page.goto('/dashboard/insurance?group=carrier')
   // El nombre abre la vista rápida; el resto de la fila, la ficha de la empresa › Seguros.
   await page.locator('tbody tr').first().locator('td').nth(1).click({ timeout: 30000 })
   await page.getByRole('button', { name: '+ Póliza' }).click({ timeout: 20000 })
@@ -423,5 +424,25 @@ test('Seguros: póliza nueva → su ficha → marcar una cuota pagada → aparec
   await expect(page.getByRole('button', { name: /Deshacer pago/ })).toHaveCount(1, { timeout: 20000 })
   await page.goto(`/dashboard/insurance/installments?state=PAID&q=${numero}`)
   await expect(page.getByText(numero).first()).toBeVisible({ timeout: 20000 })
+  expect(problems).toEqual([])
+})
+
+test('Configuración: índice → Motivos de conductor → abrir un motivo → "Está bien así" → la fila queda revisada (P1.9)', async ({ page }) => {
+  const problems = watch(page)
+  await login(page, 'ops@sim.local')
+  await page.goto('/dashboard/admin/settings')
+  const indice = page.getByRole('navigation', { name: 'Configuración' }).first()
+  await indice.getByRole('link', { name: /Motivos de conductor/ }).click({ timeout: 30000 })
+  await page.waitForURL('**/settings/operations/driver-reasons', { timeout: 20000 })
+  await page.getByRole('group', { name: 'Filtrar' }).getByRole('button', { name: /Sin revisar/ }).click()
+  const fila = page.locator('tbody tr').first()
+  const nombre = (await fila.locator('td').first().innerText()).trim()
+  await fila.click()
+  const panel = page.getByRole('dialog')
+  await panel.getByRole('button', { name: /está bien así/i }).click({ timeout: 20000 })
+  await panel.getByRole('button', { name: /cerrar/i }).click()
+  await page.getByRole('group', { name: 'Filtrar' }).getByRole('button', { name: /Todos/ }).click()
+  const revisada = page.locator('tbody tr', { hasText: nombre }).first()
+  await expect(revisada.getByText('Sin revisar')).toHaveCount(0, { timeout: 20000 })
   expect(problems).toEqual([])
 })
