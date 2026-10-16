@@ -1,10 +1,10 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   Ban, Building2, CalendarClock, CircleCheck, CircleDashed, Clock, Hourglass, MapPin, RefreshCw,
-  OctagonAlert, ShieldAlert, ShieldCheck, ShieldOff, TriangleAlert, Truck, Undo2,
+  OctagonAlert, ShieldAlert, ShieldCheck, ShieldOff, TriangleAlert, Truck, Undo2, User,
 } from 'lucide-react'
 import type { StatusTone } from '@/components/ui/StatusChip'
-import type { DirectoryEntity, FunnelBucket } from './types'
+import type { CategoriaDeLinea, DirectoryEntity, FunnelBucket } from './types'
 import { hoyEnChile } from './utils/datetime'
 
 /**
@@ -371,3 +371,25 @@ export function boardColumnStyle(group: string | null | undefined): StateStyle {
   return (group && BOARD_COLUMN_STYLE[group as BoardColumn]) || SIN_COLUMNA
 }
 
+// ── Tipos de entidad (cómo se nombra a quién se le exige o se refiere algo) ────
+export type EntityType = 'CARRIER' | 'DRIVER' | 'ASSET'
+export const ENTITY_TYPE: Record<EntityType, { label: string; icon: LucideIcon }> = {
+  CARRIER: { label: 'Empresa', icon: Building2 },
+  DRIVER: { label: 'Conductor', icon: User },
+  ASSET: { label: 'Equipo', icon: Truck },
+}
+
+// ── Cierre del día (Cierre con un solo patrón, spec §4.4) ─────────────────────
+/** La categoría de una línea del cierre, en una palabra: la misma en la columna
+ *  Estado, en el recuadro y en el chip del filtro. La calcula el backend
+ *  (`services/cierre_lineas.py`); aquí solo se nombra. */
+export const CATEGORY_LABEL: Record<CategoriaDeLinea, string> = {
+  ASIGNADO: 'Asignado',
+  SIN_RESOLVER: 'Sin motivo',
+  TRABAJANDO_SIN_ASIGNACION: 'Trabajando sin asignación',
+  NO_TRABAJANDO: 'No trabajando',
+  POR_REGULARIZAR: 'Por regularizar',
+}
+
+/** Qué se cierra: los mismos valores de la API (`services/alcance_del_cierre.py`). */
+export const SCOPE_LABEL = { tractoreo: 'Tractoreo', equipo_completo: 'Equipo Completo' } as const

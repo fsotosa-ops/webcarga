@@ -139,3 +139,26 @@ describe('carrierBlockingReason (la razón del "No habilitada" de una empresa)',
   })
 })
 
+
+describe('Cierre: categorías y alcances (Cierre con un solo patrón, C2)', () => {
+  it('cada categoría de línea tiene UNA palabra, la misma en la columna, el recuadro y el chip', async () => {
+    const { CATEGORY_LABEL, SCOPE_LABEL } = await import('./states')
+    expect(CATEGORY_LABEL).toEqual({
+      ASIGNADO: 'Asignado', SIN_RESOLVER: 'Sin motivo', TRABAJANDO_SIN_ASIGNACION: 'Trabajando sin asignación',
+      NO_TRABAJANDO: 'No trabajando', POR_REGULARIZAR: 'Por regularizar',
+    })
+    expect(SCOPE_LABEL).toEqual({ tractoreo: 'Tractoreo', equipo_completo: 'Equipo Completo' })
+  })
+})
+
+describe('tipos de entidad: una palabra y un ícono (glosario)', () => {
+  it('Empresa, Conductor y Equipo, con los íconos de la app', async () => {
+    const { ENTITY_TYPE } = await import('./states')
+    const { Building2, Truck, User } = await import('lucide-react')
+    expect(ENTITY_TYPE).toEqual({
+      CARRIER: { label: 'Empresa', icon: Building2 },
+      DRIVER: { label: 'Conductor', icon: User },
+      ASSET: { label: 'Equipo', icon: Truck },
+    })
+  })
+})

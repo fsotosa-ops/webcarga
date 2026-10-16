@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, Ban, Building2, CircleCheck, CircleDashed, Pencil, ShieldCheck, Truck, UserRound } from 'lucide-react'
+import { ArrowRight, Ban, CircleCheck, CircleDashed, Pencil, ShieldCheck } from 'lucide-react'
 import { requirementsApi } from '@/lib/api/requirements'
 import { ApiError } from '@/lib/api/client'
 import { GLOBAL_ALERT_THRESHOLD } from '@/lib/api/config'
@@ -12,7 +12,7 @@ import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { REQUIREMENTS, pendingDocumentHref } from '@/lib/navegacion/compliance'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { returnLink } from '@/lib/navegacion/directory'
-import { lifecycleStyle } from '@/lib/states'
+import { ENTITY_TYPE, lifecycleStyle } from '@/lib/states'
 import { resumenDeAviso, resumenDeVigencia, vigenciaDe, type Vigencia } from '@/lib/vigencia'
 import { formatCount } from '@/lib/clients'
 import type { RequirementDetail, VersionDeRegla } from '@/lib/types'
@@ -30,10 +30,6 @@ import { celdaSeExigeA, nivelDe } from './frase-de-la-regla'
 import { OPCIONES_DE_EXIGIBILIDAD } from './SelectorExigibilidad'
 import { useRequirementVocabulary } from './useRequirementVocabulary'
 
-const ENTIDAD: Record<RequirementDetail['target_entity'], string> = {
-  CARRIER: 'Empresa', DRIVER: 'Conductor', ASSET: 'Equipo',
-}
-const ICONO_DE_ENTIDAD = { CARRIER: Building2, DRIVER: UserRound, ASSET: Truck } as const
 const PLURAL: Record<RequirementDetail['target_entity'], string> = {
   CARRIER: 'empresas', DRIVER: 'conductores', ASSET: 'equipos',
 }
@@ -94,7 +90,7 @@ export function RequirementProfile({ id }: { id: string }) {
       <ProfileHeader
         title={r.name}
         chips={[
-          { label: ENTIDAD[r.target_entity], tone: 'neutral', icon: ICONO_DE_ENTIDAD[r.target_entity] },
+          { label: ENTITY_TYPE[r.target_entity].label, tone: 'neutral', icon: ENTITY_TYPE[r.target_entity].icon },
           { label: nivelDe(r.requirement_level), tone: 'neutral',
             icon: r.requirement_level === 'LEGAL_MANDATORY' ? ShieldCheck : CircleDashed },
           lifecycleStyle('requirement', r.is_active ? 'ACTIVE' : 'INACTIVE'),
@@ -105,7 +101,7 @@ export function RequirementProfile({ id }: { id: string }) {
       <ProfileLayout aside={<>
         <DetailsBlock canEdit={false} rows={[
           { label: 'Código', value: r.requirement_code },
-          { label: 'Para', value: ENTIDAD[r.target_entity] },
+          { label: 'Para', value: ENTITY_TYPE[r.target_entity].label },
           { label: 'Revisión', value: <MarcaDeRevision revision={revisiones.revisionDe(r.id)} /> },
         ]} />
         <AsidePanel title="Se reconoce como">

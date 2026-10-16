@@ -1,6 +1,6 @@
 'use client'
 
-import { Building2, Truck, User } from 'lucide-react'
+import { ENTITY_TYPE } from '@/lib/states'
 import type { PendingComplianceRow } from '@/lib/types'
 
 export type Slot = {
@@ -20,11 +20,6 @@ interface Props {
   onPick:   (slot: Slot) => void
 }
 
-const ICONO = {
-  CARRIER: Building2,
-  DRIVER:  User,
-  ASSET:   Truck,
-} as const
 
 const GRUPO = {
   CARRIER: 'Empresa',
@@ -58,7 +53,7 @@ export function PendingSlotPicker({ rows, selected, onPick }: Props) {
         {(['CARRIER', 'DRIVER', 'ASSET'] as const).map(tipo => {
           const items = porTipo.get(tipo)
           if (!items?.length) return null
-          const Icono = ICONO[tipo]
+          const Icono = ENTITY_TYPE[tipo].icon
 
           return (
             <div key={tipo}>

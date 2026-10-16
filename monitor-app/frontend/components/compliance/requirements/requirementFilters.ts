@@ -3,15 +3,14 @@
  *  Funciones puras: la lista llega entera (114 documentos, una consulta) y se
  *  cuenta aquí, así la cifra de cada filtro es siempre la de lo que se ve. */
 import type { RequirementOption } from '@/lib/types'
+import { ENTITY_TYPE } from '@/lib/states'
 
 export type EntityFilter = 'todos' | RequirementOption['target_entity']
 export type StateFilter = 'todos' | 'sin-revisar' | 'con-condicion' | 'mensuales' | 'sin-vigencia'
 
 export const ENTITY_FILTERS: { id: EntityFilter; label: string }[] = [
   { id: 'todos', label: 'Todos' },
-  { id: 'CARRIER', label: 'Empresa' },
-  { id: 'DRIVER', label: 'Conductor' },
-  { id: 'ASSET', label: 'Equipo' },
+  ...(['CARRIER', 'DRIVER', 'ASSET'] as const).map(id => ({ id, label: ENTITY_TYPE[id].label })),
 ]
 
 export const STATE_FILTERS: { id: StateFilter; label: string }[] = [

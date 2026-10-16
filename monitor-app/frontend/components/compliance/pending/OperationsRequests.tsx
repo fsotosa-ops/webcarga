@@ -7,10 +7,10 @@ import { certificationRequestsApi } from '@/lib/api/certificationRequests'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { formatExpiry } from '@/lib/compliance'
 import { EntityCell } from '@/components/dashboard/EntityCell'
+import { ENTITY_TYPE } from '@/lib/states'
 
 export const OPERATIONS_REQUESTS_KEY = ['certification-requests', 'open'] as const
 
-const ENTITY_NOUN = { CARRIER: 'Empresa', DRIVER: 'Conductor', ASSET: 'Equipo' } as const
 const ENTITY_KIND = { CARRIER: 'carrier', DRIVER: 'driver', ASSET: 'asset' } as const
 
 /** "Pedidos de Operaciones" arriba de Pendientes (Entrega B, 14/10): lo que
@@ -42,7 +42,7 @@ export function OperationsRequests() {
             <div className="min-w-0 flex-1">
               <p className="font-semibold text-text-primary">
                 {/* A quién se le pide y su empresa llevan a su vista rápida (N2, Entrega 1 de fichas). */}
-                {r.requirement_name ?? 'Documento sin especificar'} · {ENTITY_NOUN[r.entity_type]}{' '}
+                {r.requirement_name ?? 'Documento sin especificar'} · {ENTITY_TYPE[r.entity_type].label}{' '}
                 <EntityCell kind={ENTITY_KIND[r.entity_type]} id={r.entity_id} label={r.entity_name} empty="" />
                 {r.carrier_name && r.entity_type !== 'CARRIER' && (
                   <> (<EntityCell kind="carrier" id={r.carrier_id} label={r.carrier_name} />)</>
