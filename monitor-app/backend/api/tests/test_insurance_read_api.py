@@ -20,7 +20,7 @@ def _rutas_de_seguros():
         if not isinstance(r, APIRoute):
             continue
         if r.path.startswith(("/api/v1/policies", "/api/v1/installments")) or r.path in (
-            "/api/v1/carriers/{carrier_id}/policies", "/api/v1/carriers/insurance-overview",
+            "/api/v1/carriers/{carrier_id}/policies",
         ):
             yield r
 
@@ -59,8 +59,7 @@ def test_las_lecturas_salen_de_las_vistas_y_no_de_las_columnas_viejas():
     pool.fetchval.return_value = 0
     c = _client(pool)
     for url in ("/api/v1/policies?group_by=policy", "/api/v1/policies?group_by=carrier",
-                "/api/v1/installments?state=OVERDUE", "/api/v1/carriers/c1/policies",
-                "/api/v1/carriers/insurance-overview"):
+                "/api/v1/installments?state=OVERDUE", "/api/v1/carriers/c1/policies"):
         assert c.get(url).status_code == 200, url
     sql = _sql(pool)
     assert "app.insurance_status" in sql and "app.carrier_insurance_summary" in sql

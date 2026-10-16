@@ -21,8 +21,8 @@ async def test_S16_la_renovada_no_hace_vencida_a_la_empresa_pero_sus_deudas_cuen
     carrier = await _carrier(conn)
     vieja = await _policy(conn, carrier, valid_from=today - timedelta(days=400), valid_to=today - timedelta(days=30))
     await conn.execute(
-        "INSERT INTO public.insurance_installments (policy_id, installment_number, total_installments, amount_uf, due_date) "
-        "VALUES ($1, 1, 1, 2, $2)", vieja, today - timedelta(days=60))
+        "INSERT INTO public.insurance_installments (policy_id, installment_number, amount_uf, due_date) "
+        "VALUES ($1, 1, 2, $2)", vieja, today - timedelta(days=60))
     nueva = await _policy(conn, carrier, valid_from=today - timedelta(days=30), valid_to=today + timedelta(days=335))
 
     assert (await conn.fetchval("SELECT worst_state FROM app.carrier_insurance_summary WHERE carrier_id = $1", carrier)) == "EXPIRED"
@@ -105,8 +105,8 @@ async def test_S18_agregar_cuotas_las_numera_a_continuacion_y_respeta_la_vigenci
     carrier = await _carrier(conn)
     p = await _policy(conn, carrier, valid_from=today, valid_to=today + timedelta(days=150))
     await conn.execute(
-        "INSERT INTO public.insurance_installments (policy_id, installment_number, total_installments, amount_uf, due_date) "
-        "VALUES ($1, 1, 1, 2, $2)", p, today + timedelta(days=10))
+        "INSERT INTO public.insurance_installments (policy_id, installment_number, amount_uf, due_date) "
+        "VALUES ($1, 1, 2, $2)", p, today + timedelta(days=10))
 
     await insurance.append_installments(conn, p, count=2, amount_uf=3, first_due_date=today + timedelta(days=40), actor=ACTOR)
     numeros = [c["installment_number"] for c in await insurance.policy_installments(conn, p)]

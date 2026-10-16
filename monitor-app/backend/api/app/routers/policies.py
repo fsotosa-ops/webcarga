@@ -3,16 +3,13 @@ insurance.py de Checkpoint A-E (columnas planas coverage/plate, borrado
 2026-07-16) con el modelo M:N real (policy_coverages/policy_assets). Prefix
 /policies (recurso propio, consistente con /carriers /drivers /assets /contacts).
 """
-import calendar
-from datetime import date
-
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.insurance import (
-    InstallmentPatchBody, InstallmentScheduleGenerateBody, InsurancePolicyPatchBody,
+    InsurancePolicyPatchBody,
     InstallmentsAppendBody, PolicyAssetLinkBody, PolicyCancelBody, PolicyCoverageLinkBody, PolicyExtendBody,
     PolicyRenewBody, PolicyRenewedByBody,
 )
@@ -23,16 +20,6 @@ from ..utils.document_storage import (
 )
 
 router = APIRouter(prefix="/policies", tags=["insurance"])
-
-
-def _add_months(d: date, months: int) -> date:
-    """d + N meses, con el día clampeado al último día del mes destino
-    (ej. 31 ene + 1 mes = 28/29 feb, no un ValueError)."""
-    month_index = d.month - 1 + months
-    year = d.year + month_index // 12
-    month = month_index % 12 + 1
-    day = min(d.day, calendar.monthrange(year, month)[1])
-    return date(year, month, day)
 
 
 async def _assemble_policy_detail(policy_id: str, pool, supabase=None) -> dict:
@@ -72,8 +59,6 @@ async def _assemble_policy_detail(policy_id: str, pool, supabase=None) -> dict:
     result = {
         **dict(policy),
         **state,
-        # Compatibilidad con el frontend de hoy (la retira la Entrega 2).
-        "status": "CANCELLED" if policy["cancelled_at"] else "ACTIVE",
         "coverages": [dict(c) for c in coverages],
         "assets": [dict(a) for a in assets],
         "installments": await insurance.policy_installments(pool, policy_id),
@@ -125,7 +110,7 @@ async def patch_policy(
             current = await conn.fetchrow(
                 """
                 SELECT updated_at, carrier_id, insurance_company, policy_number, valid_from, valid_to,
-                       status, expiration_alert_days, has_endorsement, endorsement_number, external_portal_url
+                       has_endorsement, endorsement_number, external_portal_url
                 FROM public.insurance_policies WHERE id = $1
                 """,
                 policy_id,
@@ -135,8 +120,6 @@ async def patch_policy(
             if body.expected_updated_at is not None and current["updated_at"] != body.expected_updated_at:
                 raise HTTPException(409, "El registro fue modificado por otro usuario; recargue e intente de nuevo")
 
-            # `status` y `expiration_alert_days` ya no se escriben (Seguros E1): la
-            # vigencia se calcula y el plazo es uno solo (app.alert_thresholds).
             fields = ("insurance_company", "policy_number", "valid_from", "valid_to",
                       "has_endorsement", "endorsement_number", "external_portal_url")
             touched = [f for f in fields if getattr(body, f) is not None]
@@ -287,54 +270,6 @@ async def list_installments(policy_id: str, pool=Depends(get_pool), _=Depends(re
     return await insurance.policy_installments(pool, policy_id)
 
 
-@router.post("/{policy_id}/installments/generate", status_code=201)
-async def generate_installment_schedule(
-    policy_id: str, body: InstallmentScheduleGenerateBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
-):
-    """Genera el plan de cuotas completo de una póliza (mensual, monto fijo).
-    Solo aplica cuando la póliza todavía no tiene ninguna cuota, y rechaza el plan
-    si alguna cuota cae fuera de la vigencia (Seguros E1: hay 44 así, de la carga
-    de prueba; no se agregan más)."""
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            policy = await conn.fetchrow(
-                "SELECT carrier_id, valid_from, valid_to FROM public.insurance_policies WHERE id = $1", policy_id,
-            )
-            if not policy:
-                raise HTTPException(404, "Póliza no encontrada")
-            existing = await conn.fetchval(
-                "SELECT count(*) FROM public.insurance_installments WHERE policy_id = $1", policy_id,
-            )
-            if existing > 0:
-                raise HTTPException(422, "La póliza ya tiene cuotas — no se puede regenerar el plan")
-            due_dates = [_add_months(body.first_due_date, i) for i in range(body.total_installments)]
-            fuera = insurance.schedule_outside_validity(due_dates, policy["valid_from"], policy["valid_to"])
-            if fuera:
-                raise HTTPException(
-                    422, f"{len(fuera)} cuota(s) caen fuera de la vigencia de la póliza "
-                         f"(primera: {fuera[0].strftime('%d/%m/%Y')}). Ajusta la primera fecha o el número de cuotas.",
-                )
-
-            rows = []
-            for i, due in enumerate(due_dates):
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO public.insurance_installments
-                        (policy_id, installment_number, total_installments, amount_uf, due_date)
-                    VALUES ($1, $2, $3, $4, $5)
-                    RETURNING id
-                    """,
-                    policy_id, i + 1, body.total_installments, body.amount_uf, due,
-                )
-                rows.append(row["id"])
-
-            await log_change(
-                conn, actor=user["sub"], entity_type=insurance.AUDIT_ENTITY, entity_id=policy_id,
-                action="create", field="installment_schedule", new_value=body.total_installments, source="api",
-            )
-            return await insurance.policy_installments(conn, policy_id)
-
-
 @router.post("/{policy_id}/renew", status_code=201)
 async def renew_policy(
     policy_id: str, body: PolicyRenewBody, pool=Depends(get_pool), supabase=Depends(get_supabase),
@@ -428,33 +363,6 @@ async def cancel_policy(
     return await _assemble_policy_detail(policy_id, pool, supabase)
 
 
-@router.patch("/installments/{installment_id}")
-async def patch_installment(
-    installment_id: str, body: InstallmentPatchBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
-):
-    """Compatibilidad con el frontend de hoy (la retira la Entrega 2): PAID paga y
-    PENDING deshace el pago, con las mismas funciones que /installments/pay y /unpay."""
-    if body.payment_status not in ("PAID", "PENDING"):
-        raise HTTPException(422, "payment_status debe ser PAID o PENDING")
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            if body.payment_status == "PAID":
-                # La fecha de Chile del servidor: el frontend de hoy manda la de UTC,
-                # que después de las 21:00 ya es mañana (revisión final E1).
-                paid_on = await conn.fetchval("SELECT (now() AT TIME ZONE 'America/Santiago')::date")
-                result = await insurance.pay_installments(conn, [installment_id], paid_on=paid_on, actor=user["sub"])
-            else:
-                result = await insurance.unpay_installments(conn, [installment_id], actor=user["sub"])
-            if result["errors"]:
-                raise HTTPException(409, result["errors"][0]["error"])
-            row = await conn.fetchrow(
-                "SELECT installment_id AS id, installment_number, installments_total, amount_uf, due_date, due_in_days, "
-                "installment_state, paid, paid_on, paid_by, outside_validity "
-                "FROM app.insurance_status WHERE installment_id = $1", installment_id,
-            )
-    return insurance._legacy_installment(dict(row))
-
-
 @router.post("/{policy_id}/file", status_code=201)
 async def upload_policy_file(
     policy_id: str,
@@ -466,7 +374,7 @@ async def upload_policy_file(
 ):
     """Sube el archivo físico de la póliza (kind='document', policy_document_url)
     o del endoso (kind='endorsement', endorsement_document_url) — gap real
-    encontrado 2026-07-16: app.carrier_insurance_status ya calculaba
+    encontrado 2026-07-16: la vista de estado ya calculaba
     missing_physical_file pero no existía forma de subir el archivo."""
     if kind not in ("document", "endorsement"):
         raise HTTPException(422, "kind debe ser 'document' o 'endorsement'")

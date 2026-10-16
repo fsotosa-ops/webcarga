@@ -55,7 +55,7 @@ def test_get_policy_assembles_coverages_assets_installments():
     body = res.json()
     assert body["coverages"][0]["code"] == "VEHICULOS_MOTORIZADOS"
     assert body["assets"][0]["license_plate"] == "ABCD12"
-    assert body["installments"][0]["payment_status"] == "PENDING"
+    assert body["installments"][0]["installment_state"] == "PENDING"
 
 
 def test_patch_policy_optimistic_lock_conflict():
@@ -194,39 +194,6 @@ def test_unlink_coverage_404_when_not_linked():
     assert res.status_code == 404
 
 
-def test_patch_installment_updates_payment_status():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    # Seguros E1: el PATCH viejo paga con la misma función que /installments/pay
-    # (UPDATE ... RETURNING policy_id) y devuelve la cuota leída de la vista.
-    conn.fetchval.return_value = date(2026, 7, 16)
-    conn.fetchrow.side_effect = [
-        {"policy_id": "p1"},
-        {"id": "i1", "installment_number": 1, "installments_total": 2, "amount_uf": 1.04, "due_date": None,
-         "due_in_days": None, "installment_state": "PAID", "paid": True, "paid_on": date(2026, 7, 16),
-         "paid_by": None, "outside_validity": False},
-    ]
-    client = make_client(pool)
-
-    res = client.patch("/api/v1/policies/installments/i1", json={"payment_status": "PAID"})
-
-    assert res.status_code == 200
-    assert res.json()["payment_status"] == "PAID"
-
-
-def test_patch_installment_no_fields_422():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    conn.fetchrow.return_value = {"policy_id": "p1", "payment_status": "PENDING", "paid_at": None}
-    client = make_client(pool)
-
-    res = client.patch("/api/v1/policies/installments/i1", json={})
-
-    assert res.status_code == 422
-
-
 def test_patch_policy_updates_has_endorsement():
     pool = AsyncMock()
     conn = AsyncMock()
@@ -281,39 +248,6 @@ def test_patch_policy_updates_endorsement_number():
     update_sql = conn.execute.call_args_list[0].args[0]
     assert "endorsement_number = COALESCE($7, endorsement_number)" in update_sql
     assert conn.execute.call_args_list[0].args[7] == "END-99"  # $7 desde Seguros E1
-
-
-# El plan exitoso se prueba contra la base (test_insurance_status_integration.py):
-# aquí solo los rechazos, que no llegan a escribir.
-def test_generate_installment_schedule_404_when_policy_missing():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    conn.fetchrow.return_value = None
-    client = make_client(pool)
-
-    res = client.post(
-        "/api/v1/policies/p1/installments/generate",
-        json={"total_installments": 3, "amount_uf": 2.5, "first_due_date": "2026-01-15"},
-    )
-
-    assert res.status_code == 404
-
-
-def test_generate_installment_schedule_rejects_when_already_has_installments():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    conn.fetchrow.return_value = {"carrier_id": "c1", "valid_from": None, "valid_to": None}
-    conn.fetchval.return_value = 2
-    client = make_client(pool)
-
-    res = client.post(
-        "/api/v1/policies/p1/installments/generate",
-        json={"total_installments": 3, "amount_uf": 2.5, "first_due_date": "2026-01-15"},
-    )
-
-    assert res.status_code == 422
 
 
 def test_upload_policy_file_404_when_policy_missing():
@@ -506,24 +440,6 @@ def test_get_policy_resolves_signed_urls():
     assert res.json()["policy_document_url"] == "https://signed.example.com/x.pdf"
 
 
-# S4 (Seguros E1): una cuota fuera de la vigencia de su póliza se rechaza, y no se crea ninguna.
-def test_S4_generar_cuotas_fuera_de_la_vigencia_responde_422():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    conn.fetchrow.return_value = {"carrier_id": "c1", "valid_from": date(2026, 1, 1), "valid_to": date(2026, 6, 30)}
-    conn.fetchval.return_value = 0
-    client = make_client(pool)
-
-    res = client.post("/api/v1/policies/p1/installments/generate",
-                      json={"total_installments": 12, "amount_uf": 2.0, "first_due_date": "2026-01-15"})
-
-    assert res.status_code == 422
-    assert "vigencia" in res.json()["detail"]
-    assert not any("INSERT INTO public.insurance_installments" in str(c.args[0]) for c in conn.fetchrow.call_args_list)
-
-
-
 # R3 (revisión final E1): el calendario de una póliza también sale de la vista.
 def test_R3_las_cuotas_de_una_poliza_salen_de_la_vista():
     pool = AsyncMock()
@@ -535,21 +451,20 @@ def test_R3_las_cuotas_de_una_poliza_salen_de_la_vista():
     assert "app.insurance_status" in sql and "payment_status" not in sql
 
 
-# R5 (revisión final E1): el frontend de hoy manda la fecha en UTC (a las 22:00 de
-# Chile ya es mañana). El PATCH de compatibilidad usa la fecha de Chile del servidor.
-def test_R5_el_pago_por_el_patch_viejo_usa_la_fecha_de_chile():
+
+
+# S4/S18 (Seguros E2): una sola forma de crear cuotas; las que caen fuera de la
+# vigencia se rechazan con 422 y no se crea ninguna.
+def test_S4_agregar_cuotas_fuera_de_la_vigencia_responde_422():
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchval.return_value = date(2026, 10, 15)
-    conn.fetchrow.side_effect = [
-        {"policy_id": "p1"},
-        {"id": "i1", "installment_number": 1, "installments_total": 1, "amount_uf": 1, "due_date": None,
-         "due_in_days": None, "installment_state": "PAID", "paid": True, "paid_on": date(2026, 10, 15),
-         "paid_by": None, "outside_validity": False},
-    ]
+    conn.fetchrow.return_value = {"valid_from": date(2026, 1, 1), "valid_to": date(2026, 6, 30)}
     client = make_client(pool)
-    res = client.patch("/api/v1/policies/installments/i1", json={"payment_status": "PAID", "paid_at": "2026-10-16"})
-    assert res.status_code == 200
-    update = conn.fetchrow.call_args_list[0]
-    assert update.args[2] == date(2026, 10, 15)
+
+    res = client.post("/api/v1/policies/p1/installments/append",
+                      json={"count": 12, "amount_uf": 2.0, "first_due_date": "2026-01-15"})
+
+    assert res.status_code == 422
+    assert "vigencia" in res.json()["detail"]
+    assert not any("INSERT INTO public.insurance_installments" in str(c.args[0]) for c in conn.execute.call_args_list)

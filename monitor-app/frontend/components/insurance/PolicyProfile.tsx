@@ -402,9 +402,8 @@ function InstallmentsDialog({ policy, onClose, onDone }: { policy: PolicyDetail;
     <FormDialog title={hay ? 'Agregar cuotas' : 'Generar calendario'} confirm={hay ? 'Agregar' : 'Generar'} onClose={onClose}
                 disabled={!f.amount_uf || !f.first_due_date || Number(f.count) < 1}
                 onConfirm={async () => {
-                  const body = { count: Number(f.count), amount_uf: Number(f.amount_uf), first_due_date: f.first_due_date }
-                  if (hay) await insuranceApi.appendInstallments(policy.id, body)
-                  else await policiesApi.generateInstallments(policy.id, { total_installments: body.count, amount_uf: body.amount_uf, first_due_date: body.first_due_date })
+                  // Una sola forma de crear cuotas: el calendario nuevo empieza en la 1.
+                  await insuranceApi.appendInstallments(policy.id, { count: Number(f.count), amount_uf: Number(f.amount_uf), first_due_date: f.first_due_date })
                   await onDone()
                 }}>
       <p className="text-dato text-informativo">Cuotas mensuales, todas dentro de la vigencia de la póliza.</p>

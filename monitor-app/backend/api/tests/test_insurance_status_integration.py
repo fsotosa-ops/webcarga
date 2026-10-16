@@ -61,8 +61,8 @@ async def test_S2_installment_state_is_computed_on_read(conexion_revertida):
 
     async def installment(number, due, *, paid=False, paid_on=None):
         return await conn.fetchval(
-            "INSERT INTO public.insurance_installments (policy_id, installment_number, total_installments, amount_uf, due_date, paid, paid_on) "
-            "VALUES ($1, $2, 4, 2.5, $3, $4, $5) RETURNING id",
+            "INSERT INTO public.insurance_installments (policy_id, installment_number, amount_uf, due_date, paid, paid_on) "
+            "VALUES ($1, $2, 2.5, $3, $4, $5) RETURNING id",
             policy, number, due, paid, paid_on,
         )
 
@@ -95,8 +95,8 @@ async def test_las_lecturas_de_seguros_corren_contra_la_base(conexion_revertida)
     policy = await _policy(conn, carrier, valid_from=today - timedelta(days=60), valid_to=today - timedelta(days=1))
     for n, delta in ((1, -40), (2, -10)):
         await conn.execute(
-            "INSERT INTO public.insurance_installments (policy_id, installment_number, total_installments, amount_uf, due_date) "
-            "VALUES ($1, $2, 2, 3.1, $3)", policy, n, today + timedelta(days=delta),
+            "INSERT INTO public.insurance_installments (policy_id, installment_number, amount_uf, due_date) "
+            "VALUES ($1, $2, 3.1, $3)", policy, n, today + timedelta(days=delta),
         )
 
     pol = await insurance.list_policies(conn, q="Seguros Test", state="EXPIRED")
@@ -110,14 +110,11 @@ async def test_las_lecturas_de_seguros_corren_contra_la_base(conexion_revertida)
     cuo = await insurance.list_installments(conn, q="Seguros Test", state="OVERDUE")
     assert len(cuo["data"]) == 2 and cuo["facets"]["OVERDUE"] == 2
 
-    legacy = await insurance.carrier_policies(conn, carrier)
-    assert legacy[0]["policy_health"] == "EXPIRED" and legacy[0]["total_installments"] == 2
-
-    overview = await insurance.legacy_insurance_overview(conn, q="Seguros Test", health="", operational_status=["ACTIVE"], page=1, limit=10)
-    assert overview["data"][0]["worst_policy_health"] == "EXPIRED"
+    propias = await insurance.carrier_policies(conn, carrier)
+    assert propias[0]["policy_state"] == "EXPIRED" and propias[0]["installments_total"] == 2
 
     cuotas = await insurance.policy_installments(conn, policy)
-    assert [c["payment_status"] for c in cuotas] == ["OVERDUE", "OVERDUE"]
+    assert [c["installment_state"] for c in cuotas] == ["OVERDUE", "OVERDUE"]
 
 
 async def _policy_with_installments(conn, n=3):
@@ -125,8 +122,8 @@ async def _policy_with_installments(conn, n=3):
     carrier = await _carrier(conn)
     policy = await _policy(conn, carrier, valid_from=today - timedelta(days=90), valid_to=today + timedelta(days=270))
     ids = [await conn.fetchval(
-        "INSERT INTO public.insurance_installments (policy_id, installment_number, total_installments, amount_uf, due_date) "
-        "VALUES ($1, $2, $3, 2, $4) RETURNING id", policy, i + 1, n, today - timedelta(days=30 * (n - i)),
+        "INSERT INTO public.insurance_installments (policy_id, installment_number, amount_uf, due_date) "
+        "VALUES ($1, $2, 2, $3) RETURNING id", policy, i + 1, today - timedelta(days=30 * (n - i)),
     ) for i in range(n)]
     return policy, ids, today
 
@@ -182,28 +179,6 @@ async def test_cancelar_una_poliza_guarda_fecha_y_motivo(conexion_revertida):
         == "Se cambió de aseguradora"
 
 
-async def test_generar_el_plan_crea_las_cuotas_mensuales_dentro_de_la_vigencia(conexion_revertida):
-    """El camino feliz de POST /policies/{id}/installments/generate, contra la base."""
-    from app.routers.policies import _add_months
-    from app.services import insurance
-
-    conn = conexion_revertida
-    today = await _today(conn)
-    carrier = await _carrier(conn)
-    policy = await _policy(conn, carrier, valid_from=today, valid_to=today + timedelta(days=400))
-    fechas = [_add_months(today, i) for i in range(3)]
-    assert insurance.schedule_outside_validity(fechas, today, today + timedelta(days=400)) == []
-    assert insurance.schedule_outside_validity([today - timedelta(days=1)], today, None) == [today - timedelta(days=1)]
-    for i, d in enumerate(fechas):
-        await conn.execute(
-            "INSERT INTO public.insurance_installments (policy_id, installment_number, total_installments, amount_uf, due_date) "
-            "VALUES ($1, $2, 3, 2.5, $3)", policy, i + 1, d)
-    cuotas = await insurance.policy_installments(conn, policy)
-    assert [c["installment_number"] for c in cuotas] == [1, 2, 3]
-    assert {c["installments_total"] for c in cuotas} == {3}
-    assert not any(c["outside_validity"] for c in cuotas)
-
-
 async def test_S6_dos_cuotas_vencidas_es_la_alerta_de_la_empresa_en_todas_partes(conexion_revertida):
     """La regla D2 vive en app.carrier_insurance_summary: la misma fila la leen
     /policies?group_by=carrier, /carriers/{id}/policies y /trips."""
@@ -215,8 +190,8 @@ async def test_S6_dos_cuotas_vencidas_es_la_alerta_de_la_empresa_en_todas_partes
     policy = await _policy(conn, carrier, valid_from=today - timedelta(days=100), valid_to=today + timedelta(days=200))
     for n in (1, 2):
         await conn.execute(
-            "INSERT INTO public.insurance_installments (policy_id, installment_number, total_installments, amount_uf, due_date) "
-            "VALUES ($1, $2, 2, 1, $3)", policy, n, today - timedelta(days=10 * n))
+            "INSERT INTO public.insurance_installments (policy_id, installment_number, amount_uf, due_date) "
+            "VALUES ($1, $2, 1, $3)", policy, n, today - timedelta(days=10 * n))
 
     alerta = await conn.fetchval("SELECT insurance_alert FROM app.carrier_insurance_summary WHERE carrier_id = $1", carrier)
     assert alerta == "OVERDUE_INSTALLMENTS"
@@ -238,31 +213,9 @@ def test_R1_la_entrega_1_no_borra_la_vista_materializada():
     assert "DROP MATERIALIZED VIEW" not in sql and "DROP FUNCTION IF EXISTS public.refresh_insurance_view" not in sql
 
 
-async def test_R2_volver_a_correr_la_migracion_no_resucita_un_pago_deshecho(conexion_revertida):
-    from app.services import insurance
-
-    conn = conexion_revertida
-    policy, ids, today = await _policy_with_installments(conn, n=2)
-    actor = "11111111-1111-1111-1111-111111111111"
-    await conn.execute("UPDATE public.insurance_installments SET payment_status = 'PAID' WHERE id = ANY($1::uuid[])", ids)
-    await insurance.pay_installments(conn, [ids[1]], paid_on=today, actor=actor)
-    await insurance.unpay_installments(conn, [ids[0]], actor=actor)
-
-    await conn.execute(MIGRACION.read_text())
-
-    assert await conn.fetchval("SELECT paid FROM public.insurance_installments WHERE id = $1", ids[0]) is False
-
-
-async def test_R4_una_poliza_sin_fechas_no_se_ve_al_dia_en_la_pantalla_de_hoy(conexion_revertida):
-    from app.services import insurance
-
-    conn = conexion_revertida
-    carrier = await _carrier(conn)
-    await _policy(conn, carrier, valid_from=None, valid_to=None)
-    legacy = await insurance.carrier_policies(conn, carrier)
-    assert legacy[0]["policy_health"] == "EXPIRING_SOON"
-    overview = await insurance.legacy_insurance_overview(conn, q="Seguros Test", health="", operational_status=None, page=1, limit=5)
-    assert overview["data"][0]["worst_policy_health"] == "EXPIRING_SOON"
+# R2 (revisión final E1) se retiró en la contracción (E2): verificaba que volver a
+# correr 20261020090000 no resucitara un pago deshecho, y esa migración ya no se
+# puede volver a correr (su relleno lee payment_status, que se borró).
 
 
 async def test_R6_deshacer_un_pago_guarda_en_la_auditoria_lo_que_borra(conexion_revertida):

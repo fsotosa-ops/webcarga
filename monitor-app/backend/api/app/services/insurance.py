@@ -3,12 +3,7 @@
 Los estados de póliza, cuota y empresa los calcula la base en dos vistas
 (`app.insurance_status`, `app.carrier_insurance_summary`; migración
 20261020090000). Aquí solo se consultan: ningún router vuelve a escribir la
-regla de "vencida" ni la de "peor estado de la empresa".
-
-`_legacy_*`: los nombres que lee el frontend de hoy (policy_health,
-payment_status, total_installments, paid_at), calculados desde las vistas y
-no desde las columnas viejas. Los borra la Entrega 2 junto con ese frontend.
-"""
+regla de "vencida" ni la de "peor estado de la empresa"."""
 from __future__ import annotations
 
 from ..utils.identity import rut_matches_sql
@@ -192,7 +187,7 @@ async def policy_installments(conn, policy_id: str) -> list[dict]:
         "FROM app.insurance_status WHERE policy_id = $1 AND installment_id IS NOT NULL ORDER BY installment_number",
         policy_id,
     )
-    return [_legacy_installment(dict(r)) for r in rows]
+    return [dict(r) for r in rows]
 
 
 async def policy_state(conn, policy_id: str) -> dict | None:
@@ -202,82 +197,9 @@ async def policy_state(conn, policy_id: str) -> dict | None:
     return dict(row) if row else None
 
 
-# ── Compatibilidad con el frontend actual (la borra la Entrega 2) ─────────────
-
-# Una póliza sin vigencia no es "al día": en la pantalla de hoy se ve como por
-# vencer (revisión final E1), que es lo más cercano a "hay que mirarla".
-_LEGACY_HEALTH = {"EXPIRED": "EXPIRED", "EXPIRING": "EXPIRING_SOON", "VALID": "VALID", "NO_DATES": "EXPIRING_SOON",
-                  "CANCELLED": "CANCELLED", "RENEWED": "CANCELLED"}
-
-
-def _legacy_installment(r: dict) -> dict:
-    return {**r, "total_installments": r["installments_total"], "payment_status": r["installment_state"],
-            "paid_at": r["paid_on"]}
-
-
 async def carrier_policies(pool, carrier_id: str) -> list[dict]:
-    """Las pólizas de una empresa (pestaña Seguros de la ficha), con los nombres de hoy."""
-    result = await list_policies(pool, carrier_id=carrier_id, limit=200)
-    out = []
-    for r in result["data"]:
-        out.append({
-            **r,
-            "policy_expiration_date": r["valid_to"],
-            "policy_health": _LEGACY_HEALTH[r["policy_state"]],
-            "missing_physical_file": not r["has_file"],
-            "total_installments": r["installments_total"],
-            "next_payment_date": r["next_due_date"],
-        })
-    return out
-
-
-
-async def legacy_insurance_overview(pool, *, q: str, health: str, operational_status: list[str] | None,
-                                    page: int, limit: int) -> dict:
-    """`GET /carriers/insurance-overview` con sus nombres de hoy, leyendo la vista de empresa."""
-    params: list = []
-    where: list[str] = []
-    if q:
-        where.append(_search(q, params, "c.business_name", "c.tax_id"))
-    if operational_status:
-        params.append(operational_status)
-        where.append(f"c.operational_status = ANY(${len(params)}::text[])")
-    base = f"""
-        SELECT c.id AS carrier_id, c.business_name, c.tax_id, c.operational_status,
-               coalesce(s.policies, 0) AS total_policies,
-               coalesce(s.overdue_installments, 0) AS total_overdue_installments,
-               s.next_due_date AS next_payment_date,
-               CASE s.worst_state WHEN 'EXPIRING' THEN 'EXPIRING_SOON' WHEN 'NO_DATES' THEN 'EXPIRING_SOON'
-                                  ELSE s.worst_state END AS worst_policy_health
-        FROM public.carriers c
-        LEFT JOIN app.carrier_insurance_summary s ON s.carrier_id = c.id
-        {"WHERE " + " AND ".join(where) if where else ""}"""
-    hp = list(params)
-    if health == "NONE":
-        hw = "WHERE worst_policy_health IS NULL"
-    elif health:
-        hp.append(health)
-        hw = f"WHERE worst_policy_health = ${len(hp)}"
-    else:
-        hw = ""
-    rows = await pool.fetch(
-        f"WITH agg AS ({base}) SELECT * FROM agg {hw} ORDER BY CASE worst_policy_health WHEN 'EXPIRED' THEN 1 "
-        f"WHEN 'EXPIRING_SOON' THEN 2 WHEN 'VALID' THEN 3 ELSE 5 END, total_overdue_installments DESC, business_name "
-        f"LIMIT ${len(hp) + 1} OFFSET ${len(hp) + 2}",
-        *hp, limit, (page - 1) * limit,
-    )
-    count = await pool.fetchval(f"WITH agg AS ({base}) SELECT count(*) FROM agg {hw}", *hp)
-    facets = await pool.fetchrow(
-        f"WITH agg AS ({base}) SELECT "
-        "count(*) FILTER (WHERE worst_policy_health = 'EXPIRED') AS expired, "
-        "count(*) FILTER (WHERE worst_policy_health = 'EXPIRING_SOON') AS expiring_soon, "
-        "count(*) FILTER (WHERE worst_policy_health = 'VALID') AS valid, "
-        "0 AS cancelled, "
-        "count(*) FILTER (WHERE worst_policy_health IS NULL) AS no_policy, "
-        "count(*) AS total FROM agg",
-        *params,
-    )
-    return {"data": [dict(r) for r in rows], "count": count, "page": page, "limit": limit, "facets": dict(facets)}
+    """Las pólizas de una empresa (pestaña Seguros de la ficha): la misma lista de Pólizas."""
+    return (await list_policies(pool, carrier_id=carrier_id, limit=200))["data"]
 
 
 # ── Escrituras: el pago es un hecho (si, cuándo, quién) ───────────────────────
@@ -467,8 +389,9 @@ def _monthly(first, n):
 
 
 async def append_installments(conn, policy_id: str, *, count: int, amount_uf, first_due_date, actor: str) -> list[dict]:
-    """Cuotas nuevas a continuación de las existentes (p. ej. tras una extensión),
-    todas dentro de la vigencia."""
+    """Cuotas nuevas a continuación de las existentes, todas dentro de la vigencia:
+    el calendario de una póliza nueva (desde la cuota 1) o las cuotas de una
+    extensión. Una sola forma de crear cuotas."""
     p = await conn.fetchrow("SELECT valid_from, valid_to FROM public.insurance_policies WHERE id = $1", policy_id)
     if p is None:
         raise LookupError("Póliza no encontrada")
@@ -479,11 +402,10 @@ async def append_installments(conn, policy_id: str, *, count: int, amount_uf, fi
                          f"(primera: {fuera[0].strftime('%d/%m/%Y')})")
     ultimo = await conn.fetchval(
         "SELECT coalesce(max(installment_number), 0) FROM public.insurance_installments WHERE policy_id = $1", policy_id)
-    total = ultimo + count
     for i, d in enumerate(fechas):
         await conn.execute(
-            "INSERT INTO public.insurance_installments (policy_id, installment_number, total_installments, amount_uf, due_date) "
-            "VALUES ($1, $2, $3, $4, $5)", policy_id, ultimo + i + 1, total, amount_uf, d,
+            "INSERT INTO public.insurance_installments (policy_id, installment_number, amount_uf, due_date) "
+            "VALUES ($1, $2, $3, $4)", policy_id, ultimo + i + 1, amount_uf, d,
         )
     await log_change(conn, actor=actor, entity_type=AUDIT_ENTITY, entity_id=policy_id, action="create",
                      field="installments_appended", new_value=count)

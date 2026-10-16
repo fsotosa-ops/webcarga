@@ -13,7 +13,7 @@ export type PolicyFormState = {
  *  valid_to), no solo aseguradora+número. El plazo de "Por vencer" ya no es
  *  por póliza: es uno solo, en la base (Seguros E1, 15/10). Antes el
  *  formulario dejaba vigencia/alerta de vencimiento sin setear al crear,
- *  aunque el modelo real de datos (y el resto de la UI, ej. policy_health)
+ *  aunque el modelo real de datos (y el estado calculado de la póliza)
  *  depende de esos campos — una póliza recién creada quedaba "incompleta"
  *  respecto al resto. Reusado en el quick-add del sidebar y en el estado
  *  vacío (sin pólizas todavía). */

@@ -50,7 +50,7 @@ export type DirectoryChange = {
  *  el nombre y el estado de cada empresa. */
 const DIRECTORY_ROOTS: QueryKey[] = [
   ['carriers'], ['carriers-count'], ['directorio-buscar'], ['carriers-directorio'],
-  ['carriers-insurance-overview'], ['carriers-insurance-overview-count'], ['fleet-list'],
+  ['fleet-list'],
   ['fleet-assignments'],
 ]
 /** Quién está disponible para un viaje, y la búsqueda de conductores. */

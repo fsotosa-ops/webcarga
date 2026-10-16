@@ -18,7 +18,7 @@ from ..schemas.assignment import (
 from ..schemas.carrier import CARRIER_FIELD_PERMISSIONS, CarrierCreateBody, CarrierListResponse, CarrierPatchBody
 from ..schemas.common import PaginatedResponse
 from ..schemas.contact import ContactCreateBody
-from ..schemas.insurance import CarrierInsuranceOverviewResponse, InsurancePolicyCreateBody
+from ..schemas.insurance import InsurancePolicyCreateBody
 from ..services import fleet_assignments
 from ..services.entity_documents import entity_documents
 from ..services.audit import log_change, record_manual_edit
@@ -171,27 +171,6 @@ async def list_carriers(
 #    con el path param (mismo nivel de profundidad). No expone cuotas
 #    individuales cross-empresa — eso quedó descartado explícitamente. ────
 
-@router.get("/insurance-overview", response_model=CarrierInsuranceOverviewResponse)
-async def list_carriers_insurance_overview(
-    q: str = Query("", description="Buscar por nombre o RUT"),
-    health: str = Query("", description="EXPIRED|EXPIRING_SOON|VALID|NONE"),
-    operational_status: str = Query("", description="ACTIVE|INACTIVE|LEGACY_INACTIVE|ONBOARDING"),
-    page: int = Query(1, ge=1),
-    limit: int = Query(50, ge=1, le=100),
-    pool=Depends(get_pool),
-    _=Depends(require(Permission.INSURANCE_READ)),
-):
-    """Compatibilidad con la pantalla de Seguros de hoy: lee app.carrier_insurance_summary
-    (la misma regla que /policies y /trips). La reemplaza GET /policies?group_by=carrier y
-    se borra en la Entrega 2 de Seguros."""
-    if health and health not in {"EXPIRED", "EXPIRING_SOON", "VALID", "CANCELLED", "NONE"}:
-        raise HTTPException(422, "health inválido")
-    return await insurance.legacy_insurance_overview(
-        pool, q=q, health=health, operational_status=_estados(operational_status) if operational_status else None,
-        page=page, limit=limit,
-    )
-
-
 async def _assemble_carrier_detail(carrier_id: str, pool, supabase=None) -> dict:
     carrier = await pool.fetchrow(
         f"""
@@ -262,7 +241,7 @@ async def get_fleet_driver_gap(pool=Depends(get_pool), _=Depends(require(Permiss
     """Tarea 8 (plan 3.1, minuta 2026-08-03): inconsistencias de dotación
     tracto/conductor por empresa Tractoreo — solo lectura, cálculo en vivo.
     Declarada ANTES de /{carrier_id} (ruta literal debe ganarle a la ruta
-    con path param, mismo cuidado que /insurance-overview arriba)."""
+    con path param)."""
     return {"rows": await compute_fleet_driver_gap(pool)}
 
 

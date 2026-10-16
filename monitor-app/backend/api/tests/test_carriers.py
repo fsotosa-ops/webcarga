@@ -102,48 +102,6 @@ def _facets_row(**overrides):
     return base
 
 
-def test_list_carriers_insurance_overview_aggregates_by_carrier():
-    pool = AsyncMock()
-    pool.fetch.return_value = [{
-        "carrier_id": "c1", "business_name": "Acme", "tax_id": "1-9", "operational_status": "ACTIVE",
-        "total_policies": 2, "total_overdue_installments": 3, "next_payment_date": None,
-        "worst_policy_health": "EXPIRED",
-    }]
-    pool.fetchval.return_value = 1
-    pool.fetchrow.return_value = _facets_row(expired=1, total=1)
-    client = make_client(pool)
-
-    res = client.get("/api/v1/carriers/insurance-overview")
-
-    assert res.status_code == 200
-    body = res.json()
-    assert body["count"] == 1
-    assert body["data"][0]["worst_policy_health"] == "EXPIRED"
-    assert body["data"][0]["total_overdue_installments"] == 3
-    assert body["facets"] == {"expired": 1, "expiring_soon": 0, "valid": 0, "cancelled": 0, "no_policy": 0, "total": 1}
-    fetch_query = pool.fetch.call_args.args[0]
-    assert "FROM public.carriers c" in fetch_query
-    # Seguros E1: la misma vista de empresa que /policies y /trips, no la materializada.
-    assert "LEFT JOIN app.carrier_insurance_summary s ON s.carrier_id = c.id" in fetch_query
-    count_query = pool.fetchval.call_args.args[0]
-    assert "count(*)" in count_query
-
-
-def test_list_carriers_insurance_overview_filters_by_search():
-    pool = AsyncMock()
-    pool.fetch.return_value = []
-    pool.fetchval.return_value = 0
-    pool.fetchrow.return_value = _facets_row()
-    client = make_client(pool)
-
-    res = client.get("/api/v1/carriers/insurance-overview?q=Acme")
-
-    assert res.status_code == 200
-    fetch_query = pool.fetch.call_args.args[0]
-    assert "ILIKE" in fetch_query
-    assert pool.fetch.call_args.args[1] == "Acme"
-
-
 def test_list_carriers_acepta_varios_estados_separados_por_coma():
     """El resumen del Directorio cuenta `LEGACY_INACTIVE + INACTIVE` como
     "inactivas" (_SQL_DIRECTORIO) y la pestana filtraba solo por el primero:
@@ -174,81 +132,6 @@ def test_list_carriers_ignora_estados_vacios_entre_comas():
 
     assert res.status_code == 200
     assert pool.fetch.call_args.args[1] == ["ACTIVE"]
-
-
-def test_list_carriers_insurance_overview_filters_by_operational_status():
-    pool = AsyncMock()
-    pool.fetch.return_value = []
-    pool.fetchval.return_value = 0
-    pool.fetchrow.return_value = _facets_row()
-    client = make_client(pool)
-
-    res = client.get("/api/v1/carriers/insurance-overview?operational_status=LEGACY_INACTIVE")
-
-    assert res.status_code == 200
-    fetch_query = pool.fetch.call_args.args[0]
-    # Un solo estado sigue llegando como lista de uno: `= ANY(ARRAY['X'])` es
-    # equivalente a `= 'X'`, y asi la pestana "Inactivas" puede mandar los dos
-    # estados que su propio resumen ya suma.
-    assert "c.operational_status = ANY($1::text[])" in fetch_query
-    assert pool.fetch.call_args.args[1] == ["LEGACY_INACTIVE"]
-
-
-def test_list_carriers_insurance_overview_combines_search_and_operational_status():
-    pool = AsyncMock()
-    pool.fetch.return_value = []
-    pool.fetchval.return_value = 0
-    pool.fetchrow.return_value = _facets_row()
-    client = make_client(pool)
-
-    res = client.get("/api/v1/carriers/insurance-overview?q=Acme&operational_status=ACTIVE")
-
-    assert res.status_code == 200
-    fetch_query = pool.fetch.call_args.args[0]
-    assert "AND" in fetch_query
-    assert pool.fetch.call_args.args[1] == "Acme"
-    assert pool.fetch.call_args.args[2] == ["ACTIVE"]
-
-
-def test_list_carriers_insurance_overview_filters_by_health():
-    pool = AsyncMock()
-    pool.fetch.return_value = []
-    pool.fetchval.return_value = 0
-    pool.fetchrow.return_value = _facets_row()
-    client = make_client(pool)
-
-    res = client.get("/api/v1/carriers/insurance-overview?health=EXPIRED")
-
-    assert res.status_code == 200
-    fetch_query = pool.fetch.call_args.args[0]
-    assert "WHERE worst_policy_health = $1" in fetch_query
-    assert pool.fetch.call_args.args[1] == "EXPIRED"
-    # el filtro `health` no debe alterar los facets (permite ver los otros conteos) —
-    # sin q, la llamada a fetchrow no debe llevar el param "EXPIRED"
-    assert pool.fetchrow.call_args.args == (pool.fetchrow.call_args.args[0],)
-
-
-def test_list_carriers_insurance_overview_filters_by_no_policy():
-    pool = AsyncMock()
-    pool.fetch.return_value = []
-    pool.fetchval.return_value = 0
-    pool.fetchrow.return_value = _facets_row()
-    client = make_client(pool)
-
-    res = client.get("/api/v1/carriers/insurance-overview?health=NONE")
-
-    assert res.status_code == 200
-    fetch_query = pool.fetch.call_args.args[0]
-    assert "WHERE worst_policy_health IS NULL" in fetch_query
-
-
-def test_list_carriers_insurance_overview_rejects_invalid_health():
-    pool = AsyncMock()
-    client = make_client(pool)
-
-    res = client.get("/api/v1/carriers/insurance-overview?health=BOGUS")
-
-    assert res.status_code == 422
 
 
 def test_get_carrier_404_when_missing():
@@ -858,8 +741,7 @@ def test_list_carrier_policies_reads_from_insurance_status_view():
     assert res.status_code == 200
     fila = res.json()[0]
     assert fila["insurance_company"] == "HDI"
-    assert fila["policy_state"] == "EXPIRING" and fila["policy_health"] == "EXPIRING_SOON"
-    assert fila["total_installments"] == 2 and fila["missing_physical_file"] is True
+    assert fila["policy_state"] == "EXPIRING" and fila["installments_total"] == 2 and fila["has_file"] is False
     assert "FROM app.insurance_status" in pool.fetch.call_args.args[0]
 
 

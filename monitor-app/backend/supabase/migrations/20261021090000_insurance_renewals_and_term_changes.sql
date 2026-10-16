@@ -31,7 +31,12 @@ CREATE INDEX IF NOT EXISTS policy_term_changes_policy_id_idx ON public.policy_te
 ALTER TABLE public.policy_term_changes ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.policy_term_changes FROM anon, authenticated;
 
--- 3. Las vistas: RENEWED es un estado calculado (tiene sucesora).
+-- 3. total_installments deja de escribirse (se cuenta en la vista): sin NOT NULL,
+--    el código nuevo puede omitirla antes de que la contracción la borre.
+ALTER TABLE public.insurance_installments ALTER COLUMN total_installments DROP NOT NULL;
+
+-- 4. Las vistas: RENEWED es un estado calculado (tiene sucesora). outside_validity
+--    nunca es null (revisión final E1).
 CREATE OR REPLACE VIEW app.insurance_status AS
 WITH hoy AS (
     SELECT (now() AT TIME ZONE 'America/Santiago')::date AS d,
@@ -69,8 +74,8 @@ SELECT
         ELSE 'PENDING'
     END                          AS installment_state,
     i.due_date - hoy.d           AS due_in_days,
-    (i.id IS NOT NULL AND i.due_date IS NOT NULL
-        AND (i.due_date < p.valid_from OR i.due_date > p.valid_to)) AS outside_validity
+    coalesce(i.id IS NOT NULL AND i.due_date IS NOT NULL
+        AND (i.due_date < p.valid_from OR i.due_date > p.valid_to), false) AS outside_validity
 FROM public.insurance_policies p
 CROSS JOIN hoy
 LEFT JOIN public.insurance_installments i ON i.policy_id = p.id;

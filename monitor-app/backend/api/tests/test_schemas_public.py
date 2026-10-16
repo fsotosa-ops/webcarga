@@ -122,6 +122,3 @@ def test_compliance_record_patch_rejects_unknown_status():
         ComplianceRecordPatchBody(status="NOT_A_REAL_STATUS")
 
 
-def test_insurance_policy_create_defaults_alert_days():
-    body = InsurancePolicyCreateBody(carrier_id="c1", insurance_company="HDI")
-    assert body.expiration_alert_days == 30
