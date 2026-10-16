@@ -15,13 +15,13 @@ import { BotonConfirmar, MarcaDeRevision } from '@/app/dashboard/admin/settings/
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 const UNIVERSO: Record<string, string> = {
-  ASSET:   'A todos los vehículos',
+  ASSET:   'A todos los equipos',
   CARRIER: 'A todas las empresas',
   DRIVER:  'A todos los conductores',
 }
 
 const ALGUNOS: Record<string, string> = {
-  ASSET:   'Sólo a algunos subtipos de vehículo',
+  ASSET:   'Sólo a algunos subtipos de equipo',
   CARRIER: 'Sólo a algunos tipos de gestión',
 }
 

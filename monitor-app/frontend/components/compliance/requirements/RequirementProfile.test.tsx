@@ -58,7 +58,7 @@ describe('La ficha de un documento exigido (P2.3)', () => {
   it('responde las cinco preguntas en una frase', async () => {
     renderProfile()
     await screen.findByRole('heading', { name: 'Mantención Cámara de Frío' })
-    expect(within(pregunta(/¿A quién se le exige\?/)).getByText('Todos los vehículos')).toBeInTheDocument()
+    expect(within(pregunta(/¿A quién se le exige\?/)).getByText('Todos los equipos')).toBeInTheDocument()
     expect(within(pregunta(/¿A quién se le exige\?/)).getByText('37 de 122 activos')).toBeInTheDocument()
     expect(within(pregunta(/¿Cuándo vence\?/)).getByText('Anual')).toBeInTheDocument()
     expect(within(pregunta(/¿Cuándo se exige\?/)).getByText('Al ingresar')).toBeInTheDocument()
@@ -111,6 +111,20 @@ describe('La ficha de un documento exigido (P2.3)', () => {
     renderProfile()
     const enlace = await screen.findByRole('link', { name: /6 no cumplen/ })
     expect(enlace.getAttribute('href')).toBe('/dashboard/compliance/pending?doc=MANTENCION_FRIO')
+  })
+
+  it('si nadie debe el documento lo dice, sin enlace a una cola vacía', async () => {
+    vi.mocked(requirementsApi.get).mockResolvedValue({ ...FRIO, cumplen: 37, exigidos: 37 })
+    renderProfile()
+    expect(await screen.findByText('Todos cumplen.')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /no cumplen/ })).toBeNull()
+  })
+
+  it('si la regla no alcanza a nadie no dice que todos cumplen', async () => {
+    vi.mocked(requirementsApi.get).mockResolvedValue({ ...FRIO, cumplen: 0, exigidos: 0 })
+    renderProfile()
+    expect(await screen.findByText('Hoy no se le exige a nadie.')).toBeInTheDocument()
+    expect(screen.queryByText('Todos cumplen.')).toBeNull()
   })
 
   it('un documento sin vigencia lo dice en el encabezado y ofrece ponerla', async () => {

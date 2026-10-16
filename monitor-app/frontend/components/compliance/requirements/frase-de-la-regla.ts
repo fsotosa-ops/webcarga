@@ -1,7 +1,7 @@
 import type { RequirementOption } from '@/lib/types'
 
 const UNIVERSO: Record<string, string> = {
-  ASSET:   'Todos los vehículos',
+  ASSET:   'Todos los equipos',
   CARRIER: 'Todas las empresas',
   DRIVER:  'Todos los conductores',
 }

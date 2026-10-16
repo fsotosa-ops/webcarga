@@ -31,7 +31,7 @@ function requisito(patch: Partial<RequirementOption> = {}): RequirementOption {
 
 describe('fraseDeLaRegla', () => {
   it('sin condición nombra el universo de la entidad', () => {
-    expect(fraseDeLaRegla(requisito(), VOCABULARIO)).toBe('Todos los vehículos')
+    expect(fraseDeLaRegla(requisito(), VOCABULARIO)).toBe('Todos los equipos')
     expect(fraseDeLaRegla(requisito({ target_entity: 'CARRIER' }), VOCABULARIO)).toBe('Todas las empresas')
     expect(fraseDeLaRegla(requisito({ target_entity: 'DRIVER' }), VOCABULARIO)).toBe('Todos los conductores')
   })

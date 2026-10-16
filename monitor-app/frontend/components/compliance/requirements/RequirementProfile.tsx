@@ -111,7 +111,9 @@ export function RequirementProfile({ id }: { id: string }) {
           <CeldaAlias requisito={r} puedeEditar={canEdit} />
         </AsidePanel>
         <AsidePanel title="Quiénes no cumplen">
-          {noCumplen === undefined ? <p className="text-dato text-informativo">—</p> : (
+          {noCumplen === undefined ? <p className="text-dato text-informativo">—</p>
+            : r.exigidos === 0 ? <p className="text-dato text-informativo">Hoy no se le exige a nadie.</p>
+            : noCumplen === 0 ? <p className="text-dato text-text-primary">Todos cumplen.</p> : (
             <Link href={pendingDocumentHref(r.requirement_code)} prefetch={false}
               className="inline-flex items-center gap-1 text-dato font-medium text-accion hover:underline">
               {formatCount(noCumplen)} no cumplen · ver en Pendientes <ArrowRight size={13} aria-hidden />

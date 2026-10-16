@@ -181,7 +181,7 @@ describe('CondicionPanel', () => {
   // resuelven sin ver un subtipo.
   it('pregunta a todos o a algunos, sin mostrar subtipos', () => {
     montarPanel()
-    expect(screen.getByRole('radio', { name: /a todos los vehículos/i })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /a todos los equipos/i })).toBeChecked()
     expect(screen.queryByText(/furgón congelado/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/sider/i)).not.toBeInTheDocument()
   })
@@ -220,7 +220,7 @@ describe('CondicionPanel', () => {
   // seguiría vigente y la pantalla mostraría otra cosa que la base.
   it('volver a "a todos" borra la condición guardada', async () => {
     montarPanel(requisito({ applies_to_fleet_service_type_ids: ['t2'] }))
-    fireEvent.click(screen.getByRole('radio', { name: /a todos los vehículos/i }))
+    fireEvent.click(screen.getByRole('radio', { name: /a todos los equipos/i }))
     fireEvent.click(screen.getByRole('button', { name: /^guardar$/i }))
     await waitFor(() => expect(requirementsApi.patchConditions).toHaveBeenCalledWith(
       'r1', { applies_to_fleet_service_type_ids: [] }))
@@ -302,7 +302,7 @@ describe('CondicionPanel', () => {
   it('si el requisito cambia, el borrador se resincroniza', () => {
     const { redibujar } = montarPanel(requisito({ applies_to_fleet_service_type_ids: ['t2'] }))
     redibujar(requisito({ applies_to_fleet_service_type_ids: null }))
-    expect(screen.getByRole('radio', { name: /a todos los vehículos/i })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /a todos los equipos/i })).toBeChecked()
   })
 
   // La misma clase de bug, del otro lado: resincronizar DE MÁS. El catálogo
@@ -325,9 +325,9 @@ describe('CondicionPanel', () => {
 
   it('un refetch que devuelve lo mismo tampoco desmarca "a todos"', () => {
     const { redibujar } = montarPanel(requisito({ applies_to_fleet_service_type_ids: ['t2'] }))
-    fireEvent.click(screen.getByRole('radio', { name: /a todos los vehículos/i }))
+    fireEvent.click(screen.getByRole('radio', { name: /a todos los equipos/i }))
     redibujar(requisito({ applies_to_fleet_service_type_ids: ['t2'] }))
-    expect(screen.getByRole('radio', { name: /a todos los vehículos/i })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /a todos los equipos/i })).toBeChecked()
   })
 
   // Guardar CIERRA la vista previa era una capacidad menos: el número recién

@@ -17,7 +17,7 @@ type Nivel = 'LEGAL_MANDATORY' | 'CONDITIONAL_OPTIONAL'
 const ENTIDADES: [Entidad, string, string][] = [
   ['CARRIER', 'Empresa',   'Lo presenta la empresa de transporte'],
   ['DRIVER',  'Conductor', 'Lo presenta cada conductor'],
-  ['ASSET',   'Vehículo',  'Lo presenta cada vehículo'],
+  ['ASSET',   'Equipo',    'Lo presenta cada equipo'],
 ]
 
 const NIVELES: [Nivel, string, string][] = [

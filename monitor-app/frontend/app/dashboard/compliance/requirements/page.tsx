@@ -133,7 +133,27 @@ function RequirementsList() {
       ) : filas.length === 0 ? (
         <Estado tipo="vacio" titulo={q ? `Ningún documento coincide con «${q}»` : 'Ningún documento en este filtro'} />
       ) : (
-        <div className="bg-white rounded-2xl border border-border overflow-x-auto">
+        <>
+        {/* En el teléfono, una tarjeta por documento (como Clientes). */}
+        <ul aria-label="Documentos exigidos" className="md:hidden space-y-2">
+          {filas.map(r => (
+            <li key={r.id}>
+              <Link href={requirementHref(r.id, returnTo)} prefetch={false}
+                className="block rounded-2xl border border-border bg-white px-3.5 py-3 hover:bg-bg-main">
+                <span className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-text-primary">{r.name}</span>
+                  <StatusChip tone="neutral">{nivelDe(r.requirement_level)}</StatusChip>
+                </span>
+                <span className="mt-1 block text-etiqueta text-informativo">
+                  {celdaSeExigeA(r, vocabulario).regla} · {resumenDeVigencia(vigenciaDe(r))}
+                  {r.cumplen !== undefined && r.exigidos !== undefined
+                    && ` · cumplen ${formatCount(r.cumplen)} de ${formatCount(r.exigidos)}`}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+        <div className="hidden md:block bg-white rounded-2xl border border-border overflow-x-auto">
           <table className="w-full text-dato">
             <thead>
               <tr className="border-b border-border bg-bg-main">
@@ -160,8 +180,10 @@ function RequirementsList() {
                       <div className="text-etiqueta text-informativo truncate max-w-[16rem]">{r.requirement_code}</div>
                     </td>
                     <td className="px-3 py-2.5">
-                      <div className={r.is_active ? 'text-text-primary' : 'text-informativo'}>{celda.regla}</div>
-                      <StatusChip tone="neutral">{nivelDe(r.requirement_level)}</StatusChip>
+                      <span className="flex items-center gap-2 whitespace-nowrap">
+                        <span className={r.is_active ? 'text-text-primary' : 'text-informativo'}>{celda.regla}</span>
+                        <StatusChip tone="neutral">{nivelDe(r.requirement_level)}</StatusChip>
+                      </span>
                     </td>
                     <td className="px-3 py-2.5 hidden md:table-cell">{resumenDeVigencia(vigencia)}</td>
                     <td className="px-3 py-2.5 hidden md:table-cell text-informativo">{resumenDeAviso(vigencia) ?? '—'}</td>
@@ -176,6 +198,7 @@ function RequirementsList() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   )

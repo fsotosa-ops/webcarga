@@ -146,6 +146,14 @@ describe('Certificación › Documentos exigidos (P2.1)', () => {
     expect(await screen.findByText('No se pudieron cargar los documentos')).toBeInTheDocument()
   })
 
+  it('en el teléfono, una tarjeta por documento con a quién, cómo vence y cuántos cumplen', async () => {
+    renderPage()
+    const tarjetas = await screen.findByRole('list', { name: 'Documentos exigidos' })
+    const frio = within(tarjetas).getByRole('link', { name: /Mantención Cámara de Frío/ })
+    expect(frio).toHaveTextContent('Fecha del documento · cumplen 31 de 37')
+    expect(frio.getAttribute('href')).toBe('/dashboard/compliance/requirements/r2?next=%2Fdashboard%2Fcompliance%2Frequirements')
+  })
+
   it('si la lista falla lo dice', async () => {
     vi.mocked(complianceApi.listRequirements).mockRejectedValue(new Error('500'))
     renderPage()
@@ -156,14 +164,14 @@ describe('Certificación › Documentos exigidos (P2.1)', () => {
 describe('P2.2: la fila abre la ficha con la lista para volver', () => {
   it('el enlace lleva los filtros en next', async () => {
     renderPage('entity=ASSET&q=frio')
-    const enlace = await screen.findByRole('link', { name: /Mantención Cámara de Frío/ })
+    const enlace = within(await screen.findByRole('table')).getByRole('link', { name: /Mantención Cámara de Frío/ })
     expect(enlace.getAttribute('href')).toBe(
       '/dashboard/compliance/requirements/r2?next=%2Fdashboard%2Fcompliance%2Frequirements%3Fentity%3DASSET%26q%3Dfrio')
   })
 
   it('la fila entera abre la ficha', async () => {
     renderPage()
-    const fila = (await screen.findByRole('link', { name: /Revisión Técnica/ })).closest('tr')!
+    const fila = within(await screen.findByRole('table')).getByRole('link', { name: /Revisión Técnica/ }).closest('tr')!
     fireEvent.click(fila)
     expect(push).toHaveBeenCalledWith('/dashboard/compliance/requirements/r1?next=%2Fdashboard%2Fcompliance%2Frequirements')
   })
