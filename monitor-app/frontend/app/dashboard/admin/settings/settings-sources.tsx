@@ -164,8 +164,8 @@ const dias = (n: number) => `${n} ${n === 1 ? 'día' : 'días'}`
 
 /** Un umbral de vencimiento, en su área (backend: vencimientos.UMBRALES). */
 const UMBRALES: Record<string, { area: string; description: string }> = {
-  documento_por_vencer: { area: 'certification', description: 'Con cuántos días de anticipación un documento pasa a "Por vencer".' },
-  poliza_por_vencer:    { area: 'insurance',     description: 'Con cuántos días de anticipación una póliza pasa a "Por vencer".' },
+  documento_por_vencer: { area: 'certification', description: 'Con cuántos días de anticipación se avisa que un documento vence.' },
+  poliza_por_vencer:    { area: 'insurance',     description: 'Con cuántos días de anticipación se avisa que una póliza vence.' },
 }
 
 type ThresholdRow = AlertThresholdMeta & { id: string }

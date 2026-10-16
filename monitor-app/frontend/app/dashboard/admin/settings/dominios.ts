@@ -115,7 +115,7 @@ export const DOMINIOS: Dominio[] = [
     proposito: 'Cuándo una póliza está por vencer',
     secciones: [
       { clave: 'expiry-alerts', titulo: 'Alertas de vencimiento',
-        proposito: 'Con cuántos días de anticipación una póliza pasa a "Por vencer"', Panel: AlertasDePolizasPanel },
+        proposito: 'Con cuántos días de anticipación se avisa que una póliza vence', Panel: AlertasDePolizasPanel },
     ],
   },
   {
