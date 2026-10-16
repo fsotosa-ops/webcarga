@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/lib/api/users', () => ({
@@ -45,17 +45,24 @@ describe('UsuariosTab', () => {
     expect(accessApi.permissions).toHaveBeenCalled()
   })
 
-  it('muestra el total de usuarios calculado de la lista', async () => {
+  // Configuración, Parte 1: sin tarjetas de cifras; el total vive en el filtro.
+  it('los filtros son un control segmentado con sus conteos, sin tarjetas de cifras', async () => {
     mostrar()
-    const etiqueta = await screen.findByText('Usuarios')
-    expect(etiqueta.previousElementSibling).toHaveTextContent('2')
+    const filtros = await screen.findByRole('group', { name: 'Filtrar' })
+    expect(within(filtros).getByRole('button', { name: /Todos/ })).toHaveTextContent('2')
+    expect(screen.queryByText('Usuarios')).not.toBeInTheDocument()
   })
 
-  // El titulo de pagina ("Gestión de Usuarios") ahora lo pone la pagina del
-  // dominio -- este componente ya no es una pagina completa, es una seccion.
+  it('los encabezados de la tabla no van en mayúsculas', async () => {
+    mostrar()
+    const encabezado = await screen.findByRole('columnheader', { name: 'Persona' })
+    expect(encabezado).not.toHaveClass('uppercase')
+  })
+
+  // El título de página lo pone la sección; este componente no lo repite.
   it('ya no repite el titulo de pagina', async () => {
     mostrar()
-    await screen.findByText('Usuarios')
+    await screen.findByRole('group', { name: 'Filtrar' })
     expect(screen.queryByText('Gestión de Usuarios')).not.toBeInTheDocument()
   })
 })

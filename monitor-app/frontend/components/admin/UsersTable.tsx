@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
 import CreateUserForm from './CreateUserForm'
 import EditarRolesPanel from './EditarRolesPanel'
 import RolChips from './RolChips'
@@ -155,43 +157,27 @@ export default function UsersTable({ users: initial, currentUserId, roles, catal
         <div className="px-5 py-4 border-b border-border">
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative flex-1 min-w-[180px] max-w-[280px]">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-informativo" />
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Buscar por nombre o email…"
-                className="pl-8 pr-3 py-1.5 text-sm border border-border rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30"
+                aria-label="Buscar personas"
+                className="w-full rounded-lg border border-border py-1.5 pl-8 pr-3 text-dato focus:outline-none focus:ring-2 focus:ring-accent/20"
               />
             </div>
             <button
               onClick={() => setShowCreate(true)}
-              className="ml-auto flex items-center gap-2 px-4 py-2 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent/90 transition-colors shrink-0"
+              className="ml-auto flex shrink-0 items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-dato font-semibold text-white hover:bg-accent/90"
             >
               <UserPlus size={14} />
               Invitar persona
             </button>
           </div>
 
-          {/* Filter tabs */}
-          <div className="flex gap-0 mt-3 border-b border-border -mb-4 pt-0.5">
-            {TABS.map(t => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={`pb-2.5 px-1 mr-5 text-xs font-semibold border-b-2 transition-colors whitespace-nowrap ${
-                  tab === t.key
-                    ? 'border-accent text-accent'
-                    : 'border-transparent text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                {t.label}
-                <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                  tab === t.key ? 'bg-accent/10 text-accent' : 'bg-gray-100 text-gray-500'
-                }`}>
-                  {tabCounts[t.key]}
-                </span>
-              </button>
-            ))}
+          <div className="mt-3">
+            <SegmentedControl label="Filtrar" value={tab} onChange={setTab}
+              options={TABS.map(t => ({ id: t.key, label: t.label, badge: String(tabCounts[t.key]) }))} />
           </div>
         </div>
 
@@ -199,12 +185,11 @@ export default function UsersTable({ users: initial, currentUserId, roles, catal
         <div className="overflow-x-auto">
           <table className="w-full text-sm" style={{ minWidth: 680 }}>
             <thead>
-              <tr className="border-b border-border bg-gray-50/60">
-                {['Persona', 'Roles', 'Estado', 'Acceso', ''].map(h => (
-                  <th key={h} className="px-5 py-3 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wide">
-                    {h}
-                  </th>
+              <tr className="border-b border-border bg-bg-main">
+                {['Persona', 'Roles', 'Estado', 'Acceso'].map(h => (
+                  <th key={h} scope="col" className={CABECERA}>{h}</th>
                 ))}
+                <th scope="col" className="w-12"><span className="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">

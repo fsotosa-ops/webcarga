@@ -84,7 +84,8 @@ describe('la escala tipografica', () => {
     // 130 -> 128 el 2026-10-15: PolicyCreateForm sin 9-10px (menores de la revisión final de Seguros E2).
     // 128 -> 117 el 2026-10-16: Configuración con la lista + panel (Parte 1, tarea 5).
     // 117 -> 112 el 2026-10-16: parámetros de Configuración con la lista + panel (Parte 1, tarea 6).
-    const DEUDA = 112
+    // 112 -> 110 el 2026-10-16: Personas y Roles con el kit (Parte 1, tarea 8).
+    const DEUDA = 110
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

@@ -108,9 +108,9 @@ export function RolesTab() {
 
       <div className="grid grid-cols-1 md:grid-cols-[minmax(0,280px)_minmax(0,1fr)] border border-border rounded-xl overflow-hidden bg-white">
         <nav aria-label="Roles" className="p-3 space-y-1 border-b md:border-b-0 md:border-r border-border">
-          <p className="px-2.5 pt-1 pb-1 text-etiqueta font-bold uppercase tracking-wide text-informativo">De sistema</p>
+          <p className="px-2.5 pt-1 pb-1 text-etiqueta font-semibold text-informativo">De sistema</p>
           {deSistema.map(item)}
-          <p className="px-2.5 pt-3 pb-1 text-etiqueta font-bold uppercase tracking-wide text-informativo">Personalizados</p>
+          <p className="px-2.5 pt-3 pb-1 text-etiqueta font-semibold text-informativo">Personalizados</p>
           {personalizados.length > 0 ? personalizados.map(item) : (
             <p className="px-2.5 text-dato text-informativo">
               Aún no hay roles personalizados. Crea uno cuando un puesto no calce con los de sistema.
@@ -197,7 +197,7 @@ function DetalleDeRol({ rol, catalogo, puedeGestionar, onEditar, onEliminado }: 
       <div className="grid grid-cols-1 2xl:grid-cols-2 gap-x-8 gap-y-4">
         {porArea(catalogo).map(([area, permisos]) => (
           <div key={area} className="space-y-1">
-            <p className="text-etiqueta font-bold uppercase tracking-wide text-informativo">{TITULO_DE_AREA[area] ?? area}</p>
+            <p className="text-etiqueta font-semibold text-informativo">{TITULO_DE_AREA[area] ?? area}</p>
             {permisos.map(p => (
               <div key={p.code} className="flex items-start gap-2">
                 {tiene(p.code)
@@ -270,7 +270,7 @@ function FormularioDeRol({ catalogo, rol, onCancel, onSaved }: {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-8 gap-y-5">
         {porArea(catalogo).map(([area, lista]) => (
           <fieldset key={area} className="space-y-1">
-            <legend className="text-etiqueta font-bold uppercase tracking-wide text-informativo mb-1">{TITULO_DE_AREA[area] ?? area}</legend>
+            <legend className="text-etiqueta font-semibold text-informativo mb-1">{TITULO_DE_AREA[area] ?? area}</legend>
             {lista.map(p => {
               const bloqueado = !puedeDar(p.code)
               const id = `permiso-${p.code}`

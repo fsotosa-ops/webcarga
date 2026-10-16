@@ -120,7 +120,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 962 -> 954 el 2026-10-15: PolicyCreateForm con tokens (menores de la revisión final de Seguros E2).
     // 954 -> 911 el 2026-10-16: Configuración con la lista + panel; fuera los formularios por fila (Parte 1, tarea 5).
     // 911 -> 891 el 2026-10-16: umbrales, rangos y reglas del Monitor como lista + panel (Parte 1, tarea 6).
-    const DEUDA = 891
+    // 891 -> 855 el 2026-10-16: Personas y Roles con el kit (Parte 1, tarea 8).
+    const DEUDA = 855
 
     const total = usosDeColorCrudo()
     expect(
@@ -136,7 +137,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // clases. Baja a medida que cada pagina usa <EncabezadoDePagina>.
     // 9 -> 8 el 2026-10-15: el nombre editable de la ficha de empresa salió del <h1> (kit de fichas, Tarea 5).
     // 8 -> 7 el 2026-10-15: Por asignar usa EncabezadoDePagina (Entrega 2 de fichas).
-    const DEUDA = 7
+    // 7 -> 5 el 2026-10-16: Configuración con EncabezadoDePagina en la sección, la raíz y 'no existe' (Parte 1).
+    const DEUDA = 5
 
     const hallazgos = h1FueraDelEncabezado()
     expect(

@@ -99,4 +99,10 @@ describe('orden de los roles de sistema', () => {
     // Abre con el primero de la lista elegido.
     expect(screen.getByRole('region', { name: 'Propietario (Super admin)' })).toBeInTheDocument()
   })
+
+  // Configuración, Parte 1: los títulos van en texto normal, como el resto del kit.
+  it('los títulos de grupo no van en mayúsculas', async () => {
+    mostrar()
+    expect(await screen.findByText('De sistema')).not.toHaveClass('uppercase')
+  })
 })
