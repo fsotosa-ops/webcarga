@@ -91,4 +91,19 @@ describe('useDataTable', () => {
     }))
     expect(result.current.visibleColumns.map(c => c.id)).toEqual(['estado', 'conductor', 'viaje', 'nota'])
   })
+
+  it('una columna de varios valores (una fila con dos viajes) filtra y cuenta cada valor por separado', () => {
+    type ConViajes = { id: string; viajes: string[] }
+    const filas: ConViajes[] = [{ id: 'a', viajes: ['30', '31'] }, { id: 'b', viajes: ['31'] }, { id: 'c', viajes: [] }]
+    const columnas: DataColumn<ConViajes>[] = [
+      { id: 'viajes', header: 'Nº viaje', value: r => r.viajes.join(', ') || null, values: r => r.viajes },
+    ]
+    const { result } = renderHook(() => {
+      const [view, setView] = useState<TableView>({ ...EMPTY_VIEW, filters: { viajes: ['30'] } })
+      return useDataTable({ rows: filas, columns: columnas, getRowId: r => r.id, view, onViewChange: setView })
+    })
+    expect(result.current.rows.map(r => r.id)).toEqual(['a'])
+    expect(result.current.valuesOf('viajes')).toEqual(['30', '31'])
+    expect(result.current.facetCount('viajes', '31')).toBe(2)
+  })
 })

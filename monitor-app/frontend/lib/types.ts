@@ -1292,8 +1292,13 @@ export type PreCierreEscalations = {
   CONDUCTOR_SIN_EMPRESA?: ({
     driver_id: string; driver_name: string
     carrier_id: string; carrier_name: string; viajes: number
+    trips?: TripRef[]
   } & ScopedNotice)[]
 }
+/** El tipo de un aviso de Pendientes: una escalación del pre-cierre o el desbalance de
+ *  dotación de una empresa (`GET /carriers/fleet-driver-gap`). */
+export type NoticeType = keyof PreCierreEscalations | 'FLEET_DRIVER_GAP'
+
 export type PreCierreResult = {
   auto_resolved: PreCierreAutoResolved[]
   escalations:   PreCierreEscalations
@@ -1592,6 +1597,9 @@ export type CarrierUtilizationRow = {
   utilization_pct:  number
 }
 
+/** Un viaje nombrado por su Nº del TMS (D8): lo que muestra una fila con viajes. */
+export type TripRef = { id: string; code: string | null }
+
 /** Una hoja del árbol de Asignados: cliente × origen real del viaje × empresa. */
 export type AssignedRow = {
   client_name:  string
@@ -1607,6 +1615,8 @@ export type AssignedRow = {
     tractor_plate: string | null
     driver_name:   string | null
     zone:          'rm' | 'z0' | 'region' | 'unclassified'
+    /** Sus viajes del día (D8). Opcional: backend y frontend se despliegan por separado. */
+    trips?:        TripRef[]
   }[]
 }
 
@@ -1650,6 +1660,7 @@ export type OperationTypeReport = {
     origin:           string | null
     destination_zone: string | null
     legs:             number
+    trips?:           TripRef[]
   }[]
   not_working: {
     reasons:   string[]

@@ -1,345 +1,113 @@
 'use client'
 
-import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, AlertTriangle, Info } from 'lucide-react'
-import { dailyClosuresApi } from '@/lib/api/dailyClosures'
-import { carriersApi } from '@/lib/api/carriers'
-import { usePermiso } from '@/lib/authz/PermisosProvider'
-import { NewCarrierPanel } from '../NewCarrierPanel'
-import { FleetDriverGapCard } from '../FleetDriverGapCard'
-import { AltaDeFlota } from '@/components/dashboard/AltaDeFlota'
-import { VincularConductorPropuesto } from './VincularConductorPropuesto'
+import { useMemo } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { CheckCircle2, Info } from 'lucide-react'
 import { Estado } from '@/components/ui/Estado'
-import type { CarrierCreateResult } from '@/lib/api/carriers'
+import { TripCodeLinks, tripCodes } from '@/components/dashboard/TripCodeLinks'
+import type { DataColumn } from '@/components/ui/tabla/data/columns'
+import { useDataTable } from '@/components/ui/tabla/data/useDataTable'
+import { useUrlView } from '@/components/ui/tabla/data/useUrlView'
+import { useTablePreferences } from '@/components/ui/tabla/data/useTablePreferences'
+import { DataTable } from '@/components/ui/tabla/data/DataTable'
+import { TableToolbar } from '@/components/ui/tabla/data/TableToolbar'
+import { useClosureNotices } from '@/hooks/useClosureNotices'
+import type { Notice } from '@/lib/cierre/closureNotices'
+import { NOTICE_TYPE_LABEL } from '@/lib/states'
+import type { ClosureScope } from '@/lib/types'
 import { invalidateDirectory, type DirectoryChange } from '@/lib/queries/directorio'
+import { NoticeAction } from './pending/NoticeAction'
+
+const TABLE_KEY = 'closure.pending'
 
 interface Props {
   fecha: string
+  /** Qué se cierra (D6): sus avisos y los de empresa. */
+  alcance: ClosureScope
+  /** El detalle de un viaje, con la vuelta a este Cierre. */
+  tripHref: (tripId: string) => string
 }
 
-/** Sección "Pendientes" del Centro de Cierre (Tarea 12, plan 1.3) — HU-02,
- *  primera UI real del pre-cierre (corre desde HU-02/Fase 3, pero sin
- *  pantalla propia hasta esta tarea). Consume `pre_cierre` del payload de
- *  GET /daily-closures (mismo query key ['daily-closure', fecha] que ya
- *  usa FlotaDelDiaSection en esta misma página — React Query cachea, no
- *  duplica el fetch). Equipment_closures.py devuelve el mismo
- *  pre_cierre (misma corrida de run_pre_cierre) — no hace falta leerlo dos
- *  veces. */
-export function PreCierrePendingSection({ fecha }: Props) {
+/** Pestaña "Pendientes" del Cierre (HU-02, pre-cierre), con el patrón del Cierre
+ *  (spec D3 y §4.6): una tabla con la barra del kit, una fila por aviso, "Tipo de
+ *  aviso" filtrable y la acción de cada uno en su fila. El desbalance de dotación es
+ *  un tipo más. Los avisos salen de `useClosureNotices`, lo mismo que cuenta la pestaña. */
+export function PreCierrePendingSection({ fecha, alcance, tripHref }: Props) {
   const queryClient = useQueryClient()
-  // Cada acción con el permiso de su endpoint (bloque 0, 0.3): crear, vincular
-  // y dar de alta piden directory.edit. Activar una empresa en onboarding
-  // también; reactivar una dada de baja es un cambio de estado y pide
-  // directory.delete.
-  const canEditDirectory = usePermiso('directory.edit')
-  const canChangeCarrierStatus = usePermiso('directory.delete')
-  const noPermission = (
-    <p className="text-etiqueta text-informativo">Lo resuelve un supervisor desde el Directorio.</p>
-  )
-  const { data } = useQuery({
-    queryKey: ['daily-closure', fecha],
-    queryFn: () => dailyClosuresApi.get(fecha),
-  })
-
-  const [creatingFor, setCreatingFor] = useState<string | null>(null)
-  const [activating, setActivating] = useState<string | null>(null)
-  const [activateError, setActivateError] = useState<Record<string, string>>({})
-  const [taxIdDraft, setTaxIdDraft] = useState<Record<string, string>>({})
+  const [view, setView] = useUrlView()
+  const preferencias = useTablePreferences(TABLE_KEY)
+  const { notices, autoResolved, closed } = useClosureNotices(fecha, alcance)
 
   async function afterChange(change: DirectoryChange) {
     await invalidateDirectory(queryClient, change)
-    // Esta pantalla ES el Cierre: se relee ya, para traer `pendiente_desde` y que
-    // el aviso y la relectura de 15 s arranquen (0.6). Desde otras pantallas el
-    // Cierre solo queda marcado viejo (R9).
+    // Esta pantalla ES el Cierre: se relee ya, para traer `pendiente_desde` y que el
+    // aviso y la relectura de 15 s arranquen (0.6). Desde otras pantallas el Cierre
+    // solo queda marcado viejo (R9).
     await queryClient.invalidateQueries({ queryKey: ['daily-closure', fecha] })
     await queryClient.invalidateQueries({ queryKey: ['equipment-closures', fecha] })
   }
 
-  async function handleActivate(carrierId: string) {
-    setActivating(carrierId)
-    setActivateError(prev => ({ ...prev, [carrierId]: '' }))
-    try {
-      await carriersApi.patch(carrierId, { operational_status: 'ACTIVE' })
-      await afterChange({ entity: 'carrier', id: carrierId, type: 'update' })
-    } catch (e) {
-      // El 422 de "falta RUT" puede venir en 2 formas distintas según el
-      // endpoint que lo dispare (ver AGENTLOG) — en vez de parsear la forma
-      // exacta, siempre ofrecemos completar el RUT ahí mismo, que es la
-      // única causa realista de un 422 en esta acción.
-      setActivateError(prev => ({
-        ...prev,
-        [carrierId]: e instanceof Error ? e.message : 'No se pudo activar la empresa',
-      }))
-    } finally {
-      setActivating(null)
-    }
-  }
+  const columnas = useMemo<DataColumn<Notice>[]>(() => [
+    { id: 'type', header: 'Tipo de aviso', value: n => NOTICE_TYPE_LABEL[n.type] },
+    { id: 'subject', header: 'Sobre', hideable: false, value: n => n.subject,
+      render: n => <span className="font-semibold text-text-primary">{n.subject}</span> },
+    { id: 'carrier', header: 'Empresa', value: n => n.carrier },
+    { id: 'trip', header: 'Nº viaje', value: n => tripCodes(n.trips).join(', ') || null, values: n => tripCodes(n.trips),
+      render: n => <TripCodeLinks trips={n.trips} href={tripHref} /> },
+    { id: 'detail', header: 'Detalle', filter: false, sortable: false, value: n => n.detail,
+      render: n => <span className="text-text-primary">{n.detail}</span> },
+    { id: 'action', header: 'Acción', filter: false, sortable: false, hideable: false, value: () => null,
+      render: n => <NoticeAction notice={n} onChanged={afterChange} /> },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [tripHref, fecha])
 
-  async function handleSaveTaxId(carrierId: string) {
-    const taxId = taxIdDraft[carrierId]?.trim()
-    if (!taxId) return
-    setActivating(carrierId)
-    try {
-      await carriersApi.patch(carrierId, { tax_id: taxId, operational_status: 'ACTIVE' })
-      await afterChange({ entity: 'carrier', id: carrierId, type: 'update' })
-    } catch (e) {
-      setActivateError(prev => ({
-        ...prev,
-        [carrierId]: e instanceof Error ? e.message : 'No se pudo activar la empresa',
-      }))
-    } finally {
-      setActivating(null)
-    }
-  }
+  const model = useDataTable({
+    rows: notices ?? [], columns: columnas, getRowId: n => n.key, view, onViewChange: setView, pageSize: 50,
+    columnPrefs: preferencias.columns,
+    search: (n, q) => [n.subject, n.carrier, n.detail, NOTICE_TYPE_LABEL[n.type], ...tripCodes(n.trips)]
+      .some(x => (x ?? '').toLowerCase().includes(q)),
+  })
 
-  if (!data) return null
-
-  // Un día cerrado no vuelve a correr el pre-cierre (escribe en el directorio
-  // como efecto), así que no hay pendientes que mostrar: el día ya se firmó.
-  if (!data.pre_cierre) {
+  // Un día firmado no vuelve a correr el pre-cierre (escribe en el directorio como
+  // efecto): no hay pendientes que mostrar.
+  if (closed) {
     return (
-      <Estado
-        tipo="vacio"
-        titulo="El día está cerrado"
-        detalle="Los pendientes se revisan antes de firmar. Para cambiar algo hay que reabrir el día."
-      />
+      <Estado tipo="vacio" titulo="El día está cerrado"
+        detalle="Los pendientes se revisan antes de firmar. Para cambiar algo hay que reabrir el día." />
     )
   }
-
-  const { auto_resolved, escalations } = data.pre_cierre
-  // El `?.length` cubre la clave que llega explícitamente en `undefined`.
-  // Una clave AUSENTE no pasa por acá —`Object.values` no la devuelve—: de esa
-  // protege el `?? []` del `.map` de más abajo, y eso está medido: quitarlo
-  // rompe cinco tests, quitar este no rompe ninguno.
-  const hasEscalations = Object.values(escalations).some(list => (list?.length ?? 0) > 0)
+  if (!notices) return <Estado tipo="cargando" />
 
   return (
     <div className="space-y-4">
-      {auto_resolved.length > 0 && (
-        <div className="bg-white rounded-xl border border-border overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-border/60">
-            <CheckCircle2 size={14} className="text-green-500 shrink-0" />
-            <p className="text-xs font-bold text-text-primary">
-              {auto_resolved.length} resuelta{auto_resolved.length > 1 ? 's' : ''} automáticamente
-            </p>
-          </div>
-          <div className="divide-y divide-border/60">
-            {auto_resolved.map((r, i) => (
-              <p key={i} className="text-[11px] text-gray-500 px-4 py-2.5">{r.message}</p>
-            ))}
-          </div>
+      {autoResolved.length > 0 && (
+        <div className="rounded-xl border border-border bg-white">
+          <p className="flex items-center gap-2 border-b border-border/60 px-4 py-3 text-etiqueta font-semibold text-text-primary">
+            <CheckCircle2 size={14} className="shrink-0 text-resuelto" aria-hidden="true" />
+            {autoResolved.length} resuelta{autoResolved.length > 1 ? 's' : ''} automáticamente
+          </p>
+          <ul className="divide-y divide-border/60">
+            {autoResolved.map((r, i) => <li key={i} className="px-4 py-2.5 text-etiqueta text-informativo">{r.message}</li>)}
+          </ul>
         </div>
       )}
 
-      {hasEscalations && (
-        <div className="space-y-3">
-          <p className="text-xs font-bold text-text-primary flex items-center gap-1.5">
-            <AlertTriangle size={13} className="text-amber-500" /> Requieren tu atención
-          </p>
+      <TableToolbar model={model} searchPlaceholder="Buscar patente, conductor, empresa o Nº de viaje…" preferences={preferencias} />
+      <DataTable model={model} label="Avisos del cierre"
+        empty={notices.length === 0 ? 'Nada pendiente para el cierre' : 'Ningún aviso coincide'} />
 
-          {/* La PROPUESTA va primero: es la única del bloque que se resuelve
-              con un clic y sin salir de la pantalla. Las demás piden datos que
-              hay que ir a buscar.
-
-              El `?? []` no es defensa de adorno: backend y frontend se
-              despliegan por separado, y sin él una clave que el backend
-              todavía no manda tira sobre `undefined.map` y se lleva la SECCIÓN
-              ENTERA, incluidas las escalaciones que sí llegaron. Medido:
-              sacarlo rompe cinco tests. */}
-          {(escalations.CONDUCTOR_SIN_EMPRESA ?? []).map(esc => canEditDirectory ? (
-            <VincularConductorPropuesto
-              key={esc.driver_id}
-              driverId={esc.driver_id}
-              driverName={esc.driver_name}
-              carrierId={esc.carrier_id}
-              carrierName={esc.carrier_name}
-              viajes={esc.viajes}
-              onVinculado={() => afterChange({
-                entity: 'driver', id: esc.driver_id, type: 'assignment', carrierIds: [esc.carrier_id],
-              })}
-            />
-          ) : (
-            <div key={esc.driver_id}>{noPermission}</div>
-          ))}
-
-          {/* No bloquea el cierre desde el 01/10 (requirements-bug-12.md, RF-01
-              / CA-01): GPRZ30 fue de una EETT nuestra, el TMS la informa en
-              otra empresa y trababa el día entero. Por eso va en ámbar y no en
-              rojo, y dice la empresa que informa el TMS: es el dato para
-              decidir a quién asignarla. */}
-          {escalations.PATENTE_NO_REGISTRADA.map(esc => (
-            <div key={esc.tractor_plate} className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 space-y-2">
-              <p className="text-xs text-amber-800">
-                Patente sin empresa: <span className="font-semibold">{esc.tractor_plate}</span> — {esc.reason}
-                {esc.tms_carrier_name ? <>. El TMS la informa en &quot;{esc.tms_carrier_name}&quot;</> : null}.
-                {' '}No bloquea el cierre. ¿A qué empresa pertenece?
-              </p>
-              {!canEditDirectory ? noPermission : creatingFor === esc.tractor_plate ? (
-                <NewCarrierPanel
-                  open
-                  initialBusinessName={esc.tms_carrier_name ?? undefined}
-                  onClose={() => setCreatingFor(null)}
-                  onCreated={(carrier: CarrierCreateResult) => {
-                    setCreatingFor(null)
-                    void afterChange({ entity: 'carrier', id: carrier.id, type: 'create' })
-                    // La empresa queda creada; asignarle esta patente requiere
-                    // que el activo exista en public.assets (a veces no,
-                    // ver "reason" arriba) — se completa desde la ficha.
-                    window.open(`/dashboard/carriers/${carrier.id}?tab=equipos`, '_blank')
-                  }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setCreatingFor(esc.tractor_plate)}
-                  className="text-[11px] font-semibold text-accent hover:underline"
-                >
-                  Crear empresa nueva
-                </button>
-              )}
-            </div>
-          ))}
-
-          {escalations.EMPRESA_ONBOARDING.map(esc => {
-            // ONBOARDING -> ACTIVE es una alta (directory.edit); cualquier otro
-            // estado de origen es una reactivación (directory.delete).
-            const canActivate = esc.operational_status === 'ONBOARDING' ? canEditDirectory : canChangeCarrierStatus
-            return (
-              <div key={esc.carrier_id} className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 space-y-2">
-                <p className="text-xs text-amber-800">
-                  <span className="font-semibold">{esc.carrier_name}</span> está en onboarding. ¿Activarla para incluirla en el cierre?
-                </p>
-                {!canActivate ? noPermission : (<>
-                  {activateError[esc.carrier_id] && (
-                    <div className="space-y-1.5">
-                      <p className="text-[11px] text-red-600">{activateError[esc.carrier_id]}</p>
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          value={taxIdDraft[esc.carrier_id] ?? ''}
-                          onChange={e => setTaxIdDraft(prev => ({ ...prev, [esc.carrier_id]: e.target.value }))}
-                          placeholder="RUT / Tax ID"
-                          aria-label={`RUT de ${esc.carrier_name}`}
-                          className="text-[11px] border border-border rounded-lg px-2 py-1 bg-white"
-                        />
-                        <button
-                          type="button"
-                          disabled={activating === esc.carrier_id || !taxIdDraft[esc.carrier_id]?.trim()}
-                          onClick={() => handleSaveTaxId(esc.carrier_id)}
-                          className="text-[11px] font-semibold bg-accent text-white rounded-lg px-2 py-1 disabled:opacity-50"
-                        >
-                          Guardar RUT y activar
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    disabled={activating === esc.carrier_id}
-                    onClick={() => handleActivate(esc.carrier_id)}
-                    className="text-[11px] font-semibold text-amber-700 hover:underline disabled:opacity-50"
-                  >
-                    Activar empresa
-                  </button>
-                </>)}
-              </div>
-            )
-          })}
-
-          {/* Dice la consecuencia, no sólo que falta el dato: un tracto sin
-              tipo de operación cuenta como Tractoreo y exige motivo, así que
-              deja el día sin cerrar hasta que alguien lo resuelva. La versión
-              anterior decía "no puede clasificarse en el cierre", que se lee
-              como un detalle de presentación. */}
-          {escalations.SIN_TIPO_OPERACION.map(esc => (
-            <div key={`${esc.carrier_id}-${esc.tractor_plate ?? ''}`} className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
-              <p className="text-xs text-amber-800">
-                {esc.tractor_plate
-                  ? <>Patente <span className="font-semibold">{esc.tractor_plate}</span> de <span className="font-semibold">{esc.carrier_name}</span></>
-                  : <span className="font-semibold">{esc.carrier_name}</span>}
-                {' '}— sin tipo de operación. Cuenta como Tractoreo y exige motivo, así que bloquea el cierre del día hasta resolverlo.
-              </p>
-              <a
-                href={`/dashboard/carriers/${esc.carrier_id}?tab=equipos`}
-                target="_blank"
-                className="text-[11px] font-semibold text-accent hover:underline"
-              >
-                Ir a la ficha de la empresa
-              </a>
-            </div>
-          ))}
-
-          {escalations.EMPRESA_NO_RECONOCIDA.map((esc, i) => (
-            <div key={i} className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
-              <p className="text-xs text-amber-800">
-                Patente <span className="font-semibold">{esc.tractor_plate}</span>: el TMS reporta &quot;{esc.tms_carrier_name}&quot;, el directorio tiene &quot;{esc.directory_carrier_name}&quot; — sin match único.
-              </p>
-              {/* Derecho a la ficha de la empresa que el directorio tiene para
-                  esa patente, pestaña Equipos: es donde se corrige. Mandar al
-                  índice pelado deja a la persona buscando a mano lo que la
-                  pantalla ya sabe — y el buscador de empresas ni siquiera
-                  busca por patente. */}
-              <a href={`/dashboard/carriers/${esc.directory_carrier_id}?tab=equipos`} target="_blank"
-                 className="text-[11px] font-semibold text-accent hover:underline">
-                Revisar {esc.tractor_plate} en {esc.directory_carrier_name}
-              </a>
-            </div>
-          ))}
-
-          {/* Esta escalación BLOQUEA el cierre y era la única bloqueante sin
-              acción propia: sólo tenía un enlace a otro módulo, y encima a uno
-              que estaba fuera del menú. Es, textual, el "círculo bloqueante"
-              de la minuta del 25/08. Ahora el alta se hace acá.
-
-              Cuando el RUT ni siquiera es un RUT (`reason`), no hay a quién dar
-              de alta: eso se reclama aguas arriba, al TMS. */}
-          {escalations.CONDUCTOR_NO_REGISTRADO.map(esc => (
-            <div key={esc.driver_rut} className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
-              <p className="text-xs text-amber-800">
-                {esc.reason
-                  ? <>El TMS informó un RUT que no es válido: <span className="font-semibold">{esc.driver_rut}</span>. Hay que corregirlo en el TMS.</>
-                  : <>Conductor no registrado: RUT <span className="font-semibold">{esc.driver_rut}</span>
-                      {esc.driver_name_tms ? <> — el TMS lo llama &quot;{esc.driver_name_tms}&quot;</> : null}.</>}
-              </p>
-              {!esc.reason && (canEditDirectory ? (
-                <AltaDeFlota
-                  tipo="conductor"
-                  carrierId={null}
-                  rutFijo={esc.driver_rut}
-                  prefill={esc.driver_name_tms ?? undefined}
-                  etiqueta="Dar de alta a este conductor"
-                  onCreado={carrierId => afterChange({ entity: 'driver', type: 'create', carrierIds: [carrierId] })}
-                  /* El pendiente busca el RUT igual que el alta: un 409 solo
-                     ocurre si alguien lo registró mientras esta pantalla
-                     estaba abierta. No hay nada que asignar; releer el
-                     cierre hace desaparecer el pendiente. */
-                  yaExiste={{
-                    accion: () => 'Ya está registrado: actualizar el cierre',
-                    usar: existente => afterChange({ entity: 'driver', id: existente.driver_id, type: 'update' }),
-                  }}
-                />
-              ) : noPermission)}
-            </div>
-          ))}
-
-          {/* Este pie decía "Puedes avanzar al cierre aunque queden pendientes
-              sin resolver" y era FALSO desde el 2026-08-23: `close_day`
-              devuelve 409 con `_ESCALACIONES_QUE_BLOQUEAN`, que son cuatro de
-              las cinco de acá arriba. Falta de tipo de operación es la única
-              que no bloquea, y por eso se nombra aparte: un aviso que promete
-              lo contrario de lo que hace la API enseña a no leer los avisos. */}
-          <p className="text-[11px] text-informativo flex items-start gap-1">
-            <Info size={11} className="mt-0.5 shrink-0" />
-            <span>
-              Estos pendientes bloquean el cierre del día, salvo la falta de tipo
-              de operación y las patentes sin empresa. Resuélvelos aquí, o pide a
-              un administrador que fuerce el cierre dejando una nota.
-            </span>
-          </p>
-        </div>
+      {/* Decía "Puedes avanzar al cierre aunque queden pendientes" y era FALSO desde el
+          23/08: `close_day` devuelve 409 con `_ESCALACIONES_QUE_BLOQUEAN`. Un aviso que
+          promete lo contrario de lo que hace la API enseña a no leer los avisos. */}
+      {notices.length > 0 && (
+        <p className="flex items-start gap-1 text-etiqueta text-informativo">
+          <Info size={11} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span>
+            Estos pendientes bloquean el cierre del día, salvo la falta de tipo de operación, las patentes sin empresa y
+            el desbalance de dotación. Resuélvelos aquí, o pide a un administrador que fuerce el cierre dejando una nota.
+          </span>
+        </p>
       )}
-
-      <FleetDriverGapCard />
     </div>
   )
 }

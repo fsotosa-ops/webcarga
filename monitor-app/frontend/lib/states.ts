@@ -4,7 +4,7 @@ import {
   OctagonAlert, ShieldAlert, ShieldCheck, ShieldOff, TriangleAlert, Truck, Undo2, User,
 } from 'lucide-react'
 import type { StatusTone } from '@/components/ui/StatusChip'
-import type { CategoriaDeLinea, DirectoryEntity, FunnelBucket } from './types'
+import type { CategoriaDeLinea, ClosureScope, DirectoryEntity, FunnelBucket, NoticeType } from './types'
 import { hoyEnChile } from './utils/datetime'
 
 /**
@@ -392,4 +392,17 @@ export const CATEGORY_LABEL: Record<CategoriaDeLinea, string> = {
 }
 
 /** Qué se cierra: los mismos valores de la API (`services/closure_scope.py`). */
-export const SCOPE_LABEL = { tractoreo: 'Tractoreo', equipo_completo: 'Equipo Completo' } as const
+export const SCOPE_LABEL: Record<ClosureScope, string> = { tractoreo: 'Tractoreo', equipo_completo: 'Equipo Completo' }
+
+/** El tipo de un aviso de Pendientes: la columna "Tipo de aviso" y su filtro. Las
+ *  claves son las del pre-cierre (`services/pre_cierre.py`) más el desbalance de
+ *  dotación, que es un aviso más (spec §4.6). */
+export const NOTICE_TYPE_LABEL: Record<NoticeType, string> = {
+  CONDUCTOR_SIN_EMPRESA: 'Conductor sin empresa',
+  PATENTE_NO_REGISTRADA: 'Patente sin empresa',
+  EMPRESA_ONBOARDING: 'Empresa en onboarding',
+  SIN_TIPO_OPERACION: 'Sin tipo de operación',
+  EMPRESA_NO_RECONOCIDA: 'Empresa no reconocida',
+  CONDUCTOR_NO_REGISTRADO: 'Conductor no registrado',
+  FLEET_DRIVER_GAP: 'Desbalance de dotación',
+}

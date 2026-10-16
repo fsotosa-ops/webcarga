@@ -6,6 +6,8 @@ import type { SortDir } from '@/lib/table/viewInUrl'
  *  un solo patrón, spec §4.1). No hay una segunda lista de columnas en ningún lado.
  *
  *  - `value`: el texto con que la fila se filtra, se ordena y se cuenta.
+ *  - `values`: cuando una celda tiene varios valores (una fila con dos viajes): el
+ *    filtro y las cifras miran cada uno por separado; `value` sigue ordenando.
  *  - `filter`: `values` (lista de valores, por defecto), `presence` (tiene / no
  *    tiene: Acción, Comentario) o `false`.
  *  - `options`: valores que el filtro ofrece aunque ninguna fila los tenga hoy (el
@@ -15,6 +17,7 @@ export type DataColumn<T> = {
   id: string
   header: string
   value: (row: T) => string | null
+  values?: (row: T) => string[]
   render?: (row: T) => ReactNode
   filter?: 'values' | 'presence' | false
   options?: string[]
@@ -34,14 +37,21 @@ export function valueLabel<T>(column: DataColumn<T> | undefined, value: string):
   return column?.filter === 'presence' ? PRESENCE_LABEL[value] ?? value : value
 }
 
+/** Los valores de una celda para filtrar y contar: los de `values`, o el de `value`. */
+export function cellValues<T>(column: DataColumn<T>, row: T): string[] {
+  if (column.values) return column.values(row)
+  const v = column.value(row)
+  return v === null ? [] : [v]
+}
+
 export function cellMatches<T>(column: DataColumn<T>, row: T, selected: readonly string[]): boolean {
   if (!selected.length) return true
-  const v = column.value(row)
   if (column.filter === 'presence') {
+    const v = column.value(row)
     const tiene = v !== null && v.trim() !== ''
     return selected.includes(tiene ? PRESENT : ABSENT)
   }
-  return v !== null && selected.includes(v)
+  return cellValues(column, row).some(v => selected.includes(v))
 }
 
 /** Compara como lo haría una planilla: los números como números —"30179083"

@@ -7,10 +7,8 @@ import { ApiError } from '@/lib/api/client'
 
 interface Props {
   driverId:    string
-  driverName:  string
   carrierId:   string
   carrierName: string
-  viajes:      number
   onVinculado: () => Promise<void> | void
 }
 
@@ -34,9 +32,7 @@ interface Props {
  * aparte: lo que se escribe es `driver_assignments`, que es exactamente la
  * tabla que Certificación lee para saber de quién es cada conductor.
  */
-export function VincularConductorPropuesto({
-  driverId, driverName, carrierId, carrierName, viajes, onVinculado,
-}: Props) {
+export function VincularConductorPropuesto({ driverId, carrierId, carrierName, onVinculado }: Props) {
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -53,17 +49,10 @@ export function VincularConductorPropuesto({
     }
   }
 
+  // Lo que pasa y lo que cuesta (sin empresa no aparece en el cierre) lo dice el
+  // Detalle de la fila de Pendientes; aquí queda la decisión.
   return (
-    <div className="rounded-xl border border-border bg-accent/5 px-4 py-3 space-y-2">
-      <p className="text-xs text-text-primary">
-        <span className="font-semibold">{driverName}</span> manejó{' '}
-        {viajes === 1 ? 'un viaje' : `${viajes} viajes`} con un tracto de{' '}
-        <span className="font-semibold">{carrierName}</span> y no tiene empresa asignada.
-        {/* Sin empresa no entra al roster del cierre: decir la consecuencia es
-            lo que hace que valga la pena apretar el boton. */}{' '}
-        Sin empresa no aparece en el cierre del día.
-      </p>
-
+    <div className="space-y-1.5">
       {error && <p className="text-[11px] text-status-incidente">{error}</p>}
 
       <div className="flex items-center gap-3 flex-wrap">

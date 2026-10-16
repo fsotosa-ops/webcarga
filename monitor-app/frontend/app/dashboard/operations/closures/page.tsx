@@ -27,6 +27,8 @@ import { urlDelViaje } from '@/lib/navegacion/viaje'
 import { esUrlVieja, leerUrlDelCierre, urlDelCierre } from '@/lib/navegacion/cierre'
 import { GRUPOS_DE_VIAJES, closureTrips } from '@/lib/cierre/gruposDeViajes'
 import { scopeSummary } from '@/lib/cierre/dayFleet'
+import { useClosureNotices } from '@/hooks/useClosureNotices'
+import { inScope } from '@/lib/cierre/scope'
 import { SCOPE_LABEL } from '@/lib/states'
 import { useDayFleet } from '@/hooks/useDayFleet'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
@@ -211,15 +213,11 @@ function ClosuresCenterPageInner() {
   const flota = useDayFleet(fecha)
   const resumen = flota.drivers && flota.equipment ? scopeSummary(flota.drivers, flota.equipment, alcance) : null
   // Lo que falta hacer en cada pestaña, dentro del alcance (D4): Por resolver y avisos.
-  const enAlcance = (scope: ClosureScope | null | undefined) => !scope || scope === alcance
   const porResolver = cierreViajesQuery.data
     ? closureTrips(cierreViajesQuery.data.grupos)
-      .filter(v => GRUPOS_DE_VIAJES[v.grupo].pestana === 'to_resolve' && enAlcance(v.scope)).length
+      .filter(v => GRUPOS_DE_VIAJES[v.grupo].pestana === 'to_resolve' && inScope(v.scope, alcance)).length
     : null
-  const escalaciones = cierreQuery.data?.pre_cierre?.escalations
-  const avisos = escalaciones
-    ? Object.values(escalaciones).flat().filter(a => enAlcance(a.scope)).length || null
-    : null
+  const avisos = useClosureNotices(fecha, alcance).notices?.length || null
 
   const motivosViajesQuery = useQuery({
     queryKey: taxonomyKey('TRIP_UNASSIGNED_REASON'),
@@ -438,7 +436,9 @@ function ClosuresCenterPageInner() {
               />
             )}
           </>)}
-          {tab === 'pending' && <PreCierrePendingSection fecha={fecha} />}
+          {tab === 'pending' && (
+            <PreCierrePendingSection fecha={fecha} alcance={alcance} tripHref={id => urlDelViaje(id, urlDeEsteCierre())} />
+          )}
           {tab === 'report' && <StatusReportSection fecha={fecha} />}
         </div>
 

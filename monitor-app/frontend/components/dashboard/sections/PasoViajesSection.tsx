@@ -10,6 +10,7 @@ import { EntityCell } from '@/components/dashboard/EntityCell'
 import type { QuickViewTarget } from '@/lib/quickView'
 import { TEXTO_APOYO } from '@/lib/ui/texto'
 import type { ClosureScope } from '@/lib/types'
+import { inScope } from '@/lib/cierre/scope'
 import {
   GRUPOS_DE_VIAJES, PESTANAS_DE_VIAJES, diasAtras, closureTrips, pestanaInicial, situationOf, viajesPorPatente,
   type FilaDeViaje,
@@ -76,7 +77,7 @@ export function PasoViajesSection({
   const [error, setError] = useState<string | null>(null)
 
   const todas = useMemo(() => (grupos ? closureTrips(grupos) : []), [grupos])
-  const filas = useMemo(() => todas.filter(v => !v.scope || v.scope === alcance), [todas, alcance])
+  const filas = useMemo(() => todas.filter(v => inScope(v.scope, alcance)), [todas, alcance])
   const repetidas = useMemo(() => viajesPorPatente(filas), [filas])
   const pestanaDe = (v: FilaDeViaje) => GRUPOS_DE_VIAJES[v.grupo].pestana
   const nro = (v: FilaDeViaje) => v.source_system_trip_id ?? v.trip_id

@@ -6,7 +6,7 @@ import {
   useReactTable, type ColumnDef, type Row,
 } from '@tanstack/react-table'
 import type { SortDir, TableView } from '@/lib/table/viewInUrl'
-import { ABSENT, PRESENT, cellMatches, compareCells, type DataColumn } from './columns'
+import { ABSENT, PRESENT, cellMatches, cellValues, compareCells, type DataColumn } from './columns'
 
 /** Lo que cada persona eligió ver: columnas en orden y si están ocultas. */
 export type ColumnPrefs = { id: string; hidden: boolean }[]
@@ -112,7 +112,7 @@ export function useDataTable<T>({
     if (c.filter === 'presence') return [PRESENT, ABSENT]
     const fijos = c.options ?? []
     const presentes = new Set<string>()
-    for (const r of facetRows(columnId)) { const v = c.value(r); if (v) presentes.add(v) }
+    for (const r of facetRows(columnId)) for (const v of cellValues(c, r)) if (v) presentes.add(v)
     for (const v of view.filters[columnId] ?? []) presentes.add(v)
     const resto = [...presentes].filter(v => !fijos.includes(v))
       .sort((a, b) => compareCells(a, b, 'asc'))

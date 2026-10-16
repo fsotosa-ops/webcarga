@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PreCierrePendingSection } from './PreCierrePendingSection'
 import type { DailyClosureStatus } from '@/lib/types'
@@ -14,6 +14,13 @@ vi.mock('@/lib/api/carriers', () => ({
 
 vi.mock('@/lib/api/drivers', () => ({ driversApi: { create: vi.fn() } }))
 vi.mock('@/lib/api/locations', () => ({ locationsApi: { list: vi.fn().mockResolvedValue({ data: [] }) } }))
+
+// La vista vive en la URL (spec §4.2): una URL en memoria que se vuelve a dibujar.
+vi.mock('next/navigation', async () => (await import('@/lib/testing/inMemoryNavigation')).nextNavigation)
+vi.mock('@/lib/api/tablePreferences', () => ({
+  tablePreferencesApi: { get: vi.fn().mockResolvedValue(null), save: vi.fn(), reset: vi.fn() },
+}))
+import { memoryUrl } from '@/lib/testing/inMemoryNavigation'
 
 const permisos = vi.hoisted(() => ({ negados: new Set<string>() }))
 vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: (p: string) => !permisos.negados.has(p) }))
@@ -34,16 +41,20 @@ function status(overrides: Partial<DailyClosureStatus['pre_cierre']> = {}): Dail
   }
 }
 
-function renderSection() {
+type Props = Parameters<typeof PreCierrePendingSection>[0]
+function renderSection(props: Partial<Props> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <PreCierrePendingSection fecha="2026-08-04" />
+      <PreCierrePendingSection fecha="2026-08-04" alcance="tractoreo" tripHref={id => `/viaje/${id}`} {...props} />
     </QueryClientProvider>,
   )
 }
 
+const fila = (texto: string | RegExp) => screen.getByText(texto).closest('tr')!
+
 beforeEach(async () => {
+  memoryUrl.reset('/dashboard/operations/closures?tab=pending')
   permisos.negados = new Set()
   const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
   const { carriersApi } = await import('@/lib/api/carriers')
@@ -51,6 +62,7 @@ beforeEach(async () => {
   vi.mocked(carriersApi.create).mockReset()
   vi.mocked(carriersApi.patch).mockReset()
   vi.mocked(carriersApi.assignDriver).mockReset().mockResolvedValue({ ok: true } as never)
+  vi.mocked(carriersApi.fleetDriverGap).mockReset().mockResolvedValue({ rows: [] } as never)
 })
 
 describe('PreCierrePendingSection', () => {
@@ -70,7 +82,7 @@ describe('PreCierrePendingSection', () => {
       },
     }))
     renderSection()
-    expect(await screen.findByText(/Transportes Nueva/)).toBeInTheDocument()
+    expect((await screen.findAllByText(/Transportes Nueva/)).length).toBeGreaterThan(0)
     expect(screen.queryByRole('button', { name: 'Activar empresa' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Crear empresa nueva' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Dar de alta a este conductor' })).not.toBeInTheDocument()
@@ -93,7 +105,7 @@ describe('PreCierrePendingSection', () => {
       },
     }))
     renderSection()
-    await screen.findByText(/Transportes Baja/)
+    await screen.findAllByText(/Transportes Baja/)
     expect(screen.getAllByRole('button', { name: 'Activar empresa' })).toHaveLength(1)
     expect(screen.getAllByText('Lo resuelve un supervisor desde el Directorio.')).toHaveLength(1)
   })
@@ -137,7 +149,7 @@ describe('PreCierrePendingSection', () => {
     }))
     renderSection()
 
-    expect(await screen.findByText(/TRANSPORTE VICENTE BUGARIN SPA/)).toBeInTheDocument()
+    expect(await screen.findByText(/El TMS la informa en "TRANSPORTE VICENTE BUGARIN SPA"/)).toBeInTheDocument()
     expect(screen.getByText(/No bloquea el cierre/)).toBeInTheDocument()
 
     // Crear la empresa parte con el nombre que informa el TMS.
@@ -157,7 +169,7 @@ describe('PreCierrePendingSection', () => {
     }))
     vi.mocked(carriersApi.patch).mockResolvedValue({} as never)
     renderSection()
-    await screen.findByText(/Transportes Nueva/)
+    await screen.findAllByText(/Transportes Nueva/)
 
     fireEvent.click(screen.getByRole('button', { name: 'Activar empresa' }))
 
@@ -176,7 +188,7 @@ describe('PreCierrePendingSection', () => {
     }))
     vi.mocked(carriersApi.patch).mockRejectedValueOnce(new Error('No se puede activar una empresa sin RUT/tax_id'))
     renderSection()
-    await screen.findByText(/Transportes Nueva/)
+    await screen.findAllByText(/Transportes Nueva/)
     fireEvent.click(screen.getByRole('button', { name: 'Activar empresa' }))
     await screen.findByText('No se puede activar una empresa sin RUT/tax_id')
 
@@ -203,12 +215,73 @@ describe('PreCierrePendingSection', () => {
     expect(link).toHaveAttribute('href', '/dashboard/carriers/c5?tab=equipos')
   })
 
-  it('sin pendientes: no muestra el banner, igual monta FleetDriverGapCard', async () => {
+  it('sin pendientes lo dice en una línea', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue(status())
     renderSection()
-    await waitFor(() => expect(dailyClosuresApi.get).toHaveBeenCalled())
-    expect(screen.queryByText('Requieren tu atención')).not.toBeInTheDocument()
+    expect(await screen.findByText('Nada pendiente para el cierre')).toBeInTheDocument()
+  })
+
+  // ── El patrón del Cierre (C9, C14, D6) ───────────────────────────────────
+
+  it('una tabla con la barra del kit y "Tipo de aviso" filtrable, y la dotación es un tipo más (C9)', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const { carriersApi } = await import('@/lib/api/carriers')
+    vi.mocked(carriersApi.fleetDriverGap).mockResolvedValue({ rows: [
+      { carrier_id: 'c7', business_name: 'Hasa Spa', n_tractos: 4, n_conductores: 2, gap: 2 },
+    ] } as never)
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [{ tractor_plate: 'ZZZZ11', reason: 'La patente no existe en public.assets' }],
+        EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [], EMPRESA_ONBOARDING: [],
+        SIN_TIPO_OPERACION: [{ carrier_id: 'c5', carrier_name: 'Rios Ltda', tractor_plate: 'HKXW55' }],
+      },
+    }))
+    renderSection()
+    expect(await screen.findByRole('table', { name: 'Avisos del cierre' })).toBeInTheDocument()
+    expect(await screen.findByText('Faltan 2 conductores · 4 tractos / 2 conductores')).toBeInTheDocument()
+    expect(screen.getByRole('searchbox', { name: /buscar/i })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Tipo de aviso' }))
+    expect(screen.getByRole('checkbox', { name: 'Desbalance de dotación, 1' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Sin tipo de operación, 1' }))
+    expect(screen.getByText('HKXW55')).toBeInTheDocument()
+    expect(screen.queryByText('ZZZZ11')).toBeNull()
+    expect(screen.queryByText('Hasa Spa')).toBeNull()
+  })
+
+  it('Conductor sin empresa muestra sus Nº de viaje, cada uno con su enlace (C14)', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
+        EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [],
+        CONDUCTOR_SIN_EMPRESA: [{ ...PROPUESTA, viajes: 2, trips: [{ id: 't1', code: '2033000' }, { id: 't2', code: '2033001' }] }],
+      },
+    }))
+    renderSection()
+    const propia = await screen.findByText('Gerson Ferrada Zapata')
+    expect(within(propia.closest('tr')!).getByRole('link', { name: 'Ver viaje 2033000' })).toHaveAttribute('href', '/viaje/t1')
+    expect(within(propia.closest('tr')!).getByRole('link', { name: 'Ver viaje 2033001' })).toHaveAttribute('href', '/viaje/t2')
+    expect(screen.getByRole('button', { name: 'Filtrar por Nº viaje' })).toBeInTheDocument()
+  })
+
+  it('el alcance filtra los avisos; los de empresa se ven en los dos (D6)', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [
+          { tractor_plate: 'TRAC11', reason: 'Sin empresa', scope: 'tractoreo' },
+          { tractor_plate: 'EQCO11', reason: 'Sin empresa', scope: 'equipo_completo' },
+        ],
+        EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [], SIN_TIPO_OPERACION: [],
+        EMPRESA_ONBOARDING: [{ carrier_id: 'c9', carrier_name: 'Transportes Nueva', scope: null }],
+      },
+    }))
+    renderSection({ alcance: 'equipo_completo' })
+    expect(await screen.findByText('EQCO11')).toBeInTheDocument()
+    expect(screen.queryByText('TRAC11')).toBeNull()
+    expect(screen.getAllByText('Transportes Nueva').length).toBeGreaterThan(0)
   })
 
   // ── La propuesta de empresa (caso Gerson Ferrada, minuta del 25/08) ───────
@@ -230,9 +303,9 @@ describe('PreCierrePendingSection', () => {
     }))
     renderSection()
 
-    expect(await screen.findByText(/Gerson Ferrada Zapata/)).toBeInTheDocument()
-    expect(screen.getByText(/25 viajes/)).toBeInTheDocument()
-    expect(screen.getByText(/no aparece en el cierre del día/i)).toBeInTheDocument()
+    expect(await screen.findByText('Gerson Ferrada Zapata')).toBeInTheDocument()
+    expect(within(fila('Gerson Ferrada Zapata')).getByText(/25 viajes con un tracto de Transportes Juan Ramirez Spa/)).toBeInTheDocument()
+    expect(within(fila('Gerson Ferrada Zapata')).getByText(/no aparece en el cierre del día/i)).toBeInTheDocument()
   })
 
   it('confirmar la propuesta escribe la asignacion, que es lo que lee Certificacion', async () => {
