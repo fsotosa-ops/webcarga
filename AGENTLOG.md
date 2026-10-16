@@ -319,22 +319,32 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
          (anterior); Monitor con `?client=` sin chip si el cliente no tiene viajes en la vista; zonas aún en código en
          `_OPERATION_TYPE_META` y `RouteEditor`; "Sin clasificar" mientras llega `/trips/meta` y "Por revisar 0" mientras
          carga; pestaña Empresas sin paginar (100); la ficha de Empresa con su propio rastro de navegación.
-     - **Parte 2: plan ESCRITO (16/10, sin ejecutar):** `docs/superpowers/plans/2026-10-17-configuracion-parte-2.md`
-       (7 tareas, P2.1-P2.7). Decisiones del 16/10:
-       - **Lote retirado de la UI y de la API** (decisión del usuario, según el estándar de la industria, lo robusto y
-         la arquitectura): se borran `BarraDelBorrador`, `borrador.ts`, `celdas-del-borrador`, `batch-preview` y
-         `batch-update`. Evidencia en la base real: en 60 días ninguna persona editó más de 2 documentos a la vez; el
-         único minuto con 75 fue la carga del catálogo por script. Se edita solo desde la ficha.
-       - **"Sin vigencia" = `!is_active`, como hoy** (no "no vence"): 77 inactivos, 75 de ellos el catálogo apagado
-         del 09/10. Sin vigencia y Desactivados son el mismo conjunto → un solo filtro. Las cifras de la maqueta eran
-         ilustrativas. Hoy: 114 documentos, 2 con condición, 1 mensual.
-       - La API suma `GET /{id}` (con `estados` y el historial `reglas`) y `cumplen`/`exigidos` en la lista (una
-         consulta agregada). Sin migraciones; la clave de revisión `certification/conditions` se conserva.
+     - **Configuración, Parte 2 DESPLEGADA en dev (16/10, `638117b7..eafb02fe`).** Plan
+       `docs/superpowers/plans/2026-10-17-configuracion-parte-2.md`, inline, 7 tareas + revisión final opus.
+       Certificación › Documentos exigidos: lista (`/dashboard/compliance/requirements`: filtros Entidad y Estado con
+       conteos, columnas Documento · Se exige a · Vence · Aviso · Cumplen · Revisión, tarjetas en el teléfono) y ficha
+       (`…/[id]`: cinco preguntas, cada "Editar" abre `CondicionPanel` con `section`; historial de la regla; "Quiénes
+       no cumplen" → Pendientes con `?doc=`). Condiciones sale de Configuración vía `MUDADAS` (también `?doc=CODIGO`
+       y el buscador). API: `GET /compliance-requirements/{id}` y `cumplen`/`exigidos` en la lista.
+       - **Decisiones del usuario (16/10):** lote retirado de la UI y de la API (en 60 días nadie editó más de 2
+         documentos a la vez); "Sin vigencia" = `!is_active`, un solo filtro (77, 75 del catálogo apagado del 09/10).
+       - **Revisión opus:** 0 críticos, 3 importantes corregidos con test: (1) "cumplen n de m" mezclaba dos
+         poblaciones; ahora `exigidos` sale de los mismos registros y predicados que Pendientes (`exigible_sql` +
+         `in_scope_sql`), verificado en dev: la ficha de Mantención Cámara de Frío dice 37 no cumplen y Pendientes
+         "Faltan 37"; en la real 0 casos cumplen > exigidos, 18-46 ms; (2) Mensuales = período de 1 mes; (3) si fallan
+         las revisiones no se inventa "Sin revisar".
+       - Verificación: vitest completo 1.815/1.815, tsc, build, backend del área 97+ en la copia local, humo 25/25
+         (nuevo P2.7), trinquetes 797→787 y 105→102, capturas a 1440/390. Deploy Frontend y Deploy Monitor API en
+         verde; recorrido en dev (Propietario, solo lectura): lista con 114 documentos, ficha, Pendientes; todo 200.
+       - **Menores diferidos:** clave de la consulta del detalle escrita en línea (no en `clavesCertificacion`);
+         `CeldaAlias` con `quitar` sin uso y error de agregar silencioso (anterior); comentario viejo en
+         `EncabezadoOrdenable.tsx:10`; `CondicionPanel` con `text-gray-400` y `text-[10.5px]` (anterior); el buscador
+         de las listas repite su markup (no hay `SearchInput`); en el teléfono la ficha pone el costado antes de las
+         preguntas (`ProfileLayout` compartido).
      - **Entrega 2 de fichas: revisada 16/10, sin pendientes de código.** Cabos sueltos: la tabla de Por asignar nunca
        se vio con datos en dev (la sube Pablo/Carla) y los menores diferidos de la Entrega 1 (lista de arriba).
-     **Siguiente (exacto, 17/10):** ejecutar el plan de la Parte 2, inline, desde la Tarea 1. Decisión 16/10: **sin
-       "Directorio › Lugares"** (el Tarifario ya es la lista de lugares). Con eso la spec de fichas y navegación queda
-       cerrada (fuera: Cmd+K).
+     **Siguiente:** con la Parte 2, la spec de Configuración y la de fichas y navegación quedan cerradas (fuera: Cmd+K).
+       No hay paso siguiente de código decidido; elegir entre los menores diferidos o lo que pida el usuario.
   2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
      el 409 solo ocurre con la pantalla vieja). La salida del 409 en `AltaDeFlota` pasó a ser del anfitrión
