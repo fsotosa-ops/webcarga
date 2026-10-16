@@ -6,7 +6,8 @@ import { Check, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
 import { PanelLateral } from '@/components/ui/PanelLateral'
 import { configApi, type Direccion, type Revision, type TripStatusRow } from '@/lib/api/config'
 import { BotonConfirmar, MarcaDeRevision } from './revision'
-import { GROUP_OPTIONS, INPUT, SwatchPicker } from './shared'
+import { INPUT, SwatchPicker } from './shared'
+import { BOARD_COLUMNS } from '@/lib/states'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 const BOTON_ORDEN = 'inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 '
@@ -188,7 +189,7 @@ export function EstadoPanel({
           aria-label="Columna del tablero"
           className={`${INPUT} mt-1 w-full`}
         >
-          {GROUP_OPTIONS.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+          {BOARD_COLUMNS.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
         </select>
       </label>
       {/* Era un `title` sobre el encabezado de la lista vieja: invisible para

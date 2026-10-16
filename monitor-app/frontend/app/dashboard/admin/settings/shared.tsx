@@ -1,23 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { BOARD_COLUMNS } from '@/lib/states'
 import { Check, Loader2, RefreshCw, ChevronUp, ChevronDown } from 'lucide-react'
 
 // ── Vocabulario compartido ────────────────────────────────────────────────────
-
-// Taxonomía de grupos del tablero (misma que app.trip_statuses.group_id y
-// app.operational_states.group_id) — labels humanos, ids internos ocultos
-export const GROUP_OPTIONS = [
-  { id: 'en_ruta',    label: 'En Ruta'    },
-  { id: 'en_local',   label: 'En Local'   },
-  { id: 'retornando', label: 'Retornando' },
-  // Asignado y terminado para Operaciones; falta que el TMS del cliente lo cierre
-  // (Sodimac en "Control de salida"). Lo sigue Facturación (minuta 09/10, ítem 6).
-  { id: 'pendiente_cierre_tms', label: 'Pendiente de cierre TMS' },
-  { id: 'cerrado',    label: 'Cerrado'    },
-  { id: 'problema',   label: 'Problema'   },
-  { id: 'otro',       label: 'Otro'       },
-]
 
 /** Qué significa el grupo de un valor, por vocabulario. Un vocabulario que no
  *  está acá no tiene grupo, y la columna no se dibuja. El backend valida los
@@ -32,7 +19,7 @@ export const GRUPOS_POR_DOMINIO: Partial<Record<string, {
     titulo:     'Columna del tablero',
     ayuda:      'Define en qué columna del tablero aparecen los viajes con este estado',
     porDefecto: 'otro',
-    opciones:   GROUP_OPTIONS,
+    opciones:   BOARD_COLUMNS,
   },
   // Decide en qué tile del cierre del día cae el conductor, y si el motivo
   // puede arrastrarse a los días siguientes (Solicitud de Operaciones, 16/09).

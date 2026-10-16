@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import {
-  Ban, Building2, CalendarClock, CircleCheck, CircleDashed, Clock, Hourglass, RefreshCw,
-  OctagonAlert, ShieldAlert, ShieldCheck, ShieldOff, TriangleAlert,
+  Ban, Building2, CalendarClock, CircleCheck, CircleDashed, Clock, Hourglass, MapPin, RefreshCw,
+  OctagonAlert, ShieldAlert, ShieldCheck, ShieldOff, TriangleAlert, Truck, Undo2,
 } from 'lucide-react'
 import type { StatusTone } from '@/components/ui/StatusChip'
 import type { DirectoryEntity, FunnelBucket } from './types'
@@ -323,3 +323,36 @@ export function installmentsSummaryStyle(c: { overdue: number; unpaid: number; t
 export function policyFileStyle(hasFile: boolean): StateStyle {
   return hasFile ? { label: 'Cargado', tone: 'resolved', icon: CircleCheck } : { label: 'Falta', tone: 'neutral', icon: CircleDashed }
 }
+
+
+// ── Columnas del tablero (Configuración, Parte 1) ────────────────────────────
+// El color de un estado del TMS o de un estado operacional sale de su columna,
+// no de una paleta por fila: un rojo siempre es un problema. Las 7 columnas son
+// un conjunto cerrado (backend: schemas/status_taxonomy.BOARD_COLUMNS).
+
+export type BoardColumn = 'en_ruta' | 'en_local' | 'retornando' | 'pendiente_cierre_tms' | 'cerrado' | 'problema' | 'otro'
+
+const BOARD_COLUMN_STYLE: Record<BoardColumn, StateStyle> = {
+  en_ruta:              { label: 'En Ruta',                 tone: 'action',   icon: Truck },
+  en_local:             { label: 'En Local',                tone: 'action',   icon: MapPin },
+  retornando:           { label: 'Retornando',              tone: 'neutral',  icon: Undo2 },
+  // Asignado y terminado para Operaciones; falta que el TMS del cliente lo cierre
+  // (Sodimac en "Control de salida"). Lo sigue Facturación (minuta 09/10, ítem 6).
+  pendiente_cierre_tms: { label: 'Pendiente de cierre TMS', tone: 'warning',  icon: Hourglass },
+  cerrado:              { label: 'Cerrado',                 tone: 'resolved', icon: CircleCheck },
+  problema:             { label: 'Problema',                tone: 'urgent',   icon: TriangleAlert },
+  otro:                 { label: 'Otro',                    tone: 'neutral',  icon: CircleDashed },
+}
+
+/** Las columnas en el orden del tablero, con su etiqueta. */
+export const BOARD_COLUMNS: { id: BoardColumn; label: string }[] =
+  (Object.keys(BOARD_COLUMN_STYLE) as BoardColumn[]).map(id => ({ id, label: BOARD_COLUMN_STYLE[id].label }))
+
+const SIN_COLUMNA: StateStyle = { label: 'Sin columna', tone: 'neutral', icon: CircleDashed }
+
+/** Etiqueta, tono e ícono de una columna; un estado sin columna (o con una que no
+ *  existe) se ve neutro en vez de romper. */
+export function boardColumnStyle(group: string | null | undefined): StateStyle {
+  return (group && BOARD_COLUMN_STYLE[group as BoardColumn]) || SIN_COLUMNA
+}
+

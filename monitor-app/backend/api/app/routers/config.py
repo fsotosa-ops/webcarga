@@ -6,6 +6,7 @@ from pydantic import BaseModel, field_validator, model_validator
 from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
+from ..schemas.status_taxonomy import BOARD_COLUMNS
 from ..services.reordenamiento import (
     ESTADOS_DEL_TABLERO, MovimientoBody, mover_una_posicion,
 )
@@ -19,7 +20,7 @@ router = APIRouter(prefix="/config", tags=["config"])
 # Taxonomía de grupos del tablero — compartida entre estados TMS y operacionales
 # `pendiente_cierre_tms` (minuta 09/10, ítem 6): asignado y terminado para Operaciones, pero el
 # TMS del cliente todavía no lo cierra (Sodimac en "Control de salida"). Lo sigue Facturación.
-VALID_GROUP_IDS = {"en_ruta", "en_local", "retornando", "pendiente_cierre_tms", "cerrado", "problema", "otro"}
+VALID_GROUP_IDS = BOARD_COLUMNS
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
@@ -37,7 +38,7 @@ class TripStatusPatch(BaseModel):
     @classmethod
     def group_valid(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and v not in VALID_GROUP_IDS:
-            raise ValueError(f"group_id debe ser uno de {VALID_GROUP_IDS}")
+            raise ValueError(f"group_id debe ser uno de {', '.join(sorted(VALID_GROUP_IDS))}")
         return v
 
 

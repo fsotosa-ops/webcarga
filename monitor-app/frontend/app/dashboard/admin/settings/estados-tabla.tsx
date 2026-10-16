@@ -10,12 +10,13 @@ import { useOrden } from '@/components/ui/tabla/useOrden'
 import { ChipsDeFiltro } from '@/components/ui/ChipsDeFiltro'
 import { EstadoPanel } from './EstadoPanel'
 import { MarcaDeRevision, SIN_REVISAR, useChipDeRevision, useRevisiones } from './revision'
-import { GROUP_OPTIONS, LoadState } from './shared'
+import { LoadState } from './shared'
+import { BOARD_COLUMNS } from '@/lib/states'
 
 
 // Las columnas del tablero salen del propio dato, no de una lista escrita a
 // mano: si mañana se agrega una columna nueva, el chip aparece solo. Sólo se
-// usa GROUP_OPTIONS para traducir el id a una etiqueta legible — no para
+// usa BOARD_COLUMNS para traducir el id a una etiqueta legible — no para
 // decidir qué chips existen.
 function columnasDe(filas: TripStatusRow[]) {
   const cuenta = new Map<string, number>()
@@ -24,7 +25,7 @@ function columnasDe(filas: TripStatusRow[]) {
     cuenta.set(f.group, (cuenta.get(f.group) ?? 0) + 1)
   }
   return [...cuenta].map(([id, n]) => ({
-    id, etiqueta: GROUP_OPTIONS.find(g => g.id === id)?.label ?? id, n,
+    id, etiqueta: BOARD_COLUMNS.find(g => g.id === id)?.label ?? id, n,
   }))
 }
 
@@ -139,7 +140,7 @@ export function EstadosTabla() {
                   estado se trata. */}
               <td className="px-3 py-2.5 text-[11px] text-gray-400 font-mono">{s.id}</td>
               <td className="px-3 py-2.5 text-xs text-gray-700">
-                {GROUP_OPTIONS.find(g => g.id === s.group)?.label ?? s.group ?? '—'}
+                {BOARD_COLUMNS.find(g => g.id === s.group)?.label ?? s.group ?? '—'}
               </td>
               <td className="px-3 py-2.5 text-xs text-gray-400 tabular-nums">{s.sort_order}</td>
               {/* La marca en la fila, el gesto en el panel: 25 botones de
