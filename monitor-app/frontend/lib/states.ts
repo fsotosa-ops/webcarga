@@ -1,10 +1,11 @@
 import type { LucideIcon } from 'lucide-react'
 import {
-  Ban, Building2, CalendarClock, CircleCheck, CircleDashed, Clock, Hourglass,
+  Ban, Building2, CalendarClock, CircleCheck, CircleDashed, Clock, Hourglass, RefreshCw,
   OctagonAlert, ShieldAlert, ShieldCheck, ShieldOff, TriangleAlert,
 } from 'lucide-react'
 import type { StatusTone } from '@/components/ui/StatusChip'
 import type { DirectoryEntity, FunnelBucket } from './types'
+import { hoyEnChile } from './utils/datetime'
 
 /**
  * El glosario de estados en código (spec D1 §3 y §6.4): el ÚNICO lugar del
@@ -235,3 +236,70 @@ const ALERT: Record<AlertSeverity, StateStyle> = {
 export function alertSeverityStyle(severity: AlertSeverity): StateStyle {
   return ALERT[severity]
 }
+
+
+// ── Seguros: póliza y cuota (app.insurance_status; Seguros E2, 15/10) ─────────
+// La API calcula el estado y los días que faltan con la fecha de Chile; aquí solo
+// se vuelven palabra. Fechas cortas (02/10), con el año cuando no es el de hoy.
+
+export type PolicyState = 'VALID' | 'EXPIRING' | 'EXPIRED' | 'NO_DATES' | 'CANCELLED' | 'RENEWED'
+export type InstallmentState = 'PAID' | 'OVERDUE' | 'PENDING'
+
+/** "22/05" o, si no es de este año, "22/05/25". */
+export function fechaCorta(d: string, hoy: string = hoyEnChile()): string {
+  const [y, m, day] = d.slice(0, 10).split('-')
+  return y === hoy.slice(0, 4) ? `${day}/${m}` : `${day}/${m}/${y.slice(2)}`
+}
+
+const POLICY: Record<PolicyState, StateStyle> = {
+  VALID:     { label: 'Al día',       tone: 'resolved', icon: ShieldCheck },
+  EXPIRING:  { label: 'Por vencer',   tone: 'warning',  icon: Clock },
+  EXPIRED:   { label: 'Vencida',      tone: 'urgent',   icon: ShieldAlert },
+  NO_DATES:  { label: 'Sin vigencia', tone: 'warning',  icon: CircleDashed },
+  CANCELLED: { label: 'Cancelada',    tone: 'neutral',  icon: Ban },
+  RENEWED:   { label: 'Renovada',     tone: 'neutral',  icon: RefreshCw },
+}
+
+/** El estado de una póliza, dicho con su fecha cuando la tiene: "Venció el 22/05",
+ *  "Vence en 26 días · 10/11" (la misma forma que Pendientes). */
+export function policyStateStyle(
+  p: { policy_state: PolicyState; valid_to: string | null; expires_in_days: number | null },
+  hoy: string = hoyEnChile(),
+): StateStyle {
+  const base = POLICY[p.policy_state]
+  if (p.policy_state === 'EXPIRED' && p.valid_to) return { ...base, label: `Venció el ${fechaCorta(p.valid_to, hoy)}` }
+  if (p.policy_state === 'EXPIRING' && p.valid_to && p.expires_in_days != null) {
+    const dias = p.expires_in_days === 0 ? 'Vence hoy' : `Vence en ${p.expires_in_days} día${p.expires_in_days === 1 ? '' : 's'}`
+    return { ...base, label: `${dias} · ${fechaCorta(p.valid_to, hoy)}` }
+  }
+  return base
+}
+
+/** Las palabras de los estados de póliza, para filtros y conteos. */
+export const POLICY_STATE_LABELS: Record<PolicyState, string> = {
+  VALID: 'Al día', EXPIRING: 'Por vencer', EXPIRED: 'Vencidas', NO_DATES: 'Sin vigencia',
+  CANCELLED: 'Canceladas', RENEWED: 'Renovadas',
+}
+
+const INSTALLMENT: Record<InstallmentState, StateStyle> = {
+  PAID:    { label: 'Pagada',  tone: 'resolved', icon: CircleCheck },
+  OVERDUE: { label: 'Vencida', tone: 'urgent',   icon: TriangleAlert },
+  PENDING: { label: 'Por pagar', tone: 'neutral', icon: Hourglass },
+}
+
+/** Una cuota: "Pagada el 20/01", "Pagada · fecha no registrada" (54 de la carga
+ *  inicial), "Venció el 25/01/25" o "Vence el 01/11". */
+export function installmentStateStyle(
+  c: { installment_state: InstallmentState; due_date: string | null; paid_on: string | null },
+  hoy: string = hoyEnChile(),
+): StateStyle {
+  const base = INSTALLMENT[c.installment_state]
+  if (c.installment_state === 'PAID') {
+    return { ...base, label: c.paid_on ? `Pagada el ${fechaCorta(c.paid_on, hoy)}` : 'Pagada · fecha no registrada' }
+  }
+  if (!c.due_date) return base
+  return { ...base, label: `${c.installment_state === 'OVERDUE' ? 'Venció' : 'Vence'} el ${fechaCorta(c.due_date, hoy)}` }
+}
+
+/** La señal aparte de una cuota que vence fuera de la vigencia de su póliza. */
+export const OUTSIDE_VALIDITY_STYLE: StateStyle = { label: 'Fuera de vigencia', tone: 'warning', icon: CalendarClock }
