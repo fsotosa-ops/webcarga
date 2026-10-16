@@ -60,6 +60,8 @@ describe('ColumnFilter', () => {
     montar()
     fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Empresa' }))
     const buscador = screen.getByRole('searchbox')
+    // Al abrir, el foco ya está en el buscador: se tipea sin un clic más.
+    expect(document.activeElement).toBe(buscador)
     fireEvent.keyDown(buscador, { key: 'ArrowDown' })
     expect(document.activeElement).toBe(screen.getByRole('checkbox', { name: 'Hasa Spa, 4' }))
     fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' })

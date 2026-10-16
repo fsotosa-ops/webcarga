@@ -24,9 +24,15 @@ export type DataColumn<T> = {
   align?: 'left' | 'right'
 }
 
-/** Los dos valores de un filtro `presence`. */
+/** Los dos valores de un filtro `presence` y cómo se dicen (filtro y chip). */
 export const PRESENT = 'present'
 export const ABSENT = 'absent'
+export const PRESENCE_LABEL: Record<string, string> = { [PRESENT]: 'Tiene', [ABSENT]: 'No tiene' }
+
+/** Cómo se dice un valor de una columna en el filtro y en su chip. */
+export function valueLabel<T>(column: DataColumn<T> | undefined, value: string): string {
+  return column?.filter === 'presence' ? PRESENCE_LABEL[value] ?? value : value
+}
 
 export function cellMatches<T>(column: DataColumn<T>, row: T, selected: readonly string[]): boolean {
   if (!selected.length) return true

@@ -1,14 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useRef, useState } from 'react'
 import {
   DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core'
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { ChevronDown, ChevronUp, Columns3, GripVertical } from 'lucide-react'
-import { useLayer } from '@/lib/ui/layers'
+import { Popover } from '@/components/ui/Popover'
 import type { DataColumn } from './columnas'
 import type { ColumnPrefs } from './useDataTable'
 
@@ -24,10 +23,7 @@ export function ColumnsMenu<T>({ columns, onChange, onReset }: {
   onReset: () => void
 }) {
   const [abierto, setAbierto] = useState(false)
-  const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
   const boton = useRef<HTMLButtonElement>(null)
-  const panel = useRef<HTMLDivElement>(null)
-  const esLaDeArriba = useLayer(abierto)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -46,31 +42,13 @@ export function ColumnsMenu<T>({ columns, onChange, onReset }: {
     mover(columns.findIndex(c => c.column.id === e.active.id), columns.findIndex(c => c.column.id === e.over!.id))
   }
 
-  useEffect(() => {
-    if (!abierto) return
-    if (boton.current) {
-      const r = boton.current.getBoundingClientRect()
-      setPos({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) })
-    }
-    const tecla = (e: KeyboardEvent) => { if (e.key === 'Escape' && esLaDeArriba()) { setAbierto(false); boton.current?.focus() } }
-    const fuera = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (!panel.current?.contains(t) && !boton.current?.contains(t)) setAbierto(false)
-    }
-    document.addEventListener('keydown', tecla)
-    document.addEventListener('mousedown', fuera)
-    return () => { document.removeEventListener('keydown', tecla); document.removeEventListener('mousedown', fuera) }
-  }, [abierto, esLaDeArriba])
-
   return (
     <>
       <button ref={boton} type="button" aria-haspopup="dialog" aria-expanded={abierto} onClick={() => setAbierto(a => !a)}
         className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-2.5 py-1.5 text-dato text-text-primary hover:bg-bg-main">
         <Columns3 size={13} aria-hidden="true" /> Columnas
       </button>
-      {abierto && createPortal(
-        <div ref={panel} role="dialog" aria-label="Columnas" style={pos ? { top: pos.top, right: pos.right } : undefined}
-          className="fixed z-50 w-64 rounded-xl border border-border bg-white p-2 shadow-lg">
+      <Popover anchor={boton} open={abierto} onClose={() => setAbierto(false)} label="Columnas" align="end">
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={alSoltar}>
             <SortableContext items={columns.map(c => c.column.id)} strategy={verticalListSortingStrategy}>
               <ul>
@@ -87,9 +65,7 @@ export function ColumnsMenu<T>({ columns, onChange, onReset }: {
               Restablecer
             </button>
           </div>
-        </div>,
-        document.body,
-      )}
+      </Popover>
     </>
   )
 }
