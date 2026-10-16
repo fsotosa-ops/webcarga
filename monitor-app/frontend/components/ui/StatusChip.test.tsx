@@ -15,4 +15,9 @@ describe('StatusChip', () => {
     expect(screen.getByText('Activa')).toHaveClass('text-resuelto')
     expect(container.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
   })
+
+  it('no se parte en dos renglones en una columna angosta (teléfono)', () => {
+    render(<StatusChip tone="resolved">Al día</StatusChip>)
+    expect(screen.getByText('Al día')).toHaveClass('whitespace-nowrap')
+  })
 })

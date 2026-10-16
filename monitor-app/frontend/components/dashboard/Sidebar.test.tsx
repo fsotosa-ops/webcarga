@@ -119,6 +119,14 @@ describe('Sidebar — Certificación se abre en Empresas y Por asignar', () => {
   // NAV_GROUPS a mano (ver comentario junto a MOBILE_NAV_ITEMS). Sin este
   // test, volver a listar Monitor "a mano" en vez de aplanar los grupos deja
   // a Certificacion afuera del mobile EN SILENCIO — nada se pone rojo.
+  it('en mobile, con más entradas de las que caben, la barra se desplaza en vez de encimar las etiquetas', async () => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+    setup()
+    const navMobile = await screen.findByRole('navigation', { name: /móvil/i })
+    expect(navMobile).toHaveClass('overflow-x-auto')
+    for (const a of within(navMobile).getAllByRole('link')) expect(a).toHaveClass('shrink-0')
+  })
+
   it('en mobile las entradas de Certificación existen', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     setup()

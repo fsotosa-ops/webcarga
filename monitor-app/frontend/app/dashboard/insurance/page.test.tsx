@@ -44,6 +44,12 @@ beforeEach(() => {
 })
 
 describe('Seguros › Pólizas', () => {
+  it('la bajada cuenta en singular cuando hay una sola póliza o empresa', async () => {
+    vi.mocked(insuranceApi.listPolicies).mockResolvedValue({ group_by: 'policy', data: [POLIZA], count: 1, page: 1, limit: 50, facets: { ...FACETS, total: 1 } } as never)
+    renderPage()
+    expect(await screen.findByText('1 póliza')).toBeInTheDocument()
+  })
+
   it('la fila abre la ficha de la póliza, con la lista para volver; la empresa abre su vista rápida', async () => {
     renderPage()
     const tabla = await screen.findByRole('table')

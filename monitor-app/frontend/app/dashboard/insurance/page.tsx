@@ -31,6 +31,8 @@ const CARRIER_FILTERS: { id: CarrierInsuranceState; always: boolean }[] = [
   { id: 'VALID', always: true }, { id: 'NO_DATES', always: false },
 ]
 
+const cuenta = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`
+
 export default function PolizasPage() {
   return <Suspense fallback={null}><PolizasPageInner /></Suspense>
 }
@@ -93,8 +95,8 @@ function PolizasPageInner() {
       <EncabezadoDePagina
         titulo="Pólizas"
         bajada={policies.data && group === 'policy'
-          ? `${policies.data.facets.total} pólizas`
-          : carriers.data && group === 'carrier' ? `${carriers.data.facets.total} empresas` : '…'}
+          ? cuenta(policies.data.facets.total, 'póliza', 'pólizas')
+          : carriers.data && group === 'carrier' ? cuenta(carriers.data.facets.total, 'empresa', 'empresas') : '…'}
       />
 
       <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-white px-3.5 py-2.5">

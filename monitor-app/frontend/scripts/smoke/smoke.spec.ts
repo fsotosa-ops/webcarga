@@ -20,6 +20,7 @@ const ROLES = [
   { role: 'Supervisor de Certificación', email: 'cert@sim.local' },
   { role: 'Supervisor de Operaciones', email: 'ops@sim.local' },
   { role: 'Operador de Operaciones', email: 'oper@sim.local' },
+  { role: 'Supervisor de Seguros', email: 'seg@sim.local' },
 ] as const
 // El Propietario queda fuera: su rol exige verificación en dos pasos y la copia local
 // no tiene TOTP. Ve todo lo que ven los otros tres, más Administración.
@@ -391,5 +392,36 @@ test('La ficha de empresa sube documentos con la empresa ya puesta (D)', async (
   // Solo si la empresa está activa recibe documentos.
   const subir = page.getByRole('button', { name: 'Subir documentos' })
   if (await subir.isVisible().catch(() => false)) await expect(subir).toBeEnabled()
+  expect(problems).toEqual([])
+})
+
+test('Seguros: póliza nueva → su ficha → marcar una cuota pagada → aparece en Cuotas › Pagadas (S12)', async ({ page }) => {
+  const problems = watch(page)
+  const dia = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString().slice(0, 10)
+  const numero = `SMK-${Date.now()}`
+  await login(page, 'seg@sim.local')
+  // Una empresa activa sin póliza: el sujeto lo crea el test.
+  await page.goto('/dashboard/insurance?group=carrier&state=NO_POLICY')
+  // El nombre abre la vista rápida; el resto de la fila, la ficha de la empresa › Seguros.
+  await page.locator('tbody tr').first().locator('td').nth(1).click({ timeout: 30000 })
+  await page.getByRole('button', { name: '+ Póliza' }).click({ timeout: 20000 })
+  await page.getByPlaceholder('Aseguradora').fill('Aseguradora Humo')
+  await page.getByPlaceholder('N° de póliza').fill(numero)
+  await page.getByLabel('Vigencia desde').fill(dia(-30))
+  await page.getByLabel('Vigencia hasta').fill(dia(335))
+  await page.getByRole('button', { name: 'Guardar' }).click()
+  // Crear la póliza lleva a su ficha.
+  await page.waitForURL('**/dashboard/insurance/policies/**', { timeout: 20000 })
+  await page.getByRole('button', { name: 'Generar calendario' }).click({ timeout: 20000 })
+  await page.getByLabel('N° de cuotas').fill('3')
+  await page.getByLabel('Monto UF c/u').fill('1.5')
+  await page.getByLabel('Primera fecha de vencimiento').fill(dia(-10))
+  await page.getByRole('button', { name: 'Generar', exact: true }).click()
+  await page.getByRole('checkbox').first().check({ timeout: 20000 })
+  await page.getByRole('button', { name: 'Marcar pagadas…' }).click()
+  await page.getByRole('button', { name: 'Marcar 1 pagada' }).click()
+  await expect(page.getByRole('button', { name: /Deshacer pago/ })).toHaveCount(1, { timeout: 20000 })
+  await page.goto(`/dashboard/insurance/installments?state=PAID&q=${numero}`)
+  await expect(page.getByText(numero).first()).toBeVisible({ timeout: 20000 })
   expect(problems).toEqual([])
 })

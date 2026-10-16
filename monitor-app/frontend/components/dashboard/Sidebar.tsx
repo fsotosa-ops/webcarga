@@ -404,7 +404,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
       </aside>
 
       {/* ── Mobile bottom nav ─────────────────────────────────── */}
-      <nav aria-label="Navegación móvil" className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-sidebar border-t border-white/8 flex items-stretch safe-area-inset-bottom">
+      <nav aria-label="Navegación móvil" className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-sidebar border-t border-white/8 flex items-stretch overflow-x-auto safe-area-inset-bottom">
         {mobileItems.map(({ href, label, icon: Icon }) => {
           const active = href === mobileActiveHref
             && (href !== '/dashboard/operations/monitor' || pathname === href)
@@ -412,12 +412,12 @@ export default function Sidebar({ acceso }: SidebarProps) {
             <Link
               key={href}
               href={href}
-              className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors ${
+              className={`flex-1 shrink-0 min-w-16 flex flex-col items-center justify-center gap-1 px-1 py-2.5 transition-colors ${
                 active ? 'text-white' : 'text-white/40 hover:text-white/70'
               }`}
             >
               <Icon size={20} className={active ? 'text-accent' : ''} />
-              <span className="text-[9px] font-semibold tracking-wide uppercase">{label}</span>
+              <span className="whitespace-nowrap text-[9px] font-semibold tracking-wide uppercase">{label}</span>
               {active && <span className="w-1 h-1 rounded-full bg-accent" />}
             </Link>
           )
@@ -427,22 +427,22 @@ export default function Sidebar({ acceso }: SidebarProps) {
           <Link
             href={SETTINGS_HREF}
             prefetch={false}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors ${
+            className={`flex-1 shrink-0 min-w-16 flex flex-col items-center justify-center gap-1 px-1 py-2.5 transition-colors ${
               isAdmin ? 'text-white' : 'text-white/40 hover:text-white/70'
             }`}
           >
             <Users size={20} className={isAdmin ? 'text-accent' : ''} />
-            <span className="text-[9px] font-semibold tracking-wide uppercase">Admin</span>
+            <span className="whitespace-nowrap text-[9px] font-semibold tracking-wide uppercase">Admin</span>
             {isAdmin && <span className="w-1 h-1 rounded-full bg-accent" />}
           </Link>
         )}
 
         <button
           onClick={signOut}
-          className="flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-white/35 hover:text-white/65 transition-colors"
+          className="flex-1 shrink-0 min-w-16 flex flex-col items-center justify-center gap-1 px-1 py-2.5 text-white/35 hover:text-white/65 transition-colors"
         >
           <LogOut size={20} />
-          <span className="text-[9px] font-semibold tracking-wide uppercase">Salir</span>
+          <span className="whitespace-nowrap text-[9px] font-semibold tracking-wide uppercase">Salir</span>
         </button>
       </nav>
     </>
