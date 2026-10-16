@@ -299,9 +299,10 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
        #4 (frontend viejo vs API nueva entre deploys) y #8 (`settings.manage` sin sección = página en blanco). La copia
        local lleva catálogos reales (memoria `reference_copia_local_catalogos_reales`).
      **Siguiente (exacto, 17/10):** escribir y ejecutar el plan de la Parte 2 (Certificación › Documentos exigidos: lista
-       + ficha por documento, sacar Condiciones de Configuración) y después el de la Parte 3 (Directorio › Clientes y
-       Lugares: ficha de cliente, `GET/PATCH /shippers/{id}`, sacar Orígenes y Clientes del TMS de Configuración). Con eso
-       la spec de fichas y navegación queda cerrada (fuera: Cmd+K).
+       + ficha por documento, sacar Condiciones de Configuración) y ejecutar el de la Parte 3, ya escrito y comiteado
+       (`e00b6523`, `docs/superpowers/plans/2026-10-17-configuracion-parte-3.md`, falta la revisión del usuario).
+       Decisión 16/10: **sin "Directorio › Lugares"** (el Tarifario ya es la lista de lugares; la ficha de cliente lo
+       reusa filtrado, con la columna Origen). Con eso la spec de fichas y navegación queda cerrada (fuera: Cmd+K).
   2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
      el 409 solo ocurre con la pantalla vieja). La salida del 409 en `AltaDeFlota` pasó a ser del anfitrión
