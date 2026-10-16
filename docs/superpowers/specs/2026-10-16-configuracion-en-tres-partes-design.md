@@ -166,32 +166,37 @@ del permiso por sección; `test_revisiones.py` falla si se separan.
   `certification.configure` y sin él se lee; P2.4 editar la regla muestra el impacto antes de
   guardar; P2.5 ya no existe "Condiciones de documentos" en Configuración (redirige a la lista).
 
-## 6. Parte 3 — Directorio › Clientes y Lugares
+## 6. Parte 3 — Directorio › Clientes (revisado 16/10: una sola lista de lugares)
 
-- **Menú:** Directorio › Empresas · Conductores · Equipos · **Clientes** · **Lugares**.
-  Rutas: `/dashboard/clients`, `/dashboard/clients/[id]`, `/dashboard/places`.
-- **Clientes, lista:** buscador (cliente o nombre en un TMS); filtros Activos · Sin vínculo en un
-  TMS · Inactivos. Columnas: cliente, cómo lo llaman los TMS, lugares de carga, empresas que lo
-  atienden, viajes (30 días). "+ Nuevo cliente" con `commercial.edit`.
-- **Ficha de cliente** (`ProfileLayout`): encabezado con nombre, estado, viajes 30 días + "Ver en
-  el Monitor" filtrado por el cliente. Pestañas: Lugares (la tabla de Lugares filtrada) y Empresas
-  (la tabla de Directorio › Empresas filtrada por `carrier_shippers`). Costado: Detalles (nombre,
-  estado; editar) y "Cómo lo llaman los TMS" (vincular/cambiar, con la auditoría que ya existe en
-  `tms_clients.vincular`).
-- **Lugares, lista:** `public.locations` (823 en la real, 15/10: 31 orígenes con `is_origin` y el
-  resto locales de entrega del cliente, vía `entity_type`/`entity_id`). Columnas: lugar, cliente,
-  uso (Origen · Local de entrega), viajes 30 días; filtros Orígenes · Locales · Todos (Orígenes por
-  defecto: es lo que hoy edita la sección). Panel lateral para cliente y "es origen". Las tarifas de
-  cada lugar siguen en el Tarifario (no se duplican).
-- **API:** `GET /shippers/{id}` y `PATCH /shippers/{id}` (nombre, estado) nuevos; conteos de
-  lugares, empresas y viajes en `GET /shippers`. `locations` y `tms-clients` sin cambios de
-  modelo. Permiso de escritura: `commercial.edit`; lectura: `directory.read`.
-- **Se retiran** de Configuración `origenes.tsx` y `clientes-del-tms.tsx` (sus piezas pasan a
-  Directorio, no se copian).
-- **Criterios:** P3.1 Clientes y Lugares aparecen en Directorio para quien tiene `directory.read`;
-  P3.2 el Supervisor Comercial edita clientes, vínculos y lugares; P3.3 cambiar un vínculo queda
-  auditado y mueve sus viajes (comportamiento actual); P3.4 renombrar un cliente no saca sus
-  viajes del Monitor; P3.5 las URL viejas de Configuración redirigen.
+**Cambio respecto de la primera versión (decisión del usuario, 16/10):** no hay "Directorio › Lugares". El
+Tarifario ya es la lista completa de lugares (`public.locations`: alta, zona, tarifa, filtro por cliente); una
+segunda lista del mismo objeto sería duplicar ("fusionar vistas, no agregar pantallas"). Orígenes es una marca
+(`is_origin`) sobre esos lugares, no otra entidad.
+
+- **Menú:** Directorio › Empresas · Conductores · Equipos · **Clientes**. Rutas `/dashboard/clients` y
+  `/dashboard/clients/[id]`.
+- **Clientes, lista:** buscador; filtros Activos · Inactivos; vista **"Nombres del TMS sin vincular"** (lo que hoy
+  es Configuración › Clientes del TMS, sus pendientes primero). Columnas: cliente, nombres en los TMS, lugares
+  (orígenes), empresas que lo atienden, viajes (30 días). "+ Nuevo cliente" con `commercial.edit`.
+- **Ficha de cliente** (`ProfileLayout`): nombre, estado, viajes 30 días y "Ver en el Monitor" (Historial buscando
+  el cliente). Pestañas: **Lugares** (la misma tabla del Tarifario, `LocationsTable`, filtrada por el cliente, con
+  la columna **Origen**) y **Empresas** (la misma tabla de Directorio › Empresas, filtrada por `carrier_shippers`).
+  Costado: Detalles (nombre, estado; editar) y **"Cómo lo llaman los TMS"** (la misma pieza que la vista "sin
+  vincular", filtrada por el cliente; cambiar un vínculo se confirma y queda auditado).
+- **Tarifario:** gana el filtro **Orígenes** (la API ya acepta `origin=true`) y la columna Origen editable: es
+  donde se ven todos los orígenes juntos.
+- **Una pieza, dos usos (sin copias):** `LocationsTable` (Tarifario + ficha), la tabla de Empresas (lista +
+  ficha), los vínculos del TMS (vista "sin vincular" + ficha). Sin permiso de edición, las tres se leen.
+- **API:** `GET /shippers` con conteos; `GET /shippers/{id}` y `PATCH /shippers/{id}` (nombre, estado; 409 si el
+  nombre ya existe sin importar mayúsculas; auditado); `GET /carriers?shipper_id=`; `GET /tms-clients?shipper_id=`
+  y `?unlinked=true`. Escritura `commercial.edit`; lectura como hoy.
+- **Configuración** pierde Orígenes y Clientes del TMS; sus URL redirigen (Tarifario con Orígenes; Clientes con la
+  vista "sin vincular").
+- **Criterios:** P3.1 Clientes aparece en Directorio y su lista filtra con conteos; P3.2 la ficha muestra Lugares
+  (con Origen) y Empresas del cliente y sus nombres del TMS; P3.3 el Supervisor Comercial edita nombre, estado,
+  vínculos y orígenes, y sin `commercial.edit` todo se lee; P3.4 cambiar un vínculo se confirma, queda auditado y
+  mueve sus viajes; P3.5 renombrar un cliente no saca sus viajes del Monitor; P3.6 el Tarifario filtra Orígenes;
+  P3.7 Configuración ya no tiene esas secciones y sus URL redirigen.
 
 ## 7. Fuera de alcance
 
