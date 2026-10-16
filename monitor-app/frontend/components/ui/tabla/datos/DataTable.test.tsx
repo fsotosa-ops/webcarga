@@ -16,17 +16,26 @@ const COLUMNAS: DataColumn<Fila>[] = [
   { id: 'accion', header: 'Acción', value: r => r.accion, filter: false, sortable: false, render: () => <button>Ver</button> },
 ]
 
-function Tabla({ inicial = EMPTY_VIEW, filas = FILAS }: { inicial?: TableView; filas?: Fila[] }) {
+function Tabla({ inicial = EMPTY_VIEW, filas = FILAS, activa }: { inicial?: TableView; filas?: Fila[]; activa?: string }) {
   const [view, setView] = useState(inicial)
+  const [elegidas, setElegidas] = useState<Set<string>>(new Set())
   const model = useDataTable({ rows: filas, columns: COLUMNAS, getRowId: r => r.id, view, onViewChange: setView, pageSize: 20 })
-  return <DataTable model={model} label="Conductores" empty="Nadie coincide" />
+  return (<>
+    <DataTable model={model} label="Conductores" empty="Nadie coincide" pageSizes={[20, 50, 100]}
+      isRowActive={r => r.id === activa}
+      selection={{
+        isSelectable: r => r.empresa === 'Hasa', isSelected: r => elegidas.has(r.id), label: r => `Seleccionar ${r.nombre}`,
+        onToggle: r => setElegidas(s => { const n = new Set(s); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n }),
+      }} />
+    <output data-testid="elegidas">{[...elegidas].join(',')}</output>
+  </>)
 }
 
 describe('DataTable', () => {
   it('encabezados del kit, embudo solo donde se filtra y celdas propias', () => {
     render(<Tabla />)
     const tabla = screen.getByRole('table', { name: 'Conductores' })
-    expect(within(tabla).getAllByRole('columnheader').map(h => h.textContent?.trim())).toEqual(['Conductor', 'Empresa', 'Acción'])
+    expect(within(tabla).getAllByRole('columnheader').map(h => h.textContent?.trim())).toEqual(['Selección', 'Conductor', 'Empresa', 'Acción'])
     expect(within(tabla).getByRole('button', { name: 'Filtrar por Empresa' })).toBeInTheDocument()
     expect(within(tabla).queryByRole('button', { name: 'Filtrar por Acción' })).toBeNull()
     expect(within(tabla).getAllByRole('button', { name: 'Ver' })).toHaveLength(20)
@@ -55,5 +64,23 @@ describe('DataTable', () => {
     render(<Tabla inicial={{ ...EMPTY_VIEW, filters: { empresa: ['Otra'] } }} />)
     expect(screen.getByText('Nadie coincide')).toBeInTheDocument()
     expect(screen.queryByRole('row', { name: /Conductor 0/ })).toBeNull()
+  })
+
+  it('la selección: casilla solo en las filas que se pueden elegir, con su nombre', () => {
+    render(<Tabla />)
+    expect(screen.queryByRole('checkbox', { name: 'Seleccionar Conductor 00' })).toBeNull()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar Conductor 01' }))
+    expect(screen.getByTestId('elegidas')).toHaveTextContent('1')
+  })
+
+  it('"Ver" cambia cuántas filas por página', () => {
+    render(<Tabla />)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filas por página' }), { target: { value: '50' } })
+    expect(screen.getAllByRole('row')).toHaveLength(1 + 25)
+  })
+
+  it('la fila activa (vista rápida abierta desde ella) queda marcada', () => {
+    render(<Tabla activa="3" />)
+    expect(screen.getByRole('row', { current: true })).toHaveTextContent('Conductor 03')
   })
 })

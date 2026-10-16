@@ -11,12 +11,25 @@ import type { DataTableModel } from './useDataTable'
  *  encabezado con `CABECERA`, orden de tres estados con `aria-sort`, embudo en cada
  *  columna filtrable y paginación. Todo lo que hace sale del modelo (`useDataTable`);
  *  aquí no se decide nada de datos. */
-export function DataTable<T>({ model, label, empty, rowClassName }: {
+/** Elegir filas para una acción en lote: la casilla solo aparece en las que se pueden elegir. */
+export type RowSelection<T> = {
+  isSelectable: (row: T) => boolean
+  isSelected: (row: T) => boolean
+  onToggle: (row: T) => void
+  /** El nombre accesible de la casilla ("Seleccionar Ana Soto"). */
+  label: (row: T) => string
+}
+
+export function DataTable<T>({ model, label, empty, selection, pageSizes, isRowActive }: {
   model: DataTableModel<T>
   label: string
   /** Qué decir cuando ninguna fila pasa la vista. */
   empty: ReactNode
-  rowClassName?: (row: T) => string
+  selection?: RowSelection<T>
+  /** Ofrecer "Ver N" filas por página. */
+  pageSizes?: number[]
+  /** La fila desde la que se abrió algo (la vista rápida): queda marcada. */
+  isRowActive?: (row: T) => boolean
 }) {
   const { table, view, visibleColumns, pageRows, rows } = model
   const pageCount = table.getPageCount()
@@ -33,6 +46,7 @@ export function DataTable<T>({ model, label, empty, rowClassName }: {
         <table aria-label={label} className="w-full text-dato">
           <thead>
             <tr className="border-b border-border bg-bg-main">
+              {selection && <th scope="col" className="w-8 px-3"><span className="sr-only">Selección</span></th>}
               {visibleColumns.map(c => {
                 const activo = view.sort?.column === c.id
                 const ariaSort = activo ? (view.sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'
@@ -61,23 +75,46 @@ export function DataTable<T>({ model, label, empty, rowClassName }: {
             </tr>
           </thead>
           <tbody>
-            {pageRows.map((r, i) => (
-              <tr key={table.getRowModel().rows[i]?.id ?? i}
-                className={`border-b border-border/60 last:border-0 ${rowClassName?.(r) ?? ''}`}>
+            {pageRows.map((r, i) => {
+              const activa = isRowActive?.(r) ?? false
+              return (
+              <tr key={table.getRowModel().rows[i]?.id ?? i} aria-current={activa ? 'true' : undefined}
+                className={`border-b border-border/60 last:border-0 ${activa ? 'bg-accent/5 shadow-[inset_3px_0_0_var(--accent)]' : ''}`}>
+                {selection && (
+                  <td className="px-3 py-2.5 align-top">
+                    {selection.isSelectable(r) && (
+                      <input type="checkbox" aria-label={selection.label(r)} checked={selection.isSelected(r)}
+                        onChange={() => selection.onToggle(r)} className="accent-accent" />
+                    )}
+                  </td>
+                )}
                 {visibleColumns.map(c => (
                   <td key={c.id} className={`px-3 py-2.5 align-top ${c.align === 'right' ? 'text-right tabular-nums' : ''}`}>
                     {c.render ? c.render(r) : (c.value(r) ?? <span className="text-informativo">—</span>)}
                   </td>
                 ))}
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
         {rows.length === 0 && <p className="px-4 py-8 text-center text-dato text-informativo">{empty}</p>}
       </div>
       {rows.length > 0 && (
         <div className="flex items-center justify-between gap-3 text-etiqueta text-informativo">
-          <span>{rows.length === 1 ? '1 resultado' : `${rows.length} resultados`}</span>
+          <span className="inline-flex items-center gap-2.5">
+            {rows.length === 1 ? '1 resultado' : `${rows.length} resultados`}
+            {pageSizes && (
+              <label className="inline-flex items-center gap-1.5">
+                Ver
+                <select aria-label="Filas por página" value={table.getState().pagination.pageSize}
+                  onChange={e => table.setPageSize(Number(e.target.value))}
+                  className="rounded-lg border border-border bg-white px-1.5 py-1 text-etiqueta">
+                  {pageSizes.map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+            )}
+          </span>
           {pageCount > 1 && (
             <span className="inline-flex items-center gap-2">
               <button type="button" aria-label="Página anterior" disabled={!table.getCanPreviousPage()}
