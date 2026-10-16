@@ -10,6 +10,7 @@ import { ApiError } from '@/lib/api/client'
 import { GLOBAL_ALERT_THRESHOLD } from '@/lib/api/config'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { REQUIREMENTS, pendingDocumentHref } from '@/lib/navegacion/compliance'
+import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { returnLink } from '@/lib/navegacion/directory'
 import { lifecycleStyle } from '@/lib/states'
 import { resumenDeAviso, resumenDeVigencia, vigenciaDe, type Vigencia } from '@/lib/vigencia'
@@ -51,7 +52,7 @@ export function RequirementProfile({ id }: { id: string }) {
   const [section, setSection] = useState<RequirementSection | null>(null)
   const back = returnLink(searchParams.get('next'))
 
-  const doc = useQuery({ queryKey: ['compliance-requirements', 'detail', id], queryFn: () => requirementsApi.get(id), retry: false })
+  const doc = useQuery({ queryKey: clavesCertificacion.requisito(id), queryFn: () => requirementsApi.get(id), retry: false })
   const revisiones = useRevisiones('certification', 'conditions')
   const catalogo = useRequirementVocabulary()
   const { subtipos, gestiones, vocabulario } = catalogo

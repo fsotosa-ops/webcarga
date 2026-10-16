@@ -70,6 +70,17 @@ describe('CeldaAlias', () => {
       expect(requirementsApi.addAlias).toHaveBeenCalledWith('r1', 'FORMULARIO 30'))
   })
 
+  // Revisión final de la Parte 2: un error al agregar se perdía en silencio.
+  it('si no se puede agregar, lo dice', async () => {
+    vi.mocked(requirementsApi.addAlias).mockRejectedValueOnce(new Error('Esa forma ya existe en otro documento'))
+    montar(requisito())
+    fireEvent.click(screen.getByRole('button', { name: /agregar otra forma/i }))
+    const campo = screen.getByRole('textbox')
+    fireEvent.change(campo, { target: { value: 'F30' } })
+    fireEvent.keyDown(campo, { key: 'Enter' })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Esa forma ya existe en otro documento')
+  })
+
   it('escribir a medias y arrepentirse no guarda nada', () => {
     montar(requisito())
     fireEvent.click(screen.getByRole('button', { name: /agregar otra forma/i }))

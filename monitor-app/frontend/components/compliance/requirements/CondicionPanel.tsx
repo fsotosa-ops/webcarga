@@ -284,7 +284,7 @@ export function CondicionPanel({
             type="button"
             onClick={() => setVerPreview(true)}
             disabled={sucio || guardar.isPending}
-            className="text-[11.5px] font-semibold text-accion hover:opacity-70 disabled:opacity-40
+            className="text-etiqueta font-semibold text-accion hover:opacity-70 disabled:opacity-40
                        disabled:cursor-not-allowed focus-visible:outline-none
                        focus-visible:ring-2 focus-visible:ring-accent/40 rounded"
           >
@@ -317,12 +317,12 @@ export function CondicionPanel({
               onConfirmar={onConfirmar}
             />
           )}
-          {sucio && <span className="text-[10.5px] text-gray-400">Guarda la regla antes de ver qué cambia.</span>}
+          {sucio && <span className="text-etiqueta text-informativo">Guarda la regla antes de ver qué cambia.</span>}
         </div>
       ) : null}
     >
       <div className="flex items-center gap-2 flex-wrap">
-        <p className="text-[11px] text-gray-400">{requisito.requirement_code}</p>
+        <p className="text-etiqueta text-informativo">{requisito.requirement_code}</p>
         <MarcaDeRevision revision={revision} />
       </div>
 
@@ -366,7 +366,7 @@ export function CondicionPanel({
             ['LEGAL_MANDATORY', 'Obligatorio', 'Se le exige a todos los que califiquen.'],
             ['CONDITIONAL_OPTIONAL', 'Opcional', 'No se le pide a nadie por defecto; se carga si aplica.'],
           ] as const).map(([valor, etiqueta, ayuda]) => (
-            <label key={valor} className="mt-2 flex items-start gap-2 text-xs text-gray-700 cursor-pointer">
+            <label key={valor} className="mt-2 flex items-start gap-2 text-xs text-text-primary cursor-pointer">
               <input
                 type="radio"
                 name="nivel-del-requisito"
@@ -392,7 +392,7 @@ export function CondicionPanel({
         <fieldset className="mt-3">
           <legend className="text-xs font-semibold text-text-primary">¿A quién se le exige?</legend>
 
-          <label className="mt-2 flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+          <label className="mt-2 flex items-center gap-2 text-xs text-text-primary cursor-pointer">
             <input
               type="radio"
               name={`alcance-${requisito.id}`}
@@ -402,10 +402,10 @@ export function CondicionPanel({
               onChange={() => setAlcance('todos')}
             />
             {UNIVERSO[requisito.target_entity]}
-            <span className="text-gray-400 tabular-nums">· {requisito.alcance.universo}</span>
+            <span className="text-informativo tabular-nums">· {requisito.alcance.universo}</span>
           </label>
 
-          <label className="mt-1 flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+          <label className="mt-1 flex items-center gap-2 text-xs text-text-primary cursor-pointer">
             <input
               type="radio"
               name={`alcance-${requisito.id}`}
@@ -435,7 +435,7 @@ export function CondicionPanel({
                 </label>
               ))}
               {ocultos > 0 && (
-                <p className="text-[10.5px] text-amber-700 pt-1">
+                <p className="text-etiqueta text-warning pt-1">
                   +{ocultos} marca{ocultos > 1 ? 's' : ''} de {OCULTO[requisito.target_entity]},
                   no visible acá. Se conserva al guardar.
                 </p>
@@ -444,11 +444,11 @@ export function CondicionPanel({
           )}
         </fieldset>
       ) : (
-        <p className="mt-3 text-xs text-gray-700">Se exige a todos los conductores.</p>
+        <p className="mt-3 text-xs text-text-primary">Se exige a todos los conductores.</p>
       )}
 
       {ver('vigencia') && (
-      <label className="mt-4 flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+      <label className="mt-4 flex items-center gap-2 text-xs text-text-primary cursor-pointer">
         <input
           type="checkbox"
           className="accent-accent"
@@ -460,7 +460,7 @@ export function CondicionPanel({
       </label>
       )}
       {ver('vigencia') && !marcadoActivo && (
-        <p className="mt-1 text-[10.5px] text-gray-500">
+        <p className="mt-1 text-etiqueta text-informativo">
           Sin vigencia el documento no se exige a nadie, pero la condición queda guardada.
         </p>
       )}
@@ -496,24 +496,24 @@ export function CondicionPanel({
         />
       )}
 
-      {errorGuardar && <p className="mt-2 text-[10.5px] text-red-600">{errorGuardar}</p>}
-      {errorAplicar && <p className="mt-2 text-[10.5px] text-red-600">{errorAplicar}</p>}
+      {errorGuardar && <p className="mt-2 text-etiqueta text-status-incidente">{errorGuardar}</p>}
+      {errorAplicar && <p className="mt-2 text-etiqueta text-status-incidente">{errorAplicar}</p>}
 
       {verPreview && preview.isPending && (
-        <p className="mt-3 text-[11px] text-gray-500 flex items-center gap-1.5">
+        <p className="mt-3 text-etiqueta text-informativo flex items-center gap-1.5">
           <Loader2 size={11} className="animate-spin" /> Calculando…
         </p>
       )}
 
       {verPreview && preview.data && (
-        <div className="mt-3 rounded-lg border border-border bg-gray-50 px-3 py-2 text-[11.5px] space-y-1">
+        <div className="mt-3 rounded-lg border border-border bg-bg-main px-3 py-2 text-etiqueta space-y-1">
           {sinCambios ? (
-            <p className="text-gray-600">La regla ya está aplicada: no hay nada que agregar ni que dejar de exigir.</p>
+            <p className="text-informativo">La regla ya está aplicada: no hay nada que agregar ni que dejar de exigir.</p>
           ) : (
             <p>Se agregan {preview.data.crear} · <b>dejan de exigirse {preview.data.quitar}</b></p>
           )}
           {preview.data.bloqueados > 0 && (
-            <p className="flex items-start gap-1.5 text-amber-700">
+            <p className="flex items-start gap-1.5 text-warning">
               <AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
               {preview.data.bloqueados} ya no corresponden según esta regla pero tienen documento
               cargado. No se tocan: hay que resolverlos de a uno.

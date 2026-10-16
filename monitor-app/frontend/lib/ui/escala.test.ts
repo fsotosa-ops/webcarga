@@ -87,7 +87,8 @@ describe('la escala tipografica', () => {
     // 112 -> 110 el 2026-10-16: Personas y Roles con el kit (Parte 1, tarea 8).
     // 110 -> 105 el 2026-10-16: lugares, Clientes del TMS y Orígenes sin 9-10px (Parte 3).
     // 105 -> 102 el 2026-10-16: Documentos exigidos sale de Configuración; se retiró la tabla editable (Parte 2).
-    const DEUDA = 102
+    // 102 -> 97 el 2026-10-16: CondicionPanel con la escala del sistema (menores de la Parte 2).
+    const DEUDA = 97
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

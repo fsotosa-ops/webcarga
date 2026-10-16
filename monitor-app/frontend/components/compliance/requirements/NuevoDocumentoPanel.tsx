@@ -114,7 +114,7 @@ export function NuevoDocumentoPanel({ onCerrar }: { onCerrar: () => void }) {
       <fieldset className="mt-3">
         <legend className="text-xs font-semibold text-text-primary">¿Quién lo presenta?</legend>
         {ENTIDADES.map(([valor, etiqueta, ayuda]) => (
-          <label key={valor} className="mt-2 flex items-start gap-2 text-xs text-gray-700 cursor-pointer">
+          <label key={valor} className="mt-2 flex items-start gap-2 text-xs text-text-primary cursor-pointer">
             <input
               type="radio" name="entidad-del-documento" aria-label={etiqueta}
               checked={entidad === valor} onChange={() => elegirEntidad(valor)}
@@ -128,7 +128,7 @@ export function NuevoDocumentoPanel({ onCerrar }: { onCerrar: () => void }) {
       <fieldset className="mt-3">
         <legend className="text-xs font-semibold text-text-primary">¿Es obligatorio?</legend>
         {NIVELES.map(([valor, etiqueta, ayuda]) => (
-          <label key={valor} className="mt-2 flex items-start gap-2 text-xs text-gray-700 cursor-pointer">
+          <label key={valor} className="mt-2 flex items-start gap-2 text-xs text-text-primary cursor-pointer">
             <input
               type="radio" name="nivel-del-documento" aria-label={etiqueta}
               checked={nivel === valor} onChange={() => setNivel(valor)}

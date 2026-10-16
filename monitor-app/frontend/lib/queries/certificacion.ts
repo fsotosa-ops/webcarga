@@ -67,6 +67,9 @@ export const clavesCertificacion = {
   resumenPendientes: (groupBy: string) => ['compliance-pending-summary', groupBy] as const,
   /** El catálogo de requisitos de un tipo de entidad. */
   requisitos: (entityType?: string) => ['compliance-requirements', entityType ?? null] as const,
+  /** La ficha de un documento exigido. Bajo la raíz del catálogo: guardar una
+   *  regla o un alias (que invalidan `['compliance-requirements']`) la refresca. */
+  requisito: (id: string) => ['compliance-requirements', 'detail', id] as const,
 }
 
 /**

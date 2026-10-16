@@ -39,10 +39,6 @@ export function CeldaAlias({ requisito, puedeEditar, maximo }: {
     mutationFn: (alias: string) => requirementsApi.addAlias(requisito.id, alias),
     onSuccess: refrescar,
   })
-  const quitar = useMutation({
-    mutationFn: (aliasId: string) => requirementsApi.removeAlias(requisito.id, aliasId),
-    onSuccess: refrescar,
-  })
 
   function confirmar() {
     const limpio = valor.trim()
@@ -51,6 +47,9 @@ export function CeldaAlias({ requisito, puedeEditar, maximo }: {
     // El backend normaliza igual que el motor; acá sólo se descarta el vacío.
     if (limpio) agregar.mutate(limpio)
   }
+  const errorAlAgregar = agregar.isError
+    ? (agregar.error instanceof Error ? agregar.error.message : 'No se pudo agregar')
+    : null
 
   return (
     <span className="flex flex-wrap items-center gap-1">
@@ -115,6 +114,9 @@ export function CeldaAlias({ requisito, puedeEditar, maximo }: {
           aria-label={`Otra forma de escribir ${requisito.name}`}
           className="w-28 rounded border border-accent/40 px-1.5 py-0.5 text-etiqueta focus:outline-none"
         />
+      )}
+      {errorAlAgregar && (
+        <span role="alert" className="basis-full text-etiqueta text-status-incidente">{errorAlAgregar}</span>
       )}
     </span>
   )

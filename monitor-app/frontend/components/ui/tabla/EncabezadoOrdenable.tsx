@@ -7,8 +7,8 @@ import type { Orden } from './useOrden'
 /** El estilo de UN encabezado de tabla, en un solo lugar: el de Pendientes,
  *  en texto normal (kit de la Entrega 1 de fichas, 15/10).
  *
- *  Estaba escrito tres veces —acá, en condiciones-tabla y en estados-tabla—,
- *  así que cambiar el aspecto del encabezado exigía acordarse de los tres.
+ *  Estuvo escrito tres veces (acá y en dos tablas de Configuración que ya no
+ *  existen), así que cambiar el aspecto del encabezado exigía acordarse de los tres.
  *  Vive junto al encabezado ordenable porque el que ordena y el que no tienen
  *  que verse igual: si divergen, la tabla se lee como dos tablas. */
 export const CABECERA =

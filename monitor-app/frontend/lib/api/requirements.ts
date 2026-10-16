@@ -52,9 +52,6 @@ export const requirementsApi = {
       method: 'POST', body: JSON.stringify({ alias, priority }),
     }),
 
-  removeAlias: (id: string, aliasId: string) =>
-    apiFetch<void>(`${BASE}/${id}/aliases/${aliasId}`, { method: 'DELETE' }),
-
   /** Sólo lectura: qué pasaría si se aplicara la regla actual. */
   recalcPreview: (id: string) => apiFetch<RecalcPreview>(`${BASE}/${id}/recalc-preview`),
 

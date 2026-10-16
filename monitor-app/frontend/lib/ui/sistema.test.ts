@@ -124,7 +124,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 855 -> 819 el 2026-10-16: los grupos del Monitor con el tono del glosario (revisión final de la Parte 1).
     // 819 -> 797 el 2026-10-16: lugares, Clientes del TMS y Orígenes con tokens (Parte 3).
     // 797 -> 787 el 2026-10-16: Documentos exigidos con el kit; se retiraron la tabla editable y el borrador (Parte 2).
-    const DEUDA = 787
+    // 787 -> 769 el 2026-10-16: CondicionPanel y NuevoDocumentoPanel con tokens (menores de la Parte 2).
+    const DEUDA = 769
 
     const total = usosDeColorCrudo()
     expect(
