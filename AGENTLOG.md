@@ -298,11 +298,30 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
        Revisión opus: 1 crítico (caché compartida de umbrales) + 2 importantes + 6 menores corregidos con test; diferidos:
        #4 (frontend viejo vs API nueva entre deploys) y #8 (`settings.manage` sin sección = página en blanco). La copia
        local lleva catálogos reales (memoria `reference_copia_local_catalogos_reales`).
+     - **Configuración, Parte 3 DESPLEGADA en dev (16/10, `6f6b27b9..4d79ffe0`).** Plan
+       `docs/superpowers/plans/2026-10-17-configuracion-parte-3.md`, inline, 8 tareas + revisión final. Directorio ›
+       Clientes (lista con Nombres del TMS, Lugares · orígenes, Empresas, Viajes 30 días; filtros Activos/Inactivos/Sin
+       vincular; alta; tarjetas en teléfono) y ficha de cliente (pestañas Lugares = `LocationsBrowser` del Tarifario con
+       Origen, Empresas = `CarriersTable`; aside Detalles + "Cómo lo llaman los TMS"; ⋯ renombrar/desactivar/reactivar;
+       "Ver en el Monitor" por id). Orígenes y Clientes del TMS salen de Configuración (las URLs viejas redirigen);
+       el Tarifario ganó filtro Orígenes y columna Cliente. Piezas comunes: `LocationsBrowser`, `useClients` (una caché),
+       `ProfileBreadcrumb`, ciclo de vida de clientes/lugares en el glosario, zonas del catálogo. Usuario local
+       `com@sim.local` (Supervisor Comercial) para el humo.
+       - Revisión opus: 0 críticos, 3 importantes + 8 menores corregidos con test. El más serio (anterior a la entrega):
+         el trigger de lugares buscaba al cliente por nombre → renombrar cortaba el alta de lugares en silencio. Migración
+         `20261025090000_trip_stop_location_by_shipper_id.sql` (resuelve por `t.shipper_id`; medido 0/1.012 diferencias)
+         **APLICADA en la real (16/10, con autorización)**: ensayo con ROLLBACK, aplicada, verificada en vivo.
+       - Verificación: vitest 1.852, tsc y build OK, backend del área 134, humo P3.8, trinquetes 819→797 y 110→105.
+         Deploy Frontend y Deploy Monitor API en verde. Recorrido en dev (Propietario, solo lectura): Clientes (13
+         activos), ficha de Iansa (178 lugares · 7 orígenes, 4 empresas, 54 viajes), Tarifario › Todos los locales con
+         Cliente y Orígenes; todas las API 200, 0 errores de consola.
+       - Menores diferidos: la ficha mezcla `commercial.read` y `directory.read`; carrera vincular vs desactivar
+         (anterior); Monitor con `?client=` sin chip si el cliente no tiene viajes en la vista; zonas aún en código en
+         `_OPERATION_TYPE_META` y `RouteEditor`; "Sin clasificar" mientras llega `/trips/meta` y "Por revisar 0" mientras
+         carga; pestaña Empresas sin paginar (100); la ficha de Empresa con su propio rastro de navegación.
      **Siguiente (exacto, 17/10):** escribir y ejecutar el plan de la Parte 2 (Certificación › Documentos exigidos: lista
-       + ficha por documento, sacar Condiciones de Configuración) y ejecutar el de la Parte 3, ya escrito y comiteado
-       (`e00b6523`, `docs/superpowers/plans/2026-10-17-configuracion-parte-3.md`, falta la revisión del usuario).
-       Decisión 16/10: **sin "Directorio › Lugares"** (el Tarifario ya es la lista de lugares; la ficha de cliente lo
-       reusa filtrado, con la columna Origen). Con eso la spec de fichas y navegación queda cerrada (fuera: Cmd+K).
+       + ficha por documento, sacar Condiciones de Configuración). Decisión 16/10: **sin "Directorio › Lugares"** (el
+       Tarifario ya es la lista de lugares). Con eso la spec de fichas y navegación queda cerrada (fuera: Cmd+K).
   2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
      el 409 solo ocurre con la pantalla vieja). La salida del 409 en `AltaDeFlota` pasó a ser del anfitrión
