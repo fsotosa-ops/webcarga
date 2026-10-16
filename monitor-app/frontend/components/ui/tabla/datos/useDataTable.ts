@@ -129,6 +129,8 @@ export function useDataTable<T>({
     /** Todas las columnas en el orden de la persona, con si se ven (para "Columnas"). */
     orderedColumns: order.map(id => ({ column: porId.get(id)!, visible: visibility[id] !== false })),
     facetCount,
+    /** Cuántas filas pasan todos los filtros menos el de esta columna (el "Todos" de un recuadro). */
+    facetTotal: (columnId: string) => facetRows(columnId).length,
     valuesOf,
     setFilter,
     setQ: (q: string) => setView({ q }),
