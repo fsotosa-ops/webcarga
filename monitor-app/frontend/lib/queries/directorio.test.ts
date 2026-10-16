@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { entitySummaryKey } from '@/lib/api/entitySummary'
 import type { DirectoryEntity } from '@/lib/types'
 import { clavesCertificacion } from './certificacion'
+import { clientKeys } from './clientes'
 import { taxonomyKey } from './taxonomies'
 import { CLOSURE_ROOTS, directoryKeys, invalidateDirectory, type DirectoryChange } from './directorio'
 
@@ -157,6 +158,7 @@ const NO_DEPENDEN_DEL_DIRECTORIO = new Set([
   'closure-signatures', 'daily-closures-report',                       // la firma es inmutable; el reporte se pide al abrir
   'ingest-preview',                                                    // la URL firmada de un archivo, no el maestro
   'entity-documents', 'certification-requests',                        // documentos y pedidos (Entrega B): no cambian con el maestro
+  'tms-clients',                                                       // Directorio › Clientes (Parte 3): las invalida invalidateClients
 ])
 
 // Las fábricas de claves: una pantalla que lee `directoryKeys.x(…)` lee la raíz
@@ -164,6 +166,7 @@ const NO_DEPENDEN_DEL_DIRECTORIO = new Set([
 const FABRICAS: Record<string, Record<string, (...a: string[]) => readonly unknown[]>> = {
   directoryKeys: directoryKeys as unknown as Record<string, (...a: string[]) => readonly unknown[]>,
   clavesCertificacion: clavesCertificacion as unknown as Record<string, (...a: string[]) => readonly unknown[]>,
+  clientKeys: clientKeys as unknown as Record<string, (...a: string[]) => readonly unknown[]>,
 }
 
 /** Toda raíz de caché que lee alguna pantalla, con el archivo que la lee. */
@@ -174,7 +177,7 @@ function raicesLeidas(): Map<string, string> {
     if (ruta.includes(join('lib', 'queries'))) continue
     const texto = readFileSync(ruta, 'utf8')
     for (const m of texto.matchAll(/queryKey:\s*\[\s*'([^']+)'/g)) anotar(m[1], ruta)
-    for (const m of texto.matchAll(/\b(directoryKeys|clavesCertificacion)\.(\w+)\(/g)) {
+    for (const m of texto.matchAll(/\b(directoryKeys|clavesCertificacion|clientKeys)\.(\w+)\(/g)) {
       const f = FABRICAS[m[1]][m[2]]
       if (typeof f !== 'function') throw new Error(`${m[1]}.${m[2]} no existe (${relative(RAIZ, ruta)})`)
       anotar(String(f('x', 'x', 'x')[0]), ruta)
