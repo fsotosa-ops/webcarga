@@ -336,11 +336,17 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
        - Verificación: vitest completo 1.815/1.815, tsc, build, backend del área 97+ en la copia local, humo 25/25
          (nuevo P2.7), trinquetes 797→787 y 105→102, capturas a 1440/390. Deploy Frontend y Deploy Monitor API en
          verde; recorrido en dev (Propietario, solo lectura): lista con 114 documentos, ficha, Pendientes; todo 200.
-       - **Menores diferidos:** clave de la consulta del detalle escrita en línea (no en `clavesCertificacion`);
-         `CeldaAlias` con `quitar` sin uso y error de agregar silencioso (anterior); comentario viejo en
-         `EncabezadoOrdenable.tsx:10`; `CondicionPanel` con `text-gray-400` y `text-[10.5px]` (anterior); el buscador
-         de las listas repite su markup (no hay `SearchInput`); en el teléfono la ficha pone el costado antes de las
-         preguntas (`ProfileLayout` compartido).
+       - **Menores de la Parte 2 HECHOS (16/10, `9099356a`):** `CeldaAlias` dice el error al agregar (fuera `quitar` y
+         `removeAlias`, sin uso; el DELETE del backend sigue); clave `clavesCertificacion.requisito(id)`; `CondicionPanel`
+         y `NuevoDocumentoPanel` con tokens (trinquetes 787→769 y 102→97); comentario de `EncabezadoOrdenable`.
+         **Quedan, por decisión:** un `SearchInput` compartido (12 copias en Monitor, Cierre, Directorio y Seguros: es un
+         refactor entre módulos, preguntar antes); en el teléfono la ficha pone el costado antes de las preguntas
+         (`ProfileLayout` compartido por todas las fichas).
+     - **Índice de Configuración legible (16/10, `32ff265b`, desplegado y visto en dev).** El usuario: "se ve muy tosca…
+       no se entiende realmente lo que hace". Mismo `SettingsIndex` con prop `variante`: en escritorio se titula
+       "Configuración", explica el número ("lo que falta revisar", y el enlace lo nombra para lectores de pantalla) y
+       muestra el propósito de cada ajuste al pasar el mouse; en la portada del teléfono, el propósito va bajo el
+       nombre. Títulos de área legibles. "Subtipos de vehículo" → "Subtipos de equipo".
      - **Entrega 2 de fichas: revisada 16/10, sin pendientes de código.** Cabos sueltos: la tabla de Por asignar nunca
        se vio con datos en dev (la sube Pablo/Carla) y los menores diferidos de la Entrega 1 (lista de arriba).
      **Siguiente:** con la Parte 2, la spec de Configuración y la de fichas y navegación quedan cerradas (fuera: Cmd+K).
