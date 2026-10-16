@@ -15,6 +15,7 @@
 import type { CambioEnLote, CambiosDeRequisito } from '@/lib/api/requirements'
 import type { ExigibleOn, RequirementOption } from '@/lib/types'
 import { faltaDeVigencia, mismaVigencia, vigenciaDe, type Vigencia } from '@/lib/vigencia'
+import { type Renovacion } from '@/components/compliance/requirements/frase-de-la-regla'
 
 export type Edicion = {
   vigencia?: Vigencia
@@ -68,34 +69,6 @@ export function incompletos(b: Borrador): string[] {
   return Object.entries(b)
     .filter(([, { cambios }]) => cambios.vigencia && faltaDeVigencia(cambios.vigencia) !== null)
     .map(([id]) => id)
-}
-
-// ── Cómo se renueva, en las palabras de la planilla ─────────────────────────
-
-export type Renovacion = 'nunca' | 'fecha' | 'fecha_opcional' | 'anual' | 'bienal' | 'mes' | 'otra'
-
-export const RENOVACIONES: { valor: Exclude<Renovacion, 'otra'>; texto: string }[] = [
-  { valor: 'nunca', texto: 'No vence' },
-  { valor: 'fecha', texto: 'Fecha del documento' },
-  { valor: 'fecha_opcional', texto: 'Fecha del documento (opcional)' },
-  { valor: 'anual', texto: 'Cada año' },
-  { valor: 'bienal', texto: 'Cada 2 años' },
-  { valor: 'mes', texto: 'Cada mes' },
-]
-
-/** 'otra' es una regla que la celda no sabe escribir (cada 6 meses, un
- *  trimestral): se muestra tal cual y se edita en el panel, en vez de
- *  colapsarla en la opción más parecida al abrir la tabla. */
-export function renovacionDe(v: Vigencia): Renovacion {
-  switch (v.politica) {
-    case 'NONE': return 'nunca'
-    case 'REQUIRED': return 'fecha'
-    case 'OPTIONAL': return 'fecha_opcional'
-    case 'ISSUE_PLUS_MONTHS':
-      return v.validity_months === 12 ? 'anual' : v.validity_months === 24 ? 'bienal' : 'otra'
-    case 'CALENDAR_PERIOD':
-      return v.frequency_months === 1 ? 'mes' : 'otra'
-  }
 }
 
 /** La vigencia de una renovación, partiendo de la actual: el aviso y la

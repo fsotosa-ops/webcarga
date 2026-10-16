@@ -7,7 +7,7 @@ import { requirementsApi } from '@/lib/api/requirements'
 import { PanelLateral } from '@/components/ui/PanelLateral'
 import type { ExigibleOn } from '@/lib/types'
 import type { Vigencia } from '@/lib/vigencia'
-import { INPUT } from './shared'
+import { INPUT } from '@/app/dashboard/admin/settings/shared'
 import { EditorVigencia } from './EditorVigencia'
 import { SelectorExigibilidad } from './SelectorExigibilidad'
 

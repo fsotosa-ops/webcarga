@@ -2,8 +2,9 @@
 
 import type { ExigibleOn, RequirementOption } from '@/lib/types'
 import { faltaDeVigencia, resumenDeVigencia, type Vigencia } from '@/lib/vigencia'
-import { RENOVACIONES, renovacionDe, vigenciaPara, type Renovacion } from './borrador'
-import { exigibilidadesPara, OPCIONES_DE_EXIGIBILIDAD } from './SelectorExigibilidad'
+import { RENOVACIONES, renovacionDe, type Renovacion } from '@/components/compliance/requirements/frase-de-la-regla'
+import { vigenciaPara } from './borrador'
+import { exigibilidadesPara, OPCIONES_DE_EXIGIBILIDAD } from '@/components/compliance/requirements/SelectorExigibilidad'
 
 /** Las celdas que escriben en el BORRADOR de la tabla (HU-C1, entrega 2c),
  *  no en la base: cada una recibe su valor y avisa el cambio. Guardar es

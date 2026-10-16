@@ -11,7 +11,7 @@ import { faltaDeVigencia, mismaVigencia, vigenciaDe, type Vigencia } from '@/lib
 import { EditorVigencia } from './EditorVigencia'
 import { SelectorExigibilidad } from './SelectorExigibilidad'
 import type { Revision } from '@/lib/api/config'
-import { BotonConfirmar, MarcaDeRevision } from './revision'
+import { BotonConfirmar, MarcaDeRevision } from '@/app/dashboard/admin/settings/revision'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 const UNIVERSO: Record<string, string> = {

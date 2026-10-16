@@ -6,10 +6,11 @@ import { Check, Eye, Loader2, X } from 'lucide-react'
 import { requirementsApi } from '@/lib/api/requirements'
 import type { EfectoDelLote, ExigibleOn, RequirementOption } from '@/lib/types'
 import {
-  aplicarEnLote, cambiosDelBorrador, incompletos, RENOVACIONES,
-  type Borrador, type EdicionEnLote, type Renovacion,
+  aplicarEnLote, cambiosDelBorrador, incompletos,
+  type Borrador, type EdicionEnLote,
 } from './borrador'
-import { OPCIONES_DE_EXIGIBILIDAD } from './SelectorExigibilidad'
+import { RENOVACIONES, type Renovacion } from '@/components/compliance/requirements/frase-de-la-regla'
+import { OPCIONES_DE_EXIGIBILIDAD } from '@/components/compliance/requirements/SelectorExigibilidad'
 
 const BOTON = `inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-1.5
   text-xs font-semibold text-text-primary hover:bg-bg-main disabled:cursor-not-allowed disabled:opacity-45

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   aplicarEnLote, cambiosDelBorrador, camposCambiados, editar, incompletos,
-  renovacionDe, valorDe, vigenciaPara,
+  valorDe, vigenciaPara,
 } from './borrador'
 import type { RequirementOption } from '@/lib/types'
 
@@ -18,23 +18,7 @@ function req(over: Partial<RequirementOption> = {}): RequirementOption {
 
 const ANUAL = { politica: 'ISSUE_PLUS_MONTHS' as const, validity_months: 12, warning_days: 30, grace_days: 0 }
 
-describe('renovacionDe y vigenciaPara', () => {
-  it('nombra las renovaciones de la planilla', () => {
-    expect(renovacionDe({ politica: 'NONE' })).toBe('nunca')
-    expect(renovacionDe({ politica: 'REQUIRED' })).toBe('fecha')
-    expect(renovacionDe({ politica: 'OPTIONAL' })).toBe('fecha_opcional')
-    expect(renovacionDe(ANUAL)).toBe('anual')
-    expect(renovacionDe({ ...ANUAL, validity_months: 24 })).toBe('bienal')
-    expect(renovacionDe({ politica: 'CALENDAR_PERIOD', frequency_months: 1 })).toBe('mes')
-  })
-
-  it('una regla que la celda no sabe escribir no se colapsa en otra', () => {
-    // Un "cada 6 meses" elegido en el panel no puede volverse "anual" por
-    // abrir la tabla: se muestra como otra y se edita en el panel.
-    expect(renovacionDe({ ...ANUAL, validity_months: 6 })).toBe('otra')
-    expect(renovacionDe({ politica: 'CALENDAR_PERIOD', frequency_months: 3 })).toBe('otra')
-  })
-
+describe('vigenciaPara', () => {
   it('cambiar la renovación conserva el aviso y la gracia', () => {
     expect(vigenciaPara('bienal', ANUAL)).toEqual({ ...ANUAL, validity_months: 24 })
     expect(vigenciaPara('nunca', ANUAL)).toEqual({ politica: 'NONE' })
