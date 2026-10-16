@@ -319,9 +319,22 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
          (anterior); Monitor con `?client=` sin chip si el cliente no tiene viajes en la vista; zonas aún en código en
          `_OPERATION_TYPE_META` y `RouteEditor`; "Sin clasificar" mientras llega `/trips/meta` y "Por revisar 0" mientras
          carga; pestaña Empresas sin paginar (100); la ficha de Empresa con su propio rastro de navegación.
-     **Siguiente (exacto, 17/10):** escribir y ejecutar el plan de la Parte 2 (Certificación › Documentos exigidos: lista
-       + ficha por documento, sacar Condiciones de Configuración). Decisión 16/10: **sin "Directorio › Lugares"** (el
-       Tarifario ya es la lista de lugares). Con eso la spec de fichas y navegación queda cerrada (fuera: Cmd+K).
+     - **Parte 2: plan ESCRITO (16/10, sin ejecutar):** `docs/superpowers/plans/2026-10-17-configuracion-parte-2.md`
+       (7 tareas, P2.1-P2.7). Decisiones del 16/10:
+       - **Lote retirado de la UI y de la API** (decisión del usuario, según el estándar de la industria, lo robusto y
+         la arquitectura): se borran `BarraDelBorrador`, `borrador.ts`, `celdas-del-borrador`, `batch-preview` y
+         `batch-update`. Evidencia en la base real: en 60 días ninguna persona editó más de 2 documentos a la vez; el
+         único minuto con 75 fue la carga del catálogo por script. Se edita solo desde la ficha.
+       - **"Sin vigencia" = `!is_active`, como hoy** (no "no vence"): 77 inactivos, 75 de ellos el catálogo apagado
+         del 09/10. Sin vigencia y Desactivados son el mismo conjunto → un solo filtro. Las cifras de la maqueta eran
+         ilustrativas. Hoy: 114 documentos, 2 con condición, 1 mensual.
+       - La API suma `GET /{id}` (con `estados` y el historial `reglas`) y `cumplen`/`exigidos` en la lista (una
+         consulta agregada). Sin migraciones; la clave de revisión `certification/conditions` se conserva.
+     - **Entrega 2 de fichas: revisada 16/10, sin pendientes de código.** Cabos sueltos: la tabla de Por asignar nunca
+       se vio con datos en dev (la sube Pablo/Carla) y los menores diferidos de la Entrega 1 (lista de arriba).
+     **Siguiente (exacto, 17/10):** ejecutar el plan de la Parte 2, inline, desde la Tarea 1. Decisión 16/10: **sin
+       "Directorio › Lugares"** (el Tarifario ya es la lista de lugares). Con eso la spec de fichas y navegación queda
+       cerrada (fuera: Cmd+K).
   2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
      el 409 solo ocurre con la pantalla vieja). La salida del 409 en `AltaDeFlota` pasó a ser del anfitrión
