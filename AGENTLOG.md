@@ -272,8 +272,9 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
        `test_origen_del_viaje_una_definicion` sigue verde) y columnas Estado · Fecha · TMS · ID Viaje · Patente ·
        Conductor · Origen · Destinos · Temp · EETT. Verificado en dev: 200 asc/desc, orden alfabético, 0 errores.
        El primer deploy falló por el trinquete de color crudo (copié `hover:bg-gray-50`); corregido con token.
-       **Ojo:** en la copia local fallan 8 tests de integración (anulados, cliente del viaje, firma inmutable, asignación,
-       trips del día) SIN mi cambio (verificado con stash): deriva de la copia local, pendiente de revisar aparte.
+       ~~8 tests de integración fallando en la copia local~~ **RESUELTO 15/10 (`d6c21abd`):** la copia local tenía
+       catálogos ficticios mínimos; ahora lleva los reales (`.superpowers/local-sim/seed_catalogs.sql` + cleanup) y
+       los tests que elegían datos de producción crean su sujeto. Suite del backend en local: 0 fallos.
      - **Seguros (auditoría, spec, E1 y E2): CERRADO y en dev (15/10, `4b89eeb0..245684d5`), archivado.** Las dos
        migraciones de E2 aplicadas en la real con autorización (20261021 solo agrega; 20261022 contracción con copia en
        audit_log: 33 pólizas y 294 cuotas copiadas, 60 pagadas intactas). Recorrido en dev con sesión: Pólizas, ficha,
@@ -292,8 +293,11 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
      no volver a ofrecer el paso a producción hasta que el usuario lo pida. Pendiente de probar con datos reales: una tanda mezclada subida sin
      contexto (Pablo/Carla). Siguen esperando: el Google Sheet del tipo de operación, la validación de Pablo de "Pedir a
      Certificación" y el dato del tracto GPRZ30.
-- Tangentes: `FLEET_SERVICE_TYPE` tiene una fila "Tractocamión" sin `code` mezclada con carrocerías (10 tractos la usan);
-  "Asignar a 1 viajes" (plural fijo en el popover); un conductor en la base real se llama "Cajas Leiva Iván Alejandro\N".
+- Tangentes **resueltas 15/10 (`d6c21abd`):** "Asignar a 1 viajes" → "Asignar a este viaje"; el alta de equipo solo
+  ofrece subtipo (carrocería) a lo que no es tracto. **Falta aplicar en la real (autorización explícita pendiente):**
+  `20261023090000_fleet_service_type_without_power_unit.sql` (10 tractos sin el subtipo "Tractocamión", fila
+  desactivada) y `20261023090100_drivers_strip_null_marker.sql` (2 conductores con "\N" al final del nombre).
+  Ensayadas con BEGIN…ROLLBACK en la real: 10 y 2 filas, con copia en audit_log.
 
 1. ~~Mirar M2 en dev~~ **HECHO 12/10 noche:** chip gris "Dada de baja" y "La empresa no está activa", sin "se puede asignar".
    Ojo: abrir un viaje con divergencia TMS deja una nota "sistema" a nombre de quien lo abre (`_log_tms_divergence_once`,
