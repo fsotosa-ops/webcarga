@@ -71,7 +71,7 @@ export const DOMINIOS: Dominio[] = [
     proposito: 'Cómo se ve el tablero, cuándo avisa, y qué temperatura corresponde',
     secciones: [
       { clave: 'tms-statuses', titulo: 'Estados del tablero',
-        proposito: 'Colores y columna de cada estado del TMS', Panel: EstadosDelTableroPanel },
+        proposito: 'Cómo se llama cada estado del TMS y en qué columna del tablero aparece', Panel: EstadosDelTableroPanel },
       { clave: 'operational-statuses', titulo: 'Estados operacionales',
         proposito: 'El vocabulario que usa el equipo', Panel: EstadosOperacionalesPanel },
       { clave: 'equipment-statuses', titulo: 'Estados de equipo',

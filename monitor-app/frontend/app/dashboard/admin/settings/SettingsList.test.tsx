@@ -214,4 +214,11 @@ describe('SettingsList: una lista de lectura y un panel', () => {
     const filtros = await screen.findByRole('group', { name: 'Filtrar' })
     await waitFor(() => expect(within(filtros).getByRole('button', { name: /Sin revisar/ })).toHaveTextContent('0'))
   })
+
+  it('"Sin revisar" cuenta decisiones: las filas de un mismo formulario cuentan una vez (como el índice)', async () => {
+    vi.mocked(revisionesApi.list).mockResolvedValue([] as never)
+    renderLista(fuente({ revisionId: () => 'reglas' }))
+    const filtros = await screen.findByRole('group', { name: 'Filtrar' })
+    await waitFor(() => expect(within(filtros).getByRole('button', { name: /Sin revisar/ })).toHaveTextContent('1'))
+  })
 })

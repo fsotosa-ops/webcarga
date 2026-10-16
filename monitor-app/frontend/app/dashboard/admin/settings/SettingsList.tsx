@@ -75,7 +75,8 @@ export function SettingsList<Row extends { id: string }>({ source }: { source: S
     { id: TODOS, label: 'Todos', badge: String(filas.length) },
     // Sin cifra mientras las revisiones cargan: un "0" ahí afirma algo falso.
     { id: SIN_REVISAR, label: 'Sin revisar',
-      badge: revisiones.cargando ? undefined : String(filas.filter(r => revisiones.sinRevisar(rid(r))).length) },
+      // Cuenta decisiones, no filas: las reglas del Monitor son un solo formulario (igual que el índice).
+      badge: revisiones.cargando ? undefined : String(new Set(filas.map(rid).filter(id => revisiones.sinRevisar(id))).size) },
     ...extra.map(e => ({ id: e.id, label: e.label, badge: String(filas.filter(e.match).length) })),
   ]
   const fila = abierto && abierto !== NUEVO ? filas.find(r => r.id === abierto) : undefined
