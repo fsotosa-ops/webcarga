@@ -10,6 +10,31 @@ import pytest
 pytestmark = pytest.mark.integracion
 
 
+async def _cliente(conn) -> str:
+    """El id de un cliente del directorio creado por el test (conftest.cliente_de_prueba)."""
+    from tests.conftest import cliente_de_prueba
+    nombre = await cliente_de_prueba(conn)
+    return await conn.fetchval("SELECT id::text FROM public.shippers WHERE name = $1", nombre)
+
+
+async def _correspondencia(conn, shipper_id: str, source_client: str = "zz-cliente-tms") -> str:
+    """Un cliente del TMS (qanalytics) que corresponde a `shipper_id`, con un viaje; devuelve su source_client_id.
+    Lo crea el test: elegirlo de la base hacía depender el resultado de qué clientes había."""
+    import uuid
+    from datetime import date
+    source_client_id = await conn.fetchval(
+        "INSERT INTO app.tms_client_shippers (source_client_id, source_system, source_client, shipper_id) "
+        "VALUES (gen_random_uuid(), 'qanalytics', $1, $2::uuid) RETURNING source_client_id::text",
+        source_client, shipper_id)
+    # Un cliente del TMS existe porque tiene viajes (re-vincular sin viajes da 404).
+    await conn.execute(
+        "INSERT INTO app.trips (id, planning_date, client_name, source_system, source_system_trip_id, trip_status, "
+        "is_active, is_assigned, shipper_id, source_client_id) "
+        "VALUES ($1, $2, $3, 'qanalytics', $4, 'RUTA', false, true, $5::uuid, $6::uuid)",
+        uuid.uuid4(), date(2099, 3, 3), source_client, f"ZZTMS-{uuid.uuid4().hex[:6]}", shipper_id, source_client_id)
+    return source_client_id
+
+
 async def test_el_directorio_no_admite_el_mismo_nombre_con_otra_capitalizacion(conexion_revertida):
     nombre = await conexion_revertida.fetchval("SELECT name FROM public.shippers WHERE status = 'ACTIVE' LIMIT 1")
     with pytest.raises(asyncpg.UniqueViolationError):
@@ -63,26 +88,33 @@ async def test_el_alta_manual_guarda_el_id_y_el_nombre_del_directorio(conexion_r
 async def test_renombrar_un_cliente_no_saca_sus_viajes_del_monitor(conexion_revertida):
     """El caso que motivó todo: con el cruce por texto, renombrar "Colun" dejaba
     sus viajes sin cliente."""
+    import uuid
+    from datetime import date
+
     from app.routers.trips import list_trips
     from tests.conftest import PoolDeUnaConexion, _usuario_real
 
-    colun = await conexion_revertida.fetchval("SELECT id::text FROM public.shippers WHERE lower(name) = 'colun'")
-    await conexion_revertida.execute("UPDATE public.shippers SET name = 'Colun Renombrada' WHERE id = $1::uuid", colun)
-    usuario = await _usuario_real(conexion_revertida)
-    res = await list_trips(pool=PoolDeUnaConexion(conexion_revertida), user=usuario, shipper_id=colun, view="historial", limit=5)
+    conn = conexion_revertida
+    cliente = await _cliente(conn)
+    await conn.execute(
+        "INSERT INTO app.trips (id, planning_date, client_name, source_system_trip_id, trip_status, "
+        "is_active, is_assigned, shipper_id) VALUES ($1, $2, 'x', $3, 'RUTA', false, true, $4::uuid)",
+        uuid.uuid4(), date(2099, 3, 2), f"ZZREN-{uuid.uuid4().hex[:6]}", cliente)
+    await conn.execute("UPDATE public.shippers SET name = 'Cliente Renombrado' WHERE id = $1::uuid", cliente)
+    usuario = await _usuario_real(conn)
+    res = await list_trips(pool=PoolDeUnaConexion(conn), user=usuario, shipper_id=cliente, view="historial", limit=5)
     assert res["count"] > 0
-    assert {d["client_name"] for d in res["data"]} == {"Colun Renombrada"}
+    assert {d["client_name"] for d in res["data"]} == {"Cliente Renombrado"}
 
 
 async def test_vincular_un_cliente_del_tms_escribe_la_correspondencia(conexion_revertida):
     from app.routers.tms_clients import VinculoBody, vincular
     from tests.conftest import PoolDeUnaConexion, _usuario_real
 
-    fila = await conexion_revertida.fetchrow(
-        "SELECT source_client_id::text AS id FROM app.tms_client_shippers LIMIT 1")
-    otro = await conexion_revertida.fetchval("SELECT id::text FROM public.shippers WHERE lower(name) = 'hbc'")
+    origen = await _correspondencia(conexion_revertida, await _cliente(conexion_revertida))
+    otro = await _cliente(conexion_revertida)
     usuario = await _usuario_real(conexion_revertida)
-    res = await vincular(UUID(fila["id"]), VinculoBody(shipper_id=otro), pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
+    res = await vincular(UUID(origen), VinculoBody(shipper_id=otro), pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
     assert res["shipper_id"] == otro
 
 
@@ -98,17 +130,18 @@ async def test_renombrar_el_cliente_no_cambia_el_id_canonico_del_viaje_manual(co
     from app.routers.trips import TripCreateBody, _insert_trip
     from tests.conftest import _usuario_real
 
-    walmart = await conexion_revertida.fetchval("SELECT id::text FROM public.shippers WHERE lower(name) = 'walmart'")
-    await conexion_revertida.execute("UPDATE public.shippers SET name = 'Walmart Chile' WHERE id = $1::uuid", walmart)
+    cliente = await _cliente(conexion_revertida)
+    await _correspondencia(conexion_revertida, cliente, "zz-cliente-tms")
+    await conexion_revertida.execute("UPDATE public.shippers SET name = 'Cliente Renombrado' WHERE id = $1::uuid", cliente)
     usuario = await _usuario_real(conexion_revertida)
-    body = TripCreateBody(planning_date=date(2099, 1, 5), origin_tms="qanalytics", shipper_id=walmart,
+    body = TripCreateBody(planning_date=date(2099, 1, 5), origin_tms="qanalytics", shipper_id=cliente,
                           source_system_trip_id="ZZ-REN-1")
     trip_id = await _insert_trip(conexion_revertida, body, usuario, valid_statuses=set())
-    esperado = str(UUID(hashlib.md5(b"qanalytics|walmart|ZZ-REN-1").hexdigest()))
+    esperado = str(UUID(hashlib.md5(b"qanalytics|zz-cliente-tms|ZZ-REN-1").hexdigest()))
     assert trip_id == esperado
     fila = await conexion_revertida.fetchrow(
         "SELECT client_name, shipper_id::text FROM app.trips_manual WHERE id = $1", trip_id)
-    assert (fila["client_name"], fila["shipper_id"]) == ("walmart", walmart)
+    assert (fila["client_name"], fila["shipper_id"]) == ("zz-cliente-tms", cliente)
 
 
 async def test_el_csv_marca_todas_las_filas_con_cliente_fuera_del_directorio(conexion_revertida):
@@ -148,10 +181,9 @@ async def test_cambiar_un_vinculo_queda_registrado_con_quien_y_desde_que_cliente
     from app.routers.tms_clients import VinculoBody, vincular
     from tests.conftest import PoolDeUnaConexion, _usuario_real
 
-    fila = await conexion_revertida.fetchrow(
-        "SELECT source_client_id::text AS id, shipper_id::text AS antes FROM app.tms_client_shippers LIMIT 1")
-    otro = await conexion_revertida.fetchval(
-        "SELECT id::text FROM public.shippers WHERE id <> $1::uuid AND status = 'ACTIVE' LIMIT 1", fila["antes"])
+    antes = await _cliente(conexion_revertida)
+    fila = {"id": await _correspondencia(conexion_revertida, antes), "antes": antes}
+    otro = await _cliente(conexion_revertida)
     usuario = await _usuario_real(conexion_revertida)
     await vincular(UUID(fila["id"]), VinculoBody(shipper_id=otro), pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
     registro = await conexion_revertida.fetchrow(

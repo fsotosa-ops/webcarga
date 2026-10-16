@@ -59,6 +59,14 @@ describe('AsignarConductorPopover', () => {
 
   // El control y su consecuencia dicen lo mismo: no hay que acordarse de lo
   // que se marco dos renglones mas arriba.
+  it('con un solo viaje no ofrece la casilla y dice "Asignar a este viaje", no "a 1 viajes"', () => {
+    render_(<AsignarConductorPopover {...base} viajesDeLaPersona={1} candidatos={[CONTENIDO]} />)
+    fireEvent.click(screen.getByRole('button', { name: /Suarez Lopez Efrain/i }))
+    expect(screen.getByRole('button', { name: 'Asignar a este viaje' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(screen.queryByText(/1 viajes/)).not.toBeInTheDocument()
+  })
+
   it('el boton dice a cuantos viajes se aplica, y cambia con la casilla', () => {
     render_(<AsignarConductorPopover {...base} candidatos={[CONTENIDO]} />)
     fireEvent.click(screen.getByRole('button', { name: /Suarez Lopez Efrain/i }))

@@ -117,6 +117,8 @@ export function AltaDeFlota({
   // Sin elección, el primero del catálogo.
   const [chosenAssetType, setAssetType] = useState<AssetType>('')
   const assetType = chosenAssetType || assetTypes[0]?.code || ''
+  // El subtipo es la carrocería (Furgón Seco, Sider…): un tracto no tiene; su tipo ya lo dice.
+  const llevaCarroceria = assetTypes.find(t => t.code === assetType)?.is_power_unit === false
   const [patente, setPatente] = useState(tipo === 'equipo' ? prefill ?? '' : '')
   const [subtipoId, setSubtipoId] = useState('')
   const [gestionId, setGestionId] = useState('')
@@ -176,7 +178,7 @@ export function AltaDeFlota({
         creado = await assetsApi.create({
           asset_type: assetType,
           license_plate: patente.trim(),
-          ...(subtipoId ? { fleet_service_type_id: subtipoId } : {}),
+          ...(subtipoId && llevaCarroceria ? { fleet_service_type_id: subtipoId } : {}),
           ...(gestionId ? { webcarga_operation_type_id: gestionId } : {}),
         })
         if (empresaId) await carriersApi.assignAsset(empresaId, creado.id)
@@ -243,12 +245,14 @@ export function AltaDeFlota({
                     className={`${INPUT} w-36 bg-white`}>
               {assetTypes.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
             </select>
-            <select aria-label="Subtipo" value={subtipoId}
-                    onChange={e => setSubtipoId(e.target.value)}
-                    className={`${INPUT} w-44 bg-white`}>
-              <option value="">Subtipo (opcional)</option>
-              {(subtiposQuery.data ?? []).map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
-            </select>
+            {llevaCarroceria && (
+              <select aria-label="Subtipo" value={subtipoId}
+                      onChange={e => setSubtipoId(e.target.value)}
+                      className={`${INPUT} w-44 bg-white`}>
+                <option value="">Subtipo (opcional)</option>
+                {(subtiposQuery.data ?? []).map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+              </select>
+            )}
             <select aria-label="Tipo de gestión" value={gestionId}
                     onChange={e => setGestionId(e.target.value)}
                     className={`${INPUT} w-44 bg-white`}>

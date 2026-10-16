@@ -231,6 +231,10 @@ async def test_fleet_edit_locks_the_trip_before_the_link(conexion_revertida):
           AND t.trip_status LIKE 'CERRADO%' AND t.source_system <> 'manual'
         ORDER BY t.planning_date LIMIT 1
         """))
+    if trip_id == "None":
+        # La otra conexión tiene que ver el viaje: no sirve uno creado en la
+        # transacción del test, que se revierte. La copia local no tiene viajes así.
+        pytest.skip("precondición: un viaje del TMS cerrado hace más de 60 días, con flota")
     import asyncpg
     holder = await asyncpg.connect(**credenciales_integracion())
     try:

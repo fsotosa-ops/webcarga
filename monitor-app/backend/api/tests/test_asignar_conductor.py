@@ -179,19 +179,16 @@ async def test_el_resolvedor_no_pisa_ese_vinculo(conexion_revertida):
 # Por eso ordena la contencion y la similitud solo desempata.
 
 
-async def _un_nombre_de_roster(conn, minimo_tokens: int = 4):
-    """Un conductor real y sus tokens. Los nombres salen de la base y no se
-    escriben en el test: no hay PII hardcodeada y no se rompe si cambia el
-    padron."""
+async def _un_nombre_de_roster(conn):
+    """Un conductor con nombre de 4 palabras, y sus tokens. Lo crea el test (dentro
+    de la transacción que se revierte): elegirlo del padrón hacía que el test
+    dependiera de qué conductores hay en esa base. El nombre es ficticio."""
+    driver_id = await conn.fetchval(
+        "INSERT INTO public.drivers (full_name, operational_status) "
+        "VALUES ('Zuleta Quiroga Amancio Bernardino', 'ACTIVE') RETURNING id")
     return await conn.fetchrow(
-        """
-        SELECT d.id, d.full_name, public.name_tokens(d.full_name) AS tokens
-        FROM public.drivers d
-        WHERE d.full_name IS NOT NULL AND d.operational_status = 'ACTIVE'
-          AND array_length(public.name_tokens(d.full_name), 1) >= $1
-        ORDER BY d.id LIMIT 1
-        """,
-        minimo_tokens,
+        "SELECT d.id, d.full_name, public.name_tokens(d.full_name) AS tokens FROM public.drivers d WHERE d.id = $1",
+        driver_id,
     )
 
 
@@ -351,7 +348,7 @@ async def test_tambien_encuentra_cuando_al_tms_le_SOBRA_un_nombre(conexion_rever
     `by_partial`; no hay razon para que la sugerencia al humano sea mas pobre
     que la resolucion automatica."""
     conn = conexion_revertida
-    persona = await _un_nombre_de_roster(conn, minimo_tokens=3)
+    persona = await _un_nombre_de_roster(conn)
     # el TMS agrega un nombre que el roster no tiene
     nombre_tms = " ".join(list(persona["tokens"]) + ["zzqq"]).upper()
 

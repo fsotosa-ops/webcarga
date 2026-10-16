@@ -108,9 +108,11 @@ export function AsignarConductorPopover({
 
   const contenidos = candidatos.filter(c => c.contiene)
   const parecidos = candidatos.filter(c => !c.contiene)
-  const etiquetaAlcance = aTodos
-    ? `Asignar a ${viajesDeLaPersona} viajes`
-    : 'Asignar solo a este viaje'
+  // Con un solo viaje no hay alcance que elegir: "a 1 viajes" no se dice.
+  const variosViajes = viajesDeLaPersona > 1
+  const etiquetaAlcance = !variosViajes
+    ? 'Asignar a este viaje'
+    : aTodos ? `Asignar a ${viajesDeLaPersona} viajes` : 'Asignar solo a este viaje'
 
   const claseCandidato = (id: string) =>
     `w-full text-left rounded-md border px-2.5 py-2 transition-colors ${
@@ -225,11 +227,13 @@ export function AsignarConductorPopover({
 
       {avisos.length === 0 && (
       <div className="mt-3 pt-2.5 border-t border-border space-y-2.5">
-        <label className={`flex items-start gap-2 text-etiqueta cursor-pointer ${TEXTO_CUERPO}`}>
-          <input type="checkbox" checked={aTodos}
-                 onChange={e => setATodos(e.target.checked)} className="mt-0.5" />
-          <span>Aplicar a los {viajesDeLaPersona} viajes de esta persona</span>
-        </label>
+        {variosViajes && (
+          <label className={`flex items-start gap-2 text-etiqueta cursor-pointer ${TEXTO_CUERPO}`}>
+            <input type="checkbox" checked={aTodos}
+                   onChange={e => setATodos(e.target.checked)} className="mt-0.5" />
+            <span>Aplicar a los {viajesDeLaPersona} viajes de esta persona</span>
+          </label>
+        )}
         <div className="flex gap-2">
           {!dandoDeAlta && (
             <button

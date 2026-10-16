@@ -30,8 +30,20 @@ async def _vaciar_cola(conn) -> None:
     await conn.execute("DELETE FROM app.closure_recompute_queue")
 
 
+async def _una_fila_en_cada_tabla(conn) -> None:
+    """Cada tabla necesita una fila para que el UPDATE toque algo. La base real las
+    tiene todas; la copia local no tiene asignaciones tracto-conductor, así que el
+    test agrega una (con un equipo y un conductor que ya existan) en vez de depender
+    del dato."""
+    if await conn.fetchval("SELECT NOT EXISTS (SELECT 1 FROM public.vehicle_driver_assignments)"):
+        await conn.execute(
+            "INSERT INTO public.vehicle_driver_assignments (asset_id, driver_id, status, source) "
+            "SELECT (SELECT id FROM public.assets LIMIT 1), (SELECT id FROM public.drivers LIMIT 1), 'INACTIVE', 'tms'")
+
+
 async def test_escribir_en_cada_tabla_de_entrada_encola_hoy(conexion_revertida):
     hoy = await abrir_hoy(conexion_revertida)
+    await _una_fila_en_cada_tabla(conexion_revertida)
     for tabla in TABLAS_DE_LA_MIGRACION:
         await _vaciar_cola(conexion_revertida)
         # Un UPDATE que sí toca una fila, sin cambiar su valor: la marca no mira
