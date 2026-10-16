@@ -513,7 +513,7 @@ SELECT
     r.tiene_archivo,
     -- Mismo motivo que `tiene_archivo`: sin nombrarlas aca no salen de la CTE.
     r.asset_type,
-    r.fleet_service_type_label, r.fleet_service_type_bg_color, r.fleet_service_type_text_color,
+    r.fleet_service_type_label,
     r.document_state,
     {exigible_desde_sql('r')} AS exigible_desde,
     -- -infinity = presente pero sin el dato que su tipo necesita: no es una
@@ -781,7 +781,6 @@ WITH pending_rows AS (
 SELECT
     entity_type, entity_id, subject_name, carrier_operation_types,
     asset_type, fleet_service_type_label,
-    fleet_service_type_bg_color, fleet_service_type_text_color,
     count(*) AS todos,
     count(*) FILTER (WHERE document_state = 'UP_TO_DATE')            AS al_dia,
     count(*) FILTER (WHERE document_state = 'EXPIRING')              AS por_vencer,
@@ -793,7 +792,7 @@ FROM pending_rows
 -- parte ningun sujeto en dos filas: solo evita una segunda consulta para un
 -- dato que ya viaja en cada fila de `_PENDING_ROWS_SQL`.
 --
--- Los cuatro campos de vehiculo entran al agrupado por la misma razon y con
+-- Los dos campos de vehiculo entran al agrupado por la misma razon y con
 -- la misma garantia, pero MAS fuerte: dependen funcionalmente de `entity_id`
 -- -son atributos de ESE vehiculo-, asi que no pueden partir un sujeto en dos
 -- filas ni aunque la consulta dejara de estar acotada a una empresa. Se
@@ -801,8 +800,7 @@ FROM pending_rows
 -- alguna vez uno de ellos partiera un sujeto, seria una senal real de que el
 -- dato cambio de grano, no algo que un agregado deba tapar.
 GROUP BY entity_type, entity_id, subject_name, carrier_operation_types,
-         asset_type, fleet_service_type_label,
-         fleet_service_type_bg_color, fleet_service_type_text_color
+         asset_type, fleet_service_type_label
 ORDER BY entity_type, subject_name
 """
 
@@ -848,8 +846,6 @@ async def get_compliance_summary(
             "no_exigible": f["no_exigible"],
             "asset_type": f["asset_type"],
             "fleet_service_type_label": f["fleet_service_type_label"],
-            "fleet_service_type_bg_color": f["fleet_service_type_bg_color"],
-            "fleet_service_type_text_color": f["fleet_service_type_text_color"],
         }
         for f in filas
     ]

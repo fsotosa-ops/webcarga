@@ -74,8 +74,8 @@ async def _taxonomia(conn, dominio: str, etiqueta: str):
     """Una fila de catálogo sintética. Sirve para que los requisitos de prueba
     no matcheen ni un solo vehículo real: nadie tiene este tipo."""
     return await conn.fetchval(
-        "INSERT INTO app.status_taxonomies (domain, label, bg_color, text_color, active) "
-        "VALUES ($1, $2, '#eeeeee', '#111111', true) RETURNING id",
+        "INSERT INTO app.status_taxonomies (domain, label, active) "
+        "VALUES ($1, $2, true) RETURNING id",
         dominio, etiqueta,
     )
 
@@ -806,21 +806,20 @@ async def _sujeto_del_resumen(conn, empresa, entity_id):
     )
 
 
-async def test_el_resumen_proyecta_el_tipo_de_vehiculo_con_los_colores_del_catalogo(
+async def test_el_resumen_proyecta_el_tipo_de_vehiculo_del_catalogo(
     conexion_revertida,
 ):
     """El resumen tiene que traer QUÉ ES el vehículo, no sólo su patente.
 
-    Mismo riesgo que `tiene_archivo`: las cuatro columnas nacen en la CTE
+    Mismo riesgo que `tiene_archivo`: las dos columnas nacen en la CTE
     `resolved`, y el SELECT final enumera columnas — una que nadie nombra se
     pierde en silencio, y el handler revienta con KeyError. Además pasan por
     un `GROUP BY`: si faltaran ahí, Postgres rechaza la consulta entera. Un
     `AsyncMock` no ve ninguna de las dos cosas, porque devuelve el
     diccionario que el test le dicta.
 
-    Los colores salen del catálogo (`app.status_taxonomies`) y no de una
-    tabla de constantes en el frontend: por eso se afirman los valores que
-    `_taxonomia` insertó, no unos escritos a mano acá.
+    Sin colores (Configuración, Parte 1): el subtipo se ve neutro, así que el
+    resumen trae solo su etiqueta del catálogo.
     """
     conn = conexion_revertida
     cliente = await _cliente(conn)
@@ -845,8 +844,7 @@ async def test_el_resumen_proyecta_el_tipo_de_vehiculo_con_los_colores_del_catal
     assert sujeto["asset_type"] == "TRACTOCAMION"
     assert sujeto["fleet_service_type_label"] == await conn.fetchval(
         "SELECT label FROM app.status_taxonomies WHERE id = $1", subtipo)
-    assert sujeto["fleet_service_type_bg_color"] == "#eeeeee"
-    assert sujeto["fleet_service_type_text_color"] == "#111111"
+    assert not any(k.endswith("_color") for k in sujeto)
 
 
 async def test_un_vehiculo_sin_subtipo_trae_su_chasis_y_el_subtipo_nulo(
@@ -876,7 +874,6 @@ async def test_un_vehiculo_sin_subtipo_trae_su_chasis_y_el_subtipo_nulo(
     assert sujeto is not None, "el vehiculo no aparecio en el resumen"
     assert sujeto["asset_type"] == "TRACTOCAMION"
     assert sujeto["fleet_service_type_label"] is None
-    assert sujeto["fleet_service_type_bg_color"] is None
 
 
 async def test_la_empresa_y_el_conductor_no_traen_tipo_de_vehiculo(conexion_revertida):
@@ -1278,6 +1275,6 @@ async def test_el_codigo_de_gestion_es_unico_dentro_de_su_vocabulario(conexion_r
     del plan de Postgres, que es el problema que el codigo vino a sacar."""
     with pytest.raises(asyncpg.exceptions.UniqueViolationError):
         await conexion_revertida.execute(
-            "INSERT INTO app.status_taxonomies (domain, label, bg_color, text_color, code) "
-            "VALUES ('WEBCARGA_OPERATION_TYPE', 'ZZ Prueba', '#fff', '#000', 'TRACTOREO')"
+            "INSERT INTO app.status_taxonomies (domain, label, code) "
+            "VALUES ('WEBCARGA_OPERATION_TYPE', 'ZZ Prueba', 'TRACTOREO')"
         )

@@ -1,7 +1,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from ..auth import get_current_user
 from ..authz import Permission, require
@@ -29,9 +29,9 @@ class TripStatusPatch(BaseModel):
     # atómico. Mientras un cliente pueda mandar un número arbitrario, dos
     # estados pueden terminar con el mismo y la lista queda con un empate que
     # la pantalla no sabe deshacer. Ver services/reordenamiento.py.
+    model_config = ConfigDict(extra="forbid")
+
     label:      Optional[str] = None
-    bg_color:   Optional[str] = None
-    text_color: Optional[str] = None
     group_id:   Optional[str] = None
 
     @field_validator("group_id")
@@ -149,7 +149,7 @@ class TemperatureRangePatch(BaseModel):
 # (ESTADOS_DEL_TABLERO.orden). Si divergieran, la lista que se ve y la lista
 # contra la que se mueve serían dos listas distintas.
 _SQL_ESTADOS = (
-    'SELECT id, label, bg_color, text_color, group_id AS "group", sort_order '
+    'SELECT id, label, group_id AS "group", sort_order '
     f"FROM app.trip_statuses WHERE active = true ORDER BY {ESTADOS_DEL_TABLERO.orden}"
 )
 
@@ -190,7 +190,7 @@ async def patch_status(
         f"UPDATE app.trip_statuses SET {', '.join(sets)} WHERE id = $1", *vals
     )
     row = await pool.fetchrow(
-        'SELECT id, label, bg_color, text_color, group_id AS "group", sort_order '
+        'SELECT id, label, group_id AS "group", sort_order '
         "FROM app.trip_statuses WHERE id = $1",
         status_id,
     )

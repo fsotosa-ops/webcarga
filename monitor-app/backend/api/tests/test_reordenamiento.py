@@ -207,9 +207,9 @@ def test_mover_estado_devuelve_la_lista_completa():
     conn = conexion_con(TRES, {"sort_order": 2})
     pool = pool_con_conexion(conn)
     pool.fetch.return_value = [
-        {"id": "B", "label": "B", "bg_color": "#fff", "text_color": "#000",
+        {"id": "B", "label": "B",
          "group": "en_ruta", "sort_order": 1},
-        {"id": "A", "label": "A", "bg_color": "#fff", "text_color": "#000",
+        {"id": "A", "label": "A",
          "group": "en_ruta", "sort_order": 2},
     ]
     res = cliente(pool).post("/api/v1/config/statuses/B/move", json={"direction": "up"})
@@ -244,8 +244,7 @@ def test_mover_taxonomia_devuelve_su_dominio_completo():
     )
     pool = pool_con_conexion(conn)
     pool.fetchval.return_value = "EQUIPMENT_STATE"
-    pool.fetch.return_value = [{"id": "B", "domain": "EQUIPMENT_STATE", "label": "B",
-                                "bg_color": "#fff", "text_color": "#000", "group": None,
+    pool.fetch.return_value = [{"id": "B", "domain": "EQUIPMENT_STATE", "label": "B", "group": None,
                                 "sort_order": 1, "active": True}]
     res = cliente(pool).post(
         "/api/v1/config/taxonomies/22222222-2222-2222-2222-222222222222/move",
@@ -268,9 +267,9 @@ async def test_integracion_el_sql_del_movimiento_corre_de_verdad(conexion_revert
     conn = conexion_revertida
     await conn.execute(
         """
-        INSERT INTO app.trip_statuses (id, label, bg_color, text_color, group_id, sort_order, active)
-        VALUES ('ZZ_PRUEBA_1', 'Prueba 1', '#fff', '#000', 'otro', 9001, true),
-               ('ZZ_PRUEBA_2', 'Prueba 2', '#fff', '#000', 'otro', 9002, true)
+        INSERT INTO app.trip_statuses (id, label, group_id, sort_order, active)
+        VALUES ('ZZ_PRUEBA_1', 'Prueba 1', 'otro', 9001, true),
+               ('ZZ_PRUEBA_2', 'Prueba 2', 'otro', 9002, true)
         """
     )
 
@@ -299,9 +298,9 @@ async def test_integracion_el_orden_queda_sin_empates(conexion_revertida):
     conn = conexion_revertida
     await conn.execute(
         """
-        INSERT INTO app.trip_statuses (id, label, bg_color, text_color, group_id, sort_order, active)
-        VALUES ('ZZ_EMPATE_1', 'Empate 1', '#fff', '#000', 'otro', 9500, true),
-               ('ZZ_EMPATE_2', 'Empate 2', '#fff', '#000', 'otro', 9500, true)
+        INSERT INTO app.trip_statuses (id, label, group_id, sort_order, active)
+        VALUES ('ZZ_EMPATE_1', 'Empate 1', 'otro', 9500, true),
+               ('ZZ_EMPATE_2', 'Empate 2', 'otro', 9500, true)
         """
     )
     await mover_una_posicion(conn, ESTADOS_DEL_TABLERO, "ZZ_EMPATE_2", ARRIBA)
@@ -324,9 +323,9 @@ async def test_integracion_la_taxonomia_no_pisa_otro_dominio(conexion_revertida)
     conn = conexion_revertida
     ids = await conn.fetch(
         """
-        INSERT INTO app.status_taxonomies (domain, label, bg_color, text_color, sort_order)
-        VALUES ('EQUIPMENT_STATE', 'ZZ Prueba Uno', '#fff', '#000', 9001),
-               ('EQUIPMENT_STATE', 'ZZ Prueba Dos', '#fff', '#000', 9002)
+        INSERT INTO app.status_taxonomies (domain, label, sort_order)
+        VALUES ('EQUIPMENT_STATE', 'ZZ Prueba Uno', 9001),
+               ('EQUIPMENT_STATE', 'ZZ Prueba Dos', 9002)
         RETURNING id::text AS id, label
         """
     )

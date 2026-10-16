@@ -111,7 +111,7 @@ def test_meta_reads_operational_states_and_unassigned_reasons_from_status_taxono
     pool = AsyncMock()
     pool.fetch.side_effect = meta_fetch({
         "OPERATIONAL_STATE": [
-            {"id": "uuid-1", "label": "En bodega", "bg_color": "#fff", "text_color": "#000", "group": "otro"},
+            {"id": "uuid-1", "label": "En bodega", "group": "otro"},
         ],
         "DRIVER_REASON": [{"id": "uuid-2", "label": "Documentación vencida"}],
     })

@@ -124,9 +124,7 @@ resolved AS (
         -- Nulos para CARRIER y DRIVER por construccion: el LEFT JOIN a
         -- `public.assets` ya solo matchea cuando entity_type = 'ASSET'.
         a.asset_type,
-        fst.label      AS fleet_service_type_label,
-        fst.bg_color   AS fleet_service_type_bg_color,
-        fst.text_color AS fleet_service_type_text_color
+        fst.label      AS fleet_service_type_label
     FROM pending p
     LEFT JOIN public.driver_assignments da
         ON p.entity_type = 'DRIVER' AND da.driver_id = p.entity_id AND da.status = 'ACTIVE'
@@ -134,9 +132,8 @@ resolved AS (
         ON p.entity_type = 'ASSET' AND aa.asset_id = p.entity_id AND aa.status = 'ACTIVE'
     LEFT JOIN public.drivers d ON p.entity_type = 'DRIVER' AND d.id = p.entity_id
     LEFT JOIN public.assets a ON p.entity_type = 'ASSET' AND a.id = p.entity_id
-    -- Los colores salen del catalogo, no del frontend: `app.status_taxonomies`
-    -- ya trae bg_color/text_color por fila y es lo que ya leen las otras
-    -- pantallas de flota (assets.py, equipment_closures.py, status_report.py).
+    -- La etiqueta del subtipo sale del catalogo; el color no: un subtipo se ve
+    -- neutro (Configuracion, Parte 1).
     LEFT JOIN app.status_taxonomies fst ON fst.id = a.fleet_service_type_id
 )"""
 

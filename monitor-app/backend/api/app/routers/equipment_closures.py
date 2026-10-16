@@ -59,8 +59,7 @@ SELECT
     -- "Tipo Vehículo" (Ronda 80/82) — columna nueva del Excel de vehículos,
     -- se muestra junto al tracto en la tabla de cierre para que el
     -- coordinador vea la misma clasificación que ya decide el bloque.
-    st.label AS fleet_service_type_label, st.bg_color AS fleet_service_type_bg_color,
-    st.text_color AS fleet_service_type_text_color,
+    st.label AS fleet_service_type_label,
     eds.status, eds.category, eds.requires_motivo, eds.unassigned_reason_id, ur.label AS unassigned_reason_label,
     eds.valid_until, eds.comentario,
     eds.resolved_by, eds.resolved_at,

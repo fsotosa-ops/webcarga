@@ -98,7 +98,7 @@ async def test_revisar_dos_veces_pisa_la_anterior():
 def test_guardar_un_estado_lo_deja_revisado():
     pool = AsyncMock()
     pool.fetchrow.return_value = {
-        "id": "ASIGNADO", "label": "Asignado", "bg_color": "#fff", "text_color": "#000",
+        "id": "ASIGNADO", "label": "Asignado",
         "group": "en_ruta", "sort_order": 1,
     }
     res = cliente(pool).patch("/api/v1/config/statuses/ASIGNADO", json={"label": "Asignado"})
@@ -112,8 +112,7 @@ def test_guardar_una_taxonomia_la_deja_revisada_en_su_seccion():
     edita: la sección sale del `domain` de la fila."""
     pool = AsyncMock()
     pool.fetchrow.return_value = {
-        "id": "t1", "domain": "FLEET_SERVICE_TYPE", "code": None, "label": "Furgón",
-        "bg_color": "#fff", "text_color": "#000", "group": None, "sort_order": 1, "active": True,
+        "id": "t1", "domain": "FLEET_SERVICE_TYPE", "code": None, "label": "Furgón", "group": None, "sort_order": 1, "active": True,
     }
     res = cliente(pool).patch("/api/v1/config/taxonomies/t1", json={"label": "Furgón"})
     assert res.status_code == 200
@@ -127,8 +126,7 @@ def test_guardar_un_vocabulario_no_revisable_no_rompe_el_guardado():
     vocabulario que no esté declarado no puede hacer fallar un PATCH."""
     pool = AsyncMock()
     pool.fetchrow.return_value = {
-        "id": "t1", "domain": "VOCABULARIO_NUEVO", "code": None, "label": "X",
-        "bg_color": "#fff", "text_color": "#000", "group": None, "sort_order": 1, "active": True,
+        "id": "t1", "domain": "VOCABULARIO_NUEVO", "code": None, "label": "X", "group": None, "sort_order": 1, "active": True,
     }
     res = cliente(pool).patch("/api/v1/config/taxonomies/t1", json={"label": "X"})
     assert res.status_code == 200

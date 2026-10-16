@@ -67,7 +67,6 @@ async def get_asset(asset_id: str, pool=Depends(get_pool), _=Depends(require(Per
         SELECT a.id, a.license_plate, a.asset_type, a.operational_status, a.manufacture_year,
                a.is_manual_override, a.created_at,
                a.fleet_service_type_id, acs.fleet_service_type_label,
-               acs.fleet_service_type_bg_color, acs.fleet_service_type_text_color,
                -- "Tipo de Operacion WebCarga" (Tractoreo / Equipo Completo).
                -- El PATCH lo acepta desde el 2026-08-03 y el GET no lo
                -- devolvia, asi que ninguna pantalla podia mostrar en que

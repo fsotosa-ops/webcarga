@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 # NO hay lista de dominios validos aca, a proposito.
 #
@@ -32,10 +32,12 @@ GRUPOS_POR_DOMINIO = {
 
 
 class StatusTaxonomyBody(BaseModel):
+    # Sin colores: el tono sale del significado (Configuración, Parte 1). Un campo
+    # que no existe es un 422, no un dato que se ignora en silencio.
+    model_config = ConfigDict(extra="forbid")
+
     domain:     str
     label:      str
-    bg_color:   str = "#f3f4f6"
-    text_color: str = "#374151"
     sort_order: int = 99
     group_id:   Optional[str] = None
 
@@ -54,9 +56,9 @@ class StatusTaxonomyPatch(BaseModel):
     # atomico. Mientras un cliente pueda mandar un numero arbitrario, dos filas
     # del mismo dominio pueden terminar con el mismo y la lista queda con un
     # empate que la pantalla no sabe deshacer. Ver services/reordenamiento.py.
+    model_config = ConfigDict(extra="forbid")
+
     label:      Optional[str] = None
-    bg_color:   Optional[str] = None
-    text_color: Optional[str] = None
     active:     Optional[bool] = None
     group_id:   Optional[str] = None
 

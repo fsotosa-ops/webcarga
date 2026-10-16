@@ -51,7 +51,7 @@ def _categoria(fila):
 def _equipment_row(**overrides):
     base = {
         "asset_id": "a1", "tractor_plate": "ABCD12", "carrier_id": "c1", "carrier_name": "Transportes Sur",
-        "fleet_service_type_label": None, "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None,
+        "fleet_service_type_label": None,
         "status": "UNASSIGNED", "requires_motivo": True, "unassigned_reason_id": None, "unassigned_reason_label": None,
         "resolved_by": None, "resolved_at": None,
         "driver_id": None, "driver_name": None, "last_known_origin": None,
@@ -149,8 +149,7 @@ def test_detail_sql_trae_el_conductor_del_viaje_aparte_del_habitual():
 def test_get_equipment_closure_status_incluye_tipo_vehiculo_por_tracto():
     pool = AsyncMock()
     pool.fetch.return_value = [
-        _equipment_row(asset_id="a1", fleet_service_type_label="Tractoreo",
-                       fleet_service_type_bg_color="#eff6ff", fleet_service_type_text_color="#1d4ed8"),
+        _equipment_row(asset_id="a1", fleet_service_type_label="Tractoreo"),
     ]
     pool.fetchrow.return_value = None
     client = make_client(pool)
@@ -159,7 +158,6 @@ def test_get_equipment_closure_status_incluye_tipo_vehiculo_por_tracto():
 
     row = res.json()["tractoreo"]["equipment"][0]
     assert row["fleet_service_type_label"] == "Tractoreo"
-    assert row["fleet_service_type_bg_color"] == "#eff6ff"
 
 
 def test_set_batch_reason_404_cuando_falta_un_equipo():

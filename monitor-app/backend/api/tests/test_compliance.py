@@ -1669,8 +1669,7 @@ def test_summary_agrupa_por_sujeto_desde_document_state():
         {"entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
          "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1, "no_exigible": 0,
          "carrier_operation_types": ["Tractoreo"],
-         "asset_type": None, "fleet_service_type_label": None,
-         "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None},
+         "asset_type": None, "fleet_service_type_label": None},
     ]
     client = make_client(pool)
 
@@ -1685,7 +1684,6 @@ def test_summary_agrupa_por_sujeto_desde_document_state():
         # enumeran en vez de omitirse para que el test siga afirmando la
         # forma completa de la respuesta, que es lo que consume el frontend.
         "asset_type": None, "fleet_service_type_label": None,
-        "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None,
     }]
     assert body["totales"] == {"todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1, "no_exigible": 0}
     assert body["carrier_operation_types"] == ["Tractoreo"]
@@ -1712,8 +1710,7 @@ def test_summary_completo_false_cuando_el_conteo_toca_el_tope():
         {"entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
          "todos": SUMMARY_LIMIT, "al_dia": SUMMARY_LIMIT, "por_vencer": 0, "falta": 0, "no_exigible": 0,
          "carrier_operation_types": [],
-         "asset_type": None, "fleet_service_type_label": None,
-         "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None},
+         "asset_type": None, "fleet_service_type_label": None},
     ]
     client = make_client(pool)
 
@@ -1729,8 +1726,7 @@ def test_summary_completo_true_cuando_el_conteo_no_toca_el_tope():
         {"entity_type": "CARRIER", "entity_id": "c1", "subject_name": None,
          "todos": 3, "al_dia": 1, "por_vencer": 1, "falta": 1, "no_exigible": 0,
          "carrier_operation_types": [],
-         "asset_type": None, "fleet_service_type_label": None,
-         "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None},
+         "asset_type": None, "fleet_service_type_label": None},
     ]
     client = make_client(pool)
 

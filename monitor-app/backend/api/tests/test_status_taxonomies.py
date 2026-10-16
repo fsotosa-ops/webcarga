@@ -45,7 +45,7 @@ def test_list_filters_by_domain():
     pool.fetchval.return_value = True
     pool.fetch.return_value = [{
         "id": "t1", "domain": "EQUIPMENT_STATE", "label": "Disponible",
-        "bg_color": "#fff", "text_color": "#000", "group": None, "sort_order": 1, "active": True,
+        "group": None, "sort_order": 1, "active": True,
     }]
     client = make_client(pool)
     res = client.get("/api/v1/config/taxonomies?domain=EQUIPMENT_STATE")
@@ -70,11 +70,11 @@ def test_create_taxonomy():
     pool.fetchval.return_value = True
     pool.fetchrow.return_value = {
         "id": "t1", "domain": "EQUIPMENT_STATE", "label": "En Pana",
-        "bg_color": "#fef2f2", "text_color": "#b91c1c", "group": None, "sort_order": 3, "active": True,
+        "group": None, "sort_order": 3, "active": True,
     }
     client = make_client(pool)
     res = client.post("/api/v1/config/taxonomies", json={
-        "domain": "EQUIPMENT_STATE", "label": "En Pana", "bg_color": "#fef2f2", "text_color": "#b91c1c", "sort_order": 3,
+        "domain": "EQUIPMENT_STATE", "label": "En Pana", "sort_order": 3,
     })
     assert res.status_code == 200
     assert res.json()["label"] == "En Pana"
@@ -173,7 +173,7 @@ def test_un_motivo_de_conductor_acepta_sus_grupos():
     pool.fetchrow.side_effect = [
         {"id": "t1", "domain": "DRIVER_REASON"},
         {"id": "t1", "domain": "DRIVER_REASON", "code": None, "label": "Esperando carga",
-         "bg_color": "#fff", "text_color": "#000", "group": "trabajando_sin_asignacion",
+         "group": "trabajando_sin_asignacion",
          "sort_order": 1, "active": True},
     ]
     client = make_client(pool)

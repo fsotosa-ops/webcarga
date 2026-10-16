@@ -16,7 +16,7 @@ router = APIRouter(prefix="/config/taxonomies", tags=["config"])
 # y darle un codigo a un vocabulario es una decision de esquema, no un campo de
 # formulario. Ver 20260816090000_status_taxonomies_code.sql.
 _FIELDS = (
-    'id::text, domain, code, label, bg_color, text_color, '
+    'id::text, domain, code, label, '
     'group_id AS "group", sort_order, active'
 )
 
@@ -70,10 +70,10 @@ async def create_taxonomy(body: StatusTaxonomyBody, pool=Depends(get_pool), usua
     await _exigir_dominio_conocido(body.domain, pool)
     _exigir_grupo_valido(body.domain, body.group_id)
     row = await pool.fetchrow(
-        f"""INSERT INTO app.status_taxonomies (domain, label, bg_color, text_color, sort_order, group_id)
-            VALUES ($1, $2, $3, $4, $5, $6)
+        f"""INSERT INTO app.status_taxonomies (domain, label, sort_order, group_id)
+            VALUES ($1, $2, $3, $4)
             RETURNING {_FIELDS}""",
-        body.domain, body.label, body.bg_color, body.text_color, body.sort_order, body.group_id,
+        body.domain, body.label, body.sort_order, body.group_id,
     )
     await _registrar(pool, body.domain, row["id"], usuario)
     return dict(row)

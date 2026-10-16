@@ -32,7 +32,7 @@ def make_client(pool, router=config_router, user=None):
 def test_list_statuses_returns_group_key():
     pool = AsyncMock()
     pool.fetch.return_value = [{
-        "id": "RUTA", "label": "RUTA", "bg_color": "#fff", "text_color": "#000",
+        "id": "RUTA", "label": "RUTA",
         "group": "en_ruta", "sort_order": 1,
     }]
     client = make_client(pool)

@@ -1035,30 +1035,11 @@ async def list_trips(
 
 # ── Metadatos de presentación (sin auth — igual que /roles) ──────────────────
 
-_STATUS_META = [
-    {"id": "ASIGNADO",               "bg_color": "#e8eeff", "text_color": "#053bfa", "group": "en_ruta"},
-    {"id": "ORIGEN",                 "bg_color": "#f3e8ff", "text_color": "#8a00dd", "group": "en_ruta"},
-    {"id": "RUTA",                   "bg_color": "#eef6e6", "text_color": "#62a420", "group": "en_ruta"},
-    {"id": "EN LOCAL",               "bg_color": "#fef0e6", "text_color": "#ea6b25", "group": "en_local"},
-    {"id": "VIAJE EN PREDIO",        "bg_color": "#fef0e6", "text_color": "#ea6b25", "group": "en_local"},
-    {"id": "RETORNANDO",             "bg_color": "#e6f8fd", "text_color": "#0e8db5", "group": "retornando"},
-    {"id": "RETORNADO CD",           "bg_color": "#f3f4f6", "text_color": "#6b7280", "group": "retornando"},
-    {"id": "CERRADO FINALIZADO",     "bg_color": "#f3f4f6", "text_color": "#9ca3af", "group": "cerrado"},
-    {"id": "CERRADO INCOMPLETO",     "bg_color": "#fef3c7", "text_color": "#d97706", "group": "cerrado"},
-    {"id": "CERRADO MANUAL",         "bg_color": "#f3f4f6", "text_color": "#9ca3af", "group": "cerrado"},
-    {"id": "CERRADO SIN GPS",        "bg_color": "#f3f4f6", "text_color": "#9ca3af", "group": "cerrado"},
-    {"id": "CERRADO POR OTRO VIAJE", "bg_color": "#f3f4f6", "text_color": "#9ca3af", "group": "cerrado"},
-    {"id": "CERRADO FINALIZADO CC",  "bg_color": "#f3f4f6", "text_color": "#9ca3af", "group": "cerrado"},
-    {"id": "CANCELADO",              "bg_color": "#fee2e2", "text_color": "#b00020", "group": "problema"},
-    {"id": "EN PANA",                "bg_color": "#fee2e2", "text_color": "#b00020", "group": "problema"},
-    {"id": "DEVUELTO",               "bg_color": "#fee2e2", "text_color": "#b00020", "group": "problema"},
-]
-
 _TMS_META = [
-    {"id": "qanalytics", "label": "QA",     "bg_color": "#dbeafe", "text_color": "#2563eb"},
-    {"id": "wingsuite",  "label": "WS",     "bg_color": "#f3e8ff", "text_color": "#9333ea"},
-    {"id": "sodimac",    "label": "SDM",    "bg_color": "#ffedd5", "text_color": "#ea580c"},
-    {"id": "manual",     "label": "Manual", "bg_color": "#f0fdf4", "text_color": "#166534"},
+    {"id": "qanalytics", "label": "QA"},
+    {"id": "wingsuite",  "label": "WS"},
+    {"id": "sodimac",    "label": "SDM"},
+    {"id": "manual",     "label": "Manual"},
 ]
 
 # Clasificación RM/Zona Cero de la minuta UAT (catálogo de locales, H2.6) —
@@ -1066,10 +1047,10 @@ _TMS_META = [
 # (public.locations.operation_type), no una tabla configurable como
 # trip_statuses: no hay pedido de negocio para editarlos desde Configuración.
 _OPERATION_TYPE_META = [
-    {"id": "RM",            "label": "RM",            "bg_color": "#e8eeff", "text_color": "#053bfa"},
-    {"id": "Z0",             "label": "Zona Cero",     "bg_color": "#fef0e6", "text_color": "#ea6b25"},
-    {"id": "Region Norte",  "label": "Región Norte",  "bg_color": "#fef3c7", "text_color": "#d97706"},
-    {"id": "Region Sur",    "label": "Región Sur",    "bg_color": "#e6f8fd", "text_color": "#0e8db5"},
+    {"id": "RM",            "label": "RM"},
+    {"id": "Z0",             "label": "Zona Cero"},
+    {"id": "Region Norte",  "label": "Región Norte"},
+    {"id": "Region Sur",    "label": "Región Sur"},
 ]
 
 _CSV_COLUMNS = [
@@ -1093,16 +1074,12 @@ _CSV_COLUMNS = [
 class StatusMeta(BaseModel):
     id:         str
     label:      str
-    bg_color:   str
-    text_color: str
     group:      str  # group_id aliased for frontend compat
 
 
 class TmsSourceMeta(BaseModel):
     id:         str
     label:      str
-    bg_color:   str
-    text_color: str
     # Última corrida de esta TMS: el `status_reported_at` más reciente de
     # TODOS sus viajes. Verificado 2026-08-18 contra bronze: ese campo es
     # exactamente el `file_generated_at` del archivo que trajo al viaje, así
@@ -1122,8 +1099,6 @@ class TmsSourceMeta(BaseModel):
 class OperationalStateMeta(BaseModel):
     id:         str
     label:      str
-    bg_color:   str
-    text_color: str
     # Grupo del tablero (misma taxonomía que StatusMeta.group) — permite que un
     # override manual (manual_status) bucketee a su columna en vez de caer a "Otro"
     group:      str = "otro"
@@ -1167,8 +1142,6 @@ class UnassignedReasonMeta(BaseModel):
 class OperationTypeMeta(BaseModel):
     id:         str
     label:      str
-    bg_color:   str
-    text_color: str
 
 
 class TripsMeta(BaseModel):
@@ -1186,11 +1159,11 @@ class TripsMeta(BaseModel):
 @router.get("/meta", response_model=TripsMeta)
 async def get_trips_meta(pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_READ))):
     status_rows = await pool.fetch(
-        "SELECT id, label, bg_color, text_color, group_id AS group "
+        "SELECT id, label, group_id AS group "
         "FROM app.trip_statuses WHERE active = true ORDER BY sort_order"
     )
     op_rows = await pool.fetch(
-        'SELECT id::text, label, bg_color, text_color, group_id AS "group" '
+        'SELECT id::text, label, group_id AS "group" '
         "FROM app.status_taxonomies WHERE domain = 'OPERATIONAL_STATE' AND active = true ORDER BY sort_order"
     )
     # Resiliente al orden de deploy: si la tabla aún no existe (migración

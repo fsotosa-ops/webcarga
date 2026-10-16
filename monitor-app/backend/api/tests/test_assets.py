@@ -142,7 +142,6 @@ def test_asset_detail_carries_its_carrier():
         "operational_status": "ACTIVE", "manufacture_year": 2020,
         "is_manual_override": False, "created_at": None,
         "fleet_service_type_id": None, "fleet_service_type_label": None,
-        "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None,
         "total_requirements": 10, "last_document_update": None,
         "carrier_id": "c1", "carrier_name": "Transportes Sur Spa",
     }
@@ -162,7 +161,6 @@ def test_asset_detail_without_active_assignment():
         "operational_status": "ACTIVE", "manufacture_year": None,
         "is_manual_override": False, "created_at": None,
         "fleet_service_type_id": None, "fleet_service_type_label": None,
-        "fleet_service_type_bg_color": None, "fleet_service_type_text_color": None,
         "total_requirements": 0, "last_document_update": None,
         "carrier_id": None, "carrier_name": None,
     }

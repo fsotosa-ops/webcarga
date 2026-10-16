@@ -149,8 +149,6 @@ class ComplianceSummarySubject(ComplianceSummaryCounts):
     # simplemente no pinta nada; no hay valor de relleno que inventar.
     asset_type: Optional[str] = None
     fleet_service_type_label: Optional[str] = None
-    fleet_service_type_bg_color: Optional[str] = None
-    fleet_service_type_text_color: Optional[str] = None
 
 
 class ComplianceSummaryResponse(BaseModel):

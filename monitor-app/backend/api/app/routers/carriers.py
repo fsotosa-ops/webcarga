@@ -716,7 +716,6 @@ async def list_carrier_assets(carrier_id: str, pool=Depends(get_pool), _=Depends
         WITH {entity_compliance_cte()}
         SELECT r.asset_id AS id, r.license_plate, r.asset_type, r.operational_status,
                r.fleet_service_type_id, st.label AS fleet_service_type_label,
-               st.bg_color AS fleet_service_type_bg_color, st.text_color AS fleet_service_type_text_color,
                -- Tipo de Operacion WebCarga (Tractoreo / Equipo Completo), el
                -- campo que decide si el tracto bloquea el cierre del dia.
                r.webcarga_operation_type_id,
