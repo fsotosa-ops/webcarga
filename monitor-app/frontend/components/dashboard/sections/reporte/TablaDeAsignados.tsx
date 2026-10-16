@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { AssignedRow } from '@/lib/types'
 import { TripCodeLinks } from '@/components/dashboard/TripCodeLinks'
+import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
 import {
   COLUMNAS_DE_ZONA, arbolDeAsignados, filasDelArbol, type FilaDelArbol, type NivelPlegable,
 } from '@/lib/reporte/arbolDeAsignados'
@@ -53,10 +54,10 @@ export function TablaDeAsignados({ rows, plegado, tripHref }: {
     <div className="bg-white rounded-xl border border-border overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
-          <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase">
-            <th className="text-left px-3 py-2">Cliente › Origen › Empresa › Conductor</th>
-            <th className="text-left px-3 py-2">Nº viaje</th>
-            {COLUMNAS_DE_ZONA.map(z => <th key={z.clave} className="text-right px-3 py-2">{z.etiqueta}</th>)}
+          <tr className="border-b border-border bg-bg-main">
+            <th className={CABECERA}>Cliente › Origen › Empresa › Conductor</th>
+            <th className={CABECERA}>Nº viaje</th>
+            {COLUMNAS_DE_ZONA.map(z => <th key={z.clave} className={`${CABECERA} text-right`}>{z.etiqueta}</th>)}
           </tr>
         </thead>
         <tbody className="divide-y divide-border/60">

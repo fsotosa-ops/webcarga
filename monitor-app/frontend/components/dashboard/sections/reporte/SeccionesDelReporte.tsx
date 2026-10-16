@@ -6,14 +6,16 @@ import type { OperationTypeReport, ReasonRow } from '@/lib/types'
 import type { TipoDeOperacion } from '@/lib/reporte/tiposDeOperacion'
 import { sumar } from '@/lib/reporte/sumar'
 import { TablaDeAsignados, usePlegado } from './TablaDeAsignados'
+import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
 
 type Props = { reporte: OperationTypeReport; tipo: TipoDeOperacion }
 
-const TH = 'px-3 py-2 whitespace-nowrap'
-const CABECERA = 'bg-gray-50 text-[10px] font-bold text-gray-400 uppercase'
+// Los encabezados del kit (sin mayúsculas), los mismos de la tabla de datos del Cierre.
+const TH = `${CABECERA} whitespace-nowrap`
+const FILA_DE_CABECERA = 'border-b border-border bg-bg-main'
 
 function Titulo({ children }: { children: React.ReactNode }) {
-  return <p className="text-[10px] font-bold text-gray-400 uppercase mb-1.5">{children}</p>
+  return <p className="mb-1.5 text-etiqueta font-semibold text-informativo">{children}</p>
 }
 
 /** Nunca una tabla vacía con encabezados: un mensaje que dice qué pasó. */
@@ -28,7 +30,7 @@ export function Vacio({ children }: { children: React.ReactNode }) {
 function Cifra({ titulo, valor }: { titulo: string; valor: React.ReactNode }) {
   return (
     <div className="bg-white rounded-xl border border-border p-3">
-      <p className="text-[10px] font-bold text-gray-400 uppercase">{titulo}</p>
+      <p className="text-etiqueta font-semibold text-informativo">{titulo}</p>
       <p className="text-xl font-bold text-text-primary">{valor}</p>
     </div>
   )
@@ -80,7 +82,7 @@ export function SeccionResumen({ reporte, tipo }: Props) {
           {s.by_client.length === 0 ? <Vacio>No hubo equipos de {tipo.etiqueta} asignados</Vacio> : (
             <div className="bg-white rounded-xl border border-border overflow-x-auto">
               <table className="w-full text-xs">
-                <thead><tr className={CABECERA}><th className={`text-left ${TH}`}>Cliente</th><th className={`text-right ${TH}`}>Asignados</th></tr></thead>
+                <thead><tr className={FILA_DE_CABECERA}><th className={TH}>Cliente</th><th className={`${TH} text-right`}>Asignados</th></tr></thead>
                 <tbody className="divide-y divide-border/60">
                   {s.by_client.map(c => (
                     <tr key={c.client_name}><td className="px-3 py-2">{c.client_name}</td><td className="px-3 py-2 text-right">{c.assigned}</td></tr>
@@ -95,8 +97,8 @@ export function SeccionResumen({ reporte, tipo }: Props) {
           <div className="bg-white rounded-xl border border-border overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className={CABECERA}>
-                  <th className={`text-left ${TH}`}>Origen habitual</th><th className={`text-right ${TH}`}>Enrolados</th><th className={`text-right ${TH}`}>Asignados</th>
+                <tr className={FILA_DE_CABECERA}>
+                  <th className={TH}>Origen habitual</th><th className={`${TH} text-right`}>Enrolados</th><th className={`${TH} text-right`}>Asignados</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
@@ -121,11 +123,11 @@ export function TablaDeMotivos({ reasons, rows }: { reasons: string[]; rows: Rea
     <div className="bg-white rounded-xl border border-border overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
-          <tr className={CABECERA}>
-            <th className={`text-left ${TH}`}>Origen</th>
-            <th className={`text-left ${TH}`}>Empresa</th>
-            {reasons.map(m => <th key={m} className={`text-right ${TH}`}>{m}</th>)}
-            <th className={`text-right ${TH}`}>Total</th>
+          <tr className={FILA_DE_CABECERA}>
+            <th className={TH}>Origen</th>
+            <th className={TH}>Empresa</th>
+            {reasons.map(m => <th key={m} className={`${TH} text-right`}>{m}</th>)}
+            <th className={`${TH} text-right`}>Total</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border/60">
@@ -170,14 +172,14 @@ export function SeccionAsignados({ reporte, tipo, tripHref }: Props & { tripHref
       )}
       {other_origin.length > 0 && (
         <div>
-          <p className="text-etiqueta font-bold text-informativo uppercase mb-1.5">Cargaron en otro origen ({other_origin.length})</p>
+          <Titulo>Cargaron en otro origen ({other_origin.length})</Titulo>
           <div className="bg-white rounded-xl border border-border overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-etiqueta font-bold text-informativo uppercase border-b border-border">
-                  <th className={`text-left ${TH}`}>Patente</th><th className={`text-left ${TH}`}>Empresa</th>
-                  <th className={`text-left ${TH}`}>Origen habitual</th><th className={`text-left ${TH}`}>Cargó en</th>
-                  <th className={`text-left ${TH}`}>Cliente</th>
+                <tr className={FILA_DE_CABECERA}>
+                  <th className={TH}>Patente</th><th className={TH}>Empresa</th>
+                  <th className={TH}>Origen habitual</th><th className={TH}>Cargó en</th>
+                  <th className={TH}>Cliente</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
@@ -220,10 +222,10 @@ function TablaDeNoTrabajaron({ reporte, porConductor }: { reporte: OperationType
     <div className="bg-white rounded-xl border border-border overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
-          <tr className={CABECERA}>
-            <th className={`text-left ${TH}`}>Origen › Empresa</th>
-            {reasons.map(m => <th key={m} className={`text-right ${TH}`}>{m}</th>)}
-            <th className={`text-right ${TH}`}>Total</th>
+          <tr className={FILA_DE_CABECERA}>
+            <th className={TH}>Origen › Empresa</th>
+            {reasons.map(m => <th key={m} className={`${TH} text-right`}>{m}</th>)}
+            <th className={`${TH} text-right`}>Total</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border/60">

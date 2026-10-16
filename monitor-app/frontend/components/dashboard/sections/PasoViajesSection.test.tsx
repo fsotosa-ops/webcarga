@@ -252,7 +252,8 @@ describe('PasoViajesSection', () => {
     renderViajes()
     await screen.findByText('2033002')
     fireEvent.change(screen.getByRole('searchbox', { name: /buscar/i }), { target: { value: 'pyst91' } })
-    expect(await screen.findByRole('button', { name: 'En seguimiento, 2' })).toBeInTheDocument()
+    // La búsqueda espera 250 ms (debounce): con la suite completa en paralelo, 1 s no alcanza.
+    expect(await screen.findByRole('button', { name: 'En seguimiento, 2' }, { timeout: 3000 })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Por resolver, 0' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Resueltos, 0' })).toBeInTheDocument()
     expect(screen.getByText(/2 en En seguimiento/)).toBeInTheDocument()
