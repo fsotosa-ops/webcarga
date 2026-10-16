@@ -80,4 +80,15 @@ describe('useDataTable', () => {
     act(() => result.current.setFilter('estado', []))
     expect(result.current.view.filters).toEqual({})
   })
+
+  it('aplica la preferencia guardada; ignora columnas que ya no existen y no oculta la fija', () => {
+    const { result } = renderHook(() => useDataTable({
+      rows: FILAS, columns: COLUMNAS, getRowId: r => r.id, view: EMPTY_VIEW, onViewChange: () => {},
+      columnPrefs: [
+        { id: 'fantasma', hidden: false }, { id: 'estado', hidden: false },
+        { id: 'conductor', hidden: true }, { id: 'empresa', hidden: true },
+      ],
+    }))
+    expect(result.current.visibleColumns.map(c => c.id)).toEqual(['estado', 'conductor', 'viaje', 'nota'])
+  })
 })

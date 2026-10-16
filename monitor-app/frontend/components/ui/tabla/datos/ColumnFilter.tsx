@@ -13,15 +13,18 @@ const ETIQUETA_DE_PRESENCIA: Record<string, string> = { [PRESENT]: 'Tiene', [ABS
  *  múltiple, "Seleccionar todo" y "Limpiar". Abre en un portal para que ningún
  *  contenedor con `overflow` lo recorte (el defecto del filtro viejo), y Escape
  *  cierra solo esta capa. */
-export function ColumnFilter({ header, kind, values, selected, count, onChange }: {
+export function ColumnFilter({ header, kind, values, selected, count, onChange, anchor, onClose }: {
   header: string
   kind: 'values' | 'presence'
   values: string[]
   selected: string[]
   count: (value: string) => number
   onChange: (values: string[]) => void
+  /** Abierto desde otro botón ("+ Filtro" de la barra): se ancla a él y no dibuja su embudo. */
+  anchor?: React.RefObject<HTMLElement | null>
+  onClose?: () => void
 }) {
-  const [abierto, setAbierto] = useState(false)
+  const [abierto, setAbierto] = useState(!!anchor)
   const [q, setQ] = useState('')
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   const boton = useRef<HTMLButtonElement>(null)
@@ -33,15 +36,18 @@ export function ColumnFilter({ header, kind, values, selected, count, onChange }
   const etiqueta = (v: string) => (kind === 'presence' ? ETIQUETA_DE_PRESENCIA[v] ?? v : v)
   const visibles = values.filter(v => etiqueta(v).toLowerCase().includes(q.trim().toLowerCase()))
 
+  const ancla = anchor ?? boton
+
   function cerrar() {
     setAbierto(false)
     setQ('')
-    boton.current?.focus()
+    ancla.current?.focus()
+    onClose?.()
   }
 
   useLayoutEffect(() => {
-    if (!abierto || !boton.current) return
-    const r = boton.current.getBoundingClientRect()
+    if (!abierto || !ancla.current) return
+    const r = ancla.current.getBoundingClientRect()
     setPos({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - 272)) })
   }, [abierto])
 
@@ -51,7 +57,7 @@ export function ColumnFilter({ header, kind, values, selected, count, onChange }
     const tecla = (e: KeyboardEvent) => { if (e.key === 'Escape' && esLaDeArriba()) cerrar() }
     const fuera = (e: MouseEvent) => {
       const t = e.target as Node
-      if (!panel.current?.contains(t) && !boton.current?.contains(t)) { setAbierto(false); setQ('') }
+      if (!panel.current?.contains(t) && !ancla.current?.contains(t)) { setAbierto(false); setQ(''); onClose?.() }
     }
     document.addEventListener('keydown', tecla)
     document.addEventListener('mousedown', fuera)
@@ -80,14 +86,14 @@ export function ColumnFilter({ header, kind, values, selected, count, onChange }
 
   return (
     <>
-      <button
+      {!anchor && <button
         ref={boton} type="button" aria-label={nombre} aria-haspopup="dialog" aria-expanded={abierto}
         onClick={() => (abierto ? cerrar() : setAbierto(true))}
         className={`rounded p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${
           selected.length ? 'text-accion' : 'text-informativo hover:text-text-primary'}`}
       >
         <ListFilter size={13} aria-hidden="true" />
-      </button>
+      </button>}
       {abierto && createPortal(
         <div
           ref={panel} role="dialog" aria-label={`Filtrar por ${header}`} aria-describedby={tituloId}
