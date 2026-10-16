@@ -1,5 +1,4 @@
 import type { RequirementOption } from '@/lib/types'
-import type { Vigencia } from '@/lib/vigencia'
 
 const UNIVERSO: Record<string, string> = {
   ASSET:   'Todos los vehículos',
@@ -86,34 +85,6 @@ export function celdaSeExigeA(
   const cuenta = `${r.alcance.alcanzadas} de ${r.alcance.universo} activos`
   if (!r.is_active) return { regla: 'No se exige', alcance: `Alcanzaría a ${cuenta}` }
   return { regla: fraseDeLaRegla(r, vocabulario), alcance: cuenta }
-}
-
-// ── Cómo se renueva, en las palabras de la planilla ─────────────────────────
-
-export type Renovacion = 'nunca' | 'fecha' | 'fecha_opcional' | 'anual' | 'bienal' | 'mes' | 'otra'
-
-export const RENOVACIONES: { valor: Exclude<Renovacion, 'otra'>; texto: string }[] = [
-  { valor: 'nunca', texto: 'No vence' },
-  { valor: 'fecha', texto: 'Fecha del documento' },
-  { valor: 'fecha_opcional', texto: 'Fecha del documento (opcional)' },
-  { valor: 'anual', texto: 'Cada año' },
-  { valor: 'bienal', texto: 'Cada 2 años' },
-  { valor: 'mes', texto: 'Cada mes' },
-]
-
-/** 'otra' es una regla que la celda no sabe escribir (cada 6 meses, un
- *  trimestral): se muestra tal cual y se edita en el panel, en vez de
- *  colapsarla en la opción más parecida al abrir la tabla. */
-export function renovacionDe(v: Vigencia): Renovacion {
-  switch (v.politica) {
-    case 'NONE': return 'nunca'
-    case 'REQUIRED': return 'fecha'
-    case 'OPTIONAL': return 'fecha_opcional'
-    case 'ISSUE_PLUS_MONTHS':
-      return v.validity_months === 12 ? 'anual' : v.validity_months === 24 ? 'bienal' : 'otra'
-    case 'CALENDAR_PERIOD':
-      return v.frequency_months === 1 ? 'mes' : 'otra'
-  }
 }
 
 /** Qué tan exigido es, en la palabra de la planilla. */

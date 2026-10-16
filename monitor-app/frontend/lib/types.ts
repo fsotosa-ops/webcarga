@@ -748,23 +748,6 @@ export type VistaPreviaDeVigencia = {
   rige_desde_hoy: boolean
 }
 
-/** El efecto de publicar el borrador de la tabla de Configuración (HU-C1,
- *  entrega 2c): estados antes y después, y pendientes que se crean o quitan. */
-export type EfectoDeUnDocumento = {
-  requirement_id: string
-  nombre:         string
-  antes:          ConteoDeEstados
-  despues:        ConteoDeEstados
-  crear:          number
-  quitar:         number
-  bloqueados:     number
-}
-export type EfectoDelLote = {
-  por_documento: EfectoDeUnDocumento[]
-  total: Omit<EfectoDeUnDocumento, 'requirement_id' | 'nombre'>
-}
-export type LotePublicado = { actualizados: number; creados: number; quitados: number; bloqueados: number }
-
 /** Qué mostrar de la documentación de una empresa. `falta` es el default del
  *  backend y reproduce el comportamiento anterior a la ficha. */
 export type EstadoDocumental = 'todos' | 'falta' | 'por_vencer' | 'al_dia'
@@ -1900,7 +1883,7 @@ export type VersionDeRegla = ReglaDeVigencia & { vigente_desde: string | null }
 /** La ficha de un documento exigido: su fila del catálogo, sus registros por
  *  estado y el historial de la regla base, de la más nueva a la más vieja. */
 export type RequirementDetail = RequirementOption & {
-  estados: { vencidos: number; por_vencer: number; al_dia: number; falta: number }
+  estados: ConteoDeEstados
   reglas:  VersionDeRegla[]
 }
 

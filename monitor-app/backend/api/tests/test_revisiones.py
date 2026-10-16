@@ -314,7 +314,10 @@ def test_el_mapa_de_taxonomias_dice_lo_mismo_en_python_y_en_typescript():
 
 def test_toda_seccion_revisable_existe_en_el_registro_de_dominios():
     """Una seccion que el backend cuenta como revisable y que el frontend no
-    tiene seria un numero en la portada que no lleva a ningun lado."""
+    tiene seria un numero en la portada que no lleva a ningun lado. Una que se
+    mudo fuera de Configuracion (Parte 2: certification/conditions, hoy
+    Certificacion › Documentos exigidos) cuenta si esta en MUDADAS: su
+    direccion vieja lleva a su lugar nuevo."""
     from pathlib import Path
 
     fuente = (
@@ -324,7 +327,8 @@ def test_toda_seccion_revisable_existe_en_el_registro_de_dominios():
 
     for r in REVISABLES:
         assert f"clave: '{r.dominio}'" in fuente, r.dominio
-        assert f"clave: '{r.seccion}'" in fuente, r.seccion
+        assert (f"clave: '{r.seccion}'" in fuente
+                or f"'{r.dominio}/{r.seccion}':" in fuente), f"{r.dominio}/{r.seccion}"
 
 
 # ── El buscador ──────────────────────────────────────────────────────────────

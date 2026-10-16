@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { EfectoDelLote, ExigibleOn, LotePublicado, RequirementAlias, RequirementConditions, RequirementConditionsPatchResult, RequirementDetail, RequirementOption, RecalcPreview, RecalcResult, VistaPreviaDeVigencia } from '@/lib/types'
+import type { ExigibleOn, RequirementAlias, RequirementConditions, RequirementConditionsPatchResult, RequirementDetail, RequirementOption, RecalcPreview, RecalcResult, VistaPreviaDeVigencia } from '@/lib/types'
 import type { Vigencia } from '@/lib/vigencia'
 
 const BASE = '/api/v1/compliance-requirements'
@@ -12,9 +12,6 @@ export type CambiosDeRequisito = Partial<Pick<RequirementConditions,
   vigencia?: Vigencia
   exigible_on?: ExigibleOn
 }
-
-/** Un documento del borrador y lo que se le cambia. */
-export type CambioEnLote = { requirement_id: string; patch: CambiosDeRequisito }
 
 export const requirementsApi = {
   /** La ficha de un documento: fila del catálogo + estados + historial de la regla. */
@@ -68,18 +65,5 @@ export const requirementsApi = {
   previewVigencia: (id: string, vigencia: Vigencia) =>
     apiFetch<VistaPreviaDeVigencia>(`${BASE}/${id}/expiration-rule/preview`, {
       method: 'POST', body: JSON.stringify(vigencia),
-    }),
-
-  /** Qué pasaría si se publicara el borrador entero. No guarda nada: el
-   *  backend lo aplica en una transacción y la revierte. */
-  verEfectoDelLote: (cambios: CambioEnLote[]) =>
-    apiFetch<EfectoDelLote>(`${BASE}/batch-preview`, {
-      method: 'POST', body: JSON.stringify({ cambios }),
-    }),
-
-  /** Guarda el borrador y siembra lo que cambió, todo o nada. */
-  publicarLote: (cambios: CambioEnLote[]) =>
-    apiFetch<LotePublicado>(`${BASE}/batch-update`, {
-      method: 'POST', body: JSON.stringify({ cambios }),
     }),
 }

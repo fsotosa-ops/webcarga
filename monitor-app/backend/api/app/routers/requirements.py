@@ -20,7 +20,6 @@ from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.compliance import RequirementDetail, RequirementOption
 from ..schemas.requirement import (
-    LoteDeCambios,
     RecalcPreview,
     RecalcResult,
     RequirementAliasBody,
@@ -32,7 +31,6 @@ from ..services.requirement_conditions import (
     SQL_CONDICION_DE_ENTIDAD,
     TABLA_DE_ENTIDAD,
     calcular_diferencias,
-    diferencias_en,
 )
 from ..services.edicion_catalogo import (
     _CONDITION_COLUMN_CASTS,  # noqa: F401 — lo recorren los tests de la whitelist
@@ -399,113 +397,4 @@ async def recalc(
         resultado = await aplicar_recalculo(conn, requirement_id, actor=user["sub"])
     if resultado is None:
         raise HTTPException(404, "Requisito no encontrado")
-    return resultado
-
-
-# ── Editar en lote (HU-C1, entrega 2c) ────────────────────────────────────
-#
-# La tabla de Configuración junta cambios en un borrador. "Ver efecto" los
-# ensaya todos juntos y "Publicar" los guarda y aplica en UNA transacción: o
-# se publica el borrador entero, o nada. Cada documento pasa por la misma
-# función que el PATCH de uno (services/edicion_catalogo.py).
-#
-# Guardar y aplicar dejan de ser dos clics por fila, pero no dejan de ser dos
-# decisiones: el número de pendientes que se crean o se quitan se ve en "Ver
-# efecto" antes de publicar, que es para lo que existía la separación.
-
-# Los campos que cambian A QUIÉN se le exige: solo esos documentos se
-# recalculan al publicar. Renombrar o cambiar el aviso no siembra nada.
-_DECIDEN_LA_SIEMBRA = {
-    "is_active", "applies_to_fleet_service_type_ids",
-    "applies_to_management_types", "exigible_on",
-}
-
-
-def _siembra_cambia(cambio) -> bool:
-    return bool(_DECIDEN_LA_SIEMBRA & set(cambio.patch.sent_fields()))
-
-
-async def _nombres(conn, lote: LoteDeCambios) -> dict[str, str]:
-    ids = [str(c.requirement_id) for c in lote.cambios]
-    filas = await conn.fetch(
-        "SELECT id::text, name FROM public.compliance_requirements WHERE id = ANY($1::uuid[])",
-        ids)
-    nombres = {f["id"]: f["name"] for f in filas}
-    if len(nombres) != len(ids):
-        raise HTTPException(404, "Un documento del lote no existe")
-    return nombres
-
-
-async def _aplicar_cambios(conn, lote: LoteDeCambios, nombres: dict[str, str], *, actor: str):
-    for cambio in lote.cambios:
-        ident = str(cambio.requirement_id)
-        if not cambio.patch.sent_fields():
-            raise HTTPException(422, f"«{nombres[ident]}»: ningún campo enviado")
-        try:
-            # Un savepoint por documento, con sus chequeos diferidos forzados
-            # al final: así el error dice CUÁL documento falló. Con 75 en el
-            # borrador, "falta el día de corte" a secas no se puede corregir.
-            async with _transaccion_legible(conn):
-                await aplicar_cambio(conn, ident, cambio.patch, actor=actor)
-        except HTTPException as error:
-            raise HTTPException(error.status_code, f"«{nombres[ident]}»: {error.detail}") from error
-
-
-def _sumar(filas: list[dict]) -> dict:
-    return {clave: sum(f[clave] for f in filas) for clave in filas[0]} if filas else {}
-
-
-@requirements_router.post("/batch-preview")
-async def ver_efecto_del_lote(
-    body: LoteDeCambios, pool=Depends(get_pool), user=Depends(require(Permission.CERTIFICATION_CONFIGURE)),
-):
-    """Qué pasaría si se publicara el borrador, ANTES de publicarlo.
-
-    Como la vista previa de un documento, no estima: aplica el lote de verdad
-    dentro de una transacción, cuenta con los mismos predicados que el resto
-    de la app y revierte siempre."""
-    async with pool.acquire() as conn:
-        nombres = await _nombres(conn, body)
-        antes = {i: await contar_estados(conn, i) for i in nombres}
-        por_documento: list[dict] = []
-        try:
-            async with conn.transaction():
-                await _aplicar_cambios(conn, body, nombres, actor=user["sub"])
-                for cambio in body.cambios:
-                    ident = str(cambio.requirement_id)
-                    d = (await diferencias_en(conn, ident) if _siembra_cambia(cambio)
-                         else {"crear": [], "quitar": [], "bloqueados": []})
-                    por_documento.append({
-                        "requirement_id": ident, "nombre": nombres[ident],
-                        "antes": antes[ident],
-                        "despues": await contar_estados(conn, ident),
-                        "crear": len(d["crear"]), "quitar": len(d["quitar"]),
-                        "bloqueados": len(d["bloqueados"]),
-                    })
-                raise _Ensayo
-        except _Ensayo:
-            pass
-    total = {
-        "antes": _sumar([d["antes"] for d in por_documento]),
-        "despues": _sumar([d["despues"] for d in por_documento]),
-        **{k: sum(d[k] for d in por_documento) for k in ("crear", "quitar", "bloqueados")},
-    }
-    return {"por_documento": por_documento, "total": total}
-
-
-@requirements_router.post("/batch-update")
-async def publicar_lote(
-    body: LoteDeCambios, pool=Depends(get_pool), user=Depends(require(Permission.CERTIFICATION_CONFIGURE)),
-):
-    """Guarda el borrador y aplica la siembra que cambió, todo o nada."""
-    resultado = {"actualizados": len(body.cambios), "creados": 0, "quitados": 0, "bloqueados": 0}
-    async with pool.acquire() as conn, conn.transaction():
-        nombres = await _nombres(conn, body)
-        await _aplicar_cambios(conn, body, nombres, actor=user["sub"])
-        for cambio in body.cambios:
-            if not _siembra_cambia(cambio):
-                continue
-            aplicado = await aplicar_recalculo(conn, str(cambio.requirement_id), actor=user["sub"])
-            for clave in ("creados", "quitados", "bloqueados"):
-                resultado[clave] += aplicado[clave]
     return resultado

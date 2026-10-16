@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { RequirementOption } from '@/lib/types'
-import { fraseDeLaRegla, celdaSeExigeA, renovacionDe } from './frase-de-la-regla'
+import { fraseDeLaRegla, celdaSeExigeA } from './frase-de-la-regla'
 
 const SUBTIPO = (id: string) =>
   ({ t1: 'Furgón Congelado', t2: 'Sider', t3: 'Rampla Plana' }[id] ?? 'un subtipo dado de baja')
@@ -144,26 +144,5 @@ describe('celdaSeExigeA', () => {
     }), VOCABULARIO)
     expect(celda.regla).toBe('No se exige')
     expect(celda.alcance).toBe('Alcanzaría a 36 de 118 activos')
-  })
-})
-
-// Portados de borrador.test.ts (Parte 2): la renovación nombra la columna "Vence".
-const ANUAL = { politica: 'ISSUE_PLUS_MONTHS' as const, validity_months: 12, warning_days: 30, grace_days: 0 }
-
-describe('renovacionDe', () => {
-  it('nombra las renovaciones de la planilla', () => {
-    expect(renovacionDe({ politica: 'NONE' })).toBe('nunca')
-    expect(renovacionDe({ politica: 'REQUIRED' })).toBe('fecha')
-    expect(renovacionDe({ politica: 'OPTIONAL' })).toBe('fecha_opcional')
-    expect(renovacionDe(ANUAL)).toBe('anual')
-    expect(renovacionDe({ ...ANUAL, validity_months: 24 })).toBe('bienal')
-    expect(renovacionDe({ politica: 'CALENDAR_PERIOD', frequency_months: 1 })).toBe('mes')
-  })
-
-  it('una regla que la celda no sabe escribir no se colapsa en otra', () => {
-    // Un "cada 6 meses" elegido en el panel no puede volverse "anual" por
-    // abrir la tabla: se muestra como otra y se edita en el panel.
-    expect(renovacionDe({ ...ANUAL, validity_months: 6 })).toBe('otra')
-    expect(renovacionDe({ politica: 'CALENDAR_PERIOD', frequency_months: 3 })).toBe('otra')
   })
 })

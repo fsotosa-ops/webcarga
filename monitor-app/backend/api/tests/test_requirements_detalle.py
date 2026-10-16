@@ -50,6 +50,14 @@ async def _documento_con_tres_empresas(conn) -> str:
     return req
 
 
+def test_el_lote_ya_no_existe():
+    """El borrador en lote se retiró (Parte 2, 16/10): una regla se escribe
+    solo desde la ficha del documento."""
+    client = make_client(AsyncMock())
+    assert client.post("/api/v1/compliance-requirements/batch-preview", json={}).status_code in (404, 405)
+    assert client.post("/api/v1/compliance-requirements/batch-update", json={}).status_code in (404, 405)
+
+
 @pytest.mark.integracion
 async def test_la_lista_trae_cumplen_y_exigidos(conexion_revertida):
     conn = conexion_revertida
