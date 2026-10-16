@@ -61,7 +61,6 @@ const OTROS_DOMINIOS: Record<string, { etiquetas: string[]; motivo: string }> = 
   'components/dashboard/LocationsTable.tsx': { etiquetas: ['Activo', 'Inactivo'], motivo: 'lugar de carga o entrega' },
   'components/dashboard/IndicatorSwitches.tsx': { etiquetas: ['Activo'], motivo: 'indicador is_active del viaje' },
   'lib/utils/alertSignals.ts':              { etiquetas: ['Activo'], motivo: 'indicador is_active del viaje' },
-  'app/dashboard/insurance/page.tsx':       { etiquetas: ['Por vencer', 'Al día'], motivo: 'vigencia de póliza (Seguros ≠ Certificación)' },
   'lib/insurance.tsx':                      { etiquetas: ['Al día', 'Vence pronto'], motivo: 'vigencia de póliza (Seguros ≠ Certificación)' },
 }
 

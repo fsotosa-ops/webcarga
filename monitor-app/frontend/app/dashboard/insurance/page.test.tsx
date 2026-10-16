@@ -1,52 +1,88 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams() }))
+let search = ''
+const replace = vi.fn((url: string) => { search = url.split('?')[1] ?? '' })
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => new URLSearchParams(search),
+  useRouter: () => ({ replace, push: vi.fn() }),
+  usePathname: () => '/dashboard/insurance',
+}))
 vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
-vi.mock('@/lib/api/carriers', () => ({ carriersApi: { listInsuranceOverview: vi.fn() } }))
+vi.mock('@/lib/api/insurance', () => ({ insuranceApi: { listPolicies: vi.fn(), listCarriers: vi.fn() } }))
 
-import { carriersApi } from '@/lib/api/carriers'
+import { insuranceApi } from '@/lib/api/insurance'
 import { QuickViewContext } from '@/components/dashboard/QuickViewProvider'
-import SegurosPage from './page'
+import PolizasPage from './page'
 
-describe('Seguros', () => {
-  // N2 (Entrega 1 de fichas): la empresa de cada fila lleva a su vista rápida
-  // (y con Ctrl/Cmd + clic, a su ficha). En la tabla; la tarjeta del teléfono
-  // es entera un botón y un enlace adentro sería un control anidado.
-  it('N2: en la tabla, la empresa es un enlace a su ficha', async () => {
-    vi.mocked(carriersApi.listInsuranceOverview).mockResolvedValue({
-      data: [{ carrier_id: 'c1', business_name: 'Transportes Andes', tax_id: '76555555-8', operational_status: 'ACTIVE',
-        total_policies: 1, total_overdue_installments: 0, next_payment_date: null, worst_policy_health: 'VALID' }],
-      count: 1, facets: { expired: 0, expiring_soon: 0, valid: 1, cancelled: 0, no_policy: 0, total: 1 },
-    } as never)
-    render(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <QuickViewContext.Provider value={vi.fn()}><SegurosPage /></QuickViewContext.Provider>
-      </QueryClientProvider>,
-    )
+const POLIZA = {
+  id: 'p1', carrier_id: 'c1', carrier_name: 'Transportes Aguilera Spa', carrier_tax_id: '77573544-9',
+  insurance_company: 'SURA', policy_number: '8581440-RC', valid_from: '2025-05-22', valid_to: '2026-05-22',
+  has_file: false, policy_state: 'EXPIRED', expires_in_days: -146, installments_total: 11, paid_installments: 0,
+  unpaid_installments: 11, overdue_installments: 11, next_due_date: '2024-06-25', has_outside_validity: true,
+}
+const FACETS = { total: 33, EXPIRED: 9, EXPIRING: 2, VALID: 21, NO_DATES: 1, CANCELLED: 0, RENEWED: 0, UNPAID: 17, NO_FILE: 32 }
+
+function renderPage() {
+  return render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <QuickViewContext.Provider value={vi.fn()}><PolizasPage /></QuickViewContext.Provider>
+    </QueryClientProvider>,
+  )
+}
+
+beforeEach(() => {
+  search = ''
+  vi.mocked(insuranceApi.listPolicies).mockResolvedValue({ group_by: 'policy', data: [POLIZA], count: 1, page: 1, limit: 50, facets: FACETS } as never)
+  vi.mocked(insuranceApi.listCarriers).mockResolvedValue({
+    group_by: 'carrier', count: 1, page: 1, limit: 50,
+    facets: { total: 36, NO_POLICY: 18, EXPIRED: 5, EXPIRING: 0, VALID: 13, NO_DATES: 0 },
+    data: [{ carrier_id: 'c9', carrier_name: 'Hasa Spa', carrier_tax_id: '77104928-1', operational_status: 'ACTIVE', policies: 0,
+             worst_state: 'NO_POLICY', unpaid_installments: 0, overdue_installments: 0, next_due_date: null, insurance_alert: null }],
+  } as never)
+})
+
+describe('Seguros › Pólizas', () => {
+  it('la fila abre la ficha de la póliza, con la lista para volver; la empresa abre su vista rápida', async () => {
+    renderPage()
     const tabla = await screen.findByRole('table')
-    expect(await within(tabla).findByRole('link', { name: 'Ver empresa Transportes Andes' })).toHaveAttribute('href', '/dashboard/carriers/c1')
+    expect(within(tabla).getByRole('link', { name: /SURA/ })).toHaveAttribute('href', `/dashboard/insurance/policies/p1?next=${encodeURIComponent('/dashboard/insurance')}`)
+    expect(within(tabla).getByRole('link', { name: 'Ver empresa Transportes Aguilera Spa' })).toHaveAttribute('href', '/dashboard/carriers/c1')
+    expect(within(tabla).getByText('Venció el 22/05')).toBeInTheDocument()
+    expect(within(tabla).getByText('11 vencidas')).toBeInTheDocument()
   })
 
-  // Seguros con el kit (15/10): filtros con el control segmentado, cabecera sin
-  // mayúsculas y el buscador en el vocabulario del usuario.
-  it('SG1: filtros con el control segmentado, cabecera del kit y buscador por RUT', async () => {
-    vi.mocked(carriersApi.listInsuranceOverview).mockResolvedValue({
-      data: [{ carrier_id: 'c1', business_name: 'Transportes Andes', tax_id: '76555555-8', operational_status: 'ACTIVE',
-        total_policies: 1, total_overdue_installments: 0, next_payment_date: null, worst_policy_health: 'VALID' }],
-      count: 1, facets: { expired: 0, expiring_soon: 0, valid: 1, cancelled: 0, no_policy: 0, total: 1 },
-    } as never)
-    render(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <QuickViewContext.Provider value={vi.fn()}><SegurosPage /></QuickViewContext.Provider>
-      </QueryClientProvider>,
-    )
+  it('S13: agrupa por Póliza o Empresa con el control segmentado; por empresa aparecen las que no tienen póliza', async () => {
+    renderPage()
     await screen.findByRole('table')
-    const activas = within(screen.getByRole('group', { name: 'Ciclo de vida' })).getByRole('button', { name: /^Activas/ })
-    expect(activas.className).toMatch(/text-accion/)
-    expect(within(screen.getByRole('group', { name: 'Estado de las pólizas' })).getByRole('button', { name: /^Todas/ })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('columnheader', { name: 'Empresa' }).className).not.toMatch(/uppercase/)
-    expect(screen.getByPlaceholderText('Nombre o RUT…')).toBeInTheDocument()
+    const agrupar = screen.getByRole('group', { name: 'Agrupar por' })
+    expect(within(agrupar).getByRole('button', { name: 'Póliza' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(within(agrupar).getByRole('button', { name: 'Empresa' }))
+    expect(replace).toHaveBeenCalledWith('/dashboard/insurance?group=carrier', { scroll: false })
+  })
+
+  it('agrupada por empresa, la empresa sin póliza dice "Sin póliza" y los filtros cuentan con las cifras de la API', async () => {
+    search = 'group=carrier'
+    renderPage()
+    const tabla = await screen.findByRole('table')
+    expect(within(tabla).getByText('Sin póliza')).toBeInTheDocument()
+    expect(within(screen.getByRole('group', { name: 'Estado' })).getByRole('button', { name: /Sin póliza/ })).toHaveTextContent('18')
+  })
+
+  it('la cabecera es la del kit y el buscador habla de RUT; sin "0" mientras carga', async () => {
+    vi.mocked(insuranceApi.listPolicies).mockReturnValue(new Promise(() => {}))
+    renderPage()
+    expect(screen.getByPlaceholderText('Aseguradora, N° de póliza, empresa o RUT…')).toBeInTheDocument()
+    expect(within(screen.getByRole('group', { name: 'Estado' })).getByRole('button', { name: /^Todas/ })).toHaveTextContent(/^Todas$/)
+    vi.mocked(insuranceApi.listPolicies).mockResolvedValue({ group_by: 'policy', data: [POLIZA], count: 1, page: 1, limit: 50, facets: FACETS } as never)
+  })
+
+  it('filtrar por estado lo pide a la API', async () => {
+    renderPage()
+    await screen.findByRole('table')
+    fireEvent.click(within(screen.getByRole('group', { name: 'Estado' })).getByRole('button', { name: /^Vencidas/ }))
+    expect(replace).toHaveBeenCalledWith('/dashboard/insurance?state=EXPIRED', { scroll: false })
+    await waitFor(() => expect(screen.getByRole('columnheader', { name: 'Póliza' }).className).not.toMatch(/uppercase/))
   })
 })

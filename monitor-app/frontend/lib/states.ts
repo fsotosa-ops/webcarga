@@ -303,3 +303,23 @@ export function installmentStateStyle(
 
 /** La señal aparte de una cuota que vence fuera de la vigencia de su póliza. */
 export const OUTSIDE_VALIDITY_STYLE: StateStyle = { label: 'Fuera de vigencia', tone: 'warning', icon: CalendarClock }
+
+/** El estado de una empresa en Seguros: el de su peor póliza vigente, o "Sin
+ *  póliza" (18 de 36 activas el 15/10), que es lo más urgente. */
+export function carrierInsuranceStyle(state: Exclude<PolicyState, 'CANCELLED' | 'RENEWED'> | 'NO_POLICY'): StateStyle {
+  return state === 'NO_POLICY' ? { label: 'Sin póliza', tone: 'urgent', icon: ShieldOff } : POLICY[state]
+}
+
+/** Las cuotas de una póliza o una empresa en una sola señal: "11 vencidas",
+ *  "3 por pagar", "Sin cuotas" o "Al día". */
+export function installmentsSummaryStyle(c: { overdue: number; unpaid: number; total?: number }): StateStyle {
+  if (c.overdue > 0) return { label: `${c.overdue} vencida${c.overdue === 1 ? '' : 's'}`, tone: 'urgent', icon: TriangleAlert }
+  if (c.unpaid > 0) return { label: `${c.unpaid} por pagar`, tone: 'neutral', icon: Hourglass }
+  if (c.total === 0) return { label: 'Sin cuotas', tone: 'neutral', icon: CircleDashed }
+  return { label: 'Al día', tone: 'resolved', icon: CircleCheck }
+}
+
+/** El archivo de la póliza: cargado o falta (la carga inicial trajo 1 de 33). */
+export function policyFileStyle(hasFile: boolean): StateStyle {
+  return hasFile ? { label: 'Cargado', tone: 'resolved', icon: CircleCheck } : { label: 'Falta', tone: 'neutral', icon: CircleDashed }
+}

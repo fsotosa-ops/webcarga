@@ -1,301 +1,150 @@
 'use client'
 
 import { Suspense, useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { useSearchParams } from 'next/navigation'
-import { Search, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
-import { carriersApi } from '@/lib/api/carriers'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { ChevronLeft, ChevronRight, Search } from 'lucide-react'
+import { insuranceApi, type CarrierInsuranceState, type PolicyFilter } from '@/lib/api/insurance'
+import { POLICY_STATE_LABELS, carrierInsuranceStyle } from '@/lib/states'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { POLICY_HEALTH_CONFIG } from '@/lib/insurance'
-import { dueRelative } from '@/lib/utils/installments'
-import { InsurancePolicyModal } from '@/components/dashboard/InsurancePolicyModal'
-import type { CarrierInsuranceOverviewItem, CarrierOperationalStatus, InsuranceOverviewFacets } from '@/lib/types'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
-import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { SegmentedControl, type SegmentedOption } from '@/components/ui/SegmentedControl'
 import { Estado } from '@/components/ui/Estado'
-import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
-import { EntityCell } from '@/components/dashboard/EntityCell'
-import { usePermiso } from '@/lib/authz/PermisosProvider'
-import { CARRIER_LIFECYCLE_GROUP_LABELS } from '@/lib/states'
-
+import { CarriersInsuranceTable, PoliciesTable } from '@/components/insurance/PoliciesTable'
 
 const LIMIT = 50
 
-type HealthTab = '' | 'EXPIRED' | 'EXPIRING_SOON' | 'VALID' | 'NONE'
-type StatusTab = 'active' | 'legacy'
-
-/** Tabs mapean 1:1 a worst_policy_health — misma fuente real (app.carrier_insurance_status)
- *  que la tab Seguros de la ficha de empresa (H3 rediseño, "landing sincronizada con
- *  Empresas", 2026-07-16). Los conteos vienen de `facets`, no del tamaño de la página
- *  actual — necesario porque hay ~246 empresas y el límite de página es 100. */
-const TABS: { id: HealthTab; label: string; facetKey: keyof InsuranceOverviewFacets }[] = [
-  { id: '',               label: 'Todas',       facetKey: 'total' },
-  { id: 'EXPIRED',        label: 'Vencidas',     facetKey: 'expired' },
-  { id: 'EXPIRING_SOON',  label: 'Por vencer',   facetKey: 'expiring_soon' },
-  { id: 'VALID',          label: 'Al día',       facetKey: 'valid' },
-  { id: 'NONE',           label: 'Sin póliza',   facetKey: 'no_policy' },
+/** Los filtros por estado. Los de siempre se muestran aunque estén en cero; los
+ *  raros (sin vigencia, renovadas, canceladas), solo si hay alguna. */
+const POLICY_FILTERS: { id: PolicyFilter; label: string; always: boolean }[] = [
+  { id: 'EXPIRED', label: POLICY_STATE_LABELS.EXPIRED, always: true },
+  { id: 'EXPIRING', label: POLICY_STATE_LABELS.EXPIRING, always: true },
+  { id: 'VALID', label: POLICY_STATE_LABELS.VALID, always: true },
+  { id: 'UNPAID', label: 'Cuotas vencidas', always: true },
+  { id: 'NO_FILE', label: 'Sin archivo', always: true },
+  { id: 'NO_DATES', label: POLICY_STATE_LABELS.NO_DATES, always: false },
+  { id: 'RENEWED', label: POLICY_STATE_LABELS.RENEWED, always: false },
+  { id: 'CANCELLED', label: POLICY_STATE_LABELS.CANCELLED, always: false },
+]
+const CARRIER_FILTERS: { id: CarrierInsuranceState; always: boolean }[] = [
+  { id: 'NO_POLICY', always: true }, { id: 'EXPIRED', always: true }, { id: 'EXPIRING', always: true },
+  { id: 'VALID', always: true }, { id: 'NO_DATES', always: false },
 ]
 
-/** Segundo eje, independiente de los health tabs — mismo operational_status
- *  y mismo concepto Activo/Inactivo (no Activo/Legacy) que la landing de
- *  Empresas (pedido explícito del usuario 2026-07-18: Seguros debe tener
- *  la misma separación). */
-/** "Dadas de baja" agrupa los dos estados de baja, igual que en Empresas: una
- *  empresa dada de baja desde la app queda en `INACTIVE` y con un solo estado
- *  no aparecía en ninguna de las dos pestañas. Ver el comentario largo en
- *  app/dashboard/carriers/page.tsx. */
-const STATUS_TABS: { id: StatusTab; label: string; status: CarrierOperationalStatus[] }[] = [
-  { id: 'active', label: CARRIER_LIFECYCLE_GROUP_LABELS.active,   status: ['ACTIVE'] },
-  { id: 'legacy', label: CARRIER_LIFECYCLE_GROUP_LABELS.inactive, status: ['LEGACY_INACTIVE', 'INACTIVE'] },
-]
-
-const EMPTY_FACETS: InsuranceOverviewFacets = {
-  expired: 0, expiring_soon: 0, valid: 0, cancelled: 0, no_policy: 0, total: 0,
+export default function PolizasPage() {
+  return <Suspense fallback={null}><PolizasPageInner /></Suspense>
 }
 
-export default function SegurosPage() {
-  return (
-    <Suspense fallback={null}>
-      <SegurosPageInner />
-    </Suspense>
-  )
-}
-
-/** Lee `?q=` al montar (deep link desde InsuranceSummaryCard en la ficha de
- *  empresa, con el tax_id de esa empresa) — no se resincroniza si la URL
- *  cambia después, el usuario puede seguir editando la búsqueda libremente. */
-function SegurosPageInner() {
-  const searchParams = useSearchParams()
-  const [q, setQ]           = useState(() => searchParams.get('q') ?? '')
-  const [tab, setTab]       = useState<HealthTab>('')
-  const [statusTab, setStatusTab] = useState<StatusTab>('active')
-  const [page, setPage]     = useState(1)
-  const canEdit = usePermiso('policies.edit')
-  const canAdmin = usePermiso('policies.delete')
-  const [selected, setSelected] = useState<CarrierInsuranceOverviewItem | null>(null)
+/**
+ * Seguros › Pólizas (Seguros E2, 15/10): el registro de pólizas, con el patrón de
+ * Directorio y Certificación. Por póliza o agrupado por empresa (aparecen las
+ * activas sin póliza). Los estados los calcula la base; los filtros viven en la URL.
+ */
+function PolizasPageInner() {
+  const router = useRouter()
+  const pathname = usePathname()
+  const params = useSearchParams()
+  const group = params.get('group') === 'carrier' ? 'carrier' : 'policy'
+  const state = params.get('state') ?? ''
+  const page = Math.max(1, Number(params.get('page')) || 1)
+  const [q, setQ] = useState(params.get('q') ?? '')
   const qDebounced = useDebouncedValue(q, 300)
+  const returnTo = params.toString() ? `${pathname}?${params.toString()}` : pathname
 
-  useEffect(() => { setPage(1) }, [tab, statusTab, qDebounced])
+  function setParams(next: Record<string, string | null>) {
+    const sp = new URLSearchParams(params.toString())
+    for (const [k, v] of Object.entries(next)) { if (v) sp.set(k, v); else sp.delete(k) }
+    if (!('page' in next)) sp.delete('page')
+    const s = sp.toString()
+    router.replace(s ? `${pathname}?${s}` : pathname, { scroll: false })
+  }
 
+  useEffect(() => {
+    if ((params.get('q') ?? '') !== qDebounced.trim()) setParams({ q: qDebounced.trim() || null })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qDebounced])
 
-  const currentOperationalStatus = STATUS_TABS.find(t => t.id === statusTab)!.status
-
-  const query = useQuery({
-    queryKey: ['carriers-insurance-overview', qDebounced, tab, statusTab, page],
-    queryFn: () => carriersApi.listInsuranceOverview({
-      q: qDebounced, health: tab, operational_status: currentOperationalStatus.join(','), page, limit: LIMIT,
-    }),
+  const query = { state, q: params.get('q') ?? '', page, limit: LIMIT }
+  const policies = useQuery({
+    queryKey: ['insurance', 'policies', query], queryFn: () => insuranceApi.listPolicies(query),
+    enabled: group === 'policy', placeholderData: keepPreviousData,
   })
-
-  // Conteo del otro status tab, independiente de la paginación y del health
-  // tab actual (limit=1: solo interesa `facets.total`) — mismo patrón que
-  // Activas/Inactivo en /dashboard/carriers.
-  const otherStatusTabId = statusTab === 'active' ? 'legacy' : 'active'
-  const otherOperationalStatus = STATUS_TABS.find(t => t.id === otherStatusTabId)!.status
-  const otherStatusQuery = useQuery({
-    queryKey: ['carriers-insurance-overview-count', otherOperationalStatus, qDebounced],
-    queryFn: () => carriersApi.listInsuranceOverview({ q: qDebounced, operational_status: otherOperationalStatus.join(','), page: 1, limit: 1 }),
+  const carriers = useQuery({
+    queryKey: ['insurance', 'carriers', query], queryFn: () => insuranceApi.listCarriers(query),
+    enabled: group === 'carrier', placeholderData: keepPreviousData,
   })
+  const active = group === 'policy' ? policies : carriers
+  const facets = active.data?.facets as Record<string, number> | undefined
+  // Sin cifra mientras la consulta está en vuelo: un "0" ahí afirma algo falso.
+  const badge = (id: string) => (facets ? String(facets[id] ?? 0) : undefined)
 
-  const items   = query.data?.data ?? []
-  const facets  = query.data?.facets ?? EMPTY_FACETS
-  const total   = query.data?.count ?? 0
-  const totalPages = Math.max(1, Math.ceil(total / LIMIT))
-  const loading  = query.isPending
-  const fetching = query.isFetching
-  const error = query.error ? (query.error instanceof Error ? query.error.message : 'Error cargando seguros') : null
-
-  // `undefined` mientras la consulta está en vuelo: un "0" ahí afirma algo falso.
-  const statusTabCounts: Record<StatusTab, number | undefined> = {
-    [statusTab]: query.data?.facets.total,
-    [otherStatusTabId]: otherStatusQuery.data?.facets.total,
-  } as Record<StatusTab, number | undefined>
-  const badge = (n: number | undefined) => n === undefined ? undefined : String(n)
-
-  const emptyLabel = q ? 'Sin resultados' : `Sin empresas ${statusTab === 'active' ? 'activas' : 'inactivas'} en esta categoría`
+  const filtros: SegmentedOption<string>[] = [
+    { id: 'all', label: 'Todas', badge: badge('total') },
+    ...(group === 'policy'
+      ? POLICY_FILTERS.filter(f => f.always || (facets?.[f.id] ?? 0) > 0).map(f => ({ id: f.id, label: f.label, badge: badge(f.id) }))
+      : CARRIER_FILTERS.filter(f => f.always || (facets?.[f.id] ?? 0) > 0)
+          .map(f => ({ id: f.id, label: carrierInsuranceStyle(f.id).label, badge: badge(f.id) }))),
+  ]
+  const totalPages = Math.max(1, Math.ceil((active.data?.count ?? 0) / LIMIT))
+  const vacio = group === 'policy' ? 'No hay pólizas que coincidan' : 'No hay empresas que coincidan'
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
-      <div>
-        <EncabezadoDePagina
-          titulo="Seguros"
-          bajada={!query.data ? '…' : `${facets.total.toLocaleString('es-CL')} empresa${facets.total !== 1 ? 's' : ''} con seguimiento de pólizas`}
-        />
-      </div>
+    <div className="space-y-4 p-4 md:p-6">
+      <EncabezadoDePagina
+        titulo="Pólizas"
+        bajada={policies.data && group === 'policy'
+          ? `${policies.data.facets.total} pólizas`
+          : carriers.data && group === 'carrier' ? `${carriers.data.facets.total} empresas` : '…'}
+      />
 
-      {/* Con el control segmentado del kit (15/10): el ciclo de vida de la empresa
-          y el estado de sus pólizas, al lado del buscador. */}
-      <div className="bg-white border border-border rounded-2xl px-3.5 py-2.5 flex items-center gap-3 flex-wrap">
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-white px-3.5 py-2.5">
         <div className="relative shrink-0">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-informativo pointer-events-none" aria-hidden="true" />
+          <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-informativo" aria-hidden="true" />
           <input
             value={q}
             onChange={e => setQ(e.target.value)}
-            placeholder="Nombre o RUT…"
-            aria-label="Buscar empresa por nombre o RUT"
-            className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-60 max-w-full bg-white placeholder:text-informativo"
+            placeholder="Aseguradora, N° de póliza, empresa o RUT…"
+            aria-label="Buscar pólizas"
+            className="w-72 max-w-full rounded-lg border border-border bg-white py-1.5 pl-8 pr-3 text-xs placeholder:text-informativo focus:outline-none focus:ring-2 focus:ring-accent/20"
           />
         </div>
         <SegmentedControl
-          label="Ciclo de vida"
-          options={STATUS_TABS.map(t => ({ id: t.id, label: t.label, badge: badge(statusTabCounts[t.id]) }))}
-          value={statusTab}
-          onChange={setStatusTab}
+          label="Agrupar por"
+          options={[{ id: 'policy', label: 'Póliza' }, { id: 'carrier', label: 'Empresa' }]}
+          value={group}
+          onChange={g => setParams({ group: g === 'carrier' ? 'carrier' : null, state: null })}
         />
-        <SegmentedControl
-          label="Estado de las pólizas"
-          options={TABS.map(t => ({ id: t.id || 'all', label: t.label, badge: badge(query.data?.facets[t.facetKey]) }))}
-          value={tab || 'all'}
-          onChange={id => setTab(id === 'all' ? '' : id as HealthTab)}
-        />
+        <SegmentedControl label="Estado" options={filtros} value={state || 'all'}
+                          onChange={id => setParams({ state: id === 'all' ? null : id })} />
       </div>
 
-      {error ? (
-        <Estado tipo="error" titulo="No se pudieron cargar los seguros" detalle={error} />
-      ) : loading ? (
+      {active.error ? (
+        <Estado tipo="error" titulo="No se pudieron cargar las pólizas" detalle="Reintenta en unos segundos." />
+      ) : active.isPending ? (
         <Estado tipo="cargando" />
-      ) : items.length === 0 ? (
-        <Estado tipo="vacio" titulo={emptyLabel} />
+      ) : (active.data?.data.length ?? 0) === 0 ? (
+        <Estado tipo="vacio" titulo={vacio} />
       ) : (
-        <div className={`transition-opacity duration-150 ${fetching ? 'opacity-60' : ''}`}>
-          {/* Mobile: cards (misma resolución que TransporterCard en Empresas — una tabla
-             de 6 columnas no cabe en un viewport angosto sin recortar información). */}
-          <div className="md:hidden grid grid-cols-1 gap-3">
-            {items.map(item => {
-              const health = item.worst_policy_health
-              const badge = health ? POLICY_HEALTH_CONFIG[health] : null
-              const nextPayLabel = dueRelative(item.next_payment_date, item.total_overdue_installments > 0)
-              return (
-                <div
-                  key={item.carrier_id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setSelected(item)}
-                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(item) } }}
-                  className="text-left bg-white border border-border rounded-2xl p-4 space-y-3 cursor-pointer transition-all hover:shadow-md hover:border-gray-300"
-                >
-                  <div className="flex items-start gap-2.5">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-sm text-text-primary truncate leading-tight">
-                        {item.business_name || <span className="italic text-gray-400">Sin nombre</span>}
-                      </p>
-                      <p className="text-etiqueta text-informativo mt-0.5 font-identificador">{item.tax_id}</p>
-                    </div>
-                    <ChevronRight size={16} className="text-gray-300 shrink-0" />
-                  </div>
-                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/60">
-                    {badge ? (
-                      <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${badge.cls}`}>
-                        {badge.icon} {badge.label}
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">
-                        Sin póliza
-                      </span>
-                    )}
-                    <span className="text-[11px] text-gray-400 text-right">
-                      {item.total_policies} póliza{item.total_policies === 1 ? '' : 's'}
-                      {item.total_overdue_installments > 0 && <span className="text-red-600 font-semibold"> · {item.total_overdue_installments} vencida{item.total_overdue_installments === 1 ? '' : 's'}</span>}
-                      {nextPayLabel && ` · ${nextPayLabel}`}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Desktop: tabla completa */}
-          <div className="hidden md:block bg-white rounded-2xl border border-border overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-bg-main">
-                  <th scope="col" className={CABECERA}>Empresa</th>
-                  <th scope="col" className={`${CABECERA} w-32`}>Estado</th>
-                  <th scope="col" className={`${CABECERA} w-24 !text-center`}>Pólizas</th>
-                  <th scope="col" className={`${CABECERA} w-28 !text-center`}>Cuotas vencidas</th>
-                  <th scope="col" className={`${CABECERA} w-40`}>Próximo pago</th>
-                  <th scope="col" className={`${CABECERA} w-8`}><span className="sr-only">Abrir</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item, i) => {
-                  const health = item.worst_policy_health
-                  const badge = health ? POLICY_HEALTH_CONFIG[health] : null
-                  const nextPayLabel = dueRelative(item.next_payment_date, item.total_overdue_installments > 0)
-                  return (
-                    <tr
-                      key={item.carrier_id}
-                      onClick={() => setSelected(item)}
-                      className={`border-b border-border/60 last:border-0 cursor-pointer transition-colors ${
-                        selected?.carrier_id === item.carrier_id ? 'bg-accent/5' : i % 2 === 1 ? 'bg-gray-50/40 hover:bg-gray-50' : 'hover:bg-gray-50/70'
-                      }`}
-                    >
-                      <td className="px-3 py-3">
-                        {/* La empresa lleva a su vista rápida (N2, Entrega 1 de fichas); la fila, a sus pólizas. */}
-                        <p className="font-semibold text-text-primary truncate leading-tight">
-                          {item.business_name
-                            ? <EntityCell kind="carrier" id={item.carrier_id} label={item.business_name} />
-                            : <span className="italic text-gray-400">Sin nombre</span>}
-                        </p>
-                        <p className="text-etiqueta text-informativo font-identificador">{item.tax_id}</p>
-                      </td>
-                      <td className="px-3 py-3">
-                        {badge ? (
-                          <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${badge.cls}`}>
-                            {badge.icon} {badge.label}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-400">
-                            Sin póliza
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 text-center font-bold text-sm text-slate-700">{item.total_policies}</td>
-                      <td className="px-3 py-3 text-center">
-                        {item.total_overdue_installments > 0 ? (
-                          <span className="font-bold text-sm text-red-600">{item.total_overdue_installments}</span>
-                        ) : (
-                          <span className="text-gray-300">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 text-xs text-gray-500">{nextPayLabel ?? '—'}</td>
-                      <td className="px-3 py-3 text-center text-gray-300"><ChevronRight size={15} /></td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+        <div className={`transition-opacity ${active.isFetching ? 'opacity-60' : ''}`}>
+          {group === 'policy'
+            ? <PoliciesTable rows={policies.data!.data} returnTo={returnTo} />
+            : <CarriersInsuranceTable rows={carriers.data!.data} returnTo={returnTo} />}
         </div>
       )}
 
-      {!loading && totalPages > 1 && (
+      {totalPages > 1 && (
         <div className="flex items-center justify-center gap-3">
-          <button
-            onClick={() => setPage(p => Math.max(1, p - 1))}
-            disabled={page <= 1}
-            className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
+          <button type="button" onClick={() => setParams({ page: String(page - 1) })} disabled={page <= 1}
+                  className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-informativo hover:border-accion disabled:cursor-not-allowed disabled:opacity-40">
             <ChevronLeft size={13} /> Anterior
           </button>
-          <span className="text-xs text-gray-400">Página {page} de {totalPages}</span>
-          <button
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-            disabled={page >= totalPages}
-            className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-gray-500 hover:border-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
+          <span className="text-xs text-informativo">Página {page} de {totalPages}</span>
+          <button type="button" onClick={() => setParams({ page: String(page + 1) })} disabled={page >= totalPages}
+                  className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-informativo hover:border-accion disabled:cursor-not-allowed disabled:opacity-40">
             Siguiente <ChevronRight size={13} />
           </button>
         </div>
       )}
-
-      <InsurancePolicyModal
-        carrierId={selected?.carrier_id ?? null}
-        displayName={selected?.business_name || selected?.tax_id || ''}
-        onClose={() => setSelected(null)}
-        canAdmin={canAdmin}
-        canEdit={canEdit}
-      />
     </div>
   )
 }

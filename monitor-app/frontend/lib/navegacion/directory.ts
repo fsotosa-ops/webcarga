@@ -4,6 +4,7 @@
 import { destinoSeguro } from '@/lib/auth/destino'
 import { CIERRE } from './cierre'
 import { MONITOR } from './viaje'
+import { INSTALLMENTS, POLICIES } from './insurance'
 
 const CARRIERS = '/dashboard/carriers'
 const DRIVERS = '/dashboard/drivers'
@@ -38,6 +39,9 @@ export function returnLink(next: string | null | undefined): { href: string; lab
     // Las listas del Directorio, con sus filtros (N3, Entrega 1 de fichas).
     : href.startsWith(DRIVERS) ? 'Volver a Conductores'
     : href.startsWith(ASSETS) ? 'Volver a Equipos'
+    : href.startsWith(INSTALLMENTS) ? 'Volver a Cuotas'
+    : href.startsWith(`${POLICIES}/policies/`) ? 'Volver a la póliza'
+    : href.startsWith(POLICIES) ? 'Volver a Pólizas'
     : href.startsWith(`${CARRIERS}/`) ? 'Volver a la empresa'
     : href.startsWith(CARRIERS) ? 'Volver al Directorio'
     : 'Volver'
