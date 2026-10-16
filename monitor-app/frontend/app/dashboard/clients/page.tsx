@@ -9,6 +9,7 @@ import { shippersApi, type ShipperRow } from '@/lib/api/locations'
 import { tmsClientsApi } from '@/lib/api/tmsClients'
 import { clientKeys, invalidateClients } from '@/lib/queries/clientes'
 import { CLIENTS, clientHref } from '@/lib/navegacion/directory'
+import { countOf, formatCount, placesLabel } from '@/lib/clients'
 import { lifecycleStyle } from '@/lib/states'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
@@ -28,9 +29,7 @@ const VISTAS: { id: Vista; label: string }[] = [
 const STATUS_DE_VISTA: Record<Exclude<Vista, 'sin-vincular'>, string> = { activos: 'ACTIVE', inactivos: 'INACTIVE' }
 const UNLINKED = { unlinked: true } as const
 
-const cifra = (n: number) => n.toLocaleString('es-CL')
-const lugares = (c: ShipperRow) =>
-  c.origins > 0 ? `${cifra(c.locations)} · ${c.origins === 1 ? '1 origen' : `${cifra(c.origins)} orígenes`}` : cifra(c.locations)
+const cifra = formatCount
 
 /** Directorio › Clientes (Configuración, Parte 3): cada cliente con sus nombres
  *  en los TMS, sus lugares, sus empresas y sus viajes. Los clientes son pocos:
@@ -131,7 +130,28 @@ function ClientsList() {
 function ClientsTable({ items, returnTo }: { items: ShipperRow[]; returnTo: string }) {
   const router = useRouter()
   return (
-    <div className="bg-white rounded-2xl border border-border overflow-x-auto">
+    <>
+    {/* En el teléfono, una tarjeta por cliente (como Empresas). */}
+    <ul aria-label="Clientes" className="md:hidden space-y-2">
+      {items.map(c => {
+        const estado = lifecycleStyle('shipper', c.status)
+        return (
+          <li key={c.id}>
+            <Link href={clientHref(c.id, returnTo)} prefetch={false}
+              className="block rounded-2xl border border-border bg-white px-3.5 py-3 hover:bg-bg-main">
+              <span className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-text-primary">{c.name}</span>
+                <StatusChip tone={estado.tone} icon={estado.icon}>{estado.label}</StatusChip>
+              </span>
+              <span className="mt-1 block text-etiqueta text-informativo">
+                {placesLabel(c, { noun: true })} · {countOf(c.carriers, 'empresa', 'empresas')} · {countOf(c.trips_30d, 'viaje', 'viajes')} (30 días)
+              </span>
+            </Link>
+          </li>
+        )
+      })}
+    </ul>
+    <div className="hidden md:block bg-white rounded-2xl border border-border overflow-x-auto">
       <table className="w-full text-dato">
         <thead>
           <tr className="border-b border-border bg-bg-main">
@@ -156,7 +176,7 @@ function ClientsTable({ items, returnTo }: { items: ShipperRow[]; returnTo: stri
                     className="font-semibold text-text-primary hover:text-accent">{c.name}</Link>
                 </td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{cifra(c.tms_names)}</td>
-                <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">{lugares(c)}</td>
+                <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">{placesLabel(c)}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{cifra(c.carriers)}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{cifra(c.trips_30d)}</td>
                 <td className="px-3 py-2.5"><StatusChip tone={estado.tone} icon={estado.icon}>{estado.label}</StatusChip></td>
@@ -166,6 +186,7 @@ function ClientsTable({ items, returnTo }: { items: ShipperRow[]; returnTo: stri
         </tbody>
       </table>
     </div>
+    </>
   )
 }
 

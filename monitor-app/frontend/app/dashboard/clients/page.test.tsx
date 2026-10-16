@@ -114,4 +114,12 @@ describe('Directorio › Clientes', () => {
     renderPage()
     expect(await screen.findByText('No se pudieron cargar los clientes')).toBeInTheDocument()
   })
+
+  it('en el teléfono cada cliente es una tarjeta que abre su ficha', async () => {
+    renderPage()
+    const tarjetas = await screen.findByRole('list', { name: 'Clientes' })
+    const colun = within(tarjetas).getByRole('link', { name: /Colun/ })
+    expect(colun).toHaveAttribute('href', '/dashboard/clients/s1?next=%2Fdashboard%2Fclients')
+    expect(within(colun).getByText('12 lugares · 3 orígenes · 4 empresas · 1.830 viajes (30 días)')).toBeInTheDocument()
+  })
 })

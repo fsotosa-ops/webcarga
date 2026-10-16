@@ -122,7 +122,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 911 -> 891 el 2026-10-16: umbrales, rangos y reglas del Monitor como lista + panel (Parte 1, tarea 6).
     // 891 -> 855 el 2026-10-16: Personas y Roles con el kit (Parte 1, tarea 8).
     // 855 -> 819 el 2026-10-16: los grupos del Monitor con el tono del glosario (revisión final de la Parte 1).
-    const DEUDA = 819
+    // 819 -> 797 el 2026-10-16: lugares, Clientes del TMS y Orígenes con tokens (Parte 3).
+    const DEUDA = 797
 
     const total = usosDeColorCrudo()
     expect(

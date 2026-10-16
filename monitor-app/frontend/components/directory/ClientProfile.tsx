@@ -12,6 +12,7 @@ import { clientKeys, invalidateClients } from '@/lib/queries/clientes'
 import { CLIENTS, clientHref, returnLink } from '@/lib/navegacion/directory'
 import { monitorClientHref } from '@/lib/navegacion/viaje'
 import { lifecycleStyle } from '@/lib/states'
+import { formatCount as cifra, placesLabel } from '@/lib/clients'
 import { useTransporters } from '@/hooks/useTransporters'
 import { Estado } from '@/components/ui/Estado'
 import { Tabs } from '@/components/ui/Tabs'
@@ -27,7 +28,6 @@ import { ClientNamePanel } from '@/components/directory/ClientNamePanel'
 import { LocationsBrowser, NO_LOCATION_FILTERS, type LocationFilters } from '@/components/dashboard/LocationsBrowser'
 
 type Section = 'lugares' | 'empresas'
-const cifra = (n: number) => n.toLocaleString('es-CL')
 
 /**
  * La ficha de un cliente (Configuración, Parte 3): sus lugares de carga (la
@@ -117,7 +117,7 @@ export function ClientProfile({ id }: { id: string }) {
       <ProfileLayout aside={<>
         <DetailsBlock canEdit={false} rows={[
           { label: 'Estado', value: lifecycleStyle('shipper', c.status).label },
-          { label: 'Lugares', value: `${cifra(c.locations)} (${cifra(c.origins)} de origen)` },
+          { label: 'Lugares', value: placesLabel(c) },
           { label: 'Empresas', value: cifra(c.carriers) },
           { label: 'Viajes (30 días)', value: cifra(c.trips_30d) },
         ]} />

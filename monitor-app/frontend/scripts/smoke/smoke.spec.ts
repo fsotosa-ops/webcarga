@@ -446,3 +446,37 @@ test('Configuración: índice → Motivos de conductor → abrir un motivo → "
   await expect(revisada.getByText('Sin revisar')).toHaveCount(0, { timeout: 20000 })
   expect(problems).toEqual([])
 })
+
+test('Directorio › Clientes → un cliente → marcar un lugar como Origen → aparece en el Tarifario con Orígenes (P3.8)', async ({ page }) => {
+  test.setTimeout(120000)
+  const problems = watch(page)
+  await login(page, 'com@sim.local')
+  await page.goto('/dashboard/clients')
+  // Un cliente con lugares (columna Lugares distinta de 0).
+  const filas = page.locator('tbody tr')
+  await filas.first().waitFor({ timeout: 30000 })
+  let elegido = -1
+  for (let i = 0; i < await filas.count(); i++) {
+    if ((await filas.nth(i).locator('td').nth(2).innerText()).trim() !== '0') { elegido = i; break }
+  }
+  expect(elegido).toBeGreaterThanOrEqual(0)
+  await filas.nth(elegido).locator('a').first().click()
+  await page.waitForURL('**/dashboard/clients/**', { timeout: 20000 })
+  const origen = page.getByRole('checkbox', { name: /^Origen: / }).first()
+  await origen.waitFor({ timeout: 30000 })
+  const lugar = (await origen.getAttribute('aria-label'))!.replace('Origen: ', '')
+  const eraOrigen = await origen.isChecked()
+  if (!eraOrigen) {
+    await origen.check()
+    await expect(origen).toBeChecked({ timeout: 20000 })
+  }
+  await page.goto('/dashboard/pricing?origen=1')
+  const fila = page.locator('tbody tr', { has: page.getByRole('checkbox', { name: `Origen: ${lugar}` }) })
+  await expect(fila).toHaveCount(1, { timeout: 30000 })
+  // Deja el lugar como estaba: la corrida siguiente parte igual.
+  if (!eraOrigen) {
+    await fila.getByRole('checkbox', { name: `Origen: ${lugar}` }).uncheck()
+    await expect(fila).toHaveCount(0, { timeout: 20000 })
+  }
+  expect(problems).toEqual([])
+})
