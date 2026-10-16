@@ -66,6 +66,13 @@ Recorrido en dev (16/10, Propietario, solo lectura) — lo que hoy está mal:
   viendo (alcance · filtros · N filas)" por defecto u "Todo el día". "Copiar estatus" copia siempre lo que se ve (con
   "Cliente: Walmart", el estatus de Walmart). Cada archivo lleva escrito arriba qué recorte es. **El PDF no es
   prioridad: queda como hoy, fuera de esta entrega** (el usuario, 16/10); aplica al Excel y a "Copiar estatus".
+- **D8 — Toda tabla con filas de viajes muestra la columna "Nº viaje"** (el usuario, 16/10: "para las pestañas que
+  no están reportando la columna id del viaje hay que adicionarlas"). Hoy faltan en Reporte › Asignados (cada conductor
+  con sus viajes del día), Reporte › Segundas vueltas (una fila por patente con N vueltas) y Pendientes › Conductor sin
+  empresa (el aviso ya trae `viajes`). Con varios viajes en una fila, se listan todos; cada número abre el viaje (el
+  mismo enlace que la Flota del día). El backend del Reporte ya tiene los ids (`_TODAY_TRIPS_SQL`): se devuelven en
+  esas filas. No aplica a No trabajaron, Empresas, Dotación ni "trabajaron sin asignación": sus filas no tienen viaje.
+  La columna es filtrable y entra al Excel.
 
 ## 4. Diseño
 
@@ -183,6 +190,8 @@ Viajes, secciones del Reporte, Pendientes). `CabeceraDeColumna.tsx` se borra en 
 - C9 Viajes, Reporte y Pendientes usan la misma barra y la misma tabla; "Todos los clientes" del Reporte es un filtro.
 - C12 En Equipo Completo, Viajes muestra solo los viajes de tractos de Equipo Completo y los "Sin tracto"; en Tractoreo,
   los de Tractoreo y los "Sin tracto".
+- C14 Reporte › Asignados, Reporte › Segundas vueltas y Pendientes › Conductor sin empresa muestran "Nº viaje" (todos
+  los de la fila, cada uno con su enlace), filtrable, y entra al Excel.
 - C13 "Descargar" del Reporte ofrece "Lo que estás viendo" (marcado) y "Todo el día"; el Excel bajado coincide con la
   tabla en pantalla y dice arriba qué recorte es; "Copiar estatus" copia lo que se ve.
 - C10 No queda `CabeceraDeColumna` ni pestañas o segmentados hechos a mano en el Cierre (guarda).
