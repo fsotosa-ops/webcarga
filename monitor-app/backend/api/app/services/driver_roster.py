@@ -13,6 +13,8 @@ pasa a ser público (sin guion bajo) porque ahora lo importan 2 routers:
 daily_closures.py (cuadratura por conductor) y status_report.py (Sección
 4 del reporte, agrupada por conductor)."""
 
+from .alcance_del_cierre import is_scope_sql
+
 def tractoreo_roster_select(day: str = "public.hoy_chile()") -> str:
     """El SELECT del roster de Tractoreo de un día (`day`: expresión SQL de tipo date)."""
     return """
@@ -36,8 +38,8 @@ def tractoreo_roster_select(day: str = "public.hoy_chile()") -> str:
         JOIN app.fleet_assignment_periods aa ON aa.relation = 'ASSET_CARRIER' AND aa.counterpart_id = c.id
              AND aa.valid_during @> {day}
         JOIN public.assets a ON a.id = aa.subject_id AND a.operational_status = 'ACTIVE' AND public.is_power_unit(a.asset_type)
-        JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id AND wot.code = 'TRACTOREO'
-""".format(day=day)
+        JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id AND {es_tractoreo}
+""".format(day=day, es_tractoreo=is_scope_sql("wot", "tractoreo"))
 
 
 def tractoreo_roster_cte(day: str = "public.hoy_chile()") -> str:

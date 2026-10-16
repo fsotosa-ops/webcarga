@@ -15,6 +15,8 @@ import json
 from dataclasses import dataclass, field
 from datetime import date as _date
 
+from .alcance_del_cierre import scope_sql, tractor_scope_join
+
 
 def _single_value(values: list[str]) -> str | None:
     """Señal usable solo si TODOS los viajes de la ventana coinciden para esa
@@ -43,6 +45,7 @@ class Patente:
     carrier_id: str | None
     carrier_name: str | None
     is_manual_override: bool
+    scope: str | None = None
 
 
 @dataclass(frozen=True)
@@ -73,13 +76,13 @@ def clasificar(s: Senales) -> Clasificacion:
         if not p.asset_id:
             c.escalations["PATENTE_NO_REGISTRADA"].append({
                 "tractor_plate": p.plate, "reason": "La patente no existe en public.assets",
-                "tms_carrier_name": tms_carrier_name,
+                "tms_carrier_name": tms_carrier_name, "scope": None,
             })
             continue
         if not p.carrier_id:
             c.escalations["PATENTE_NO_REGISTRADA"].append({
                 "tractor_plate": p.plate, "reason": "La patente existe pero no tiene empresa asignada",
-                "tms_carrier_name": tms_carrier_name,
+                "tms_carrier_name": tms_carrier_name, "scope": p.scope,
             })
             continue
 
@@ -88,16 +91,16 @@ def clasificar(s: Senales) -> Clasificacion:
     for d in s.conductores:
         if not d.es_canonico:
             c.escalations["CONDUCTOR_NO_REGISTRADO"].append(
-                {"driver_rut": d.rut, "reason": "El TMS informó un RUT que no es válido"})
+                {"driver_rut": d.rut, "reason": "El TMS informó un RUT que no es válido", "scope": None})
             continue
         if not d.driver_id:
             c.escalations["CONDUCTOR_NO_REGISTRADO"].append(
-                {"driver_rut": d.rut, "driver_name_tms": _single_value(d.names)})
+                {"driver_rut": d.rut, "driver_name_tms": _single_value(d.names), "scope": None})
 
     return c
 
 
-_SQL_PATENTES = """
+_SQL_PATENTES = f"""
 WITH p AS (
     SELECT upper(trim(t.fleet->>'tractor_plate')) AS plate,
            array_agg(t.fleet->>'transporter_name_tms') AS carrier_names
@@ -107,7 +110,8 @@ WITH p AS (
 )
 SELECT p.plate, p.carrier_names, a.id::text AS asset_id,
        asg.carrier_id::text AS carrier_id, asg.business_name AS carrier_name,
-       COALESCE(asg.is_manual_override, false) AS is_manual_override
+       COALESCE(asg.is_manual_override, false) AS is_manual_override,
+       {scope_sql('sc')} AS scope
 FROM p
 LEFT JOIN LATERAL (
     SELECT id FROM public.assets WHERE upper(trim(license_plate)) = p.plate LIMIT 1
@@ -117,6 +121,7 @@ LEFT JOIN LATERAL (
     FROM public.asset_assignments aa JOIN public.carriers c ON c.id = aa.carrier_id
     WHERE aa.asset_id = a.id AND aa.status = 'ACTIVE' LIMIT 1
 ) asg ON true
+{tractor_scope_join('a.id', 'sc')}
 """
 
 # La llave del GROUP BY es el RUT canónico cuando existe, y el crudo cuando no
@@ -170,12 +175,17 @@ WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND a.webcarga_operati
 
 # PROPONE, no escribe (minuta 25/08): solo con el padrón en silencio y una sola
 # empresa en todos sus viajes. El vínculo lo escribe una persona desde el panel.
-_SQL_SIN_EMPRESA = """
+_SQL_SIN_EMPRESA = f"""
 SELECT vfr.resolved_driver_id::text AS driver_id, d.full_name AS driver_name,
        min(vfr.resolved_carrier_id::text) AS carrier_id, min(c.business_name) AS carrier_name,
-       count(*) AS viajes
+       count(*) AS viajes,
+       -- Sus viajes con su Nº (D8) y el alcance de sus tractos, si es uno solo (D6).
+       json_agg(json_build_object('id', t.id::text, 'code', t.source_system_trip_id)
+                ORDER BY t.source_system_trip_id)::text AS trips,
+       CASE WHEN count(DISTINCT sc.code) = 1 THEN min({scope_sql('sc')}) END AS scope
 FROM app.trips t
 JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
+{tractor_scope_join('vfr.resolved_tractor_asset_id', 'sc')}
 JOIN public.drivers d ON d.id = vfr.resolved_driver_id AND d.operational_status = 'ACTIVE'
 JOIN public.carriers c ON c.id = vfr.resolved_carrier_id AND c.operational_status = 'ACTIVE'
 WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
@@ -221,8 +231,13 @@ async def avisos_del_dia(conn, fecha: _date) -> dict:
     """Tipo B y lo resuelto solo, en lectura pura: no escribe nada."""
     c = clasificar(await leer_senales(conn, fecha))
     escalations = c.escalations
-    escalations["EMPRESA_ONBOARDING"] = [dict(r) for r in await conn.fetch(_SQL_ONBOARDING, fecha)]
-    escalations["SIN_TIPO_OPERACION"] = [dict(r) for r in await conn.fetch(_SQL_SIN_TIPO, fecha)]
-    escalations["CONDUCTOR_SIN_EMPRESA"] = [dict(r) for r in await conn.fetch(_SQL_SIN_EMPRESA, fecha)]
+    # Los de empresa no tienen alcance (D6): se ven en los dos. "Sin tipo de
+    # operación" tampoco, por definición: es el tracto al que le falta.
+    escalations["EMPRESA_ONBOARDING"] = [
+        {**dict(r), "scope": None} for r in await conn.fetch(_SQL_ONBOARDING, fecha)]
+    escalations["SIN_TIPO_OPERACION"] = [
+        {**dict(r), "scope": None} for r in await conn.fetch(_SQL_SIN_TIPO, fecha)]
+    escalations["CONDUCTOR_SIN_EMPRESA"] = [
+        {**dict(r), "trips": json.loads(r["trips"])} for r in await conn.fetch(_SQL_SIN_EMPRESA, fecha)]
     auto_resolved = [_resuelta(r) for r in await conn.fetch(_SQL_RESUELTAS, fecha)]
     return {"auto_resolved": auto_resolved, "escalations": escalations}

@@ -29,6 +29,7 @@ from fastapi import HTTPException
 
 from .cliente_del_viaje import join_cliente, nombre_del_cliente
 from .audit import log_change
+from .alcance_del_cierre import is_scope_sql
 from .cierre_viajes import SQL_VIAJES_DEL_DIA
 from .driver_roster import tractoreo_roster_cte
 from .pre_cierre import avisos_del_dia
@@ -114,11 +115,11 @@ GROUP BY r.driver_id, r.home_carrier_id, r.home_location_id
 
 # Un tracto de Equipo Completo puro no exige motivo (cierre pasivo); uno sin
 # tipo de operación cae en Tractoreo y sí lo exige.
-SQL_ESTADO_TRACTOS = """
+SQL_ESTADO_TRACTOS = f"""
 WITH active_roster AS (
     SELECT a.id AS asset_id,
-           wot.code = 'TRACTOREO' AS is_tractoreo,
-           wot.code = 'EQUIPO_COMPLETO' AS is_equipo_completo
+           {is_scope_sql('wot', 'tractoreo')} AS is_tractoreo,
+           {is_scope_sql('wot', 'equipo_completo')} AS is_equipo_completo
     FROM public.assets a
     -- D2: la empresa del tracto ESE día.
     JOIN app.fleet_assignment_periods aa ON aa.relation = 'ASSET_CARRIER' AND aa.subject_id = a.id

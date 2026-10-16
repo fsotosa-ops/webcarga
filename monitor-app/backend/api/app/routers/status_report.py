@@ -49,13 +49,15 @@ from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente
 from ..services.cierre_lineas import (
     GRUPO_NO_TRABAJANDO, GRUPO_TRABAJANDO_SIN_ASIGNACION, LINEAS_CONDUCTORES, LINEAS_TRACTOS, frescura_del_dia,
 )
+from ..services.alcance_del_cierre import EQUIPO_COMPLETO, OPERATION_TYPE_CODE, TRACTOREO
 from ..services.driver_roster import TRACTOREO_ROSTER_CTE
 from .trips import _load_operation_type_buckets, _resolve_operation_type
 
 router = APIRouter(prefix="/status-report", tags=["status-report"])
 
-# Los dos tipos del reporte: clave de la API → código estable de la taxonomía.
-_TIPOS = {"tractoreo": "TRACTOREO", "equipo_completo": "EQUIPO_COMPLETO"}
+# Los dos tipos del reporte: clave de la API → código estable de la taxonomía
+# (services/alcance_del_cierre.py, el único lugar donde se escribe).
+_TIPOS = OPERATION_TYPE_CODE
 
 
 def _parse_business_date(fecha: str) -> _date:
@@ -93,6 +95,7 @@ WHERE a.operational_status = 'ACTIVE' AND public.is_power_unit(a.asset_type)
 _TODAY_TRIPS_SQL = f"""
 SELECT
     t.id AS trip_id,
+    t.source_system_trip_id AS trip_code,
     vfr.resolved_tractor_asset_id AS asset_id,
     -- El cliente del directorio, por id (spec 2026-10-11): el id para filtrar y
     -- el nombre para mostrar (services/cliente_del_viaje.nombre_del_cliente).
@@ -202,13 +205,13 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
         # Ahora lee `code`, el identificador estable (no editable desde la app).
         # Nótese que el mapeo de abajo ya producía justamente esos códigos.
         operation_code = r["webcarga_operation_type_code"]
-        is_tractoreo = operation_code == "TRACTOREO"
-        is_equipo_completo = operation_code == "EQUIPO_COMPLETO"
+        is_tractoreo = operation_code == TRACTOREO
+        is_equipo_completo = operation_code == EQUIPO_COMPLETO
         categories = []
         if is_tractoreo:
-            categories.append("TRACTOREO")
+            categories.append(TRACTOREO)
         if is_equipo_completo:
-            categories.append("EQUIPO_COMPLETO")
+            categories.append(EQUIPO_COMPLETO)
         if not categories:
             categories.append("SIN_CLASIFICAR")
 
@@ -245,6 +248,8 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
             "driver_name": latest["driver_name"] if latest else None,
             "dias_en_curso": dias_en_curso,
             "vueltas": max((leg_by_trip.get(t["trip_id"], 1) for t in asset_trips), default=0),
+            # Los viajes del día de la fila, con su Nº (D8 del Cierre con un solo patrón).
+            "trips": [{"id": str(t["trip_id"]), "code": t["trip_code"]} for t in asset_trips],
             "unassigned_reason_label": status_row["unassigned_reason_label"] if status_row else None,
             # La categoría de la línea, tal como la calcula cierre_lineas: el
             # reporte no la deduce del motivo por su cuenta.
@@ -448,7 +453,8 @@ def _asignados(rows: list[dict]) -> list[dict]:
         zona = _ZONA_A_CLAVE[r["destination_zone"] or "Sin clasificar"]
         b[zona] += 1
         b["total"] += 1
-        b["vehicles"].append({"tractor_plate": r["tractor_plate"], "driver_name": r["driver_name"], "zone": zona})
+        b["vehicles"].append({"tractor_plate": r["tractor_plate"], "driver_name": r["driver_name"], "zone": zona,
+                              "trips": r["trips"]})
     for b in acc.values():
         b["vehicles"].sort(key=lambda v: (v["driver_name"] is None, v["driver_name"] or "", v["tractor_plate"] or ""))
     return [acc[k] for k in sorted(acc)]
@@ -485,7 +491,8 @@ def _segundas_vueltas(rows: list[dict]) -> list[dict]:
     09/10). El conductor es el del último viaje del día."""
     return [
         {"tractor_plate": r["tractor_plate"], "carrier_name": r["carrier_name"], "driver_name": r["driver_name"],
-         "origin": r["origin_cd"], "destination_zone": r["destination_zone"], "legs": r["vueltas"]}
+         "origin": r["origin_cd"], "destination_zone": r["destination_zone"], "legs": r["vueltas"],
+         "trips": r["trips"]}
         for r in rows if r["con_carga"] and r["vueltas"] >= 2
     ]
 

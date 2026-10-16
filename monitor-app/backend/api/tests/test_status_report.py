@@ -50,6 +50,7 @@ def _row(**overrides):
         # tapando el hueco de quien no salio.
         "home_cd": "CD Lo Aguirre", "origin_cd": "CD Lo Aguirre", "client_name": "Walmart", "shipper_id": "s1",
         "destination_zone": "RM", "driver_name": "Juan Pérez", "dias_en_curso": 0, "vueltas": 1, "unassigned_reason_label": None,
+        "trips": [],
         "category": "ASIGNADO",
     }
     base.update(overrides)
@@ -330,8 +331,8 @@ def test_cada_fila_de_asignados_trae_sus_conductores_con_patente_y_zona():
         _row(asset_id="a2", tractor_plate="AAAA11", driver_name=None, destination_zone="Región"),
     ]
     assert _asignados(rows)[0]["vehicles"] == [
-        {"tractor_plate": "BBBB22", "driver_name": "Ana Soto", "zone": "rm"},
-        {"tractor_plate": "AAAA11", "driver_name": None, "zone": "region"},
+        {"tractor_plate": "BBBB22", "driver_name": "Ana Soto", "zone": "rm", "trips": []},
+        {"tractor_plate": "AAAA11", "driver_name": None, "zone": "region", "trips": []},
     ]
 
 
@@ -371,7 +372,7 @@ def test_segundas_vueltas_por_patente_con_su_conductor():
     ]
     assert _segundas_vueltas(rows) == [{
         "tractor_plate": "AAAA11", "carrier_name": "Transportes Sur", "driver_name": "Ana Soto",
-        "origin": "CD Lo Aguirre", "destination_zone": "Z0", "legs": 2,
+        "origin": "CD Lo Aguirre", "destination_zone": "Z0", "legs": 2, "trips": [],
     }]
 
 

@@ -6,13 +6,15 @@ transportista), no una acción del sistema con estado propio que haya que
 'cerrar'. Equipo Completo queda fuera del cruce (la minuta lo excluye
 explícitamente: 'no aplica este control')."""
 
+from .alcance_del_cierre import is_scope_sql
 
-_FLEET_DRIVER_GAP_SQL = """
+
+_FLEET_DRIVER_GAP_SQL = f"""
 WITH tractoreo_assets AS (
     SELECT aa.carrier_id, count(*) AS n_tractos
     FROM public.asset_assignments aa
     JOIN public.assets a ON a.id = aa.asset_id AND a.operational_status = 'ACTIVE' AND public.is_power_unit(a.asset_type)
-    JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id AND wot.code = 'TRACTOREO'
+    JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id AND {is_scope_sql('wot', 'tractoreo')}
     WHERE aa.status = 'ACTIVE'
     GROUP BY aa.carrier_id
 ),

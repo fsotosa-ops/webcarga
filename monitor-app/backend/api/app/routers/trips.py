@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require, require_fields
 from ..db import get_pool
+from ..services.alcance_del_cierre import scope_sql, tractor_scope_join
 from ..services.cliente_del_viaje import (
     SIN_VINCULAR, join_cliente, leer_filtro_de_cliente, nombre_del_cliente, resolver_cliente, texto_del_cliente_en_el_tms,
 )
@@ -2234,9 +2235,10 @@ async def cierre_viajes(
     filas = await pool.fetch(
         f"""
         WITH g AS (({SQL_GRUPOS_CIERRE}) UNION ALL ({SQL_CON_MOTIVO}))
-        SELECT g.*, ur.label AS unassigned_reason_label
+        SELECT g.*, ur.label AS unassigned_reason_label, {scope_sql('sc')} AS scope
         FROM g
         LEFT JOIN app.status_taxonomies ur ON ur.id = g.unassigned_reason_id
+        {tractor_scope_join('g.tractor_asset_id', 'sc')}
         ORDER BY g.grupo, g.planning_date DESC
         """,
         day,
@@ -2272,6 +2274,8 @@ async def cierre_viajes(
             "carrier_id": r["carrier_id"],
             "driver_id": r["driver_id"],
             "tractor_asset_id": r["tractor_asset_id"],
+            # El alcance del Cierre (D6): el del tracto resuelto; sin tracto, None (los dos).
+            "scope": r["scope"],
         })
 
     # Una asignación incompleta bloquea solo si es del día (decisión del 11/10).

@@ -25,7 +25,7 @@ def test_patente_inexistente_es_aviso_con_la_empresa_del_tms():
     c = clasificar(senales(patentes=[patente(asset_id=None, carrier_id=None, carrier_name=None)]))
     assert c.escalations["PATENTE_NO_REGISTRADA"] == [{
         "tractor_plate": "ABCD12", "reason": "La patente no existe en public.assets",
-        "tms_carrier_name": "Trans Sur"}]
+        "tms_carrier_name": "Trans Sur", "scope": None}]
 
 
 def test_patente_sin_empresa_es_aviso():
@@ -46,8 +46,8 @@ def test_rut_invalido_es_aviso_y_rut_sin_conductor_propone_el_nombre():
         Conductor(rut="11111111-1", es_canonico=True, names=["Ana Paz"], driver_id=None),
     ]))
     assert c.escalations["CONDUCTOR_NO_REGISTRADO"] == [
-        {"driver_rut": "X", "reason": "El TMS informó un RUT que no es válido"},
-        {"driver_rut": "11111111-1", "driver_name_tms": "Ana Paz"},
+        {"driver_rut": "X", "reason": "El TMS informó un RUT que no es válido", "scope": None},
+        {"driver_rut": "11111111-1", "driver_name_tms": "Ana Paz", "scope": None},
     ]
 
 
