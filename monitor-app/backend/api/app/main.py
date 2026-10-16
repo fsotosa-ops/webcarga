@@ -26,6 +26,7 @@ from .routers.drivers import router as drivers_router
 from .routers.equipment_closures import router as equipment_closures_router
 from .routers.internal import router as internal_router
 from .routers.filter_groups import router as filter_groups_router
+from .routers.table_preferences import router as table_preferences_router
 from .routers.locations import router as locations_router
 from .routers.installments import router as installments_router
 from .routers.policies import router as policies_router
@@ -124,6 +125,7 @@ app.include_router(status_taxonomies_router,   prefix="/api/v1")
 app.include_router(trips_router,               prefix="/api/v1")
 app.include_router(users_router,               prefix="/api/v1")
 app.include_router(filter_groups_router,       prefix="/api/v1")
+app.include_router(table_preferences_router,   prefix="/api/v1")
 # Módulo Empresas/Seguros (H2) — reemplaza por completo los routers de
 # Checkpoint A-E (transporters.py/transporters_legacy.py/insurance.py,
 # borrados 2026-07-16, ver AGENTLOG.md). Sin flag de coexistencia.
