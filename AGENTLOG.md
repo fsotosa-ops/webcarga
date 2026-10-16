@@ -294,10 +294,10 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
      contexto (Pablo/Carla). Siguen esperando: el Google Sheet del tipo de operación, la validación de Pablo de "Pedir a
      Certificación" y el dato del tracto GPRZ30.
 - Tangentes **resueltas 15/10 (`d6c21abd`):** "Asignar a 1 viajes" → "Asignar a este viaje"; el alta de equipo solo
-  ofrece subtipo (carrocería) a lo que no es tracto. **Falta aplicar en la real (autorización explícita pendiente):**
+  ofrece subtipo (carrocería) a lo que no es tracto. **Aplicadas en la real con autorización (15/10):**
   `20261023090000_fleet_service_type_without_power_unit.sql` (10 tractos sin el subtipo "Tractocamión", fila
   desactivada) y `20261023090100_drivers_strip_null_marker.sql` (2 conductores con "\N" al final del nombre).
-  Ensayadas con BEGIN…ROLLBACK en la real: 10 y 2 filas, con copia en audit_log.
+  10 y 2 filas, con copia en audit_log; verificado: 0 tractos con ese subtipo, 0 nombres con el marcador.
 
 1. ~~Mirar M2 en dev~~ **HECHO 12/10 noche:** chip gris "Dada de baja" y "La empresa no está activa", sin "se puede asignar".
    Ojo: abrir un viaje con divergencia TMS deja una nota "sistema" a nombre de quien lo abre (`_log_tms_divergence_once`,
