@@ -34,6 +34,7 @@ async function clickTab(name: RegExp) {
 
 vi.mock('next/navigation', () => ({ useParams: vi.fn(), useRouter: vi.fn(), useSearchParams: vi.fn() }))
 vi.mock('@/lib/supabase/client', () => ({ createClient: vi.fn() }))
+vi.mock('@/lib/api/insurance', () => ({ insuranceApi: { carrierPolicies: vi.fn().mockResolvedValue([]) } }))
 // Por defecto lo tiene todo; cada test niega lo que necesita.
 const permisos = vi.hoisted(() => ({ darDeBaja: true, negados: new Set<string>() }))
 vi.mock('@/lib/authz/PermisosProvider', () => ({
@@ -672,5 +673,23 @@ describe('ficha de empresa liviana', () => {
     renderPage()
     const tab = await screen.findByRole('button', { name: /^Conductores/ })
     expect(tab).toHaveTextContent(/^Conductores$/)
+  })
+
+  // S10 (Seguros E2): la pestaña Seguros es la tabla de Pólizas, filtrada por la
+  // empresa; la fila abre la ficha de la póliza (ya no el modal viejo).
+  it('S10: la pestaña Seguros es la misma tabla de Pólizas, sin la columna Empresa', async () => {
+    const { insuranceApi } = await import('@/lib/api/insurance')
+    vi.mocked(insuranceApi.carrierPolicies).mockResolvedValue([{
+      id: 'p1', carrier_id: 't1', carrier_name: 'Transportes Test', carrier_tax_id: '11111111-1', insurance_company: 'SURA',
+      policy_number: '8581440-RC', valid_from: '2025-05-22', valid_to: '2026-05-22', has_file: false, policy_state: 'EXPIRED',
+      expires_in_days: -146, installments_total: 2, paid_installments: 0, unpaid_installments: 2, overdue_installments: 2,
+      next_due_date: null, has_outside_validity: false,
+    }] as never)
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams({ tab: 'seguros' }) as unknown as ReturnType<typeof useSearchParams>)
+    renderPage()
+    const enlace = await screen.findByRole('link', { name: /SURA/ })
+    expect(enlace.getAttribute('href')).toMatch(/^\/dashboard\/insurance\/policies\/p1\?next=/)
+    expect(screen.queryByRole('columnheader', { name: 'Empresa' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

@@ -27,7 +27,10 @@ import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
 import { ReactivateCarrierModal } from '@/components/dashboard/ReactivateCarrierModal'
 import { CarrierClientsModal } from '@/components/dashboard/CarrierClientsModal'
 import { DeleteCarrierModal } from '@/components/dashboard/DeleteCarrierModal'
-import { InsurancePolicyModal, PolicyCreateForm, type PolicyFormState } from '@/components/dashboard/InsurancePolicyModal'
+import { PolicyCreateForm, type PolicyFormState } from '@/components/insurance/PolicyCreateForm'
+import { PoliciesTable } from '@/components/insurance/PoliciesTable'
+import { insuranceApi } from '@/lib/api/insurance'
+import { policyHref } from '@/lib/navegacion/insurance'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { GestionDeclarada } from '@/components/compliance/GestionDeclarada'
 import { complianceApi } from '@/lib/api/compliance'
@@ -74,7 +77,6 @@ function EmpresaDetailPageInner() {
   const canAdmin = usePermiso('directory.delete')
   // Cada botón con el permiso de SU endpoint (bloque 0, 0.3): ninguno responde 403.
   const canEditPolicies = usePermiso('policies.edit')
-  const canDeletePolicies = usePermiso('policies.delete')
   // Los documentos son de Certificación: subirlos se decide con
   // SUS permisos, los mismos que exige la API (L5, 11/10).
   const canUploadDocuments = usePermiso('documents.upload')
@@ -110,7 +112,6 @@ function EmpresaDetailPageInner() {
   const [reactivateOpen, setReactivateOpen] = useState(false)
   const [clientsOpen, setClientsOpen] = useState(false)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
-  const [selectedPolicyId, setSelectedPolicyId] = useState<string | null>(null)
 
 
   const carrierQuery = useQuery({ queryKey: directoryKeys.carrierDetail(id), queryFn: () => carriersApi.get(id) })
@@ -126,7 +127,8 @@ function EmpresaDetailPageInner() {
   const summaryQuery = useQuery({ queryKey: clavesCertificacion.resumen(id), queryFn: () => complianceApi.summary(id) })
   const derivedOperation = summaryQuery.data?.carrier_operation_types.join(' + ') || null
   const assetsQuery  = useQuery({ queryKey: directoryKeys.carrierAssets(id), queryFn: () => carriersApi.listAssets(id) })
-  const policiesQuery = useQuery({ queryKey: ['carrier-policies', id], queryFn: () => carriersApi.listPolicies(id) })
+  // Las pólizas de la empresa con su estado calculado (Seguros E2): la misma tabla que Seguros › Pólizas.
+  const policiesQuery = useQuery({ queryKey: ['insurance', 'carrier-policies', id], queryFn: () => insuranceApi.carrierPolicies(id) })
   const shippersQuery = useQuery({ queryKey: ['carrier-shippers', id], queryFn: () => carriersApi.listShippers(id) })
   const activeShippers = (shippersQuery.data ?? []).filter(s => s.status === 'ACTIVE')
   // D2 (P4): lo que toca la baja, recién al abrir la confirmación y siempre fresco.
@@ -142,7 +144,6 @@ function EmpresaDetailPageInner() {
   const assets  = assetsQuery.data ?? []
   const policies = policiesQuery.data ?? []
 
-  function invalidatePolicies(){ queryClient.invalidateQueries({ queryKey: ['carrier-policies', id] }) }
   const [notice, setNotice] = useState<string | null>(null)
   // "Activar" no tiene diálogo propio: si falla, se dice (revisión final de la Entrega 1).
   const [activateError, setActivateError] = useState<string | null>(null)
@@ -192,7 +193,7 @@ function EmpresaDetailPageInner() {
     if (!policyForm.insurance_company) return
     setSubmitting(true)
     try {
-      await carriersApi.createPolicy(id, {
+      const creada = await carriersApi.createPolicy(id, {
         insurance_company: policyForm.insurance_company,
         policy_number: policyForm.policy_number || undefined,
         valid_from: policyForm.valid_from || undefined,
@@ -205,7 +206,9 @@ function EmpresaDetailPageInner() {
         has_endorsement: false, endorsement_number: '',
       })
       setAddPolicyOpen(false)
-      invalidatePolicies()
+      await queryClient.invalidateQueries({ queryKey: ['insurance'] })
+      // A su ficha: es donde se cargan las cuotas y los documentos.
+      router.push(policyHref(creada.id, `/dashboard/carriers/${id}?tab=seguros`))
     } finally { setSubmitting(false) }
   }
 
@@ -527,24 +530,7 @@ function EmpresaDetailPageInner() {
         {policies.length === 0 ? (
           <Estado tipo="vacio" titulo="Sin pólizas registradas" />
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {policies.map(p => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => setSelectedPolicyId(p.id)}
-                className="flex items-center justify-between rounded-xl border border-border bg-white px-3 py-2.5 text-left transition-all hover:border-accion/40"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-dato font-semibold text-text-primary">{p.insurance_company}</p>
-                  <p className="truncate text-etiqueta text-informativo">Póliza {p.policy_number ?? '—'}</p>
-                </div>
-                {p.overdue_installments > 0 && (
-                  <span className="shrink-0 text-etiqueta font-semibold text-status-incidente">{p.overdue_installments} vencida{p.overdue_installments > 1 ? 's' : ''}</span>
-                )}
-              </button>
-            ))}
-          </div>
+          <PoliciesTable rows={policies} hideCarrier returnTo={`/dashboard/carriers/${id}?tab=seguros`} />
         )}
       </div>
       )}
@@ -555,14 +541,6 @@ function EmpresaDetailPageInner() {
       {selectedDriverId && <FleetProfile kind="driver" id={selectedDriverId} variant="dialog" onClose={() => setSelectedDriverId(null)} />}
       {selectedAssetId && <FleetProfile kind="asset" id={selectedAssetId} variant="dialog" onClose={() => setSelectedAssetId(null)} />}
 
-      <InsurancePolicyModal
-        carrierId={selectedPolicyId ? id : null}
-        displayName={carrier.business_name || carrier.tax_id}
-        initialPolicyId={selectedPolicyId}
-        onClose={() => setSelectedPolicyId(null)}
-        canAdmin={canDeletePolicies}
-        canEdit={canEditPolicies}
-      />
 
       {bajaModalOpen && (
         <BajaReasonModal

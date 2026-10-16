@@ -22,6 +22,9 @@ vi.mock('@/lib/api/documentIngest', () => ({
 vi.mock('@/lib/api/certificationRequests', () => ({
   certificationRequestsApi: { listOpen: vi.fn().mockResolvedValue({ total: 0, rows: [] }) },
 }))
+vi.mock('@/lib/api/insurance', () => ({
+  insuranceApi: { listInstallments: vi.fn().mockResolvedValue({ data: [], count: 0, page: 1, limit: 1, facets: { OVERDUE: 150, DUE_30: 0, PAID: 0, ALL: 0 } }) },
+}))
 
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import Sidebar from './Sidebar'
@@ -337,5 +340,23 @@ describe('cuenta al pie de la barra', () => {
     expect(trigger()).toHaveAttribute('title', 'Cristian Castillo, Administración')
     expect(within(trigger()).queryByText('Cristian Castillo')).not.toBeInTheDocument()
     localStorage.removeItem('sidebar-collapsed')
+  })
+})
+
+// S8 (Seguros E2): Seguros es un grupo, como Directorio y Certificación, con
+// Pólizas y Cuotas; Cuotas lleva el contador de vencidas.
+describe('Sidebar — Seguros con submódulos', () => {
+  it('S8: Seguros tiene Pólizas y Cuotas, y Cuotas cuenta las vencidas', async () => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+    nav.ruta = '/dashboard/insurance/installments'
+    setup()
+    const aside = document.querySelector('aside')!
+    await waitFor(() => {
+      const delGrupo = within(aside).getAllByRole('link')
+        .filter(a => a.getAttribute('href')?.startsWith('/dashboard/insurance'))
+        .map(a => a.getAttribute('href'))
+      expect(delGrupo).toEqual(['/dashboard/insurance', '/dashboard/insurance/installments'])
+    })
+    await waitFor(() => expect(within(aside).getByRole('link', { name: /Cuotas/ })).toHaveTextContent('150'))
   })
 })

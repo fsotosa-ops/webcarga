@@ -15,6 +15,7 @@ import { documentIngestApi } from '@/lib/api/documentIngest'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { getDisplayName, puedeVerConfiguracion, type Acceso } from '@/lib/authz/acceso'
 import { certificationRequestsApi } from '@/lib/api/certificationRequests'
+import { insuranceApi } from '@/lib/api/insurance'
 import LogoWebCarga from '@/components/brand/LogoWebCarga'
 import SidebarAccount, { SETTINGS_HREF } from './SidebarAccount'
 
@@ -26,7 +27,7 @@ import SidebarAccount, { SETTINGS_HREF } from './SidebarAccount'
 // "Cierres" (ex-Reportería, ahora en /operations/closures/history) se sacó
 // del Sidebar — /dashboard/operations/closures pasará a ser el Centro de
 // Cierre del Día (tarea futura), que todavía no tiene link de nav propio.
-type NavLeaf  = { href: string; label: string; badge?: 'inbox' | 'requests' }
+type NavLeaf  = { href: string; label: string; badge?: 'inbox' | 'requests' | 'installments' }
 type NavGroupDef = { label: string; icon: LucideIcon; items: NavLeaf[] }
 
 // Un modulo por objeto de trabajo, con sus vistas adentro (HU-04). La
@@ -79,15 +80,24 @@ const NAV_GROUPS: NavGroupDef[] = [
       { href: '/dashboard/compliance/pending', label: 'Pendientes', badge: 'requests' },
     ],
   },
+  // Seguros (Seguros E2, 15/10): un submódulo por objeto de trabajo, como
+  // Directorio y Certificación. Cuotas cuenta las vencidas.
+  {
+    label: 'Seguros',
+    icon:  Shield,
+    items: [
+      { href: '/dashboard/insurance',              label: 'Pólizas' },
+      { href: '/dashboard/insurance/installments', label: 'Cuotas', badge: 'installments' },
+    ],
+  },
 ]
 
-// Un modulo por objeto de trabajo. Seguros y Tarifario todavia no tienen
-// mas de una vista: pasar Seguros a seccion de la ficha es la HU-06.
+// Un modulo por objeto de trabajo. Tarifario todavia no tiene mas de una vista
+// (Seguros paso a grupo en la Entrega 2 de Seguros, 15/10).
 // Sin `badge`: al pasar Certificacion a NAV_GROUPS, el unico item con contador
 // se fue con ella. Un campo del tipo y una rama de render inalcanzables se leen
 // como una capacidad que existe, y no existe.
 const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
-  { href: '/dashboard/insurance', label: 'Seguros',    icon: Shield },
   { href: '/dashboard/pricing',   label: 'Tarifario',  icon: Receipt },
 ]
 
@@ -99,7 +109,8 @@ const NAV_ORDEN: (NavGroupDef | (typeof NAV_ITEMS)[number])[] = [
   NAV_GROUPS[0],                                              // Operaciones
   NAV_GROUPS[1],                                              // Directorio
   NAV_GROUPS[2],                                              // Certificación
-  NAV_ITEMS[0], NAV_ITEMS[1],                                 // Seguros, Tarifario
+  NAV_GROUPS[3],                                              // Seguros
+  NAV_ITEMS[0],                                               // Tarifario
 ]
 
 const esGrupo = (e: (typeof NAV_ORDEN)[number]): e is NavGroupDef => 'items' in e
@@ -129,7 +140,7 @@ const MOBILE_NAV_ITEMS = [
  *  Bandeja termino colgando del primer nivel en vez de vivir dentro de
  *  Certificacion, como manda la HU-04. */
 function NavGroup({
-  group, pathname, collapsed, inboxCount, requestsCount = 0,
+  group, pathname, collapsed, inboxCount, requestsCount = 0, installmentsCount = 0,
 }: {
   group:      NavGroupDef
   pathname:   string
@@ -137,9 +148,12 @@ function NavGroup({
   inboxCount: number
   /** Pedidos de Operaciones abiertos (Entrega B): el contador de Pendientes. */
   requestsCount?: number
+  /** Cuotas de seguro vencidas (Seguros E2): el contador de Cuotas. */
+  installmentsCount?: number
 }) {
   const countOf = (badge?: NavLeaf['badge']) =>
-    badge === 'inbox' ? inboxCount : badge === 'requests' ? requestsCount : 0
+    badge === 'inbox' ? inboxCount : badge === 'requests' ? requestsCount
+      : badge === 'installments' ? installmentsCount : 0
   // Match mas especifico primero: /dashboard/compliance/inbox gana sobre
   // /dashboard/compliance, que es su prefijo.
   const activeHref = group.items
@@ -271,6 +285,14 @@ export default function Sidebar({ acceso }: SidebarProps) {
     enabled: puedeClasificar,
   }).data?.total ?? 0
 
+  // Cuotas de seguro vencidas: la API las cuenta con la fecha de Chile (limit=1:
+  // solo interesa la cifra).
+  const installmentsCount = useQuery({
+    queryKey: ['insurance', 'installments', 'overdue-count'],
+    queryFn: () => insuranceApi.listInstallments({ state: 'OVERDUE', limit: 1 }),
+    staleTime: 60_000,
+  }).data?.facets.OVERDUE ?? 0
+
   useEffect(() => {
     if (localStorage.getItem('sidebar-collapsed') === 'true') setCollapsed(true)
   }, [])
@@ -341,6 +363,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
                   collapsed={collapsed}
                   inboxCount={inboxCount}
                   requestsCount={requestsCount}
+                  installmentsCount={installmentsCount}
                 />
               )
             }
