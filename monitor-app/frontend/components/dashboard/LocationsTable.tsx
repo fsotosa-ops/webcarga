@@ -60,8 +60,10 @@ const CELDA = 'py-2.5 px-2'
  *
  *  Sin `canEdit` (la API exige commercial.edit) se lee todo y no hay un solo
  *  control. Las zonas salen del catálogo de la API (`meta.operation_types`). */
-export function LocationsTable({ items, onChanged, canEdit }: {
+export function LocationsTable({ items, onChanged, canEdit, emptyTitle = 'Sin lugares para este filtro' }: {
   items: Location[]; onChanged: () => void; canEdit: boolean
+  /** Qué decir sin lugares; la ficha de un cliente sin filtros dice otra cosa. */
+  emptyTitle?: string
 }) {
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({})
   const [editingRate, setEditingRate] = useState<string | null>(null)
@@ -115,7 +117,7 @@ export function LocationsTable({ items, onChanged, canEdit }: {
     })
   }
 
-  if (items.length === 0) return <Estado tipo="vacio" titulo="Sin lugares para este filtro" />
+  if (items.length === 0) return <Estado tipo="vacio" titulo={emptyTitle} />
 
   return (
     <div className="bg-white border border-border rounded-2xl overflow-hidden">

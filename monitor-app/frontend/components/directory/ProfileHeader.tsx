@@ -15,8 +15,10 @@ export function ProfileHeader({ title, chips, reason, onSeeDocuments, primaryAct
   title: string
   /** `null` mientras carga el resumen. */
   chips: StateStyle[] | null
-  reason: string | null
-  onSeeDocuments: () => void
+  /** Por qué no puede operar, y cómo llegar a sus documentos. Solo las fichas
+   *  con documentos (empresa, conductor, equipo) lo tienen. */
+  reason?: string | null
+  onSeeDocuments?: () => void
   primaryAction?: ReactNode
   menuItems: ActionsMenuItem[]
 }) {
@@ -26,7 +28,7 @@ export function ProfileHeader({ title, chips, reason, onSeeDocuments, primaryAct
       bajada={chips && (
         <span className="flex flex-wrap items-center gap-2">
           {chips.map(c => <StatusChip key={c.label} tone={c.tone} icon={c.icon}>{c.label}</StatusChip>)}
-          {reason && (
+          {reason && onSeeDocuments && (
             <span className="text-dato text-informativo">
               <span>{reason}</span> ·{' '}
               <button type="button" onClick={onSeeDocuments} className="font-medium text-accion hover:underline">

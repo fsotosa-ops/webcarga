@@ -126,6 +126,13 @@ describe('invalidateDirectory', () => {
     expect(editado).toContain(JSON.stringify(['asset-driver-assignment']))
   })
 
+  it('un cambio de empresa refresca los conteos de Clientes; uno de conductor no', async () => {
+    const empresa = await claves({ entity: 'carrier', id: 'c1', type: 'delete' })
+    expect(empresa).toContain('["clients"]')
+    expect(empresa).toContain('["client-detail"]')
+    expect(await claves({ entity: 'driver', id: 'd1', type: 'update' })).not.toContain('["clients"]')
+  })
+
   it('la ficha de empresa tiene una sola clave (R11)', () => {
     expect(directoryKeys.carrierDetail('c1')).toEqual(['carrier-detail', 'c1'])
     const viejas: string[] = []
@@ -158,7 +165,7 @@ const NO_DEPENDEN_DEL_DIRECTORIO = new Set([
   'closure-signatures', 'daily-closures-report',                       // la firma es inmutable; el reporte se pide al abrir
   'ingest-preview',                                                    // la URL firmada de un archivo, no el maestro
   'entity-documents', 'certification-requests',                        // documentos y pedidos (Entrega B): no cambian con el maestro
-  'clients', 'tms-clients',                                            // Directorio › Clientes (Parte 3): las invalida invalidateClients
+  'tms-clients',                                                       // Directorio › Clientes (Parte 3): las invalida invalidateClients
 ])
 
 // Las fábricas de claves: una pantalla que lee `directoryKeys.x(…)` lee la raíz
@@ -215,6 +222,8 @@ function noLasCambia(change: DirectoryChange, leidas: Map<string, string>): stri
   if (change.entity === 'driver') fuera.push('asset-detail', 'carrier-assets-roster', 'carrier-assets')
   // Un equipo no aparece en la ficha de un conductor ni en el roster de conductores.
   if (change.entity === 'asset') fuera.push('driver-detail', 'carrier-drivers')
+  // Los conteos de un cliente cuentan empresas, no conductores ni equipos.
+  if (change.entity !== 'carrier') fuera.push('clients', 'client-detail')
   // Alguien recién creado no tiene ficha propia en caché.
   if (change.type === 'create' && change.entity === 'driver') fuera.push('driver-detail')
   if (change.type === 'create' && change.entity === 'asset') fuera.push('asset-detail', 'asset-driver-assignment')

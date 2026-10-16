@@ -18,6 +18,27 @@ export function monitorSearchHref(q: string): string {
   return `${MONITOR}?tab=historial&q=${encodeURIComponent(q)}`
 }
 
+/** El Monitor filtrado por un cliente del directorio, por su id: "Ver en el
+ *  Monitor" de la ficha de un cliente (Configuración, Parte 3). */
+export function monitorClientHref(shipperId: string): string {
+  return `${MONITOR}?tab=historial&client=${encodeURIComponent(shipperId)}`
+}
+
+/** Lo que la URL del Monitor abre ya puesto: la pestaña, la búsqueda y el
+ *  cliente. Lee lo que escriben los dos enlaces de arriba. */
+export function monitorFiltersFromUrl(params: URLSearchParams): {
+  tab?: 'historial' | 'en_curso'; q?: string; fClient?: string[]
+} {
+  const tab = params.get('tab')
+  const q = params.get('q')
+  const client = params.get('client')
+  return {
+    ...(tab === 'historial' || tab === 'en_curso' ? { tab } : {}),
+    ...(q ? { q } : {}),
+    ...(client ? { fClient: client.split(',').filter(Boolean) } : {}),
+  }
+}
+
 export function volverDesdeElViaje(next: string | null | undefined): string {
   return destinoSeguro(next, MONITOR)
 }

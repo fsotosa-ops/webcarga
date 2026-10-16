@@ -3,16 +3,15 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { locationsApi, shippersApi, type Shipper } from '@/lib/api/locations'
+import { invalidateClients } from '@/lib/queries/clientes'
 import { LocationCreateForm } from '@/components/dashboard/LocationCreateForm'
-import { LocationsTable } from '@/components/dashboard/LocationsTable'
+import { LocationsBrowser, NO_LOCATION_FILTERS, type LocationFilters } from '@/components/dashboard/LocationsBrowser'
 import { LocationsPendingTab } from '@/components/dashboard/LocationsPendingTab'
-import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { INPUT, LoadState } from '../admin/settings/shared'
+import { LoadState } from '../admin/settings/shared'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 type Tab = 'pending' | 'all'
-const LIMIT = 50
 
 /** Tarifario robustecido (2026-07-27) — reemplaza el gate que exigia un
  *  generador de carga antes de operar (spec 2026-07-22) por dos tabs: "Por
@@ -24,13 +23,9 @@ export default function TarifarioPage() {
   const canEdit = usePermiso('commercial.edit')
   const [tab, setTab] = useState<Tab>('pending')
   const [shippers, setShippers] = useState<Shipper[]>([])
-  const [shipperId, setShipperId] = useState('')
-  const [q, setQ] = useState('')
-  const [page, setPage] = useState(1)
-  const qDebounced = useDebouncedValue(q, 300)
+  const [filters, setFilters] = useState<LocationFilters>(NO_LOCATION_FILTERS)
 
   useEffect(() => { shippersApi.list().then(setShippers).catch(() => setShippers([])) }, [])
-  useEffect(() => { setPage(1) }, [shipperId, qDebounced])
 
   const pendingQuery = useQuery({
     queryKey: ['tarifario-pending'],
@@ -38,22 +33,7 @@ export default function TarifarioPage() {
   })
   const pendingItems = pendingQuery.data?.data ?? []
 
-  const allQuery = useQuery({
-    queryKey: ['tarifario-all', shipperId, qDebounced, page],
-    queryFn: () => locationsApi.list({
-      entity_type: 'SHIPPER', entity_id: shipperId, q: qDebounced,
-      include_rate: true, page, limit: LIMIT,
-    }),
-    enabled: tab === 'all',
-  })
-  const allItems = allQuery.data?.data ?? []
-  const allCount = allQuery.data?.count ?? 0
-  const totalPages = Math.max(1, Math.ceil(allCount / LIMIT))
-
-  function invalidate() {
-    queryClient.invalidateQueries({ queryKey: ['tarifario-pending'] })
-    queryClient.invalidateQueries({ queryKey: ['tarifario-all'] })
-  }
+  const invalidate = () => invalidateClients(queryClient)
 
   function shipperName(entityId: string) {
     return shippers.find(s => s.id === entityId)?.name ?? '—'
@@ -100,39 +80,14 @@ export default function TarifarioPage() {
               items={pendingItems}
               shipperName={shipperName}
               onChanged={invalidate}
-              onSelect={loc => { setQ(loc.name); setTab('all') }}
+              onSelect={loc => { setFilters({ ...NO_LOCATION_FILTERS, q: loc.name }); setTab('all') }}
             />
           )}
         </>
       )}
 
       {tab === 'all' && (
-        <>
-          <div className="bg-white border border-border rounded-2xl px-3.5 py-2.5 flex items-center gap-2 flex-wrap">
-            <select value={shipperId} onChange={e => setShipperId(e.target.value)} aria-label="Filtrar por generador de carga" className={INPUT + ' w-56'}>
-              <option value="">Todos los generadores de carga</option>
-              {shippers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por nombre o N° de local…" aria-label="Buscar local" className={INPUT + ' w-64'} />
-          </div>
-
-          <LoadState loading={allQuery.isPending} error={allQuery.error ? 'Error al cargar' : null} onRetry={() => allQuery.refetch()} />
-          {allQuery.isSuccess && <LocationsTable items={allItems} onChanged={invalidate} canEdit={canEdit} />}
-
-          {allQuery.isSuccess && totalPages > 1 && (
-            <div className="flex items-center justify-center gap-3 pt-3">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
-                className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-gray-500 disabled:opacity-40">
-                Anterior
-              </button>
-              <span className="text-xs text-gray-400">Página {page} de {totalPages} ({allCount} locales)</span>
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
-                className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-gray-500 disabled:opacity-40">
-                Siguiente
-              </button>
-            </div>
-          )}
-        </>
+        <LocationsBrowser filters={filters} onFiltersChange={setFilters} shippers={shippers} canEdit={canEdit} />
       )}
     </div>
   )

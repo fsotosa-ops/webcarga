@@ -38,6 +38,7 @@ import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { useAssetTypes } from '@/hooks/useAssetTypes'
 import { returnLink } from '@/lib/navegacion/directory'
 import { CLOSURE_NOTICE, directoryKeys, invalidateDirectory, type DirectoryChange } from '@/lib/queries/directorio'
+import { invalidateClients } from '@/lib/queries/clientes'
 
 type Tab = 'documentos' | 'conductores' | 'equipos' | 'seguros'
 const TABS: Tab[] = ['documentos', 'conductores', 'equipos', 'seguros']
@@ -186,11 +187,11 @@ function EmpresaDetailPageInner() {
   }
   async function handleAddClient(shipperId: string) {
     await carriersApi.addShipper(id, shipperId)
-    await queryClient.invalidateQueries({ queryKey: ['carrier-shippers', id] })
+    await Promise.all([queryClient.invalidateQueries({ queryKey: ['carrier-shippers', id] }), invalidateClients(queryClient)])
   }
   async function handleEndClient(shipperId: string) {
     await carriersApi.endShipper(id, shipperId)
-    await queryClient.invalidateQueries({ queryKey: ['carrier-shippers', id] })
+    await Promise.all([queryClient.invalidateQueries({ queryKey: ['carrier-shippers', id] }), invalidateClients(queryClient)])
   }
   async function handleDeleteCarrier() {
     await carriersApi.delete(id)

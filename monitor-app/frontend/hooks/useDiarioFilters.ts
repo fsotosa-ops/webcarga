@@ -181,7 +181,7 @@ export function countPopoverFilters(f: DiarioFilters): number {
 
 /** `initial`: lo que llega en la URL — "Ver viajes en el Monitor" de la ficha de
  *  un conductor o un equipo abre `?tab=historial&q=<RUT o patente>` (D4). */
-export function useDiarioFilters(initial: Partial<Pick<DiarioFilters, 'tab' | 'q'>> = {}) {
+export function useDiarioFilters(initial: Partial<Pick<DiarioFilters, 'tab' | 'q' | 'fClient'>> = {}) {
   return useReducer(reducer, {
     tab: 'en_curso', q: '', fechaDesde: '', fechaHasta: '',
     activeGroup: null, activeSignals: [], fTms: [], fOperationType: [],

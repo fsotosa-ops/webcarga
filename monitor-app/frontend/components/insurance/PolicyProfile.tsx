@@ -17,6 +17,7 @@ import type { ActionsMenuItem } from '@/components/ui/ActionsMenu'
 import { Estado } from '@/components/ui/Estado'
 import { PanelLateral } from '@/components/ui/PanelLateral'
 import { ProfileHeader } from '@/components/directory/ProfileHeader'
+import { ProfileBreadcrumb } from '@/components/directory/ProfileBreadcrumb'
 import { DetailsBlock, type DetailRow } from '@/components/directory/DetailsBlock'
 import { AsidePanel, ProfileLayout } from '@/components/directory/ProfileLayout'
 import { EntityCell } from '@/components/dashboard/EntityCell'
@@ -121,16 +122,11 @@ export function PolicyProfile({ id }: { id: string }) {
           <ArrowLeft size={14} aria-hidden="true" />{back.label}
         </Link>
       )}
-      <nav aria-label="Ruta" className="flex items-center gap-1.5 text-xs text-informativo">
-        Seguros <span aria-hidden>›</span> <Link href={POLICIES} className="hover:text-accion">Pólizas</Link>
-        <span aria-hidden>›</span> <span className="font-semibold text-text-primary">{nombre(p)}</span>
-      </nav>
+      <ProfileBreadcrumb module="Seguros" list={{ href: POLICIES, label: 'Pólizas' }} title={nombre(p)} />
 
       <ProfileHeader
         title={nombre(p)}
         chips={chips}
-        reason={null}
-        onSeeDocuments={() => {}}
         primaryAction={canEdit && toPay.length ? (
           <button type="button" onClick={() => setDialog('pay')}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-dato font-semibold text-white hover:bg-accent/90">

@@ -19,6 +19,7 @@ import { useAssetTypes } from '@/hooks/useAssetTypes'
 import { Estado } from '@/components/ui/Estado'
 import type { ActionsMenuItem } from '@/components/ui/ActionsMenu'
 import { ProfileHeader } from '@/components/directory/ProfileHeader'
+import { ProfileBreadcrumb } from '@/components/directory/ProfileBreadcrumb'
 import { DetailsBlock, type DetailRow } from '@/components/directory/DetailsBlock'
 import { AsidePanel, ProfileLayout } from '@/components/directory/ProfileLayout'
 import { BulkUploadReview } from '@/components/compliance/pending/BulkUploadReview'
@@ -198,12 +199,7 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
           Abrir ficha completa <ArrowRight size={13} aria-hidden="true" />
         </Link>
       ) : (
-        <nav aria-label="Ruta" className="flex items-center gap-1.5 text-xs text-informativo">
-          {back
-            ? <Link href={back.href} className="hover:text-accion">{back.label}</Link>
-            : <>Directorio <span aria-hidden>›</span> <Link href={LIST[kind].href} className="hover:text-accion">{LIST[kind].label}</Link></>}
-          <span aria-hidden>›</span> <span className="font-semibold text-text-primary">{title}</span>
-        </nav>
+        <ProfileBreadcrumb module="Directorio" list={LIST[kind]} title={title} back={back} />
       )}
       <ProfileHeader title={title} chips={chips} reason={reason}
                      onSeeDocuments={() => document.getElementById(documentsId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}

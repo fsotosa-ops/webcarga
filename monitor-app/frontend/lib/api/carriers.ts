@@ -23,6 +23,8 @@ export type CarrierListParams = {
   operational_status?: CarrierOperationalStatus | CarrierOperationalStatus[] | ''
   /** D-R6: habilitación calculada por la API (Habilitada / No habilitada). */
   enablement?:         'enabled' | 'not_enabled' | ''
+  /** Solo las empresas con vínculo activo a este cliente (ficha de cliente). */
+  shipper_id?:         string
   page?:               number
   limit?:              number
 }
@@ -118,6 +120,7 @@ export const carriersApi = {
       qs.set('operational_status', Array.isArray(estados) ? estados.join(',') : estados)
     }
     if (params?.enablement)              qs.set('enablement', params.enablement)
+    if (params?.shipper_id)              qs.set('shipper_id', params.shipper_id)
     if (params?.page)                    qs.set('page', String(params.page))
     if (params?.limit)                   qs.set('limit', String(params.limit))
     const suffix = qs.toString() ? `?${qs}` : ''

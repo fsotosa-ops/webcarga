@@ -53,6 +53,8 @@ const DIRECTORY_ROOTS: QueryKey[] = [
   ['fleet-list'],
   ['fleet-assignments'],
 ]
+/** La lista de Clientes y la ficha de un cliente (Configuración, Parte 3). */
+const CLIENT_COUNT_ROOTS: QueryKey[] = [['clients'], ['client-detail']]
 /** Quién está disponible para un viaje, y la búsqueda de conductores. */
 const MONITOR_ROOTS: QueryKey[] = [['available-drivers'], ['available-assets'], ['drivers'], ['driver-candidates']]
 /** El Cierre: se recalcula en el servidor (cola, cada minuto). */
@@ -118,6 +120,8 @@ export async function invalidateDirectory(qc: QueryClient, change: DirectoryChan
   // sabemos de qué tracto es: raíz entera (solo se relee la que está montada).
   // Un conductor recién creado todavía no es el habitual de nadie.
   if (change.entity === 'driver' && change.type !== 'create') keys.push(['asset-driver-assignment'])
+  // Los conteos de Directorio › Clientes cuentan las empresas de cada cliente.
+  if (change.entity === 'carrier') keys.push(...CLIENT_COUNT_ROOTS)
   for (const carrierId of change.carrierIds ?? []) {
     if (carrierId) keys.push(...rosterKeys(change.entity, carrierId))
   }

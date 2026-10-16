@@ -33,3 +33,13 @@ describe('etiquetaDeVuelta', () => {
     expect(etiquetaDeVuelta('https://evil.com/dashboard/operations/closures')).toBe('Volver al Monitor')
   })
 })
+
+describe('lo que la URL del Monitor abre ya puesto', () => {
+  it('la búsqueda y el cliente vuelven como filtros, en el Historial', async () => {
+    const { monitorClientHref, monitorFiltersFromUrl, monitorSearchHref } = await import('./viaje')
+    const leer = (href: string) => monitorFiltersFromUrl(new URL(href, 'http://x').searchParams)
+    expect(leer(monitorSearchHref('GPRZ30'))).toEqual({ tab: 'historial', q: 'GPRZ30' })
+    expect(leer(monitorClientHref('s1'))).toEqual({ tab: 'historial', fClient: ['s1'] })
+    expect(leer('/dashboard/operations/monitor?tab=otra')).toEqual({})
+  })
+})

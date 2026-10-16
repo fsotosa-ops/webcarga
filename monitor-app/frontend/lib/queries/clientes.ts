@@ -17,7 +17,10 @@ export const clientKeys = {
   pickers:  () => ['shippers'] as const,
 }
 
-const CLIENT_ROOTS: QueryKey[] = [['clients'], ['client-detail'], ['tms-clients'], ['shippers'], ['tarifario-all']]
+// Los lugares (Tarifario y ficha) también: Origen y Activo cambian los conteos.
+const CLIENT_ROOTS: QueryKey[] = [
+  ['clients'], ['client-detail'], ['tms-clients'], ['shippers'], ['tarifario-all'], ['tarifario-pending'],
+]
 
 export async function invalidateClients(qc: QueryClient): Promise<void> {
   await Promise.all(CLIENT_ROOTS.map(queryKey => qc.invalidateQueries({ queryKey })))

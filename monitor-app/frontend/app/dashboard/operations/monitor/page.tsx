@@ -20,7 +20,7 @@ import { FleetCenterDialog } from '@/components/dashboard/FleetCenterDialog'
 import type { FleetAssignValue } from '@/components/dashboard/FleetAssignSection'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useTrips, type TripListParams } from '@/hooks/useTrips'
-import { useDiarioFilters, countActiveFilters, type DiarioFilters, type Tab } from '@/hooks/useDiarioFilters'
+import { useDiarioFilters, countActiveFilters } from '@/hooks/useDiarioFilters'
 import { formatRelativeTime } from '@/lib/utils/datetime'
 import { DEFAULT_ALERT_RULES } from '@/lib/utils/kpis'
 import {
@@ -40,7 +40,7 @@ import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { EntityQuickView } from '@/components/dashboard/EntityQuickView'
 import { useQuickView } from '@/lib/quickView'
-import { MONITOR } from '@/lib/navegacion/viaje'
+import { MONITOR, monitorFiltersFromUrl } from '@/lib/navegacion/viaje'
 import { BOARD_COLUMNS, boardColumnStyle } from '@/lib/states'
 import { STATUS_TONE_CLASS, STATUS_TONE_DOT } from '@/components/ui/StatusChip'
 
@@ -83,17 +83,8 @@ export default function DiarioPage() {
   return <Suspense fallback={null}><DiarioPageInner /></Suspense>
 }
 
-/** Lo que la URL puede abrir ya puesto: la pestaña y la búsqueda (D4). */
-function filtersFromUrl(params: URLSearchParams): Partial<Pick<DiarioFilters, 'tab' | 'q'>> {
-  const tab = params.get('tab')
-  return {
-    ...(params.get('q') ? { q: params.get('q')! } : {}),
-    ...(tab === 'historial' || tab === 'en_curso' ? { tab: tab as Tab } : {}),
-  }
-}
-
 function DiarioPageInner() {
-  const [f, dispatch] = useDiarioFilters(filtersFromUrl(useSearchParams()))
+  const [f, dispatch] = useDiarioFilters(monitorFiltersFromUrl(useSearchParams()))
 
   const [tripsMeta,      setTripsMeta]      = useState<TripsMeta | null>(null)
   const [showCreate,      setShowCreate]      = useState(false)
