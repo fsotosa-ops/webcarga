@@ -73,4 +73,33 @@ describe('InstallmentsTable', () => {
     expect(screen.getByText('Pagada el 02/09')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Deshacer pago de la cuota 3' })).toBeInTheDocument()
   })
+
+  it('en Cuotas, lo que no se pudo pagar dice de qué póliza es, y no se pierde si la lista queda vacía', async () => {
+    vi.mocked(insuranceApi.pay).mockResolvedValue({ paid: [], errors: [{ id: 'i1', error: 'Ya estaba pagada' }] })
+    const client = new QueryClient()
+    const tabla = (rows: unknown[]) => (
+      <QueryClientProvider client={client}><InstallmentsTable rows={rows as never} showPolicy empty={<p>No hay cuotas vencidas</p>} /></QueryClientProvider>
+    )
+    const { rerender } = render(tabla([cuota('i1', 1)]))
+    fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar cuota 1/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar pagadas…' }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Marcar 1 pagada' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cuota 1 · SURA 1: Ya estaba pagada')
+    rerender(tabla([]))
+    expect(screen.getByText('No hay cuotas vencidas')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Ya estaba pagada')
+  })
+
+  it('si deshacer un pago falla, lo dice', async () => {
+    vi.mocked(insuranceApi.unpay).mockRejectedValue(new Error('Sin conexión'))
+    renderTable()
+    fireEvent.click(screen.getByRole('button', { name: /Deshacer pago/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sin conexión')
+  })
+
+  it('mientras la lista se actualiza, "Marcar pagadas…" espera', () => {
+    render(<QueryClientProvider client={new QueryClient()}><InstallmentsTable rows={[cuota('i1', 1)] as never} busy /></QueryClientProvider>)
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar cuota 1' }))
+    expect(screen.getByRole('button', { name: 'Marcar pagadas…' })).toBeDisabled()
+  })
 })

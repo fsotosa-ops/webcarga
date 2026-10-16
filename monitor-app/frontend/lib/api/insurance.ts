@@ -100,7 +100,7 @@ const qs = (p: Record<string, string | number | undefined>) =>
 const post = <T,>(path: string, body: unknown) => apiFetch<T>(path, { method: 'POST', body: JSON.stringify(body) })
 
 export const insuranceApi = {
-  listPolicies: (p: { state?: string; q?: string; carrierId?: string; page?: number; limit?: number } = {}) =>
+  listPolicies: (p: { state?: string; q?: string; page?: number; limit?: number } = {}) =>
     apiFetch<PoliciesResponse>(`/api/v1/policies?${qs({ group_by: 'policy', state: p.state, q: p.q, page: p.page, limit: p.limit })}`),
   listCarriers: (p: { state?: string; q?: string; page?: number; limit?: number } = {}) =>
     apiFetch<CarriersInsuranceResponse>(`/api/v1/policies?${qs({ group_by: 'carrier', state: p.state, q: p.q, page: p.page, limit: p.limit })}`),

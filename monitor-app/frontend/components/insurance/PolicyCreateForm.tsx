@@ -29,7 +29,7 @@ export function PolicyCreateForm({ form, onChange, onSubmit, onCancel, submittin
   const inputCls = compact
     ? 'w-full text-xs border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30'
     : 'w-full text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/30'
-  const labelCls = compact ? 'text-[9px] text-gray-400 uppercase tracking-wide' : 'text-[10px] text-gray-400 uppercase tracking-wide'
+  const labelCls = 'text-etiqueta text-informativo'
   return (
     <div className={compact ? 'space-y-2' : 'space-y-2.5'}>
       <input
@@ -56,7 +56,7 @@ export function PolicyCreateForm({ form, onChange, onSubmit, onCancel, submittin
             onChange={e => onChange({ ...form, valid_to: e.target.value })} className={inputCls} />
         </div>
       </div>
-      <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+      <label className="flex items-center gap-1.5 text-xs text-informativo cursor-pointer">
         <input type="checkbox" checked={form.has_endorsement}
           onChange={e => onChange({ ...form, has_endorsement: e.target.checked })} />
         Tiene endoso
@@ -69,7 +69,7 @@ export function PolicyCreateForm({ form, onChange, onSubmit, onCancel, submittin
           className={inputCls}
         />
       )}
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-status-incidente">{error}</p>}
       <div className="flex items-center gap-2 pt-1">
         <button
           onClick={onSubmit}
@@ -81,7 +81,7 @@ export function PolicyCreateForm({ form, onChange, onSubmit, onCancel, submittin
           {submitting ? <Loader2 size={compact ? 12 : 13} className="animate-spin" /> : <Check size={compact ? 12 : 13} />}
           Guardar
         </button>
-        <button onClick={onCancel} className={compact ? 'p-1.5 text-gray-400 hover:text-gray-600' : 'text-sm text-gray-400 hover:text-gray-600 px-2'}>
+        <button onClick={onCancel} className={compact ? 'p-1.5 text-informativo hover:text-text-primary' : 'text-sm text-informativo hover:text-text-primary px-2'}>
           {compact ? <X size={14} /> : 'Cancelar'}
         </button>
       </div>

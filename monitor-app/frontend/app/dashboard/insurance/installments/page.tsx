@@ -71,11 +71,10 @@ function CuotasPageInner() {
         <Estado tipo="error" titulo="No se pudieron cargar las cuotas" detalle="Reintenta en unos segundos." />
       ) : list.isPending ? (
         <Estado tipo="cargando" />
-      ) : list.data!.data.length === 0 ? (
-        <Estado tipo="vacio" titulo={empty} />
       ) : (
         <div className={`transition-opacity ${list.isFetching ? 'opacity-60' : ''}`}>
-          <InstallmentsTable rows={list.data!.data} showPolicy returnTo={returnTo} />
+          <InstallmentsTable rows={list.data!.data} showPolicy returnTo={returnTo} busy={list.isFetching}
+                             empty={<Estado tipo="vacio" titulo={empty} />} />
           {list.data!.count > list.data!.data.length && (
             <p className="mt-2 text-etiqueta text-informativo tabular-nums">Mostrando {list.data!.data.length} de {list.data!.count}</p>
           )}

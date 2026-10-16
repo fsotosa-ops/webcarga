@@ -764,8 +764,8 @@ def test_create_carrier_policy_success():
     conn.fetchval.return_value = 1
     conn.fetchrow.return_value = {
         "id": "p1", "carrier_id": "c1", "insurance_company": "HDI", "policy_number": None,
-        "valid_from": None, "valid_to": None, "expiration_alert_days": 30,
-        "status": "ACTIVE", "created_at": None,
+        "valid_from": None, "valid_to": None,
+        "created_at": None,
     }
     client = make_client(pool)
 
@@ -791,8 +791,8 @@ def test_create_carrier_policy_serializes_uuid_id_in_audit_log():
     conn.fetchrow.return_value = {
         "id": uuid.UUID("11111111-1111-1111-1111-111111111111"), "carrier_id": "c1",
         "insurance_company": "HDI", "policy_number": None,
-        "valid_from": None, "valid_to": None, "expiration_alert_days": 30,
-        "status": "ACTIVE", "created_at": None,
+        "valid_from": None, "valid_to": None,
+        "created_at": None,
     }
     client = make_client(pool)
 
@@ -815,8 +815,8 @@ def test_create_carrier_policy_persists_has_endorsement():
     conn.fetchval.return_value = 1
     conn.fetchrow.return_value = {
         "id": "p1", "carrier_id": "c1", "insurance_company": "HDI", "policy_number": None,
-        "valid_from": None, "valid_to": None, "expiration_alert_days": 30, "has_endorsement": True,
-        "endorsement_number": "END-1", "status": "ACTIVE", "created_at": None,
+        "valid_from": None, "valid_to": None, "has_endorsement": True,
+        "endorsement_number": "END-1", "created_at": None,
     }
     client = make_client(pool)
 

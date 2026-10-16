@@ -81,7 +81,8 @@ describe('la escala tipografica', () => {
     // 167 -> 163 el 2026-10-15: las listas del Directorio con el kit; se retiró TransporterSlideOver.
     // 163 -> 158 el 2026-10-15: fichas en dos columnas, flota de la empresa en tabla, Seguros y Requisito con el kit.
     // 158 -> 130 el 2026-10-15: Seguros con el kit; se retiraron el modal de pólizas y sus piezas (Seguros E2).
-    const DEUDA = 130
+    // 130 -> 128 el 2026-10-15: PolicyCreateForm sin 9-10px (menores de la revisión final de Seguros E2).
+    const DEUDA = 128
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

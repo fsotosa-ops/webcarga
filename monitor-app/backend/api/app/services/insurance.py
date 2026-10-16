@@ -6,6 +6,8 @@ Los estados de póliza, cuota y empresa los calcula la base en dos vistas
 regla de "vencida" ni la de "peor estado de la empresa"."""
 from __future__ import annotations
 
+import asyncpg
+
 from ..utils.identity import rut_matches_sql
 from .audit import log_change
 
@@ -281,27 +283,57 @@ def schedule_outside_validity(due_dates: list, valid_from, valid_to) -> list:
 
 # ── Renovar y extender (Seguros E2; los dos habilitados, a validar con Pablo) ──
 
+async def _open_policy(conn, policy_id: str, columns: str = "id") -> asyncpg.Record:
+    """La póliza, bloqueada, si todavía se puede renovar o extender: ni cancelada
+    ni renovada. La API lo exige aunque la ficha ya esconda los botones."""
+    row = await conn.fetchrow(
+        f"SELECT {columns}, cancelled_at, "
+        "EXISTS (SELECT 1 FROM public.insurance_policies s WHERE s.renews_policy_id = p.id) AS renewed "
+        "FROM public.insurance_policies p WHERE p.id = $1 FOR UPDATE OF p", policy_id,
+    )
+    if row is None:
+        raise LookupError("Póliza no encontrada")
+    if row["cancelled_at"] is not None:
+        raise ValueError("La póliza está cancelada")
+    if row["renewed"]:
+        raise ValueError("Esta póliza ya fue renovada por otra")
+    return row
+
+
 async def link_renewal(conn, previous_id: str, successor_id: str, *, actor: str) -> None:
     """Enlaza una póliza ya cargada como sucesora de otra (las 6 renovaciones de
     la carga inicial): la anterior pasa a RENEWED. Siempre lo confirma una persona."""
     if previous_id == successor_id:
         raise ValueError("Una póliza no se renueva a sí misma")
     pares = await conn.fetch(
-        "SELECT id, carrier_id, renews_policy_id FROM public.insurance_policies WHERE id = ANY($1::uuid[])",
+        "SELECT id, carrier_id, renews_policy_id, cancelled_at FROM public.insurance_policies WHERE id = ANY($1::uuid[])",
         [previous_id, successor_id],
     )
     if len(pares) != 2:
         raise LookupError("Póliza no encontrada")
     if len({r["carrier_id"] for r in pares}) != 1:
         raise ValueError("Las dos pólizas tienen que ser de la misma empresa")
-    if await conn.fetchval("SELECT 1 FROM public.insurance_policies WHERE renews_policy_id = $1", previous_id):
-        raise ValueError("Esta póliza ya fue renovada por otra")
-    if next(r for r in pares if str(r["id"]) == str(successor_id))["renews_policy_id"] is not None:
+    await _open_policy(conn, previous_id)
+    successor = next(r for r in pares if str(r["id"]) == str(successor_id))
+    if successor["renews_policy_id"] is not None:
         raise ValueError("La póliza nueva ya renueva a otra")
-    await conn.execute(
-        "UPDATE public.insurance_policies SET renews_policy_id = $2, updated_at = now() WHERE id = $1",
-        successor_id, previous_id,
-    )
+    if successor["cancelled_at"] is not None:
+        raise ValueError("La póliza nueva está cancelada")
+    # A ← B ← C: enlazar C como renovada por A cerraría un ciclo y la empresa
+    # quedaría sin ninguna póliza que cuente.
+    if await conn.fetchval(
+        "WITH RECURSIVE chain(id) AS (SELECT renews_policy_id FROM public.insurance_policies WHERE id = $1 "
+        "UNION SELECT p.renews_policy_id FROM public.insurance_policies p JOIN chain ON p.id = chain.id) "
+        "SELECT 1 FROM chain WHERE id = $2", previous_id, successor_id,
+    ):
+        raise ValueError("La póliza nueva es anterior a esta en su cadena de renovaciones")
+    try:
+        await conn.execute(
+            "UPDATE public.insurance_policies SET renews_policy_id = $2, updated_at = now() WHERE id = $1",
+            successor_id, previous_id,
+        )
+    except asyncpg.UniqueViolationError as exc:
+        raise ValueError("Esta póliza ya fue renovada por otra") from exc
     await log_change(conn, actor=actor, entity_type=AUDIT_ENTITY, entity_id=previous_id,
                      action="update", field="renewed_by", new_value=str(successor_id))
 
@@ -309,20 +341,16 @@ async def link_renewal(conn, previous_id: str, successor_id: str, *, actor: str)
 async def renew_policy(conn, previous_id: str, *, valid_from, valid_to, policy_number: str | None,
                        actor: str, insurance_company: str | None = None) -> str:
     """Crea la póliza que renueva a otra, con sus datos precargados."""
-    prev = await conn.fetchrow(
-        "SELECT carrier_id, insurance_company, policy_number, has_endorsement, endorsement_number, external_portal_url "
-        "FROM public.insurance_policies WHERE id = $1", previous_id,
-    )
-    if prev is None:
-        raise LookupError("Póliza no encontrada")
-    if await conn.fetchval("SELECT 1 FROM public.insurance_policies WHERE renews_policy_id = $1", previous_id):
-        raise ValueError("Esta póliza ya fue renovada por otra")
-    new_id = await conn.fetchval(
-        "INSERT INTO public.insurance_policies (carrier_id, insurance_company, policy_number, valid_from, valid_to, "
-        "external_portal_url, renews_policy_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
-        prev["carrier_id"], insurance_company or prev["insurance_company"], policy_number, valid_from, valid_to,
-        prev["external_portal_url"], previous_id,
-    )
+    prev = await _open_policy(conn, previous_id, "carrier_id, insurance_company, external_portal_url")
+    try:
+        new_id = await conn.fetchval(
+            "INSERT INTO public.insurance_policies (carrier_id, insurance_company, policy_number, valid_from, valid_to, "
+            "external_portal_url, renews_policy_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+            prev["carrier_id"], insurance_company or prev["insurance_company"], policy_number, valid_from, valid_to,
+            prev["external_portal_url"], previous_id,
+        )
+    except asyncpg.UniqueViolationError as exc:  # otra renovación ganó la carrera
+        raise ValueError("Esta póliza ya fue renovada por otra") from exc
     await conn.execute(
         "INSERT INTO public.policy_coverages (policy_id, coverage_type_id) "
         "SELECT $1, coverage_type_id FROM public.policy_coverages WHERE policy_id = $2", new_id, previous_id,
@@ -358,9 +386,7 @@ async def renewal_candidates(conn, policy_id: str) -> list[dict]:
 async def extend_policy(conn, policy_id: str, *, valid_to, endorsement_number: str | None, endorsement_date,
                         actor: str) -> None:
     """Prórroga por endoso: nueva fecha de término, guardada en el historial."""
-    prev = await conn.fetchrow("SELECT valid_from, valid_to FROM public.insurance_policies WHERE id = $1 FOR UPDATE", policy_id)
-    if prev is None:
-        raise LookupError("Póliza no encontrada")
+    prev = await _open_policy(conn, policy_id, "valid_from, valid_to")
     if prev["valid_to"] is not None and valid_to <= prev["valid_to"]:
         raise ValueError("La nueva fecha de término tiene que ser posterior a la actual")
     if prev["valid_from"] is not None and valid_to <= prev["valid_from"]:

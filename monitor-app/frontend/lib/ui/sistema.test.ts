@@ -117,7 +117,8 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 1194 -> 1142 el 2026-10-15: las listas del Directorio con el kit; se retiró TransporterSlideOver.
     // 1142 -> 1084 el 2026-10-15: fichas en dos columnas, flota de la empresa en tabla, Seguros y Requisito con el kit.
     // 1084 -> 962 el 2026-10-15: Seguros con el kit; se retiraron el modal de pólizas y sus piezas (Seguros E2).
-    const DEUDA = 962
+    // 962 -> 954 el 2026-10-15: PolicyCreateForm con tokens (menores de la revisión final de Seguros E2).
+    const DEUDA = 954
 
     const total = usosDeColorCrudo()
     expect(

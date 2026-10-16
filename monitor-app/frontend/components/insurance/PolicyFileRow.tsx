@@ -19,6 +19,14 @@ export function PolicyFileRow({ label, detail, url, canEdit, onUpload, onDelete 
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  async function upload(input: HTMLInputElement) {
+    const f = input.files?.[0]
+    if (!f) return
+    setUploading(true)
+    // El valor se limpia para que volver a elegir el mismo archivo dispare otra vez.
+    try { await onUpload(f) } finally { setUploading(false); input.value = '' }
+  }
   const s = policyFileStyle(!!url)
   return (
     <div className="flex min-h-10 items-center gap-3 border-b border-border px-3 py-2 last:border-b-0">
@@ -33,14 +41,14 @@ export function PolicyFileRow({ label, detail, url, canEdit, onUpload, onDelete 
           </button>
         )}
         {canEdit && (
-          <button type="button" onClick={() => inputRef.current?.click()} aria-label={`${url ? 'Reemplazar' : 'Subir'} ${label}`}
-                  className="inline-flex min-w-24 items-center justify-center gap-1.5 rounded-md border border-dashed border-accion/45 px-2 py-0.5 text-etiqueta font-semibold text-accion hover:opacity-70">
-            <Upload size={12} aria-hidden="true" /> {url ? 'Reemplazar' : 'Subir'}
+          <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading} aria-label={`${url ? 'Reemplazar' : 'Subir'} ${label}`}
+                  className="inline-flex min-w-24 items-center justify-center gap-1.5 rounded-md border border-dashed border-accion/45 px-2 py-0.5 text-etiqueta font-semibold text-accion hover:opacity-70 disabled:opacity-50">
+            <Upload size={12} aria-hidden="true" /> {uploading ? 'Subiendo…' : url ? 'Reemplazar' : 'Subir'}
           </button>
         )}
       </span>
       {canEdit && (
-        <input ref={inputRef} type="file" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) void onUpload(f) }} />
+        <input ref={inputRef} type="file" className="hidden" onChange={e => void upload(e.target)} />
       )}
       {previewOpen && url && (
         <DocumentPreviewModal label={label} url={url} canEdit={canEdit} onClose={() => setPreviewOpen(false)}

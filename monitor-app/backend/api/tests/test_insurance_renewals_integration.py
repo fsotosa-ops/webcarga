@@ -134,3 +134,52 @@ async def test_S18_agregar_cuotas_las_numera_a_continuacion_y_respeta_la_vigenci
 
     with pytest.raises(ValueError, match="vigencia"):
         await insurance.append_installments(conn, p, count=6, amount_uf=3, first_due_date=today + timedelta(days=100), actor=ACTOR)
+
+
+async def test_una_cancelada_no_se_renueva_ni_se_extiende(conexion_revertida):
+    """Revisión final E2 (M6): la API no dependía de que la ficha escondiera los botones."""
+    import pytest
+    from app.services import insurance
+
+    conn = conexion_revertida
+    today = await _today(conn)
+    carrier = await _carrier(conn)
+    p = await _policy(conn, carrier, valid_from=today - timedelta(days=300), valid_to=today + timedelta(days=60))
+    await insurance.cancel_policy(conn, p, reason="Baja", actor=ACTOR)
+    with pytest.raises(ValueError):
+        await insurance.renew_policy(conn, p, valid_from=today, valid_to=today + timedelta(days=365), policy_number="X", actor=ACTOR)
+    with pytest.raises(ValueError):
+        await insurance.extend_policy(conn, p, valid_to=today + timedelta(days=90), endorsement_number=None,
+                                      endorsement_date=None, actor=ACTOR)
+
+
+async def test_una_renovada_no_se_extiende(conexion_revertida):
+    import pytest
+    from app.services import insurance
+
+    conn = conexion_revertida
+    today = await _today(conn)
+    carrier = await _carrier(conn)
+    vieja = await _policy(conn, carrier, valid_from=today - timedelta(days=360), valid_to=today + timedelta(days=5))
+    await insurance.renew_policy(conn, vieja, valid_from=today + timedelta(days=5), valid_to=today + timedelta(days=370),
+                                 policy_number="P-2", actor=ACTOR)
+    with pytest.raises(ValueError):
+        await insurance.extend_policy(conn, vieja, valid_to=today + timedelta(days=30), endorsement_number=None,
+                                      endorsement_date=None, actor=ACTOR)
+
+
+async def test_el_enlace_de_renovaciones_no_cierra_un_ciclo(conexion_revertida):
+    """A ← B ← C: enlazar C como renovada por A dejaría la empresa sin póliza vigente."""
+    import pytest
+    from app.services import insurance
+
+    conn = conexion_revertida
+    today = await _today(conn)
+    carrier = await _carrier(conn)
+    a = await _policy(conn, carrier, valid_from=today - timedelta(days=700), valid_to=today - timedelta(days=360))
+    b = await _policy(conn, carrier, valid_from=today - timedelta(days=360), valid_to=today)
+    c = await _policy(conn, carrier, valid_from=today, valid_to=today + timedelta(days=365))
+    await insurance.link_renewal(conn, a, b, actor=ACTOR)
+    await insurance.link_renewal(conn, b, c, actor=ACTOR)
+    with pytest.raises(ValueError):
+        await insurance.link_renewal(conn, c, a, actor=ACTOR)

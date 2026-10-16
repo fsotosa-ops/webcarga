@@ -3,7 +3,9 @@ insurance.py de Checkpoint A-E (columnas planas coverage/plate, borrado
 2026-07-16) con el modelo M:N real (policy_coverages/policy_assets). Prefix
 /policies (recurso propio, consistente con /carriers /drivers /assets /contacts).
 """
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, UploadFile
 
 from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require
@@ -20,6 +22,10 @@ from ..utils.document_storage import (
 )
 
 router = APIRouter(prefix="/policies", tags=["insurance"])
+
+# Un id que no es UUID se rechaza aquí (422) en vez de llegar a la base y volver 500.
+# Se mantiene `str`: el resto del router compara y arma rutas de archivo con texto.
+Id = Annotated[str, Path(pattern=r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")]
 
 
 async def _assemble_policy_detail(policy_id: str, pool, supabase=None) -> dict:
@@ -95,14 +101,14 @@ async def list_policies(
 
 @router.get("/{policy_id}")
 async def get_policy(
-    policy_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(require(Permission.INSURANCE_READ)),
+    policy_id: Id, pool=Depends(get_pool), supabase=Depends(get_supabase), _=Depends(require(Permission.INSURANCE_READ)),
 ):
     return await _assemble_policy_detail(policy_id, pool, supabase)
 
 
 @router.patch("/{policy_id}")
 async def patch_policy(
-    policy_id: str, body: InsurancePolicyPatchBody, pool=Depends(get_pool),
+    policy_id: Id, body: InsurancePolicyPatchBody, pool=Depends(get_pool),
     supabase=Depends(get_supabase), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     async with pool.acquire() as conn:
@@ -153,7 +159,7 @@ async def patch_policy(
 
 @router.delete("/{policy_id}")
 async def delete_policy(
-    policy_id: str, pool=Depends(get_pool), supabase=Depends(get_supabase), user=Depends(require(Permission.POLICIES_DELETE)),
+    policy_id: Id, pool=Depends(get_pool), supabase=Depends(get_supabase), user=Depends(require(Permission.POLICIES_DELETE)),
 ):
     """Borra la póliza completa (coverages/assets/installments caen por
     ON DELETE CASCADE). Borra también los archivos físicos en Storage si
@@ -184,7 +190,7 @@ async def delete_policy(
 
 @router.post("/{policy_id}/coverages", status_code=201)
 async def link_coverage(
-    policy_id: str, body: PolicyCoverageLinkBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
+    policy_id: Id, body: PolicyCoverageLinkBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -206,7 +212,7 @@ async def link_coverage(
 
 @router.delete("/{policy_id}/coverages/{coverage_type_id}")
 async def unlink_coverage(
-    policy_id: str, coverage_type_id: str, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
+    policy_id: Id, coverage_type_id: Id, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -225,7 +231,7 @@ async def unlink_coverage(
 
 @router.post("/{policy_id}/assets", status_code=201)
 async def link_asset(
-    policy_id: str, body: PolicyAssetLinkBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
+    policy_id: Id, body: PolicyAssetLinkBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -247,7 +253,7 @@ async def link_asset(
 
 @router.delete("/{policy_id}/assets/{asset_id}")
 async def unlink_asset(
-    policy_id: str, asset_id: str, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
+    policy_id: Id, asset_id: Id, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -265,14 +271,14 @@ async def unlink_asset(
 
 
 @router.get("/{policy_id}/installments")
-async def list_installments(policy_id: str, pool=Depends(get_pool), _=Depends(require(Permission.INSURANCE_READ))):
+async def list_installments(policy_id: Id, pool=Depends(get_pool), _=Depends(require(Permission.INSURANCE_READ))):
     """Las cuotas de una póliza, con su estado calculado (app.insurance_status)."""
     return await insurance.policy_installments(pool, policy_id)
 
 
 @router.post("/{policy_id}/renew", status_code=201)
 async def renew_policy(
-    policy_id: str, body: PolicyRenewBody, pool=Depends(get_pool), supabase=Depends(get_supabase),
+    policy_id: Id, body: PolicyRenewBody, pool=Depends(get_pool), supabase=Depends(get_supabase),
     user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     """Renovar: crea la póliza nueva con los datos de esta; esta queda renovada."""
@@ -292,14 +298,14 @@ async def renew_policy(
 
 
 @router.get("/{policy_id}/renewal-candidates")
-async def renewal_candidates(policy_id: str, pool=Depends(get_pool), _=Depends(require(Permission.INSURANCE_READ))):
+async def renewal_candidates(policy_id: Id, pool=Depends(get_pool), _=Depends(require(Permission.INSURANCE_READ))):
     """Pólizas de la misma empresa que podrían haber renovado a esta (la ficha pregunta; nada se enlaza solo)."""
     return await insurance.renewal_candidates(pool, policy_id)
 
 
 @router.post("/{policy_id}/renewed-by")
 async def link_renewal(
-    policy_id: str, body: PolicyRenewedByBody, pool=Depends(get_pool), supabase=Depends(get_supabase),
+    policy_id: Id, body: PolicyRenewedByBody, pool=Depends(get_pool), supabase=Depends(get_supabase),
     user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     async with pool.acquire() as conn:
@@ -315,7 +321,7 @@ async def link_renewal(
 
 @router.post("/{policy_id}/extend")
 async def extend_policy(
-    policy_id: str, body: PolicyExtendBody, pool=Depends(get_pool), supabase=Depends(get_supabase),
+    policy_id: Id, body: PolicyExtendBody, pool=Depends(get_pool), supabase=Depends(get_supabase),
     user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     """Prórroga por endoso: nueva fecha de término, guardada en el historial de vigencia."""
@@ -334,7 +340,7 @@ async def extend_policy(
 
 @router.post("/{policy_id}/installments/append", status_code=201)
 async def append_installments(
-    policy_id: str, body: InstallmentsAppendBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
+    policy_id: Id, body: InstallmentsAppendBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     """Cuotas nuevas a continuación de las existentes, dentro de la vigencia."""
     async with pool.acquire() as conn:
@@ -350,7 +356,7 @@ async def append_installments(
 
 @router.post("/{policy_id}/cancel")
 async def cancel_policy(
-    policy_id: str, body: PolicyCancelBody, pool=Depends(get_pool), supabase=Depends(get_supabase),
+    policy_id: Id, body: PolicyCancelBody, pool=Depends(get_pool), supabase=Depends(get_supabase),
     user=Depends(require(Permission.POLICIES_EDIT)),
 ):
     """Cancelar es el único estado de la póliza que decide una persona: fecha y motivo."""
@@ -365,7 +371,7 @@ async def cancel_policy(
 
 @router.post("/{policy_id}/file", status_code=201)
 async def upload_policy_file(
-    policy_id: str,
+    policy_id: Id,
     file: UploadFile = File(...),
     kind: str = "document",
     pool=Depends(get_pool),
@@ -421,7 +427,7 @@ async def upload_policy_file(
 
 @router.delete("/{policy_id}/file")
 async def delete_policy_file(
-    policy_id: str,
+    policy_id: Id,
     kind: str = "document",
     pool=Depends(get_pool),
     supabase=Depends(get_supabase),

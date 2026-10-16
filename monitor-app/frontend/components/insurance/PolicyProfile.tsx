@@ -47,6 +47,7 @@ export function PolicyProfile({ id }: { id: string }) {
   const [dialog, setDialog] = useState<Dialog>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
   const detail = useQuery({ queryKey: ['insurance', 'policy', id], queryFn: () => insuranceApi.get(id), retry: false })
   const p = detail.data
@@ -61,17 +62,18 @@ export function PolicyProfile({ id }: { id: string }) {
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['insurance'] })
   async function act(fn: () => Promise<unknown>, done?: string) {
-    setActionError(null)
+    if (busy) return
+    setActionError(null); setBusy(true)
     try { await fn(); await refresh(); if (done) setNotice(done) } catch (e) {
       setActionError(e instanceof Error ? e.message : 'No se pudo completar la acción')
-    }
+    } finally { setBusy(false) }
   }
 
   if (detail.isError) {
     const status = (detail.error as { status?: number })?.status
     return status === 404
       ? <Estado tipo="vacio" titulo="No se encontró la póliza"><Link href={POLICIES} className="text-accion hover:underline">Volver a Pólizas</Link></Estado>
-      : <Estado tipo="error" titulo="No se pudo abrir la póliza" detalle="Reintenta en unos segundos." />
+      : <Estado tipo="error" titulo="No se pudo abrir la póliza" detalle="Reintenta en unos segundos."><Link href={POLICIES} className="text-accion hover:underline">Volver a Pólizas</Link></Estado>
   }
   if (!p) return <Estado tipo="cargando" />
 
@@ -143,9 +145,9 @@ export function PolicyProfile({ id }: { id: string }) {
           {candidates.data.map(c => (
             <span key={c.id} className="flex flex-wrap items-center gap-3">
               <span>¿La reemplazó {nombre(c)}, que empezó el {fechaCorta(c.valid_from)}?</span>
-              <button type="button" onClick={() => void act(() => insuranceApi.renewedBy(id, c.id), 'Listo: quedó como renovada.')}
-                      className="font-semibold text-accion hover:underline">
-                Sí, enlazar
+              <button type="button" disabled={busy} onClick={() => void act(() => insuranceApi.renewedBy(id, c.id), 'Listo: quedó como renovada.')}
+                      className="font-semibold text-accion hover:underline disabled:opacity-50">
+                {busy ? 'Enlazando…' : 'Sí, enlazar'}
               </button>
             </span>
           ))}
@@ -212,7 +214,7 @@ export function PolicyProfile({ id }: { id: string }) {
 
       {dialog === 'pay' && (
         <PayInstallmentsDialog rows={toPay} onClose={() => setDialog(null)}
-                               onDone={async errs => { setDialog(null); setActionError(errs.length ? errs.map(e => e.error).join(' · ') : null); await refresh() }} />
+                               onDone={async errs => { setDialog(null); setActionError(errs.length ? errs.map(e => `Cuota ${p.installments.find(i => i.id === e.id)?.installment_number ?? ''}: ${e.error}`).join(' · ') : null); await refresh() }} />
       )}
       {dialog === 'renew' && <RenewDialog policy={p} onClose={() => setDialog(null)}
         onDone={nueva => { setDialog(null); router.push(policyHref(nueva.id)) }} />}

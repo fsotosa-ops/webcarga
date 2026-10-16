@@ -70,4 +70,24 @@ describe('Ficha de póliza', () => {
     fireEvent.click(within(aviso.closest('[role="status"]') as HTMLElement).getByRole('button', { name: 'Sí, enlazar' }))
     await waitFor(() => expect(insuranceApi.renewedBy).toHaveBeenCalledWith('p1', 'p9'))
   })
+
+  it('si no se pudo abrir, también ofrece volver a Pólizas', async () => {
+    vi.mocked(insuranceApi.get).mockRejectedValue(Object.assign(new Error('boom'), { status: 500 }))
+    renderProfile()
+    expect(await screen.findByText('No se pudo abrir la póliza')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Volver a Pólizas' })).toHaveAttribute('href', '/dashboard/insurance')
+  })
+
+  it('"Sí, enlazar" queda deshabilitado mientras enlaza (no se manda dos veces)', async () => {
+    vi.mocked(insuranceApi.renewalCandidates).mockResolvedValue([
+      { id: 'p9', insurance_company: 'Chubb Generales', policy_number: '77', valid_from: '2026-05-22', valid_to: '2027-05-22' },
+    ])
+    vi.mocked(insuranceApi.renewedBy).mockReturnValue(new Promise(() => {}))
+    renderProfile()
+    const aviso = (await screen.findByText(/¿La reemplazó Chubb Generales · 77/)).closest('[role="status"]') as HTMLElement
+    fireEvent.click(within(aviso).getByRole('button', { name: 'Sí, enlazar' }))
+    await waitFor(() => expect(within(aviso).getByRole('button', { name: /enlaz/i })).toBeDisabled())
+    fireEvent.click(within(aviso).getByRole('button', { name: /enlaz/i }))
+    expect(insuranceApi.renewedBy).toHaveBeenCalledTimes(1)
+  })
 })

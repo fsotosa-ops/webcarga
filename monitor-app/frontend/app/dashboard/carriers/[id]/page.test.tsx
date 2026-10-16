@@ -80,7 +80,6 @@ vi.mock('@/lib/api/assets', () => ({
 vi.mock('@/lib/api/contacts', () => ({
   contactsApi: { patch: vi.fn(), delete: vi.fn() },
 }))
-vi.mock('@/components/dashboard/InsuranceSummaryCard', () => ({ InsuranceSummaryCard: () => null }))
 
 const CARRIER: Carrier = {
   id: 't1', tax_id: '11111111-1', country_code: 'CL', business_name: 'Transportes Test',

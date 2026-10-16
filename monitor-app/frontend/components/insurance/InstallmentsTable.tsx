@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
 import { CheckCheck } from 'lucide-react'
@@ -20,10 +20,15 @@ const uf = (n: number | null) => (n == null ? '—' : `${n.toLocaleString('es-CL
 /** Cuotas con selección múltiple y "Marcar pagadas…" (Seguros E2). La usan la
  *  ficha de la póliza y Seguros › Cuotas (`showPolicy`, con empresa y póliza). El
  *  estado lo manda la API; aquí solo se pinta. */
-export function InstallmentsTable({ rows, showPolicy = false, returnTo }: {
+export function InstallmentsTable({ rows, showPolicy = false, returnTo, empty, busy = false }: {
   rows: InstallmentRow[]
   showPolicy?: boolean
   returnTo?: string
+  /** Lo que se ve sin filas. La tabla sigue montada: un error de pago no se
+   *  pierde cuando la cuota que falló sale del filtro. */
+  empty?: ReactNode
+  /** La lista se está actualizando: no se paga sobre filas que van a cambiar. */
+  busy?: boolean
 }) {
   const queryClient = useQueryClient()
   const canEdit = usePermiso('policies.edit')
@@ -31,6 +36,9 @@ export function InstallmentsTable({ rows, showPolicy = false, returnTo }: {
   const [paying, setPaying] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const label = (r: InstallmentRow) => `cuota ${r.installment_number}${showPolicy ? ` de ${r.insurance_company}` : ''}`
+  // En Cuotas se mezclan pólizas: el mensaje dice de cuál es la cuota.
+  const cuota = (r: InstallmentRow | undefined) => !r ? 'Cuota' : `Cuota ${r.installment_number}${
+    showPolicy ? ` · ${r.insurance_company}${r.policy_number ? ` ${r.policy_number}` : ''}` : ''}`
 
   const toggle = (id: string) => setSelected(prev => {
     const next = new Set(prev)
@@ -43,17 +51,22 @@ export function InstallmentsTable({ rows, showPolicy = false, returnTo }: {
   const visibles = rows.filter(r => selected.has(r.id) && !r.paid)
 
   async function undo(r: InstallmentRow) {
-    const res = await insuranceApi.unpay([r.id])
-    setErrors(res.errors.map(e => `Cuota ${r.installment_number}: ${e.error}`))
-    await refresh()
+    try {
+      const res = await insuranceApi.unpay([r.id])
+      setErrors(res.errors.map(e => `${cuota(r)}: ${e.error}`))
+      await refresh()
+    } catch (e) {
+      setErrors([`${cuota(r)}: ${e instanceof Error ? e.message : 'No se pudo deshacer el pago'}`])
+    }
   }
 
   return (
     <div className="space-y-2">
-      {canEdit && (
+      {canEdit && rows.length > 0 && (
         <div className="overflow-hidden rounded-md border border-border">
           <BarraDeSeleccion seleccionados={visibles.length} ayuda="Marca las cuotas que se pagaron" onLimpiar={() => setSelected(new Set())}>
-            <button type="button" onClick={() => setPaying(true)} className="inline-flex items-center gap-1.5 text-etiqueta font-semibold text-accion hover:underline">
+            <button type="button" onClick={() => setPaying(true)} disabled={busy}
+                    className="inline-flex items-center gap-1.5 text-etiqueta font-semibold text-accion hover:underline disabled:opacity-50">
               <CheckCheck size={13} aria-hidden="true" /> Marcar pagadas…
             </button>
           </BarraDeSeleccion>
@@ -64,6 +77,7 @@ export function InstallmentsTable({ rows, showPolicy = false, returnTo }: {
           {errors.map(e => <p key={e}>{e}</p>)}
         </div>
       )}
+      {rows.length === 0 && empty ? empty : (
       <div className="overflow-x-auto rounded-md border border-border bg-white">
         <table className="w-full text-dato">
           <thead>
@@ -119,12 +133,13 @@ export function InstallmentsTable({ rows, showPolicy = false, returnTo }: {
           </tbody>
         </table>
       </div>
+      )}
       {paying && (
         <PayInstallmentsDialog
           rows={visibles}
           onClose={() => setPaying(false)}
           onDone={async (errs) => {
-            setErrors(errs.map(e => `Cuota ${rows.find(r => r.id === e.id)?.installment_number ?? '?'}: ${e.error}`))
+            setErrors(errs.map(e => `${cuota(rows.find(r => r.id === e.id))}: ${e.error}`))
             setSelected(new Set())
             setPaying(false)
             await refresh()
