@@ -54,9 +54,24 @@ function mismoConjunto(a: string[], b: string[]) {
  *  Guardar la regla y aplicarla siguen siendo dos actos distintos, como en el
  *  Tramo 3: cambiar una condición puede crear o dejar de exigir cientos de
  *  registros, y nadie debería descubrirlo después. */
+/** Las preguntas de la ficha del documento (Certificación › Documentos
+ *  exigidos). Cada "Editar" abre el panel en la suya; sin `section`, el panel
+ *  muestra todas, como antes. El aviso vive dentro de la vigencia. */
+export type RequirementSection = 'nombre' | 'quien' | 'vigencia' | 'vence' | 'cuando'
+
+const TITULO_DE_SECCION: Record<RequirementSection, string> = {
+  nombre: 'Cómo se llama',
+  quien: '¿A quién se le exige?',
+  vigencia: 'Vigencia',
+  vence: '¿Cuándo vence y con cuánta anticipación se avisa?',
+  cuando: '¿Cuándo se exige?',
+}
+
 export function CondicionPanel({
-  requisito, subtipos, gestiones, revision, onConfirmar, confirmando, onGuardado, onCerrar,
+  requisito, subtipos, gestiones, revision, onConfirmar, confirmando, onGuardado, onCerrar, section,
 }: {
+  /** La pregunta que se edita; sin ella, todas. */
+  section?:  RequirementSection
   requisito: RequirementOption
   subtipos:  { id: string; label: string }[]
   /** Los tipos de gestión del catálogo, identificados por su CÓDIGO estable.
@@ -75,6 +90,7 @@ export function CondicionPanel({
 }) {
   const canEdit = usePermiso('certification.configure')
   const qc = useQueryClient()
+  const ver = (s: RequirementSection) => !section || section === s
 
   const esAsset   = requisito.target_entity === 'ASSET'
   const esCarrier = requisito.target_entity === 'CARRIER'
@@ -247,7 +263,7 @@ export function CondicionPanel({
 
   return (
     <PanelLateral
-      titulo={requisito.name}
+      titulo={section ? `${requisito.name} · ${TITULO_DE_SECCION[section]}` : requisito.name}
       onCerrar={onCerrar}
       pie={canEdit ? (
         <div className="flex items-center gap-2 flex-wrap">
@@ -310,7 +326,7 @@ export function CondicionPanel({
         <MarcaDeRevision revision={revision} />
       </div>
 
-      {canEdit && (
+      {canEdit && ver('nombre') && (
         <fieldset className="mt-3">
           <legend className="text-xs font-semibold text-text-primary">Cómo se llama</legend>
 
@@ -339,7 +355,7 @@ export function CondicionPanel({
         </fieldset>
       )}
 
-      {canEdit && (
+      {canEdit && ver('quien') && (
         <fieldset className="mt-3">
           <legend className="text-xs font-semibold text-text-primary">¿Es obligatorio?</legend>
           {/* NO es una etiqueta de presentación: los disparadores de siembra
@@ -372,7 +388,7 @@ export function CondicionPanel({
         </fieldset>
       )}
 
-      {(esAsset || esCarrier) ? (
+      {!ver('quien') ? null : (esAsset || esCarrier) ? (
         <fieldset className="mt-3">
           <legend className="text-xs font-semibold text-text-primary">¿A quién se le exige?</legend>
 
@@ -431,6 +447,7 @@ export function CondicionPanel({
         <p className="mt-3 text-xs text-gray-700">Se exige a todos los conductores.</p>
       )}
 
+      {ver('vigencia') && (
       <label className="mt-4 flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
         <input
           type="checkbox"
@@ -441,13 +458,14 @@ export function CondicionPanel({
         />
         Vigente
       </label>
-      {!marcadoActivo && (
+      )}
+      {ver('vigencia') && !marcadoActivo && (
         <p className="mt-1 text-[10.5px] text-gray-500">
           Sin vigencia el documento no se exige a nadie, pero la condición queda guardada.
         </p>
       )}
 
-      <EditorVigencia value={vigencia} onChange={setVigencia} disabled={!canEdit} />
+      {ver('vence') && <EditorVigencia value={vigencia} onChange={setVigencia} disabled={!canEdit} />}
 
       {vigenciaSucia && efecto.data && (
         <div className="mt-2 rounded-lg border border-border px-3 py-2 text-etiqueta text-text-primary">
@@ -469,12 +487,14 @@ export function CondicionPanel({
         </p>
       )}
 
-      <SelectorExigibilidad
-        value={exigible}
-        onChange={setExigible}
-        entidad={requisito.target_entity}
-        disabled={!canEdit}
-      />
+      {ver('cuando') && (
+        <SelectorExigibilidad
+          value={exigible}
+          onChange={setExigible}
+          entidad={requisito.target_entity}
+          disabled={!canEdit}
+        />
+      )}
 
       {errorGuardar && <p className="mt-2 text-[10.5px] text-red-600">{errorGuardar}</p>}
       {errorAplicar && <p className="mt-2 text-[10.5px] text-red-600">{errorAplicar}</p>}

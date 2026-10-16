@@ -119,6 +119,30 @@ describe('CondicionPanel — cuándo vence y cuándo se exige', () => {
     expect(requirementsApi.patchConditions).not.toHaveBeenCalled()
   })
 
+  // P2.4 (Parte 2): desde la ficha, "¿Cuándo vence?" abre el panel en esa
+  // pregunta, y el efecto se ve igual antes de guardar.
+  it('en la pregunta "vence" muestra solo la vigencia, con su efecto ANTES de guardar', async () => {
+    vi.mocked(requirementsApi.previewVigencia).mockResolvedValue({
+      antes:   { vencidos: 0, por_vencer: 0, al_dia: 2, falta: 0 },
+      despues: { vencidos: 2, por_vencer: 0, al_dia: 0, falta: 0 },
+      rige_desde_hoy: false,
+    })
+    const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={cliente}>
+        <CondicionPanel section="vence" requisito={requisito({ expiration_policy: 'NONE' })} subtipos={SUBTIPOS}
+          gestiones={GESTIONES} revision={null} onConfirmar={confirmar} confirmando={false}
+          onGuardado={vi.fn()} onCerrar={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    expect(screen.queryByRole('group', { name: '¿A quién se le exige?' })).toBeNull()
+    expect(screen.queryByLabelText('Nombre del documento')).toBeNull()
+    fireEvent.click(screen.getByRole('radio', { name: /dura un plazo desde que se emite/i }))
+
+    expect(await screen.findByText(/2 vencidos/)).toBeInTheDocument()
+    expect(requirementsApi.patchConditions).not.toHaveBeenCalled()
+  })
+
   // Visto en dev: un mensual recién elegido no tiene día tope; la pantalla ya
   // decía "Falta el día tope" y aun así pedía la vista previa, que volvía 422
   // con el mensaje técnico del trigger debajo.
