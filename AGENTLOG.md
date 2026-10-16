@@ -283,8 +283,14 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
        retira; (b) validar con Pablo renovar vs extender; (c) dato raro: una póliza vigente hasta 23/03/2076 (Chubb, tipeo
        probable); (d) 4 de las 6 empresas "vencida y vigente" no tienen candidata de renovación a ±30 días: siguen
        Vencida hasta que alguien enlace. Local: usuario `seg@sim.local` (Supervisor de Seguros) para el humo.
-     **Siguiente:** Configuración (auditoría + maqueta + spec + plan). Con eso la spec de fichas y navegación queda
-       cerrada (fuera: Cmd+K).
+     - **Configuración (15/10): auditoría + maquetas + spec + plan de la Parte 1 HECHOS.** Spec
+       `docs/superpowers/specs/2026-10-16-configuracion-en-tres-partes-design.md` (aprobada): separar ajustes de
+       catálogos de trabajo; índice único a la izquierda; un patrón (lista + panel); color por significado (tono por
+       columna del tablero, también en el Monitor; retirar `bg_color`/`text_color` expandiendo y contrayendo); Parte 2 =
+       Certificación › Documentos exigidos; Parte 3 = Directorio › Clientes y Lugares. Plan Parte 1:
+       `docs/superpowers/plans/2026-10-16-configuracion-parte-1.md` (10 tareas, criterios P1.1-P1.10).
+     **Siguiente (exacto):** que el usuario revise el plan de la Parte 1; ejecutarlo inline (método 14/10); después
+       planes de la Parte 2 y la Parte 3. Con eso la spec de fichas y navegación queda cerrada (fuera: Cmd+K).
   2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
      el 409 solo ocurre con la pantalla vieja). La salida del 409 en `AltaDeFlota` pasó a ser del anfitrión
