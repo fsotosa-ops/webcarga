@@ -13,7 +13,8 @@ from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.insurance import (
     InstallmentPatchBody, InstallmentScheduleGenerateBody, InsurancePolicyPatchBody,
-    PolicyAssetLinkBody, PolicyCancelBody, PolicyCoverageLinkBody,
+    InstallmentsAppendBody, PolicyAssetLinkBody, PolicyCancelBody, PolicyCoverageLinkBody, PolicyExtendBody,
+    PolicyRenewBody, PolicyRenewedByBody,
 )
 from ..services import insurance
 from ..services.audit import log_change, record_manual_edit
@@ -39,8 +40,10 @@ async def _assemble_policy_detail(policy_id: str, pool, supabase=None) -> dict:
         """
         SELECT id, carrier_id, insurance_company, policy_number, valid_from, valid_to,
                policy_document_url, has_endorsement, endorsement_number, endorsement_document_url,
-               external_portal_url, cancelled_at, cancelled_reason, is_manual_override, created_at, updated_at
-        FROM public.insurance_policies WHERE id = $1
+               external_portal_url, cancelled_at, cancelled_reason, is_manual_override, created_at, updated_at,
+               renews_policy_id,
+               (SELECT s.id FROM public.insurance_policies s WHERE s.renews_policy_id = p.id) AS renewed_by_policy_id
+        FROM public.insurance_policies p WHERE id = $1
         """,
         policy_id,
     )
@@ -73,6 +76,8 @@ async def _assemble_policy_detail(policy_id: str, pool, supabase=None) -> dict:
         "coverages": [dict(c) for c in coverages],
         "assets": [dict(a) for a in assets],
         "installments": await insurance.policy_installments(pool, policy_id),
+        # Extender vigencia (Seguros E2): el historial de prórrogas.
+        "term_changes": await insurance.term_changes(pool, policy_id),
     }
     # policy_document_url/endorsement_document_url guardan el storage_path
     # crudo (ver upload_policy_file) — firmarlos antes de devolverlos.
@@ -327,6 +332,84 @@ async def generate_installment_schedule(
                 action="create", field="installment_schedule", new_value=body.total_installments, source="api",
             )
             return await insurance.policy_installments(conn, policy_id)
+
+
+@router.post("/{policy_id}/renew", status_code=201)
+async def renew_policy(
+    policy_id: str, body: PolicyRenewBody, pool=Depends(get_pool), supabase=Depends(get_supabase),
+    user=Depends(require(Permission.POLICIES_EDIT)),
+):
+    """Renovar: crea la póliza nueva con los datos de esta; esta queda renovada."""
+    if body.valid_to <= body.valid_from:
+        raise HTTPException(422, "La vigencia termina antes de empezar")
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            try:
+                new_id = await insurance.renew_policy(conn, policy_id, valid_from=body.valid_from, valid_to=body.valid_to,
+                                                      policy_number=body.policy_number,
+                                                      insurance_company=body.insurance_company, actor=user["sub"])
+            except LookupError as exc:
+                raise HTTPException(404, str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+    return await _assemble_policy_detail(str(new_id), pool, supabase)
+
+
+@router.get("/{policy_id}/renewal-candidates")
+async def renewal_candidates(policy_id: str, pool=Depends(get_pool), _=Depends(require(Permission.INSURANCE_READ))):
+    """Pólizas de la misma empresa que podrían haber renovado a esta (la ficha pregunta; nada se enlaza solo)."""
+    return await insurance.renewal_candidates(pool, policy_id)
+
+
+@router.post("/{policy_id}/renewed-by")
+async def link_renewal(
+    policy_id: str, body: PolicyRenewedByBody, pool=Depends(get_pool), supabase=Depends(get_supabase),
+    user=Depends(require(Permission.POLICIES_EDIT)),
+):
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            try:
+                await insurance.link_renewal(conn, policy_id, body.successor_id, actor=user["sub"])
+            except LookupError as exc:
+                raise HTTPException(404, str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
+    return await _assemble_policy_detail(policy_id, pool, supabase)
+
+
+@router.post("/{policy_id}/extend")
+async def extend_policy(
+    policy_id: str, body: PolicyExtendBody, pool=Depends(get_pool), supabase=Depends(get_supabase),
+    user=Depends(require(Permission.POLICIES_EDIT)),
+):
+    """Prórroga por endoso: nueva fecha de término, guardada en el historial de vigencia."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            try:
+                await insurance.extend_policy(conn, policy_id, valid_to=body.valid_to,
+                                              endorsement_number=body.endorsement_number,
+                                              endorsement_date=body.endorsement_date, actor=user["sub"])
+            except LookupError as exc:
+                raise HTTPException(404, str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+    return await _assemble_policy_detail(policy_id, pool, supabase)
+
+
+@router.post("/{policy_id}/installments/append", status_code=201)
+async def append_installments(
+    policy_id: str, body: InstallmentsAppendBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),
+):
+    """Cuotas nuevas a continuación de las existentes, dentro de la vigencia."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            try:
+                return await insurance.append_installments(conn, policy_id, count=body.count, amount_uf=body.amount_uf,
+                                                           first_due_date=body.first_due_date, actor=user["sub"])
+            except LookupError as exc:
+                raise HTTPException(404, str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
 
 
 @router.post("/{policy_id}/cancel")

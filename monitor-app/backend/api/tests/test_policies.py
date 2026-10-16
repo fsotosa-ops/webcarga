@@ -45,6 +45,7 @@ def test_get_policy_assembles_coverages_assets_installments():
         [{"id": "i1", "installment_number": 1, "installments_total": 2, "amount_uf": 1.04, "due_date": None,
           "due_in_days": None, "installment_state": "PENDING", "paid": False, "paid_on": None, "paid_by": None,
           "outside_validity": False}],
+        [],  # historial de vigencia (Seguros E2)
     ]
     client = make_client(pool)
 
@@ -92,7 +93,7 @@ def test_patch_policy_sets_manual_override():
         "external_portal_url": None, "status": "ACTIVE", "cancelled_at": None, "cancelled_reason": None, "is_manual_override": True,
         "created_at": None, "updated_at": None,
     }
-    pool.fetch.side_effect = [[], [], []]
+    pool.fetch.side_effect = [[], [], [], []]  # + historial de vigencia (Seguros E2)
     client = make_client(pool)
 
     res = client.patch("/api/v1/policies/p1", json={"insurance_company": "Chubb"})
@@ -242,7 +243,7 @@ def test_patch_policy_updates_has_endorsement():
         "external_portal_url": None, "status": "ACTIVE", "cancelled_at": None, "cancelled_reason": None, "is_manual_override": True,
         "created_at": None, "updated_at": None,
     }
-    pool.fetch.side_effect = [[], [], []]
+    pool.fetch.side_effect = [[], [], [], []]  # + historial de vigencia (Seguros E2)
     client = make_client(pool)
 
     res = client.patch("/api/v1/policies/p1", json={"has_endorsement": True})
@@ -271,7 +272,7 @@ def test_patch_policy_updates_endorsement_number():
         "external_portal_url": None, "status": "ACTIVE", "cancelled_at": None, "cancelled_reason": None, "is_manual_override": True,
         "created_at": None, "updated_at": None,
     }
-    pool.fetch.side_effect = [[], [], []]
+    pool.fetch.side_effect = [[], [], [], []]  # + historial de vigencia (Seguros E2)
     client = make_client(pool)
 
     res = client.patch("/api/v1/policies/p1", json={"endorsement_number": "END-99"})
@@ -494,7 +495,7 @@ def test_get_policy_resolves_signed_urls():
         "external_portal_url": None, "status": "ACTIVE", "cancelled_at": None, "cancelled_reason": None, "is_manual_override": False,
         "created_at": None, "updated_at": None,
     }
-    pool.fetch.side_effect = [[], [], []]
+    pool.fetch.side_effect = [[], [], [], []]  # + historial de vigencia (Seguros E2)
     supabase = MagicMock()
     supabase.storage.from_.return_value.create_signed_url.return_value = {"signedURL": "https://signed.example.com/x.pdf"}
     client = make_client(pool, supabase=supabase)

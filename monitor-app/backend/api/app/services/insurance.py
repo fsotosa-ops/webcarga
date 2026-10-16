@@ -18,7 +18,7 @@ from .audit import log_change
 # antes era CARRIER, a veces con el id de la póliza, y el rastro no llevaba a nada.
 AUDIT_ENTITY = "INSURANCE_POLICY"
 
-POLICY_STATES = ("EXPIRED", "EXPIRING", "VALID", "NO_DATES", "CANCELLED")
+POLICY_STATES = ("EXPIRED", "EXPIRING", "VALID", "NO_DATES", "CANCELLED", "RENEWED")
 # Filtros de la lista de Pólizas que no son un estado de la póliza.
 POLICY_FILTERS = POLICY_STATES + ("UNPAID", "NO_FILE")
 CARRIER_STATES = ("EXPIRED", "EXPIRING", "VALID", "NO_DATES", "NO_POLICY")
@@ -52,7 +52,7 @@ _POLICY_FILTER_SQL = {
 
 _POLICY_ORDER = """
     CASE policy_state WHEN 'EXPIRED' THEN 1 WHEN 'NO_DATES' THEN 2 WHEN 'EXPIRING' THEN 3
-                      WHEN 'VALID' THEN 4 ELSE 5 END,
+                      WHEN 'VALID' THEN 4 WHEN 'RENEWED' THEN 6 ELSE 5 END,
     overdue_installments DESC, carrier_name, insurance_company"""
 
 
@@ -207,7 +207,7 @@ async def policy_state(conn, policy_id: str) -> dict | None:
 # Una póliza sin vigencia no es "al día": en la pantalla de hoy se ve como por
 # vencer (revisión final E1), que es lo más cercano a "hay que mirarla".
 _LEGACY_HEALTH = {"EXPIRED": "EXPIRED", "EXPIRING": "EXPIRING_SOON", "VALID": "VALID", "NO_DATES": "EXPIRING_SOON",
-                  "CANCELLED": "CANCELLED"}
+                  "CANCELLED": "CANCELLED", "RENEWED": "CANCELLED"}
 
 
 def _legacy_installment(r: dict) -> dict:
@@ -347,3 +347,144 @@ async def cancel_policy(conn, policy_id: str, *, reason: str, actor: str) -> Non
 def schedule_outside_validity(due_dates: list, valid_from, valid_to) -> list:
     """Las fechas del calendario que caen fuera de la vigencia de la póliza."""
     return [d for d in due_dates if (valid_from and d < valid_from) or (valid_to and d > valid_to)]
+
+
+
+# ── Renovar y extender (Seguros E2; los dos habilitados, a validar con Pablo) ──
+
+async def link_renewal(conn, previous_id: str, successor_id: str, *, actor: str) -> None:
+    """Enlaza una póliza ya cargada como sucesora de otra (las 6 renovaciones de
+    la carga inicial): la anterior pasa a RENEWED. Siempre lo confirma una persona."""
+    if previous_id == successor_id:
+        raise ValueError("Una póliza no se renueva a sí misma")
+    pares = await conn.fetch(
+        "SELECT id, carrier_id, renews_policy_id FROM public.insurance_policies WHERE id = ANY($1::uuid[])",
+        [previous_id, successor_id],
+    )
+    if len(pares) != 2:
+        raise LookupError("Póliza no encontrada")
+    if len({r["carrier_id"] for r in pares}) != 1:
+        raise ValueError("Las dos pólizas tienen que ser de la misma empresa")
+    if await conn.fetchval("SELECT 1 FROM public.insurance_policies WHERE renews_policy_id = $1", previous_id):
+        raise ValueError("Esta póliza ya fue renovada por otra")
+    if next(r for r in pares if str(r["id"]) == str(successor_id))["renews_policy_id"] is not None:
+        raise ValueError("La póliza nueva ya renueva a otra")
+    await conn.execute(
+        "UPDATE public.insurance_policies SET renews_policy_id = $2, updated_at = now() WHERE id = $1",
+        successor_id, previous_id,
+    )
+    await log_change(conn, actor=actor, entity_type=AUDIT_ENTITY, entity_id=previous_id,
+                     action="update", field="renewed_by", new_value=str(successor_id))
+
+
+async def renew_policy(conn, previous_id: str, *, valid_from, valid_to, policy_number: str | None,
+                       actor: str, insurance_company: str | None = None) -> str:
+    """Crea la póliza que renueva a otra, con sus datos precargados."""
+    prev = await conn.fetchrow(
+        "SELECT carrier_id, insurance_company, policy_number, has_endorsement, endorsement_number, external_portal_url "
+        "FROM public.insurance_policies WHERE id = $1", previous_id,
+    )
+    if prev is None:
+        raise LookupError("Póliza no encontrada")
+    if await conn.fetchval("SELECT 1 FROM public.insurance_policies WHERE renews_policy_id = $1", previous_id):
+        raise ValueError("Esta póliza ya fue renovada por otra")
+    new_id = await conn.fetchval(
+        "INSERT INTO public.insurance_policies (carrier_id, insurance_company, policy_number, valid_from, valid_to, "
+        "external_portal_url, renews_policy_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+        prev["carrier_id"], insurance_company or prev["insurance_company"], policy_number, valid_from, valid_to,
+        prev["external_portal_url"], previous_id,
+    )
+    await conn.execute(
+        "INSERT INTO public.policy_coverages (policy_id, coverage_type_id) "
+        "SELECT $1, coverage_type_id FROM public.policy_coverages WHERE policy_id = $2", new_id, previous_id,
+    )
+    await conn.execute(
+        "INSERT INTO public.policy_assets (policy_id, asset_id) "
+        "SELECT $1, asset_id FROM public.policy_assets WHERE policy_id = $2", new_id, previous_id,
+    )
+    await log_change(conn, actor=actor, entity_type=AUDIT_ENTITY, entity_id=new_id,
+                     action="create", field="renews_policy_id", new_value=str(previous_id))
+    return new_id
+
+
+async def renewal_candidates(conn, policy_id: str) -> list[dict]:
+    """Otras pólizas de la misma empresa que empiezan dentro de los 30 días del fin
+    de esta y no renuevan ya a otra: la ficha propone el enlace, no lo hace."""
+    rows = await conn.fetch(
+        """
+        SELECT o.id, o.insurance_company, o.policy_number, o.valid_from, o.valid_to
+        FROM public.insurance_policies p
+        JOIN public.insurance_policies o ON o.carrier_id = p.carrier_id AND o.id <> p.id
+        WHERE p.id = $1 AND p.valid_to IS NOT NULL AND o.valid_from IS NOT NULL
+          AND o.valid_from BETWEEN p.valid_to - 30 AND p.valid_to + 30
+          AND o.renews_policy_id IS NULL AND o.cancelled_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM public.insurance_policies x WHERE x.renews_policy_id = p.id)
+        ORDER BY abs(o.valid_from - p.valid_to), o.valid_from
+        """,
+        policy_id,
+    )
+    return [dict(r) for r in rows]
+
+
+async def extend_policy(conn, policy_id: str, *, valid_to, endorsement_number: str | None, endorsement_date,
+                        actor: str) -> None:
+    """Prórroga por endoso: nueva fecha de término, guardada en el historial."""
+    prev = await conn.fetchrow("SELECT valid_from, valid_to FROM public.insurance_policies WHERE id = $1 FOR UPDATE", policy_id)
+    if prev is None:
+        raise LookupError("Póliza no encontrada")
+    if prev["valid_to"] is not None and valid_to <= prev["valid_to"]:
+        raise ValueError("La nueva fecha de término tiene que ser posterior a la actual")
+    if prev["valid_from"] is not None and valid_to <= prev["valid_from"]:
+        raise ValueError("La nueva fecha de término tiene que ser posterior al inicio de la vigencia")
+    await conn.execute("UPDATE public.insurance_policies SET valid_to = $2, updated_at = now() WHERE id = $1", policy_id, valid_to)
+    await conn.execute(
+        "INSERT INTO public.policy_term_changes (policy_id, previous_valid_to, new_valid_to, endorsement_number, "
+        "endorsement_date, changed_by) VALUES ($1, $2, $3, $4, $5, $6::uuid)",
+        policy_id, prev["valid_to"], valid_to, endorsement_number, endorsement_date, actor,
+    )
+    await log_change(conn, actor=actor, entity_type=AUDIT_ENTITY, entity_id=policy_id, action="update",
+                     field="valid_to", old_value=prev["valid_to"],
+                     new_value={"valid_to": valid_to, "endorsement_number": endorsement_number})
+
+
+async def term_changes(conn, policy_id: str) -> list[dict]:
+    rows = await conn.fetch(
+        "SELECT previous_valid_to, new_valid_to, endorsement_number, endorsement_date, changed_at "
+        "FROM public.policy_term_changes WHERE policy_id = $1 ORDER BY changed_at DESC", policy_id,
+    )
+    return [dict(r) for r in rows]
+
+
+def _monthly(first, n):
+    import calendar
+    from datetime import date
+    out = []
+    for i in range(n):
+        idx = first.month - 1 + i
+        y, m = first.year + idx // 12, idx % 12 + 1
+        out.append(date(y, m, min(first.day, calendar.monthrange(y, m)[1])))
+    return out
+
+
+async def append_installments(conn, policy_id: str, *, count: int, amount_uf, first_due_date, actor: str) -> list[dict]:
+    """Cuotas nuevas a continuación de las existentes (p. ej. tras una extensión),
+    todas dentro de la vigencia."""
+    p = await conn.fetchrow("SELECT valid_from, valid_to FROM public.insurance_policies WHERE id = $1", policy_id)
+    if p is None:
+        raise LookupError("Póliza no encontrada")
+    fechas = _monthly(first_due_date, count)
+    fuera = schedule_outside_validity(fechas, p["valid_from"], p["valid_to"])
+    if fuera:
+        raise ValueError(f"{len(fuera)} cuota(s) caen fuera de la vigencia de la póliza "
+                         f"(primera: {fuera[0].strftime('%d/%m/%Y')})")
+    ultimo = await conn.fetchval(
+        "SELECT coalesce(max(installment_number), 0) FROM public.insurance_installments WHERE policy_id = $1", policy_id)
+    total = ultimo + count
+    for i, d in enumerate(fechas):
+        await conn.execute(
+            "INSERT INTO public.insurance_installments (policy_id, installment_number, total_installments, amount_uf, due_date) "
+            "VALUES ($1, $2, $3, $4, $5)", policy_id, ultimo + i + 1, total, amount_uf, d,
+        )
+    await log_change(conn, actor=actor, entity_type=AUDIT_ENTITY, entity_id=policy_id, action="create",
+                     field="installments_appended", new_value=count)
+    return await policy_installments(conn, policy_id)

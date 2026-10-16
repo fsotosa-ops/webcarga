@@ -92,3 +92,26 @@ class CarrierInsuranceOverviewResponse(BaseModel):
     page: int
     limit: int
     facets: InsuranceOverviewFacets
+
+
+class PolicyRenewBody(BaseModel):
+    valid_from: date
+    valid_to: date
+    policy_number: Optional[str] = None
+    insurance_company: Optional[str] = None
+
+
+class PolicyRenewedByBody(BaseModel):
+    successor_id: str
+
+
+class PolicyExtendBody(BaseModel):
+    valid_to: date
+    endorsement_number: Optional[str] = None
+    endorsement_date: Optional[date] = None
+
+
+class InstallmentsAppendBody(BaseModel):
+    count: int = Field(ge=1, le=60)
+    amount_uf: float = Field(gt=0)
+    first_due_date: date
