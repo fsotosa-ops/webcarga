@@ -4,9 +4,12 @@ import { useState } from 'react'
 import { Pencil } from 'lucide-react'
 import type { Location } from '@/lib/types'
 import { locationsApi } from '@/lib/api/locations'
+import { useTripsMeta } from '@/hooks/useTripsMeta'
+import { lifecycleStyle } from '@/lib/states'
+import { StatusChip } from '@/components/ui/StatusChip'
+import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
+import { Estado } from '@/components/ui/Estado'
 import { INPUT, SaveRowButton, useRowFeedback } from '@/app/dashboard/admin/settings/shared'
-
-const OPERATION_TYPE_OPTIONS = ['RM', 'Z0', 'Region Norte', 'Region Sur']
 
 type RowDraft = {
   name: string
@@ -43,21 +46,28 @@ function rateSummary(loc: Location): string {
   return `${loc.current_rate}${from}`
 }
 
-/** Tabla completa de gestión de locales — extraída de TarifarioPage
- *  (Robustecer Tarifario, 2026-07-27) para que la página pueda alternar
- *  entre esta tabla y la tab de triage sin duplicar el estado de drafts.
- *  Recibe los locales ya cargados por el padre — sin fetching propio.
+const CELDA = 'py-2.5 px-2'
+
+/** La lista de lugares de carga: el Tarifario y la pestaña Lugares de la ficha
+ *  de un cliente (Configuración, Parte 3). Recibe los lugares ya cargados por
+ *  el padre — sin fetching propio de lugares.
  *
  *  Ajuste 2026-07-28 (sin scroll horizontal): N° Local se fusiona como
  *  badge dentro de Nombre, la clasificación automática se marca con un
  *  punto en vez de texto "auto", y Tarifa/Válido desde/Válido hasta
  *  colapsan en un resumen de una línea que se expande a los 3 inputs
- *  solo al click en "Editar" — mismos campos y mismo `save()` de antes,
- *  únicamente cambia qué está visible por defecto. */
-export function LocationsTable({ items, onChanged }: { items: Location[]; onChanged: () => void }) {
+ *  solo al click en "Editar".
+ *
+ *  Sin `canEdit` (la API exige commercial.edit) se lee todo y no hay un solo
+ *  control. Las zonas salen del catálogo de la API (`meta.operation_types`). */
+export function LocationsTable({ items, onChanged, canEdit }: {
+  items: Location[]; onChanged: () => void; canEdit: boolean
+}) {
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({})
   const [editingRate, setEditingRate] = useState<string | null>(null)
   const fb = useRowFeedback()
+  const zonas = useTripsMeta().data?.operation_types ?? []
+  const zonaLabel = (id: string) => zonas.find(z => z.id === id)?.label ?? id
 
   const draftFor = (loc: Location) => drafts[loc.id] ?? emptyDraft(loc)
   const isDirty = (loc: Location) => {
@@ -97,82 +107,105 @@ export function LocationsTable({ items, onChanged }: { items: Location[]; onChan
     })
   }
 
-  async function toggleActive(loc: Location) {
-    const next = loc.operational_status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
+  /** Activo y Origen se guardan al instante, como un interruptor. */
+  async function patchNow(loc: Location, body: Partial<Pick<Location, 'operational_status' | 'is_origin'>>) {
     await fb.run(loc.id, async () => {
-      await locationsApi.patch(loc.id, { operational_status: next })
+      await locationsApi.patch(loc.id, body)
       onChanged()
     })
   }
 
+  if (items.length === 0) return <Estado tipo="vacio" titulo="Sin lugares para este filtro" />
+
   return (
     <div className="bg-white border border-border rounded-2xl overflow-hidden">
       <div className="overflow-x-auto">
-      <table className="w-full text-xs">
+      <table className="w-full text-dato">
         <thead>
-          <tr className="text-[10px] font-bold text-gray-400 uppercase tracking-wide border-b border-border bg-gray-50">
-            <th className="py-2.5 px-2 text-left">Nombre</th>
-            <th className="py-2.5 px-2 text-left">Formato</th>
-            <th className="py-2.5 px-2 text-left">Dirección</th>
-            <th className="py-2.5 px-2 text-left">Región</th>
-            <th className="py-2.5 px-2 text-left">Clasificación</th>
-            <th className="py-2.5 px-2 text-left">Activo</th>
-            <th className="py-2.5 px-2 text-left">Tarifa vigente</th>
-            <th className="py-2.5 px-2 text-right w-[72px]" aria-label="Acciones" />
+          <tr className="border-b border-border bg-bg-main">
+            <th scope="col" className={CABECERA}>Nombre</th>
+            <th scope="col" className={CABECERA}>Formato</th>
+            <th scope="col" className={CABECERA}>Dirección</th>
+            <th scope="col" className={CABECERA}>Región</th>
+            <th scope="col" className={CABECERA}>Clasificación</th>
+            <th scope="col" className={CABECERA}>Origen</th>
+            <th scope="col" className={CABECERA}>Activo</th>
+            <th scope="col" className={CABECERA}>Tarifa vigente</th>
+            {canEdit && <th scope="col" className={`${CABECERA} w-[72px]`}><span className="sr-only">Acciones</span></th>}
           </tr>
         </thead>
-        <tbody className="divide-y divide-border/50">
+        <tbody className="divide-y divide-border/60">
           {items.map(loc => {
             const d = draftFor(loc)
             const dirty = isDirty(loc)
             const incomplete = !loc.operation_type
             const isEditingRate = editingRate === loc.id
+            const estado = lifecycleStyle('location', loc.operational_status)
+            const activo = loc.operational_status === 'ACTIVE'
             return (
-              <tr key={loc.id} className={`hover:bg-gray-50/60 transition-colors ${dirty ? 'bg-accent/[0.03]' : incomplete ? 'bg-amber-50/50' : ''}`}>
-                <td className="py-2.5 px-2">
+              <tr key={loc.id} className={`transition-colors hover:bg-bg-main ${dirty ? 'bg-accent/5' : incomplete ? 'bg-warning/5' : ''}`}>
+                <td className={CELDA}>
                   <div className="flex items-center gap-1">
                     {loc.site_number && (
-                      <span className="font-mono text-[9px] text-gray-400 shrink-0">{loc.site_number}</span>
+                      <span className="font-identificador text-etiqueta text-informativo shrink-0">{loc.site_number}</span>
                     )}
-                    <input value={d.name} onChange={e => setDraft(loc, { name: e.target.value })}
-                      aria-label={`Nombre de ${loc.name}`} className={INPUT + ' w-28'} />
+                    {canEdit
+                      ? <input value={d.name} onChange={e => setDraft(loc, { name: e.target.value })}
+                          aria-label={`Nombre de ${loc.name}`} className={INPUT + ' w-28'} />
+                      : <span className="font-semibold text-text-primary">{loc.name}</span>}
                   </div>
                 </td>
-                <td className="py-2.5 px-2">
-                  <input value={d.format} onChange={e => setDraft(loc, { format: e.target.value })}
-                    aria-label={`Formato de ${loc.name}`} className={INPUT + ' w-20'} />
+                <td className={CELDA}>
+                  {canEdit
+                    ? <input value={d.format} onChange={e => setDraft(loc, { format: e.target.value })}
+                        aria-label={`Formato de ${loc.name}`} className={INPUT + ' w-20'} />
+                    : <span className="text-informativo">{loc.format ?? '—'}</span>}
                 </td>
-                <td className="py-2.5 px-2">
-                  <input value={d.address} onChange={e => setDraft(loc, { address: e.target.value })}
-                    aria-label={`Dirección de ${loc.name}`} className={INPUT + ' w-28'} />
+                <td className={CELDA}>
+                  {canEdit
+                    ? <input value={d.address} onChange={e => setDraft(loc, { address: e.target.value })}
+                        aria-label={`Dirección de ${loc.name}`} className={INPUT + ' w-28'} />
+                    : <span className="text-informativo">{loc.address ?? '—'}</span>}
                 </td>
-                <td className="py-2.5 px-2 text-gray-500 max-w-[80px] truncate" title={loc.region_name ?? undefined}>{loc.region_name ?? '—'}</td>
-                <td className="py-2.5 px-2">
+                <td className={`${CELDA} text-informativo max-w-[80px] truncate`} title={loc.region_name ?? undefined}>{loc.region_name ?? '—'}</td>
+                <td className={CELDA}>
                   <div className="flex items-center gap-1">
-                    <select value={d.operation_type}
-                      onChange={e => setDraft(loc, { operation_type: e.target.value })}
-                      aria-label={`Clasificación de ${loc.name}`} className={INPUT + ' w-24'}>
-                      <option value="">Sin clasificar</option>
-                      {OPERATION_TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
+                    {canEdit ? (
+                      <select value={d.operation_type}
+                        onChange={e => setDraft(loc, { operation_type: e.target.value })}
+                        aria-label={`Clasificación de ${loc.name}`} className={INPUT + ' w-24'}>
+                        <option value="">Sin clasificar</option>
+                        {zonas.map(z => <option key={z.id} value={z.id}>{z.label}</option>)}
+                      </select>
+                    ) : (
+                      <span className="text-informativo">{loc.operation_type ? zonaLabel(loc.operation_type) : 'Sin clasificar'}</span>
+                    )}
                     {!loc.is_manual_override && loc.operation_type && (
                       <span className="w-1.5 h-1.5 rounded-full bg-accent/50 shrink-0" title="Clasificado automáticamente" />
                     )}
                   </div>
                 </td>
-                <td className="py-2.5 px-2">
-                  <button type="button" onClick={() => toggleActive(loc)}
-                    aria-label={`${loc.operational_status === 'ACTIVE' ? 'Desactivar' : 'Activar'} ${loc.name}`}
-                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${
-                      loc.operational_status === 'ACTIVE'
-                        ? 'bg-green-50 text-green-600 border border-green-100'
-                        : 'bg-gray-50 text-gray-400 border border-gray-100'
-                    }`}>
-                    {loc.operational_status === 'ACTIVE' ? 'Activo' : 'Inactivo'}
-                  </button>
+                <td className={CELDA}>
+                  {canEdit ? (
+                    <input type="checkbox" checked={loc.is_origin}
+                      onChange={() => patchNow(loc, { is_origin: !loc.is_origin })}
+                      aria-label={`Origen: ${loc.name}`} className="accent-accent" />
+                  ) : (
+                    <span className="text-informativo">{loc.is_origin ? 'Origen' : '—'}</span>
+                  )}
                 </td>
-                <td className="py-2.5 px-2">
-                  {isEditingRate ? (
+                <td className={CELDA}>
+                  {canEdit ? (
+                    <button type="button" onClick={() => patchNow(loc, { operational_status: activo ? 'INACTIVE' : 'ACTIVE' })}
+                      aria-label={`${activo ? 'Desactivar' : 'Activar'} ${loc.name}`}>
+                      <StatusChip tone={estado.tone} icon={estado.icon}>{estado.label}</StatusChip>
+                    </button>
+                  ) : (
+                    <StatusChip tone={estado.tone} icon={estado.icon}>{estado.label}</StatusChip>
+                  )}
+                </td>
+                <td className={CELDA}>
+                  {canEdit && isEditingRate ? (
                     <div className="flex items-center gap-1 flex-wrap">
                       <input value={d.tarifa} onChange={e => setDraft(loc, { tarifa: e.target.value })}
                         placeholder="Ej. 450.000 CLP" aria-label={`Tarifa de ${loc.name}`} className={INPUT + ' w-24'} />
@@ -181,25 +214,26 @@ export function LocationsTable({ items, onChanged }: { items: Location[]; onChan
                       <input type="date" value={d.valid_to} onChange={e => setDraft(loc, { valid_to: e.target.value })}
                         aria-label={`Válido hasta de ${loc.name}`} className={INPUT + ' w-28'} />
                     </div>
-                  ) : (
+                  ) : canEdit ? (
                     <button type="button" onClick={() => setEditingRate(loc.id)}
                       aria-label={`Editar tarifa de ${loc.name}`}
-                      className="flex items-center gap-1 text-[11px] text-gray-600 hover:text-accent">
-                      {rateSummary(loc)} <Pencil size={10} className="text-gray-300" />
+                      className="flex items-center gap-1 text-informativo hover:text-accent">
+                      {rateSummary(loc)} <Pencil size={10} />
                     </button>
+                  ) : (
+                    <span className="text-informativo">{rateSummary(loc)}</span>
                   )}
                 </td>
-                <td className="py-2.5 px-2 text-right whitespace-nowrap">
-                  <SaveRowButton dirty={dirty} saving={fb.saving === loc.id}
-                    saved={!!fb.savedAt[loc.id]} onClick={() => save(loc)} />
-                  {fb.errors[loc.id] && <p className="text-[9px] text-red-500 mt-1">{fb.errors[loc.id]}</p>}
-                </td>
+                {canEdit && (
+                  <td className={`${CELDA} text-right whitespace-nowrap`}>
+                    <SaveRowButton dirty={dirty} saving={fb.saving === loc.id}
+                      saved={!!fb.savedAt[loc.id]} onClick={() => save(loc)} />
+                    {fb.errors[loc.id] && <p role="alert" className="text-etiqueta text-status-incidente mt-1">{fb.errors[loc.id]}</p>}
+                  </td>
+                )}
               </tr>
             )
           })}
-          {items.length === 0 && (
-            <tr><td colSpan={8} className="py-4 text-center text-gray-300 italic">Sin locales para este filtro</td></tr>
-          )}
         </tbody>
       </table>
       </div>

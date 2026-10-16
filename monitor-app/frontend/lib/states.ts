@@ -67,9 +67,19 @@ const FLEET_LIFECYCLE: Record<string, StateStyle> = {
   INACTIVE: { label: 'Dado de baja', tone: 'neutral',  icon: Ban },
 }
 
-export function lifecycleStyle(kind: EntityKind, status: string): StateStyle {
-  const table = kind === 'carrier' ? CARRIER_LIFECYCLE : FLEET_LIFECYCLE
-  return table[status] ?? { label: status, tone: 'neutral', icon: CircleDashed }
+/** Clientes y lugares: se activan o desactivan, sin baja ni onboarding. */
+const CATALOG_LIFECYCLE: Record<string, StateStyle> = {
+  ACTIVE:   { label: 'Activo',   tone: 'resolved', icon: CircleCheck },
+  INACTIVE: { label: 'Inactivo', tone: 'neutral',  icon: Ban },
+}
+const LIFECYCLE_BY_KIND: Record<EntityKind | CatalogKind, Record<string, StateStyle>> = {
+  carrier: CARRIER_LIFECYCLE, driver: FLEET_LIFECYCLE, asset: FLEET_LIFECYCLE,
+  shipper: CATALOG_LIFECYCLE, location: CATALOG_LIFECYCLE,
+}
+export type CatalogKind = 'shipper' | 'location'
+
+export function lifecycleStyle(kind: EntityKind | CatalogKind, status: string): StateStyle {
+  return LIFECYCLE_BY_KIND[kind][status] ?? { label: status, tone: 'neutral', icon: CircleDashed }
 }
 
 /** La empresa está dada de baja (no "en onboarding"). Su flota queda vinculada

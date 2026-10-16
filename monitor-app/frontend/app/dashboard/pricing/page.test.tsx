@@ -9,6 +9,9 @@ vi.mock('@/lib/api/locations', () => ({
   locationsApi: { list: vi.fn(), create: vi.fn(), patch: vi.fn(), createRate: vi.fn(), patchRate: vi.fn(), listRates: vi.fn() },
   shippersApi: { list: vi.fn() },
 }))
+vi.mock('@/hooks/useTripsMeta', () => ({ useTripsMeta: () => ({ data: { operation_types: [{ id: 'RM', label: 'RM' }] } }) }))
+let canEdit = true
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => canEdit }))
 
 const SHIPPER: Shipper = { id: 'shipper-1', name: 'Walmart', status: 'ACTIVE' }
 const PENDING: Location = {
@@ -33,6 +36,7 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  canEdit = true
   vi.mocked(shippersApi.list).mockReset().mockResolvedValue([SHIPPER])
   vi.mocked(locationsApi.list).mockReset().mockImplementation(async (params?: LocationListParams) => {
     if (params?.needs_manual_classification) return { data: [PENDING], count: 1, page: 1, limit: 50 }
@@ -73,5 +77,25 @@ describe('TarifarioPage', () => {
 
     expect(await screen.findByRole('button', { name: /Todos los locales/, pressed: true })).toBeInTheDocument()
     expect(screen.getByLabelText('Buscar local')).toHaveValue('Empresas Carozzi S.A.')
+  })
+
+  it('sin commercial.edit el Tarifario se lee: sin alta de lugares y la tabla sin controles', async () => {
+    canEdit = false
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /Todos los locales/ }))
+    expect(await screen.findByText('Alameda')).toBeInTheDocument()
+    expect(screen.queryByText('Nuevo local')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Nombre de Alameda')).not.toBeInTheDocument()
+  })
+
+  it('si la lista falla se dice el error, no que no hay lugares', async () => {
+    vi.mocked(locationsApi.list).mockImplementation(async (params?: LocationListParams) => {
+      if (params?.entity_type) throw new Error('500')
+      return { data: [PENDING], count: 1, page: 1, limit: 200 }
+    })
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /Todos los locales/ }))
+    expect(await screen.findByText('Error al cargar')).toBeInTheDocument()
+    expect(screen.queryByText('Sin lugares para este filtro')).not.toBeInTheDocument()
   })
 })

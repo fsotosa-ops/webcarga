@@ -9,6 +9,7 @@ import { LocationsPendingTab } from '@/components/dashboard/LocationsPendingTab'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { INPUT, LoadState } from '../admin/settings/shared'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
+import { usePermiso } from '@/lib/authz/PermisosProvider'
 
 type Tab = 'pending' | 'all'
 const LIMIT = 50
@@ -20,6 +21,7 @@ const LIMIT = 50
  *  docs/superpowers/specs/2026-07-27-tarifario-robustecimiento-design.md. */
 export default function TarifarioPage() {
   const queryClient = useQueryClient()
+  const canEdit = usePermiso('commercial.edit')
   const [tab, setTab] = useState<Tab>('pending')
   const [shippers, setShippers] = useState<Shipper[]>([])
   const [shipperId, setShipperId] = useState('')
@@ -66,7 +68,7 @@ export default function TarifarioPage() {
             bajada="Local, formato, dirección, clasificación y tarifa vigente — la zona se clasifica sola desde los viajes del TMS."
           />
         </div>
-        <LocationCreateForm shippers={shippers} onCreated={invalidate} />
+        {canEdit && <LocationCreateForm shippers={shippers} onCreated={invalidate} />}
       </div>
 
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">
@@ -115,9 +117,9 @@ export default function TarifarioPage() {
           </div>
 
           <LoadState loading={allQuery.isPending} error={allQuery.error ? 'Error al cargar' : null} onRetry={() => allQuery.refetch()} />
-          {!allQuery.isPending && <LocationsTable items={allItems} onChanged={invalidate} />}
+          {allQuery.isSuccess && <LocationsTable items={allItems} onChanged={invalidate} canEdit={canEdit} />}
 
-          {!allQuery.isPending && totalPages > 1 && (
+          {allQuery.isSuccess && totalPages > 1 && (
             <div className="flex items-center justify-center gap-3 pt-3">
               <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
                 className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-border text-gray-500 disabled:opacity-40">

@@ -6,7 +6,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { tripsApi, type TripListResponse } from '@/lib/api/trips'
-import { fetchTripsMeta } from '@/lib/api/tripsMeta'
+import { useTripsMeta } from '@/hooks/useTripsMeta'
 import type { Trip } from '@/lib/types'
 import { TripDetailView } from '@/components/dashboard/TripDetailView'
 
@@ -18,7 +18,7 @@ export default function TripDetailOverlay() {
   const panelRef = useRef<HTMLDivElement>(null)
 
   const tripQuery = useQuery({ queryKey: ['trip', id], queryFn: () => tripsApi.get(id) })
-  const metaQuery = useQuery({ queryKey: ['trips-meta'], queryFn: fetchTripsMeta, staleTime: 60 * 60 * 1000 })
+  const metaQuery = useTripsMeta()
 
   function dismiss() { router.back() }
   const isTop = useLayer()
