@@ -29,15 +29,6 @@ def cliente(pool):
     return TestClient(app)
 
 
-def test_get_pide_solo_la_fila_global_con_parametro():
-    pool = AsyncMock()
-    pool.fetch.return_value = []
-    assert cliente(pool).get("/api/v1/config/alert-thresholds").status_code == 200
-    sql, *args = pool.fetch.call_args.args
-    assert "WHERE doc_type = $1" in sql
-    assert args == [GLOBAL_ALERT_THRESHOLD]
-
-
 def test_patch_de_una_fila_por_documento_responde_404_y_no_escribe():
     pool = AsyncMock()
     res = cliente(pool).patch("/api/v1/config/alert-thresholds/license_expiry", json={"warning_days": 10})

@@ -36,6 +36,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Literal, Optional
 
+from ..authz.permissions import Permission
+
 
 
 def hoy_sql() -> str:
@@ -48,6 +50,26 @@ def hoy_sql() -> str:
 # La fila global de Configuracion > Alertas de vencimiento: aviso (warning_days)
 # y critico (error_days). La unica que lee la logica (D1-R4).
 GLOBAL_ALERT_THRESHOLD = "documento_por_vencer"
+
+# El plazo de "póliza por vencer" (Seguros E1, D1). Lo leen las vistas
+# app.insurance_status y app.carrier_insurance_summary.
+POLIZA_POR_VENCER = "poliza_por_vencer"
+
+
+@dataclass(frozen=True)
+class Umbral:
+    """Quién edita un umbral de vencimiento y dónde queda su revisión."""
+    permiso: Permission
+    dominio: str
+    seccion: str
+
+
+# Los umbrales que se editan en Configuración, cada uno en su área
+# (Configuración, Parte 1). Uno que no está acá no se lee ni se edita.
+UMBRALES: dict[str, Umbral] = {
+    GLOBAL_ALERT_THRESHOLD: Umbral(Permission.CERTIFICATION_CONFIGURE, "certification", "expiry-alerts"),
+    POLIZA_POR_VENCER:      Umbral(Permission.INSURANCE_CONFIGURE, "insurance", "expiry-alerts"),
+}
 
 # El aviso de Configuracion > Alertas, para los tipos sin dias propios. Sin
 # correlacion: Postgres lo calcula una vez por consulta.

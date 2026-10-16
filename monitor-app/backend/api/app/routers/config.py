@@ -5,13 +5,14 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from ..auth import get_current_user
 from ..authz import Permission, require
+from ..authz.deps import exigir
 from ..db import get_pool
 from ..schemas.status_taxonomy import BOARD_COLUMNS
 from ..services.reordenamiento import (
     ESTADOS_DEL_TABLERO, MovimientoBody, mover_una_posicion,
 )
 from ..services.reglas_del_monitor import SQL_REGLAS_DEL_MONITOR
-from ..services.vencimientos import GLOBAL_ALERT_THRESHOLD
+from ..services.vencimientos import UMBRALES
 from ..services.revisiones import SQL_PENDIENTES_POR_DOMINIO, registrar_revision
 
 # Cada ruta declara su permiso (RBAC): ver tests/test_toda_ruta_declara_permiso.py.
@@ -224,13 +225,13 @@ async def move_status(
 async def list_alert_thresholds(pool=Depends(get_pool),
     _permiso=Depends(require(Permission.REFERENCE_READ)),
 ):
-    # Solo el aviso general (D1-R4): las filas por documento no las lee nadie
-    # y la pantalla prometía una alerta que no existía. Sigue siendo una lista
-    # para no cambiar el contrato del cliente.
+    # Los umbrales del registro, uno por área (Configuración, Parte 1): el aviso
+    # general de documentos y el de pólizas. Las filas por documento no las lee
+    # nadie (D1-R4).
     rows = await pool.fetch(
         "SELECT doc_type, label, warning_days, error_days "
-        "FROM app.alert_thresholds WHERE doc_type = $1",
-        GLOBAL_ALERT_THRESHOLD,
+        "FROM app.alert_thresholds WHERE doc_type = ANY($1::text[]) ORDER BY doc_type",
+        list(UMBRALES),
     )
     return [dict(r) for r in rows]
 
@@ -240,11 +241,13 @@ async def patch_alert_threshold(
     doc_type: str,
     body: AlertThresholdPatch,
     pool=Depends(get_pool),
-    # Reglas de vencimiento de documentos: Certificación (spec RBAC §4).
-    usuario=Depends(require(Permission.CERTIFICATION_CONFIGURE)),
+    usuario=Depends(get_current_user),
 ):
-    if doc_type != GLOBAL_ALERT_THRESHOLD:
-        raise HTTPException(404, "Solo se edita el aviso general de vencimiento")
+    # Cada umbral lo edita su área: documentos, Certificación; pólizas, Seguros.
+    umbral = UMBRALES.get(doc_type)
+    if umbral is None:
+        raise HTTPException(404, "Ese umbral no se edita en Configuración")
+    exigir(usuario, umbral.permiso)
     existing = await pool.fetchrow(
         "SELECT doc_type, label, warning_days, error_days FROM app.alert_thresholds WHERE doc_type = $1",
         doc_type,
@@ -275,8 +278,7 @@ async def patch_alert_threshold(
         "FROM app.alert_thresholds WHERE doc_type = $1",
         doc_type,
     )
-    await registrar_revision(
-        pool, "certification", "expiry-alerts", doc_type, usuario["sub"])
+    await registrar_revision(pool, umbral.dominio, umbral.seccion, doc_type, usuario["sub"])
     # Sin invalidar /trips/meta: la meta ya no lleva los umbrales (D1, R-E4).
     return dict(row)
 
