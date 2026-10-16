@@ -480,3 +480,38 @@ test('Directorio › Clientes → un cliente → marcar un lugar como Origen →
   }
   expect(problems).toEqual([])
 })
+
+test('Certificación › Documentos exigidos → filtro → ficha → "¿Cuándo vence?" con su efecto → cancelar → Volver con el filtro (P2.7)', async ({ page }) => {
+  test.setTimeout(120000)
+  const problems = watch(page)
+  await login(page, 'cert@sim.local')
+  // El menú lo recorre la matriz por rol; aquí se entra directo.
+  await page.goto('/dashboard/compliance/requirements')
+  await page.getByRole('group', { name: 'Entidad' }).getByRole('button', { name: /Equipo/ }).click()
+  await page.waitForURL('**/requirements?entity=ASSET', { timeout: 20000 })
+  // Un documento vigente: su vigencia se puede cambiar y su efecto se calcula.
+  const vigente = page.locator('tbody tr').filter({ hasNotText: 'No se exige' }).first()
+  await vigente.waitFor({ timeout: 30000 })
+  const nombre = (await vigente.locator('a').first().innerText()).trim()
+  await vigente.locator('a').first().click()
+  await page.waitForURL('**/dashboard/compliance/requirements/**', { timeout: 20000 })
+  await expect(page.getByRole('heading', { name: nombre })).toBeVisible({ timeout: 30000 })
+
+  const vence = page.getByRole('region', { name: '¿Cuándo vence?' })
+  await vence.getByRole('button', { name: 'Editar' }).click()
+  const panel = page.getByRole('dialog')
+  await expect(panel).toBeVisible()
+  // Solo la pregunta elegida: el panel no ofrece cambiar a quién se exige.
+  await expect(panel.getByText('¿A quién se le exige?')).toHaveCount(0)
+  const plazo = panel.getByRole('radio', { name: 'Dura un plazo desde que se emite' })
+  const otra = (await plazo.isChecked()) ? panel.getByRole('radio', { name: 'No vence' }) : plazo
+  await otra.click()
+  // El efecto se ve ANTES de guardar.
+  await expect(panel.getByText(/Con esta regla:/)).toBeVisible({ timeout: 30000 })
+  await page.keyboard.press('Escape')
+  await expect(panel).toHaveCount(0)
+
+  await page.getByRole('link', { name: 'Volver a Documentos exigidos' }).click()
+  await page.waitForURL('**/requirements?entity=ASSET', { timeout: 20000 })
+  expect(problems).toEqual([])
+})
