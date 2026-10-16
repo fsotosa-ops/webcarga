@@ -149,7 +149,7 @@ describe('invalidateDirectory', () => {
 const NO_DEPENDEN_DEL_DIRECTORIO = new Set([
   'trips', 'trip', 'trip-notes', 'trips-meta', 'trips-activos',      // el viaje, no el maestro
   'fleet-activity',                                                    // la ficha (D4): cuenta viajes, no cambia con el maestro
-  'taxonomies', 'tms-statuses', 'origenes', 'shippers', 'asset-types', // catálogos
+  'taxonomies', 'tms-statuses', 'origenes', 'asset-types',             // catálogos
   'locations-picker', 'coverage-types',
   'compliance-requirements', 'recalc-preview', 'vigencia-preview',     // configuración
   'planilla-vencimientos', 'config-inventario', 'config-busqueda', 'solicitables',

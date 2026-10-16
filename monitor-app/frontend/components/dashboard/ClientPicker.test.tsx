@@ -107,4 +107,14 @@ describe('ClientPicker', () => {
     expect(await screen.findByText('«Agrícola Vieja» está inactivo en el directorio')).toBeInTheDocument()
     expect(screen.queryByText(/Crear cliente/)).toBeNull()
   })
+
+  it('crear un cliente refresca Directorio › Clientes', async () => {
+    vi.mocked(shippersApi.create).mockResolvedValue({ id: 's3', name: 'Agrosuper', status: 'ACTIVE' } as never)
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalida = vi.spyOn(qc, 'invalidateQueries')
+    render(<QueryClientProvider client={qc}><ClientPicker value={null} onChange={vi.fn()} /></QueryClientProvider>)
+    fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'Agrosuper' } })
+    fireEvent.click(await screen.findByText('Crear cliente “Agrosuper”'))
+    await waitFor(() => expect(invalida).toHaveBeenCalledWith({ queryKey: ['clients'] }))
+  })
 })

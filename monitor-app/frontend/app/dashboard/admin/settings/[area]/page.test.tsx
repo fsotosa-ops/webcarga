@@ -36,6 +36,14 @@ describe('/settings/[area] (P1.7)', () => {
     expect(reemplazar).toHaveBeenCalledWith('/dashboard/pricing?origen=1')
   })
 
+  it('P3.7: el enlace viejo redirige aunque la persona ya no vea esa área (solo commercial.edit)', async () => {
+    permisos = ['commercial.edit']
+    busqueda = 'section=tms-clients'
+    await montar('operations')
+    expect(reemplazar).toHaveBeenCalledWith('/dashboard/clients?vista=sin-vincular')
+    expect(noEncontrado).not.toHaveBeenCalled()
+  })
+
   it('?doc= de Condiciones se conserva', async () => {
     permisos = ['certification.configure']
     busqueda = 'section=conditions&doc=MANTENCION_FRIO'

@@ -33,7 +33,8 @@ FROM public.shippers sh
 CROSS JOIN LATERAL (
     SELECT count(*) AS locations, count(*) FILTER (WHERE l.is_origin) AS origins
     FROM public.locations l
-    WHERE l.entity_type = 'SHIPPER' AND l.entity_id = sh.id AND l.operational_status = 'ACTIVE'
+    -- Todos, activos e inactivos: es lo que lista la pestaña Lugares de la ficha.
+    WHERE l.entity_type = 'SHIPPER' AND l.entity_id = sh.id
 ) lug
 """
 
@@ -46,6 +47,14 @@ class ShipperPatchBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = None
     status: Literal["ACTIVE", "INACTIVE"] | None = None
+
+
+# Una sentencia por campo editable, escrita entera: ningún nombre de columna
+# se arma con texto que venga del pedido.
+_SQL_ACTUALIZAR = {
+    "name":   "UPDATE public.shippers SET name = $2 WHERE id = $1::uuid",
+    "status": "UPDATE public.shippers SET status = $2 WHERE id = $1::uuid",
+}
 
 
 def _nombre_limpio(name: str) -> str:
@@ -106,8 +115,7 @@ async def patch_shipper(
                 if actual[campo] == valor:
                     continue
                 try:
-                    # `campo` sale del modelo con extra="forbid": solo name o status.
-                    await conn.execute(f"UPDATE public.shippers SET {campo} = $2 WHERE id = $1::uuid", sid, valor)
+                    await conn.execute(_SQL_ACTUALIZAR[campo], sid, valor)
                 except Exception as e:
                     if _es_nombre_repetido(e):
                         raise _nombre_repetido(valor)

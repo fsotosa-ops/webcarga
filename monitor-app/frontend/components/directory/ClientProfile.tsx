@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, Ban, CircleCheck, Pencil } from 'lucide-react'
+import { ArrowRight, Ban, CircleCheck, Loader2, Pencil } from 'lucide-react'
 import { shippersApi, type ShipperPatch, type ShipperRow } from '@/lib/api/locations'
 import { ApiError } from '@/lib/api/client'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
@@ -53,11 +53,10 @@ export function ClientProfile({ id }: { id: string }) {
     await invalidateClients(qc)
   }
 
-  async function setStatus(status: ShipperPatch['status']) {
+  async function reactivate() {
     setActionError(null)
     try {
-      await patch({ status })
-      setPanel(null)
+      await patch({ status: 'ACTIVE' })
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'No se pudo guardar')
     }
@@ -90,7 +89,7 @@ export function ClientProfile({ id }: { id: string }) {
     { id: 'name', label: 'Cambiar nombre', icon: Pencil, onSelect: () => setPanel('name') },
     active
       ? { id: 'deactivate', label: 'Desactivar cliente', icon: Ban, destructive: true, onSelect: () => setPanel('deactivate') }
-      : { id: 'reactivate', label: 'Reactivar cliente', icon: CircleCheck, onSelect: () => { void setStatus('ACTIVE') } },
+      : { id: 'reactivate', label: 'Reactivar cliente', icon: CircleCheck, onSelect: () => { void reactivate() } },
   ] : []
 
   return (
@@ -127,7 +126,8 @@ export function ClientProfile({ id }: { id: string }) {
       </>}>
         {section === 'lugares'
           ? <LocationsBrowser filters={locationFilters} onFiltersChange={setLocationFilters} canEdit={canEdit}
-              emptyTitle="Este cliente todavía no tiene lugares" />
+              empty={{ titulo: 'Este cliente todavía no tiene lugares',
+                       detalle: 'Llegan solos con los viajes del TMS, o se agregan en el Tarifario.' }} />
           : <ClientCarriers client={c} />}
       </ProfileLayout>
 
@@ -136,19 +136,43 @@ export function ClientProfile({ id }: { id: string }) {
           onGuardar={async name => { await patch({ name }); setPanel(null) }} onCerrar={() => setPanel(null)} />
       )}
       {panel === 'deactivate' && (
-        <PanelLateral titulo={`Desactivar ${c.name}`} onCerrar={() => setPanel(null)} pie={
-          <button type="button" onClick={() => { void setStatus('INACTIVE') }}
-            className="inline-flex items-center gap-1.5 rounded-md bg-status-incidente px-3 py-1.5 text-dato font-semibold text-white hover:bg-status-incidente/90">
-            <Ban size={12} aria-hidden /> Desactivar
-          </button>
-        }>
-          <p className="text-dato text-text-primary">
-            Deja de ofrecerse para vincular nombres del TMS. No se borran sus lugares, sus empresas ni sus viajes,
-            y se puede reactivar.
-          </p>
-        </PanelLateral>
+        <DeactivatePanel name={c.name} onDeactivate={() => patch({ status: 'INACTIVE' })} onClose={() => setPanel(null)} />
       )}
     </div>
+  )
+}
+
+/** Confirmar la desactivación, diciendo qué pasa y qué no. El error se ve aquí,
+ *  en el panel abierto, y el botón no se aprieta dos veces mientras guarda. */
+function DeactivatePanel({ name, onDeactivate, onClose }: {
+  name: string; onDeactivate: () => Promise<void>; onClose: () => void
+}) {
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function deactivate() {
+    setSaving(true)
+    setError(null)
+    try {
+      await onDeactivate()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo guardar')
+      setSaving(false)
+    }
+  }
+  return (
+    <PanelLateral titulo={`Desactivar ${name}`} onCerrar={onClose} pie={
+      <button type="button" onClick={() => { void deactivate() }} disabled={saving}
+        className="inline-flex items-center gap-1.5 rounded-md bg-status-incidente px-3 py-1.5 text-dato font-semibold text-white hover:bg-status-incidente/90 disabled:opacity-50">
+        {saving ? <Loader2 size={12} className="animate-spin" aria-hidden /> : <Ban size={12} aria-hidden />} Desactivar
+      </button>
+    }>
+      <p className="text-dato text-text-primary">
+        Deja de ofrecerse para vincular nombres del TMS. No se borran sus lugares, sus empresas ni sus viajes,
+        y se puede reactivar.
+      </p>
+      {error && <p role="alert" className="mt-2 text-dato text-status-incidente">{error}</p>}
+    </PanelLateral>
   )
 }
 

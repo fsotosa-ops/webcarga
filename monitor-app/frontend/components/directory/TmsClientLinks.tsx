@@ -2,11 +2,12 @@
 
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { shippersApi, type Shipper } from '@/lib/api/locations'
+import type { Shipper } from '@/lib/api/locations'
 import { tmsClientsApi } from '@/lib/api/tmsClients'
 import type { TmsClient } from '@/lib/types'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { clientKeys, invalidateClients } from '@/lib/queries/clientes'
+import { useClients } from '@/hooks/useClients'
 import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
 import { Estado } from '@/components/ui/Estado'
 import { INPUT } from '@/app/dashboard/admin/settings/shared'
@@ -31,7 +32,7 @@ export function TmsClientLinks(props: Props) {
   const qc = useQueryClient()
   const puedeEditar = usePermiso('commercial.edit')
   const lista = useQuery({ queryKey: clientKeys.tmsLinks(params), queryFn: () => tmsClientsApi.list(params) })
-  const directorio = useQuery({ queryKey: clientKeys.pickers(), queryFn: shippersApi.list })
+  const directorio = useClients()
   const [aplicados, setAplicados] = useState<Set<string>>(new Set())
   const [porConfirmar, setPorConfirmar] = useState<{ id: string; shipperId: string } | null>(null)
   const vinculo = useMutation({
@@ -146,6 +147,10 @@ function VinculoDeLaFila({ c, activos, puedeEditar, pendiente, guardando, error,
         className={INPUT}
       >
         {!c.shipper_id && <option value="">Elige el cliente</option>}
+        {/* Vinculado a un cliente desactivado: se dice, y se puede mover a uno activo. */}
+        {c.shipper_id && !activos.some(s => s.id === c.shipper_id) && (
+          <option value={c.shipper_id} disabled>{c.shipper_name} (inactivo)</option>
+        )}
         {activos.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
       </select>
       {pendiente && (

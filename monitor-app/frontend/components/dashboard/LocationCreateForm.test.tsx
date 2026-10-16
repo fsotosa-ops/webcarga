@@ -4,6 +4,7 @@ import { LocationCreateForm } from './LocationCreateForm'
 import { locationsApi, type Shipper } from '@/lib/api/locations'
 import type { Location } from '@/lib/types'
 
+vi.mock('@/hooks/useTripsMeta', () => ({ useTripsMeta: () => ({ data: { operation_types: [{ id: 'RM', label: 'RM' }, { id: 'ZX', label: 'Zona Nueva' }] } }) }))
 vi.mock('@/lib/api/locations', () => ({
   locationsApi: { create: vi.fn() },
 }))
@@ -89,5 +90,11 @@ describe('LocationCreateForm', () => {
     fireEvent.click(screen.getByText('Nuevo local'))
     fireEvent.click(screen.getByText('Cancelar'))
     expect(screen.getByText('Nuevo local')).toBeInTheDocument()
+  })
+
+  it('las zonas son las del catálogo, no un literal del componente', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    expect(readFileSync(join(__dirname, 'LocationCreateForm.tsx'), 'utf8')).not.toMatch(/['"](RM|Z0|Region Norte|Region Sur)['"]/)
   })
 })

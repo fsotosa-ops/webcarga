@@ -1,9 +1,10 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { locationsApi, shippersApi, type Shipper } from '@/lib/api/locations'
+import { locationsApi } from '@/lib/api/locations'
+import { useClients } from '@/hooks/useClients'
 import { invalidateClients } from '@/lib/queries/clientes'
 import { LocationCreateForm } from '@/components/dashboard/LocationCreateForm'
 import { LocationsBrowser, NO_LOCATION_FILTERS, type LocationFilters } from '@/components/dashboard/LocationsBrowser'
@@ -29,10 +30,8 @@ function Tarifario() {
   // `?origen=1` (ex Configuración › Orígenes) abre los lugares de origen.
   const desdeOrigenes = useSearchParams().get('origen') === '1'
   const [tab, setTab] = useState<Tab>(desdeOrigenes ? 'all' : 'pending')
-  const [shippers, setShippers] = useState<Shipper[]>([])
+  const shippers = useClients().data ?? []
   const [filters, setFilters] = useState<LocationFilters>({ ...NO_LOCATION_FILTERS, origin: desdeOrigenes })
-
-  useEffect(() => { shippersApi.list().then(setShippers).catch(() => setShippers([])) }, [])
 
   const pendingQuery = useQuery({
     queryKey: ['tarifario-pending'],
@@ -88,6 +87,7 @@ function Tarifario() {
               shipperName={shipperName}
               onChanged={invalidate}
               onSelect={loc => { setFilters({ ...NO_LOCATION_FILTERS, q: loc.name }); setTab('all') }}
+              canEdit={canEdit}
             />
           )}
         </>

@@ -1,4 +1,4 @@
-"""Configuración › Clientes del TMS (spec 2026-10-11 §4): a qué cliente del
+"""Cómo llama cada TMS a cada cliente (spec 2026-10-11 §4; Directorio › Clientes desde la Parte 3): a qué cliente del
 directorio corresponde cada cliente de cada TMS. dbt la lee para
 app.trips.shipper_id; un cambio se aplica a los viajes, incluidos los viejos, en
 la próxima corrida (escotilla OR 7 del modelo trips)."""

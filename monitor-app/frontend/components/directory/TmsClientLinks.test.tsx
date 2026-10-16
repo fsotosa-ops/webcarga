@@ -117,4 +117,14 @@ describe('TmsClientLinks', () => {
     expect(await screen.findByText('No se pudieron cargar los nombres del TMS')).toBeInTheDocument()
     expect(screen.queryByRole('combobox')).toBeNull()
   })
+
+  it('un vínculo a un cliente inactivo se muestra como tal, y se puede mover a uno activo', async () => {
+    vi.mocked(tmsClientsApi.list).mockResolvedValue([{ ...VINCULADO, shipper_id: 's5', shipper_name: 'Agrícola Vieja' }] as never)
+    renderLinks({ shipperId: 's5' })
+    const selector = await screen.findByRole('combobox', { name: 'Cliente del directorio para walmart' })
+    expect(selector).toHaveValue('s5')
+    expect(within(selector).getByRole('option', { name: 'Agrícola Vieja (inactivo)' })).toBeDisabled()
+    fireEvent.change(selector, { target: { value: 's1' } })
+    expect(screen.getByText('¿Pasar «walmart» y sus 3.029 viajes a Walmart?')).toBeInTheDocument()
+  })
 })

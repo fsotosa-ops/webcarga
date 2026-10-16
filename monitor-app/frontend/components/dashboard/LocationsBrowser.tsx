@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { locationsApi, type Shipper } from '@/lib/api/locations'
 import { invalidateClients } from '@/lib/queries/clientes'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { LocationsTable } from '@/components/dashboard/LocationsTable'
+import { LocationsTable, type LocationsEmpty } from '@/components/dashboard/LocationsTable'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { INPUT, LoadState } from '@/app/dashboard/admin/settings/shared'
 
@@ -20,13 +20,13 @@ export const NO_LOCATION_FILTERS: LocationFilters = { shipperId: '', q: '', orig
  *  ofrece elegir el generador de carga; sin él, el cliente es el de `filters`.
  *  Los filtros los guarda quien lo usa (el Tarifario salta aquí desde "Por
  *  revisar" con la búsqueda puesta). */
-export function LocationsBrowser({ filters, onFiltersChange, shippers, canEdit, emptyTitle }: {
+export function LocationsBrowser({ filters, onFiltersChange, shippers, canEdit, empty }: {
   filters: LocationFilters
   onFiltersChange: (next: LocationFilters) => void
   shippers?: Shipper[]
   canEdit: boolean
-  /** Qué decir sin lugares y sin búsqueda. */
-  emptyTitle?: string
+  /** Qué decir sin lugares y sin filtros. */
+  empty?: LocationsEmpty
 }) {
   const qc = useQueryClient()
   const q = useDebouncedValue(filters.q, 300)
@@ -62,7 +62,7 @@ export function LocationsBrowser({ filters, onFiltersChange, shippers, canEdit, 
       <LoadState loading={query.isPending} error={query.error ? 'Error al cargar' : null} onRetry={() => query.refetch()} />
       {query.isSuccess && (
         <LocationsTable items={query.data.data} onChanged={() => invalidateClients(qc)} canEdit={canEdit}
-          emptyTitle={!filters.q && !filters.origin && emptyTitle ? emptyTitle : undefined}
+          empty={!filters.q && !filters.origin ? empty : undefined}
           clientOf={shippers && !filters.shipperId ? clientOf : undefined} />
       )}
 

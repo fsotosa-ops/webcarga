@@ -98,3 +98,9 @@ def test_renombrar_a_un_nombre_que_ya_existe_es_409():
     wire_transactional_conn(pool, conn)
     res = make_client(pool).patch(f"/api/v1/shippers/{SHIPPER_ID}", json={"name": "walmart"})
     assert res.status_code == 409
+
+
+def test_cada_campo_editable_tiene_su_sentencia_escrita():
+    """Agregar un campo al PATCH obliga a escribir su UPDATE (sin armar SQL con texto)."""
+    from app.routers.shippers import _SQL_ACTUALIZAR, ShipperPatchBody
+    assert set(ShipperPatchBody.model_fields) == set(_SQL_ACTUALIZAR)

@@ -2,7 +2,9 @@
 
 import { useState } from 'react'
 import { Search, Loader2, Building2, Plus } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
+import { useClients } from '@/hooks/useClients'
+import { invalidateClients } from '@/lib/queries/clientes'
 import { shippersApi } from '@/lib/api/locations'
 import { ApiError } from '@/lib/api/client'
 
@@ -28,11 +30,8 @@ export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size
   const [creating, setCreating] = useState(false)
   const [err, setErr]           = useState<string | null>(null)
 
-  const shippersQuery = useQuery({
-    queryKey: ['shippers', 'list'],
-    queryFn: () => shippersApi.list(),
-    staleTime: 5 * 60 * 1000,
-  })
+  const qc = useQueryClient()
+  const shippersQuery = useClients()
   // Solo clientes activos: el backend rechaza un viaje con un cliente inactivo.
   const todos = shippersQuery.data ?? []
   const shippers = todos.filter(s => s.status === 'ACTIVE')
@@ -54,6 +53,7 @@ export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size
     setCreating(true); setErr(null)
     try {
       const created = await shippersApi.create({ name })
+      await invalidateClients(qc)
       elegir(created)
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {

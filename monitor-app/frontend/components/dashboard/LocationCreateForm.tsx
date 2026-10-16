@@ -4,8 +4,7 @@ import { useState } from 'react'
 import { Loader2, Plus } from 'lucide-react'
 import type { Location } from '@/lib/types'
 import { locationsApi, type Shipper } from '@/lib/api/locations'
-
-const OPERATION_TYPE_OPTIONS = ['RM', 'Z0', 'Region Norte', 'Region Sur']
+import { useTripsMeta } from '@/hooks/useTripsMeta'
 
 const EMPTY_LOCATION = {
   shipperId: '', name: '', site_number: '', format: '', address: '',
@@ -24,6 +23,8 @@ interface Props {
  *  página, para que "+ Nuevo local" quede visible siempre, no solo con un
  *  generador ya elegido. */
 export function LocationCreateForm({ shippers, onCreated }: Props) {
+  // Las zonas salen del catálogo de la API (`meta.operation_types`).
+  const zonas = useTripsMeta().data?.operation_types ?? []
   const [nuevo, setNuevo]         = useState<typeof EMPTY_LOCATION | null>(null)
   const [creating, setCreating]   = useState(false)
   const [createErr, setCreateErr] = useState<string | null>(null)
@@ -78,10 +79,10 @@ export function LocationCreateForm({ shippers, onCreated }: Props) {
         <select value={nuevo.operation_type} onChange={e => setNuevo({ ...nuevo, operation_type: e.target.value })}
           aria-label="Clasificación del local nuevo" className={INPUT + ' w-32'}>
           <option value="">Sin clasificar</option>
-          {OPERATION_TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+          {zonas.map(z => <option key={z.id} value={z.id}>{z.label}</option>)}
         </select>
       </div>
-      {createErr && <p className="text-[10px] text-red-500">{createErr}</p>}
+      {createErr && <p role="alert" className="text-etiqueta text-status-incidente">{createErr}</p>}
       <div className="flex items-center gap-2">
         <button type="button" onClick={create} disabled={creating}
           className="flex items-center gap-1.5 text-xs font-semibold text-white bg-accent hover:bg-accent/90 px-3 py-1.5 rounded-lg disabled:opacity-50">

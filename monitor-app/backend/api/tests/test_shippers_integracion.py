@@ -43,6 +43,15 @@ async def test_los_conteos_del_cliente_salen_de_sus_datos(conexion_revertida):
     assert (fila["tms_names"], fila["locations"], fila["origins"], fila["carriers"], fila["trips_30d"]) == (1, 2, 1, 1, 1)
 
 
+async def test_los_lugares_cuentan_tambien_los_inactivos_como_la_tabla(conexion_revertida):
+    """La pestaña Lugares lista activos e inactivos: su cifra cuenta lo mismo."""
+    sid = await _cliente_con_todo(conexion_revertida)
+    await conexion_revertida.execute(
+        "INSERT INTO public.locations (entity_type, entity_id, name, operational_status) VALUES ('SHIPPER', $1::uuid, 'ZZ-INACTIVO', 'INACTIVE')",
+        sid)
+    assert (await _detalle(conexion_revertida, sid))["locations"] == 3
+
+
 async def test_desactivar_y_renombrar_audita_y_no_borra_nada(conexion_revertida):
     sid = await _cliente_con_todo(conexion_revertida)
     usuario = await _usuario_real(conexion_revertida)
@@ -90,3 +99,21 @@ async def test_los_nombres_del_tms_se_filtran_por_cliente_y_sin_vincular(conexio
     assert all(f["shipper_id"] is None for f in sin_vincular)
     todos = await listar(shipper_id=None, unlinked=False, pool=pool, _=None)
     assert len(todos) > len(sin_vincular)
+
+
+async def test_renombrar_un_cliente_no_corta_el_alta_de_sus_lugares(conexion_revertida):
+    """Revisión final de la Parte 3: el trigger que registra los lugares de las
+    paradas buscaba al cliente por el NOMBRE que manda el TMS. Renombrar el
+    cliente en la ficha cortaba el alta en silencio. Se resuelve por el id del
+    viaje, como el resto del modelo (spec 2026-10-11)."""
+    sid = await _cliente_con_todo(conexion_revertida)
+    trip_id = await conexion_revertida.fetchval(
+        "SELECT id FROM app.trips WHERE shipper_id = $1::uuid LIMIT 1", sid)
+    await conexion_revertida.execute("UPDATE public.shippers SET name = $2 WHERE id = $1::uuid",
+                                     sid, f"TEST-{uuid.uuid4().hex[:8]} renombrado")
+    await conexion_revertida.execute(
+        "INSERT INTO app.trip_stops (stop_id, trip_id, stop_order, stop_type, local) VALUES ($1, $2, 9, 'DESTINATION', 'ZZ-LOCAL-NUEVO')",
+        f"ZZSTOP-{uuid.uuid4().hex[:6]}", trip_id)
+    assert await conexion_revertida.fetchval(
+        "SELECT count(*) FROM public.locations WHERE entity_type = 'SHIPPER' AND entity_id = $1::uuid AND name = 'ZZ-LOCAL-NUEVO'",
+        sid) == 1

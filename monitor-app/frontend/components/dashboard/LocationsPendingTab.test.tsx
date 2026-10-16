@@ -7,6 +7,9 @@ import type { Location } from '@/lib/types'
 vi.mock('@/lib/api/locations', () => ({
   locationsApi: { patch: vi.fn() },
 }))
+vi.mock('@/hooks/useTripsMeta', () => ({
+  useTripsMeta: () => ({ data: { operation_types: [{ id: 'RM', label: 'RM' }, { id: 'Z0', label: 'Zona Cero' }] } }),
+}))
 
 const LOCATION: Location = {
   id: 'loc-9', entity_type: 'SHIPPER', entity_id: 'shipper-1', site_number: null,
@@ -22,20 +25,20 @@ beforeEach(() => {
 
 describe('LocationsPendingTab', () => {
   it('shows one card per pending location with its generador de carga', () => {
-    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={vi.fn()} onSelect={vi.fn()} />)
+    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={vi.fn()} onSelect={vi.fn()} canEdit />)
     expect(screen.getByText('Empresas Carozzi S.A.')).toBeInTheDocument()
     expect(screen.getByText(/Iansa/)).toBeInTheDocument()
   })
 
   it('shows an empty state when there is nothing pending', () => {
-    render(<LocationsPendingTab items={[]} shipperName={() => ''} onChanged={vi.fn()} onSelect={vi.fn()} />)
+    render(<LocationsPendingTab items={[]} shipperName={() => ''} onChanged={vi.fn()} onSelect={vi.fn()} canEdit />)
     expect(screen.getByText(/Sin locales por revisar/)).toBeInTheDocument()
   })
 
   it('classifying a card calls patch with the chosen zone and refreshes', async () => {
     vi.mocked(locationsApi.patch).mockResolvedValue({ ...LOCATION, operation_type: 'Z0' })
     const onChanged = vi.fn()
-    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={onChanged} onSelect={vi.fn()} />)
+    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={onChanged} onSelect={vi.fn()} canEdit />)
 
     fireEvent.change(screen.getByLabelText(`Clasificar ${LOCATION.name}`), { target: { value: 'Z0' } })
 
@@ -45,7 +48,7 @@ describe('LocationsPendingTab', () => {
 
   it('clicking a card calls onSelect with that location', () => {
     const onSelect = vi.fn()
-    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={vi.fn()} onSelect={onSelect} />)
+    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={vi.fn()} onSelect={onSelect} canEdit />)
 
     fireEvent.click(screen.getByText('Empresas Carozzi S.A.'))
 
@@ -54,10 +57,25 @@ describe('LocationsPendingTab', () => {
 
   it('clicking the classify select does not trigger onSelect', () => {
     const onSelect = vi.fn()
-    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={vi.fn()} onSelect={onSelect} />)
+    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={vi.fn()} onSelect={onSelect} canEdit />)
 
     fireEvent.click(screen.getByLabelText(`Clasificar ${LOCATION.name}`))
 
     expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('las zonas son las del catálogo, no un literal del componente', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={vi.fn()} onSelect={vi.fn()} canEdit />)
+    const opciones = Array.from((screen.getByLabelText('Clasificar Empresas Carozzi S.A.') as HTMLSelectElement).options)
+    expect(opciones.map(o => o.textContent)).toEqual(['Elegir zona…', 'RM', 'Zona Cero'])
+    expect(readFileSync(join(__dirname, 'LocationsPendingTab.tsx'), 'utf8')).not.toMatch(/['"](RM|Z0|Region Norte|Region Sur)['"]/)
+  })
+
+  it('sin commercial.edit se ve qué falta clasificar, sin selector', () => {
+    render(<LocationsPendingTab items={[LOCATION]} shipperName={() => 'Iansa'} onChanged={vi.fn()} onSelect={vi.fn()} canEdit={false} />)
+    expect(screen.getByText('Empresas Carozzi S.A.')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).toBeNull()
   })
 })

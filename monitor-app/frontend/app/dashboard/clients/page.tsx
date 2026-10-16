@@ -18,6 +18,7 @@ import { StatusChip } from '@/components/ui/StatusChip'
 import { Estado } from '@/components/ui/Estado'
 import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
 import { TmsClientLinks } from '@/components/directory/TmsClientLinks'
+import { useClients } from '@/hooks/useClients'
 import { ClientNamePanel } from '@/components/directory/ClientNamePanel'
 
 type Vista = 'activos' | 'inactivos' | 'sin-vincular'
@@ -45,7 +46,7 @@ function ClientsList() {
   const q = searchParams.get('q') ?? ''
   const returnTo = searchParams.toString() ? `${CLIENTS}?${searchParams.toString()}` : CLIENTS
 
-  const clientes = useQuery({ queryKey: clientKeys.list({}), queryFn: shippersApi.list })
+  const clientes = useClients()
   const sinVincular = useQuery({ queryKey: clientKeys.tmsLinks(UNLINKED), queryFn: () => tmsClientsApi.list(UNLINKED) })
 
   const buscados = useMemo(() => {

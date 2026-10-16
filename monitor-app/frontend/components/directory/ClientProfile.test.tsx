@@ -136,6 +136,7 @@ describe('ClientProfile', () => {
     vi.mocked(carriersApi.list).mockResolvedValue({ data: [], count: 0, page: 1, limit: 100, facets: { total: 0, enabled: 0, not_enabled: 0 } } as never)
     const { unmount } = renderProfile()
     expect(await screen.findByText('Este cliente todavía no tiene lugares')).toBeInTheDocument()
+    expect(screen.getByText('Llegan solos con los viajes del TMS, o se agregan en el Tarifario.')).toBeInTheDocument()
     unmount()
     renderProfile('tab=empresas')
     expect(await screen.findByText('Ninguna empresa atiende todavía a este cliente')).toBeInTheDocument()
@@ -146,5 +147,19 @@ describe('ClientProfile', () => {
     renderProfile()
     expect(await screen.findByText('Este cliente no existe')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Volver a Clientes' })).toHaveAttribute('href', '/dashboard/clients')
+  })
+
+  it('si desactivar falla, el error se ve en el panel y no se puede apretar dos veces', async () => {
+    let falla!: (e: Error) => void
+    vi.mocked(shippersApi.patch).mockReturnValueOnce(new Promise((_, rej) => { falla = rej }) as never)
+    renderProfile()
+    fireEvent.click(await screen.findByRole('button', { name: 'Más acciones' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Desactivar cliente' }))
+    const panel = screen.getByRole('dialog')
+    fireEvent.click(within(panel).getByRole('button', { name: 'Desactivar' }))
+    expect(within(panel).getByRole('button', { name: /Desactivar/ })).toBeDisabled()
+    falla(new Error('Error 500'))
+    expect(await within(panel).findByText('Error 500')).toBeInTheDocument()
+    expect(shippersApi.patch).toHaveBeenCalledTimes(1)
   })
 })

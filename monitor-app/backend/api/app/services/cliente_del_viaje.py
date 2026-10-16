@@ -63,7 +63,7 @@ async def texto_del_cliente_en_el_tms(conn, *, source_system: str, shipper_id: s
     if len(textos) > 1:
         raise HTTPException(
             422, f"Ese cliente tiene más de un nombre en {source_system} ({', '.join(textos)}); "
-                 "regístralo sin TMS o deja uno solo en Configuración › Clientes del TMS")
+                 "regístralo sin TMS o deja uno solo en la ficha del cliente (Directorio › Clientes)")
     return textos[0] if textos else None
 
 
