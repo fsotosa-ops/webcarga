@@ -193,11 +193,11 @@ describe('InsurancePolicyModal', () => {
     })
     renderModal('c1')
     await screen.findByText('Póliza 5663040')
-    expect(screen.getByText('Falta subir')).toBeInTheDocument()
+    expect(screen.getAllByText('Falta')[0]).toBeInTheDocument()  // PolicyFileRow del kit (Seguros E2)
 
     const file = new File(['x'], 'poliza.pdf', { type: 'application/pdf' })
     fireEvent.click(screen.getByLabelText('Subir Póliza'))
-    const input = screen.getByLabelText('Subir Póliza').parentElement!.querySelector('input[type="file"]')!
+    const input = screen.getByLabelText('Subir Póliza').closest('div')!.querySelector('input[type="file"]')!
     fireEvent.change(input, { target: { files: [file] } })
     await waitFor(() => expect(policiesApi.uploadFile).toHaveBeenCalledWith('p1', file, 'document'))
   })
@@ -208,9 +208,9 @@ describe('InsurancePolicyModal', () => {
     )
     renderModal('c1')
     await screen.findByText('Póliza 5663040')
-    expect(screen.queryByText('Falta subir')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Cargado')[0]).toBeInTheDocument()  // PolicyFileRow del kit (Seguros E2)
 
-    fireEvent.click(screen.getAllByText('Ver archivo')[0])
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ver' })[0])
     const iframe = document.querySelector('iframe')
     expect(iframe).toHaveAttribute('src', 'https://signed.example.com/p1.pdf')
   })
@@ -223,7 +223,7 @@ describe('InsurancePolicyModal', () => {
     renderModal('c1')
     await screen.findByText('Póliza 5663040')
 
-    fireEvent.click(screen.getAllByText('Ver archivo')[0])
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ver' })[0])
     fireEvent.click(screen.getByLabelText('Eliminar Póliza'))
     fireEvent.click(screen.getByText('Sí'))
 

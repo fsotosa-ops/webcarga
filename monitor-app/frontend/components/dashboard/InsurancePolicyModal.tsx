@@ -9,7 +9,7 @@ import type { CoverageType, InsuranceInstallment, InsurancePolicy } from '@/lib/
 import { formatExpiry } from '@/lib/compliance'
 import { POLICY_HEALTH_CONFIG } from '@/lib/insurance'
 import { InstallmentRow } from './InstallmentRow'
-import { DocumentPreviewModal } from './DocumentPreviewModal'
+import { PolicyFileRow } from '@/components/insurance/PolicyFileRow'
 
 export type PolicyFormState = {
   insurance_company: string; policy_number: string
@@ -702,68 +702,6 @@ export function InsurancePolicyModal({ carrierId, displayName, initialPolicyId, 
  *  backend (resolve_signed_url), lista para abrir directo. Mismo modal de
  *  preview/descarga/borrado que Empresas y Conductores/Vehículos (pedido
  *  explícito del usuario 2026-07-18 de unificar la experiencia). */
-function PolicyFileRow({ label, url, canEdit, onUpload, onDelete }: {
-  label: string; url: string | null; canEdit: boolean; onUpload: (file: File) => void
-  onDelete?: () => Promise<void>
-}) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [previewOpen, setPreviewOpen] = useState(false)
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-[10px] text-gray-400 w-16 shrink-0">{label}</span>
-      {url ? (
-        <button
-          type="button" onClick={() => setPreviewOpen(true)}
-          className="text-[11px] text-accent hover:underline truncate flex-1 min-w-0 text-left"
-        >
-          Ver archivo
-        </button>
-      ) : (
-        <span className="text-[11px] text-gray-300 italic flex-1">Falta subir</span>
-      )}
-      {canEdit && (
-        url ? (
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            aria-label={`Reemplazar ${label}`}
-            className="text-[10px] text-gray-400 hover:text-accent shrink-0"
-          >
-            Reemplazar
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            aria-label={`Subir ${label}`}
-            className="text-[10px] font-semibold text-accent border border-dashed border-accent/40 rounded px-1.5 py-0.5 hover:bg-accent/5 transition-colors shrink-0"
-          >
-            Subir documento
-          </button>
-        )
-      )}
-      {canEdit && (
-        <input
-          ref={inputRef}
-          type="file"
-          className="hidden"
-          onChange={e => { const f = e.target.files?.[0]; if (f) onUpload(f) }}
-        />
-      )}
-
-      {previewOpen && url && (
-        <DocumentPreviewModal
-          label={label}
-          url={url}
-          canEdit={canEdit}
-          onClose={() => setPreviewOpen(false)}
-          onDelete={canEdit && onDelete ? onDelete : undefined}
-        />
-      )}
-    </div>
-  )
-}
-
 /** Fila de texto libre editable inline (ej. N° de endoso) — mismo patrón que
  *  PolicyLinkRow (draft resincronizado explícitamente al abrir edición) pero
  *  para un campo de texto plano en vez de URL, y parametrizado por `field`

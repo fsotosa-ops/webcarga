@@ -42,7 +42,8 @@ async def _assemble_policy_detail(policy_id: str, pool, supabase=None) -> dict:
                policy_document_url, has_endorsement, endorsement_number, endorsement_document_url,
                external_portal_url, cancelled_at, cancelled_reason, is_manual_override, created_at, updated_at,
                renews_policy_id,
-               (SELECT s.id FROM public.insurance_policies s WHERE s.renews_policy_id = p.id) AS renewed_by_policy_id
+               (SELECT s.id FROM public.insurance_policies s WHERE s.renews_policy_id = p.id) AS renewed_by_policy_id,
+               (SELECT c.business_name FROM public.carriers c WHERE c.id = p.carrier_id) AS carrier_name
         FROM public.insurance_policies p WHERE id = $1
         """,
         policy_id,

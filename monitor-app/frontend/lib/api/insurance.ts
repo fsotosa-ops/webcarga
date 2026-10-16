@@ -70,6 +70,7 @@ export type InstallmentsResponse = Paged<InstallmentRow, InstallmentFilter>
 export type PolicyDetail = {
   id: string
   carrier_id: string
+  carrier_name: string
   insurance_company: string
   policy_number: string | null
   valid_from: string | null
