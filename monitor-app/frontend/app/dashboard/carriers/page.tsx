@@ -1,8 +1,6 @@
 'use client'
 
-import { carrierHref } from '@/lib/navegacion/directory'
 import { Suspense, useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight, Search, Plus } from 'lucide-react'
@@ -11,15 +9,13 @@ import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
 import { NewCarrierPanel } from '@/components/dashboard/NewCarrierPanel'
 import { useTransporters } from '@/hooks/useTransporters'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
-import { StatusChip } from '@/components/ui/StatusChip'
-import { CARRIER_LIFECYCLE_GROUP_LABELS, ENABLEMENT_GROUP_LABELS, enablementStyle, lifecycleStyle } from '@/lib/states'
+import { CARRIER_LIFECYCLE_GROUP_LABELS, ENABLEMENT_GROUP_LABELS } from '@/lib/states'
 import { TransporterCard } from '@/components/dashboard/TransporterCard'
+import { CarriersTable } from '@/components/directory/CarriersTable'
 import { ResultadosDelDirectorio } from '@/components/dashboard/ResultadosDelDirectorio'
 import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Estado } from '@/components/ui/Estado'
-import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
-import { updatedRelative } from '@/lib/compliance'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { directoryKeys, invalidateDirectory } from '@/lib/queries/directorio'
@@ -246,51 +242,7 @@ function EmpresasTransportePageInner() {
         </div>
       ) : (
         <div className={`transition-opacity duration-150 ${fetching ? 'opacity-60' : ''}`}>
-          <div className="md:hidden grid grid-cols-1 gap-3">
-            {items.map(item => <TransporterCard returnTo={returnTo} key={item.id} item={item} />)}
-          </div>
-
-          <div className="hidden md:block bg-white rounded-2xl border border-border overflow-hidden">
-            <table className="w-full text-dato">
-              <thead>
-                <tr className="border-b border-border bg-bg-main">
-                  <th scope="col" className={CABECERA}>Empresa</th>
-                  <th scope="col" className={`${CABECERA} w-32`}>RUT</th>
-                  <th scope="col" className={`${CABECERA} w-32`}>Estado</th>
-                  <th scope="col" className={`${CABECERA} w-36`}>Habilitación</th>
-                  <th scope="col" className={`${CABECERA} w-44`}>Última actualización</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map(item => {
-                  const lifecycle = lifecycleStyle('carrier', item.operational_status)
-                  const enablement = enablementStyle(item.compliance_summary, item.operational_status === 'ACTIVE')
-                  const href = carrierHref(item.id, returnTo)
-                  return (
-                    // La fila entera abre la ficha, como en Conductores y Equipos; el
-                    // nombre es el enlace (Ctrl/Cmd + clic, lector de pantalla).
-                    <tr
-                      key={item.id}
-                      onClick={() => router.push(href)}
-                      className="border-b border-border/60 last:border-0 cursor-pointer transition-colors hover:bg-bg-main"
-                    >
-                      <td className="px-3 py-2.5">
-                        {/* prefetch=false: precargar las 100 filas visibles agota el límite de tasa. */}
-                        <Link href={href} prefetch={false} onClick={e => e.stopPropagation()}
-                              className="font-semibold text-text-primary hover:text-accent">
-                          {item.business_name || <span className="italic text-informativo">Sin nombre</span>}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2.5 font-identificador text-etiqueta text-informativo">{item.tax_id}</td>
-                      <td className="px-3 py-2.5"><StatusChip tone={lifecycle.tone} icon={lifecycle.icon}>{lifecycle.label}</StatusChip></td>
-                      <td className="px-3 py-2.5"><StatusChip tone={enablement.tone} icon={enablement.icon}>{enablement.label}</StatusChip></td>
-                      <td className="px-3 py-2.5 text-etiqueta text-informativo whitespace-nowrap">{updatedRelative(item.last_document_update) ?? '—'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <CarriersTable items={items} returnTo={returnTo} />
         </div>
       )}
 
