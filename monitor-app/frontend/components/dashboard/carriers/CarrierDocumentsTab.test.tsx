@@ -7,7 +7,7 @@ import { QuickViewContext } from '@/components/dashboard/QuickViewProvider'
 
 const { SUBJECT_COUNTS, NOT_ASSET } = vi.hoisted(() => ({
   SUBJECT_COUNTS: { todos: 1, al_dia: 1, por_vencer: 0, falta: 0 },
-  NOT_ASSET: { asset_type: null, fleet_service_type_label: null, fleet_service_type_bg_color: null, fleet_service_type_text_color: null },
+  NOT_ASSET: { asset_type: null, fleet_service_type_label: null, },
 }))
 
 vi.mock('@/lib/api/compliance', () => ({

@@ -14,8 +14,8 @@ describe('GroupBuilder — prefill', () => {
         onClose={vi.fn()}
         initialStatuses={['ASIGNADO', 'RUTA']}
         statuses={[
-          { id: 'ASIGNADO', label: 'Asignado', bg_color: '#fff', text_color: '#000', group: 'en_ruta' },
-          { id: 'RUTA',     label: 'Ruta',     bg_color: '#fff', text_color: '#000', group: 'en_ruta' },
+          { id: 'ASIGNADO', label: 'Asignado',   group: 'en_ruta' },
+          { id: 'RUTA',     label: 'Ruta',   group: 'en_ruta' },
         ]}
       />
     )
@@ -30,9 +30,9 @@ describe('GroupBuilder — prefill', () => {
         initialStatuses={['ASIGNADO']}
         editing={{ id: 'g1', name: 'Mi grupo', statuses: ['RUTA', 'ORIGEN'], color: 'blue', created_at: '', updated_at: '' }}
         statuses={[
-          { id: 'ASIGNADO', label: 'Asignado', bg_color: '#fff', text_color: '#000', group: 'en_ruta' },
-          { id: 'RUTA',     label: 'Ruta',     bg_color: '#fff', text_color: '#000', group: 'en_ruta' },
-          { id: 'ORIGEN',   label: 'Origen',   bg_color: '#fff', text_color: '#000', group: 'en_ruta' },
+          { id: 'ASIGNADO', label: 'Asignado',   group: 'en_ruta' },
+          { id: 'RUTA',     label: 'Ruta',   group: 'en_ruta' },
+          { id: 'ORIGEN',   label: 'Origen',   group: 'en_ruta' },
         ]}
       />
     )

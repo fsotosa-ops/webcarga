@@ -60,8 +60,8 @@ describe('TripBoard', () => {
 
   it('buckets a manual override (estado operacional) into its group instead of Otro', () => {
     const meta = {
-      statuses: [{ id: 'ORIGEN', label: 'ORIGEN', bg_color: '#fff', text_color: '#000', group: 'en_ruta' }],
-      operational_states: [{ id: 'op-uuid-1', label: 'En panne confirmada', bg_color: '#fee', text_color: '#b00', group: 'problema' }],
+      statuses: [{ id: 'ORIGEN', label: 'ORIGEN',   group: 'en_ruta' }],
+      operational_states: [{ id: 'op-uuid-1', label: 'En panne confirmada',   group: 'problema' }],
       tms_sources: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [], operation_types: [],
       origins: [],
     }

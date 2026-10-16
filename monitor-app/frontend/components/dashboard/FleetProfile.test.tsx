@@ -53,8 +53,7 @@ const FILAS = [
 ]
 const ASSET = {
   id: 'a1', license_plate: 'BBPV80', asset_type: 'TRACTOCAMION', operational_status: 'ACTIVE', manufacture_year: 2019,
-  is_manual_override: false, created_at: null, fleet_service_type_id: null, fleet_service_type_label: null,
-  fleet_service_type_bg_color: null, fleet_service_type_text_color: null, webcarga_operation_type_id: null,
+  is_manual_override: false, created_at: null, fleet_service_type_id: null, fleet_service_type_label: null,   webcarga_operation_type_id: null,
   webcarga_operation_type_label: null, webcarga_operation_type_code: null, total_requirements: 0, last_document_update: null,
 }
 const RESUMEN_EQUIPO = {

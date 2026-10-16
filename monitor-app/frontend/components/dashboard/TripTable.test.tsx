@@ -121,7 +121,7 @@ describe('TripTable', () => {
     const meta = {
       statuses: [], tms_sources: [], operational_states: [], csv_columns: [],
       temperature_ranges: [], unassigned_reasons: [],
-      operation_types: [{ id: 'RM', label: 'RM', bg_color: '#e8eeff', text_color: '#053bfa' }],
+      operation_types: [{ id: 'RM', label: 'RM', }],
       origins: [],
     }
     render(<TripTable trips={[makeTrip('t1', { stops })]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={meta} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
@@ -207,8 +207,8 @@ describe('TripTable — solo lectura (Fase 2, Plan 6)', () => {
 describe('TripTable — estado manual resuelto contra estados operacionales', () => {
   it('muestra el label del estado operacional (no el uuid) cuando hay override', () => {
     const meta = {
-      statuses: [{ id: 'ORIGEN', label: 'ORIGEN', bg_color: '#fff', text_color: '#000', group: 'en_ruta' }],
-      operational_states: [{ id: 'op-uuid-1', label: 'Confirmado en panne', bg_color: '#fee', text_color: '#b00', group: 'problema' }],
+      statuses: [{ id: 'ORIGEN', label: 'ORIGEN',   group: 'en_ruta' }],
+      operational_states: [{ id: 'op-uuid-1', label: 'Confirmado en panne',   group: 'problema' }],
       tms_sources: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [], operation_types: [],
       origins: [],
     }

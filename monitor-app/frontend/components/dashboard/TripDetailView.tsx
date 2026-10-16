@@ -104,15 +104,13 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
             target="_blank"
             rel="noopener noreferrer"
             title={`Abrir en ${tmsMeta?.label ?? tmsLabel}`}
-            className="text-etiqueta font-bold px-2 py-0.5 rounded-full shrink-0 hover:opacity-80 transition-opacity"
-            style={tmsMeta ? { backgroundColor: tmsMeta.bg_color, color: tmsMeta.text_color } : undefined}
+            className="text-etiqueta font-bold px-2 py-0.5 rounded-full shrink-0 bg-informativo/10 text-informativo hover:opacity-80 transition-opacity"
           >
             {tmsLabel}
           </a>
         ) : (
           <span
-            className={`text-etiqueta font-bold px-2 py-0.5 rounded-full shrink-0 ${tmsMeta ? '' : 'bg-informativo/10 text-informativo'}`}
-            style={tmsMeta ? { backgroundColor: tmsMeta.bg_color, color: tmsMeta.text_color } : undefined}
+            className="text-etiqueta font-bold px-2 py-0.5 rounded-full shrink-0 bg-informativo/10 text-informativo"
           >
             {tmsLabel}
           </span>
@@ -204,7 +202,7 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
       {/* ── Hero — la historia del viaje ── */}
       <div data-testid="hero" className="px-4 py-3 md:px-6 border-b border-border shrink-0 space-y-1.5">
         <div className="flex items-center gap-2.5 flex-wrap">
-          <StatusBadge status={currentStatus} meta={meta} size="md" fallbackLabel="Sin estado" />
+          <StatusBadge status={currentStatus} meta={meta} fallbackLabel="Sin estado" />
           {trip.manual_status && <StatusChip tone="action">manual</StatusChip>}
           {activeStop && (
             <span className="text-lectura text-text-primary min-w-0">

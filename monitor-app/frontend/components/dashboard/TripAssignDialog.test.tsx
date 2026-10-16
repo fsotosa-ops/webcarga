@@ -20,10 +20,10 @@ vi.mock('@/lib/api/locations', () => ({
 }))
 
 const meta: TripsMeta = {
-  statuses: [{ id: 'ASIGNADO', label: 'ASIGNADO', bg_color: '#fff', text_color: '#000', group: 'otro' }],
+  statuses: [{ id: 'ASIGNADO', label: 'ASIGNADO',   group: 'otro' }],
   tms_sources: [
-    { id: 'qanalytics', label: 'QA', bg_color: '#fff', text_color: '#000' },
-    { id: 'manual', label: 'Manual', bg_color: '#fff', text_color: '#000' },
+    { id: 'qanalytics', label: 'QA', },
+    { id: 'manual', label: 'Manual', },
   ],
   operational_states: [], csv_columns: [], temperature_ranges: [], unassigned_reasons: [], operation_types: [],
   origins: [],

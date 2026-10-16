@@ -212,8 +212,7 @@ export function TripBoard({ trips, groups, meta, onSaved, onSelect, onSelectFocu
                   key={s.id}
                   type="button"
                   onClick={() => { applyMove(choice.trip, s.id); setChoice(null) }}
-                  className="w-full text-left px-3 py-2 rounded-lg text-dato font-semibold hover:bg-gray-50 border border-transparent hover:border-border transition-colors"
-                  style={{ backgroundColor: s.bg_color, color: s.text_color }}
+                  className="w-full text-left px-3 py-2 rounded-lg text-dato font-semibold text-text-primary hover:bg-gray-50 border border-transparent hover:border-border transition-colors"
                 >
                   {s.label}
                 </button>

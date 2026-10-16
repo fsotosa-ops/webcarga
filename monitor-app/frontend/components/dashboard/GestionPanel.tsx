@@ -19,7 +19,7 @@ import { OperationTypeBadge } from '@/components/ui/OperationTypeBadge'
 import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
 import { PendingDocsBadge } from '@/components/ui/PendingDocsBadge'
 import { StatusChip } from '@/components/ui/StatusChip'
-import { alertSeverityStyle, enablementStyleFromFlag, lifecycleStyle } from '@/lib/states'
+import { alertSeverityStyle, boardColumnStyle, enablementStyleFromFlag, lifecycleStyle } from '@/lib/states'
 import { EntityCell } from './EntityCell'
 import { Section } from '@/components/ui/Section'
 import { KeyValueList } from '@/components/ui/KeyValueList'
@@ -231,12 +231,7 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
                 const opState = meta?.operational_states.find(s => s.id === trip.manual_status)
                 const label = opState?.label ?? trip.manual_status
                 return opState ? (
-                  <span
-                    className="inline-flex px-2 py-0.5 rounded-full text-etiqueta font-semibold"
-                    style={{ backgroundColor: opState.bg_color, color: opState.text_color }}
-                  >
-                    {label}
-                  </span>
+                  <StatusChip tone={boardColumnStyle(opState.group).tone}>{label}</StatusChip>
                 ) : (
                   <span className="inline-flex px-2 py-0.5 rounded-full text-etiqueta font-semibold bg-informativo/10 text-informativo">
                     {label}

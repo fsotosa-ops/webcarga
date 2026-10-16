@@ -52,16 +52,14 @@ export type Database = {
 export type StatusMeta = {
   id:         string
   label:      string
-  bg_color:   string
-  text_color: string
+
   group:      string
 }
 
 export type TmsSourceMeta = {
   id:         string
   label:      string
-  bg_color:   string
-  text_color: string
+
   /** Última corrida de esta TMS (el status_reported_at más reciente de todos
    *  sus viajes). null si la fuente todavía no tiene viajes. */
   last_run_at?: string | null
@@ -70,8 +68,7 @@ export type TmsSourceMeta = {
 export type OperationalStateMeta = {
   id:         string
   label:      string
-  bg_color:   string
-  text_color: string
+
   /** Grupo del tablero (misma taxonomía que StatusMeta.group) */
   group?:     string
 }
@@ -145,8 +142,7 @@ export type PeriodoDeCierre = {
 export type OperationTypeMeta = {
   id:         string
   label:      string
-  bg_color:   string
-  text_color: string
+
 }
 
 /** Una opción del filtro de cliente del Monitor: un cliente con viajes en la
@@ -946,8 +942,7 @@ export type ComplianceSummarySubject = ComplianceSummaryCounts & {
    *  marcado que `VehicleRosterCard`. */
   asset_type:                    AssetType | null
   fleet_service_type_label:      string | null
-  fleet_service_type_bg_color:   string | null
-  fleet_service_type_text_color: string | null
+
 }
 
 /** GET /compliance-records/summary — lo que la ficha de empresa pide al
@@ -1063,8 +1058,7 @@ export type CarrierAssetRosterItem = {
   operational_status:          OperationalStatus
   fleet_service_type_id:       string | null
   fleet_service_type_label:    string | null
-  fleet_service_type_bg_color: string | null
-  fleet_service_type_text_color: string | null
+
   /** "Tipo de Operación WebCarga" — Tractoreo / Equipo Completo, dominio
    *  WEBCARGA_OPERATION_TYPE. NO es lo mismo que `fleet_service_type_*`, que
    *  describe el subtipo físico de la carrocería: 36 tractocamiones operan
@@ -1144,8 +1138,7 @@ export type Asset = {
    *  que HU §2.2 usa para clasificar el Cierre del Día. */
   fleet_service_type_id:        string | null
   fleet_service_type_label:     string | null
-  fleet_service_type_bg_color:  string | null
-  fleet_service_type_text_color: string | null
+
   /** "Tipo de Operación WebCarga" — Tractoreo / Equipo Completo, dominio
    *  WEBCARGA_OPERATION_TYPE. NO es lo mismo que `fleet_service_type_*`, que
    *  describe el subtipo físico de la carrocería: 36 tractocamiones operan
@@ -1441,8 +1434,7 @@ export type EquipmentDayStatusRow = {
   /** "Tipo Vehículo" — hoja Vehiculos_Equipos del SharePoint, mismo campo
    *  que ya decide requires_motivo (ver abajo). null = sin clasificar. */
   fleet_service_type_label:      string | null
-  fleet_service_type_bg_color:   string | null
-  fleet_service_type_text_color: string | null
+
   status:                  EquipmentDayStatusValue
   /** true = Tractoreo o Sin clasificar (cierre activo, exige motivo);
    *  false = Equipo Completo puro (cierre pasivo, nunca bloquea). */

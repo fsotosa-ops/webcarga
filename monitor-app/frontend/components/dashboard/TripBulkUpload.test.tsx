@@ -17,7 +17,7 @@ const columns: CSVColumnDef[] = [
 ]
 
 const meta: TripsMeta = {
-  statuses: [{ id: 'ASIGNADO', label: 'ASIGNADO', bg_color: '#fff', text_color: '#000', group: 'otro' }],
+  statuses: [{ id: 'ASIGNADO', label: 'ASIGNADO',   group: 'otro' }],
   tms_sources: [], operational_states: [], csv_columns: columns, temperature_ranges: [], unassigned_reasons: [], operation_types: [],
   origins: [],
 }

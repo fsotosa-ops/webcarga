@@ -27,8 +27,8 @@ const meta: TripsMeta = {
   ],
   unassigned_reasons: [],
   operation_types: [
-    { id: 'RM', label: 'RM', bg_color: '#e8eeff', text_color: '#053bfa' },
-    { id: 'ZONA_CERO', label: 'Zona Cero', bg_color: '#fef3e8', text_color: '#a35b00' },
+    { id: 'RM', label: 'RM', },
+    { id: 'ZONA_CERO', label: 'Zona Cero', },
   ],
   origins: [],
 }

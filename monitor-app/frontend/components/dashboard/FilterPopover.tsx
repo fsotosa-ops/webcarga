@@ -208,9 +208,8 @@ export function FilterPopover({
                     type="button"
                     onClick={() => dispatch({ type: 'toggleTms', id: src.id })}
                     aria-pressed={active}
-                    style={active ? { backgroundColor: src.bg_color, color: src.text_color, borderColor: src.bg_color } : undefined}
                     className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
-                      active ? '' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
+                      active ? 'bg-accion/10 text-accion border-accion/30' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
                     }`}
                   >
                     {src.label}
@@ -241,9 +240,8 @@ export function FilterPopover({
                     type="button"
                     onClick={() => dispatch({ type: 'toggleOperationType', id: ot.id })}
                     aria-pressed={active}
-                    style={active ? { backgroundColor: ot.bg_color, color: ot.text_color, borderColor: ot.bg_color } : undefined}
                     className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
-                      active ? '' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
+                      active ? 'bg-accion/10 text-accion border-accion/30' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
                     }`}
                   >
                     {ot.label}

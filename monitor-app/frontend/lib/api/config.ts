@@ -2,7 +2,11 @@ import { apiFetch } from './client'
 import type { StatusMeta, OperationalStateMeta, AlertThresholdMeta, TemperatureRangeMeta, MonitorAlertRules } from '@/lib/types'
 
 
-export type TripStatusRow = StatusMeta & { sort_order: number }
+/** Los colores por fila viven solo aquí hasta que Configuración use la lista +
+ *  panel (Parte 1, tarea 5); el resto de la app pinta por significado. */
+type ColoresDeFila = { bg_color: string; text_color: string }
+
+export type TripStatusRow = StatusMeta & ColoresDeFila & { sort_order: number }
 
 /** Una posición arriba o una abajo. El destino lo decide la lista, no el
  *  cliente: mandar un `sort_order` calculado acá es lo que dejaba dos filas
@@ -18,7 +22,7 @@ export const configApi = {
   getStatuses: () =>
     apiFetch<TripStatusRow[]>('/api/v1/config/statuses'),
 
-  patchStatus: (id: string, body: Partial<Pick<StatusMeta, 'label' | 'bg_color' | 'text_color' | 'group'>>) =>
+  patchStatus: (id: string, body: Partial<Pick<TripStatusRow, 'label' | 'bg_color' | 'text_color' | 'group'>>) =>
     apiFetch<TripStatusRow>(`/api/v1/config/statuses/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify({ ...body, group: undefined, group_id: body.group }),
@@ -96,7 +100,7 @@ export type TaxonomyDomain =
  *  apuntan por texto —hoy WEBCARGA_OPERATION_TYPE— y por eso es opcional. Es
  *  lo que permite renombrar "Equipo Completo" sin cambiar a qué empresas
  *  alcanza una regla. */
-export type TaxonomyRow = OperationalStateMeta & {
+export type TaxonomyRow = OperationalStateMeta & ColoresDeFila & {
   sort_order: number
   active: boolean
   code: string | null

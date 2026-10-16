@@ -12,6 +12,16 @@ export const STATUS_TONE_CLASS: Record<StatusTone, string> = {
   action:   'bg-accion/10 text-accion',
 }
 
+/** El punto de color de un tono, para las tablas densas (el Monitor): mismo
+ *  significado que la pastilla, con menos peso. */
+export const STATUS_TONE_DOT: Record<StatusTone, string> = {
+  neutral:  'bg-informativo',
+  warning:  'bg-warning',
+  urgent:   'bg-status-incidente',
+  resolved: 'bg-resuelto',
+  action:   'bg-accion',
+}
+
 /** Una variante es una prop: el ícono del glosario (`lib/states.ts`) viaja con
  *  el tono, no en un componente hermano. */
 export function StatusChip({ tone, icon: Icon, children }: { tone: StatusTone; icon?: LucideIcon; children: ReactNode }) {

@@ -20,10 +20,7 @@ export function OperationTypeBadge({ operationType, meta, size = 'sm' }: Props) 
   return (
     <span
       title={resolved?.label ?? operationType}
-      className={`inline-flex rounded whitespace-nowrap shrink-0 ${SIZE_CLS[size]}`}
-      style={resolved
-        ? { backgroundColor: resolved.bg_color, color: resolved.text_color }
-        : { backgroundColor: '#f3f4f6', color: '#9ca3af' }}
+      className={`inline-flex rounded whitespace-nowrap shrink-0 bg-informativo/10 text-informativo ${SIZE_CLS[size]}`}
     >
       {resolved?.label ?? operationType}
     </span>

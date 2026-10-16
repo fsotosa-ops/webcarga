@@ -49,9 +49,8 @@ function useCopyToClipboard() {
 export function TmsChip({ tms, meta, sourceTripId }: { tms: string; meta?: TripsMeta | null; sourceTripId?: string | null }) {
   const tm = meta?.tms_sources.find(x => x.id === tms.toLowerCase())
   const label = tm?.label ?? tms.toUpperCase().slice(0, 3)
-  const style = tm
-    ? { backgroundColor: tm.bg_color, color: tm.text_color, borderColor: `${tm.bg_color}80` }
-    : { backgroundColor: '#f3f4f6', color: '#6b7280', borderColor: '#e5e7eb' }
+  // Identifica el sistema de origen; no es un estado, así que va neutro (Configuración, Parte 1).
+  const chip = 'text-etiqueta font-bold px-1.5 py-0.5 rounded border border-border bg-informativo/10 text-informativo'
   const loginUrl = TMS_LOGIN_URLS[tms.toLowerCase()]
 
   if (loginUrl) {
@@ -65,15 +64,14 @@ export function TmsChip({ tms, meta, sourceTripId }: { tms: string; meta?: Trips
           if (sourceTripId) navigator.clipboard?.writeText(sourceTripId).catch(() => {})
         }}
         title={sourceTripId ? `Abrir ${label} — ID ${sourceTripId} copiado para buscarlo` : `Abrir ${label}`}
-        className="text-etiqueta font-bold px-1.5 py-0.5 rounded border hover:opacity-75 transition-opacity"
-        style={style}
+        className={`${chip} hover:opacity-75 transition-opacity`}
       >
         {label}
       </a>
     )
   }
   return (
-    <span className="text-etiqueta font-bold px-1.5 py-0.5 rounded border" style={style}>
+    <span className={chip}>
       {label}
     </span>
   )

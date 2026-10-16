@@ -86,11 +86,7 @@ function InsigniasDeVehiculo({ sujeto }: { sujeto: ComplianceSummarySubject }) {
           // en "F": una letra suelta no es un dato, es ruido con forma de
           // dato. La carroceria es contexto y se lee al abrir el vehiculo; la
           // patente y el chasis son la identidad y esos si entran siempre.
-          className="hidden sm:inline-block min-w-0 truncate text-etiqueta font-semibold px-1.5 py-0.5 rounded-full"
-          style={{
-            backgroundColor: sujeto.fleet_service_type_bg_color ?? undefined,
-            color:           sujeto.fleet_service_type_text_color ?? undefined,
-          }}
+          className="hidden sm:inline-block min-w-0 truncate text-etiqueta font-semibold px-1.5 py-0.5 rounded-full bg-informativo/10 text-informativo"
         >
           {sujeto.fleet_service_type_label}
         </span>
