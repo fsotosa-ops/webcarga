@@ -61,7 +61,7 @@ Recorrido en dev (16/10, Propietario, solo lectura) — lo que hoy está mal:
   motivo" reemplaza a "No asignados" (que hoy cuenta solo los que no tienen motivo).
 - **D6 — El alcance filtra también los viajes** (respuesta a la revisión, 16/10): el tipo de operación de un viaje sale
   de su **tracto resuelto**; un viaje **sin tracto** se ve en los dos alcances, marcado "Sin tracto" (es justo el que
-  hay que resolver). Exige el campo en el backend (§4.6).
+  hay que resolver). Exige el campo en el backend (§4.5).
 - **D7 — Descargas del Reporte:** estándar "se exporta lo que ves, y se dice": un solo "Descargar" con "Lo que estás
   viendo (alcance · filtros · N filas)" por defecto u "Todo el día". "Copiar estatus" copia siempre lo que se ve (con
   "Cliente: Walmart", el estatus de Walmart). Cada archivo lleva escrito arriba qué recorte es. **El PDF no es
@@ -121,7 +121,7 @@ Viajes, secciones del Reporte, Pendientes). `CabeceraDeColumna.tsx` se borra en 
 - El resumen del alcance ("32 asignados · 16 sin asignar · 66,7 % · 1 sin motivo bloquea la firma") se calcula con las
   mismas categorías; "sin asignar" = suma de las categorías no asignadas, dicho igual en todas partes.
 
-### 4.6 El alcance en Viajes y Pendientes (D6)
+### 4.5 El alcance en Viajes y Pendientes (D6)
 
 - `GET /trips/cierre-viajes` agrega a cada viaje su tipo de operación, derivado del tracto resuelto con la misma
   definición que ya usa la Flota del día (`operation_type` del tracto, catálogo `public.asset_types` /
@@ -131,7 +131,7 @@ Viajes, secciones del Reporte, Pendientes). `CabeceraDeColumna.tsx` se borra en 
   de empresa (onboarding, desbalance de dotación) se ven en los dos alcances. Mismo campo, misma regla.
 - Sin migración de esquema: es lectura derivada en la consulta.
 
-### 4.7 Decisiones de diseño (las tomó quien escribe, se pueden revisar)
+### 4.6 Decisiones de diseño (las tomó quien escribe, se pueden revisar)
 
 - **Pendientes no cambia de contenido**, solo de forma: conserva sus avisos (conductor sin empresa, patente no
   registrada, empresa en onboarding, sin tipo de operación…) con su acción por fila y el desbalance de dotación; se
@@ -145,7 +145,7 @@ Viajes, secciones del Reporte, Pendientes). `CabeceraDeColumna.tsx` se borra en 
 - `TRABAJANDO_SIN_ASIGNACION` es un valor del filtro Estado, sin recuadro propio (hoy no lo tiene).
 - Se agrega `@dnd-kit/sortable` junto a `@dnd-kit/core`, que ya está.
 
-### 4.5 El Cierre con el kit
+### 4.7 El Cierre con el kit
 
 - `EncabezadoDePagina` con la fecha como acción (children), sin tarjeta propia; migas con el patrón del kit.
 - Alcance arriba de las pestañas con `SegmentedControl`; pestañas con `Tabs` del kit y su número (D4).
