@@ -88,6 +88,7 @@ async def list_carriers(
             "de las dos: su ciclo de vida ya lo dice."
         ),
     )] = "",
+    shipper_id: UUID | None = Query(None, description="Solo las empresas con vínculo activo a este cliente"),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
     pool=Depends(get_pool),
@@ -95,6 +96,11 @@ async def list_carriers(
 ):
     clauses: list[str] = []
     params: list = []
+    if shipper_id:
+        params.append(str(shipper_id))
+        clauses.append(
+            "EXISTS (SELECT 1 FROM public.carrier_shippers cs WHERE cs.carrier_id = c.id "
+            f"AND cs.shipper_id = ${len(params)}::uuid AND cs.status = 'ACTIVE')")
     if q:
         params.append(q)
         clauses.append(f"(c.business_name ILIKE '%' || ${len(params)} || '%' OR {rut_matches_sql('c.tax_id', f'${len(params)}')})")

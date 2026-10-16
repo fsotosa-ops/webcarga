@@ -4,7 +4,7 @@ app.trips.shipper_id; un cambio se aplica a los viajes, incluidos los viejos, en
 la próxima corrida (escotilla OR 7 del modelo trips)."""
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from ..authz import Permission, require
@@ -25,7 +25,7 @@ SELECT t.source_client_id::text AS source_client_id,
 FROM app.trips t
 LEFT JOIN app.tms_client_shippers m ON m.source_client_id = t.source_client_id
 LEFT JOIN public.shippers sh ON sh.id = m.shipper_id
-WHERE t.source_client_id IS NOT NULL
+WHERE t.source_client_id IS NOT NULL{filtro}
 GROUP BY t.source_client_id, m.shipper_id, sh.name
 ORDER BY (m.shipper_id IS NULL) DESC, min(t.source_system), min(t.client_name)
 """
@@ -38,8 +38,17 @@ class VinculoBody(BaseModel):
 
 
 @router.get("")
-async def listar(pool=Depends(get_pool), _=Depends(require(Permission.COMMERCIAL_READ))):
-    return [dict(r) for r in await pool.fetch(_SQL_LISTA)]
+async def listar(
+    shipper_id: UUID | None = Query(None, description="Solo los nombres del TMS de este cliente"),
+    unlinked: bool = Query(False, description="Solo los que todavía no tienen cliente"),
+    pool=Depends(get_pool),
+    _=Depends(require(Permission.COMMERCIAL_READ)),
+):
+    if shipper_id:
+        return [dict(r) for r in await pool.fetch(
+            _SQL_LISTA.format(filtro=" AND m.shipper_id = $1::uuid"), str(shipper_id))]
+    filtro = " AND m.shipper_id IS NULL" if unlinked else ""
+    return [dict(r) for r in await pool.fetch(_SQL_LISTA.format(filtro=filtro))]
 
 
 @router.put("/{source_client_id}")

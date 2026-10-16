@@ -63,3 +63,30 @@ async def test_renombrar_con_otra_capitalizacion_de_un_nombre_existente_es_409(c
         await patch_shipper(uuid.UUID(sid), ShipperPatchBody(name=f" {otro.lower()} "),
                             pool=PoolDeUnaConexion(conexion_revertida), user=usuario)
     assert e.value.status_code == 409
+
+
+async def test_las_empresas_de_un_cliente_son_las_de_vinculo_activo(conexion_revertida):
+    from app.routers.carriers import list_carriers
+    sid = await _cliente_con_todo(conexion_revertida)
+    terminada = await conexion_revertida.fetchval(
+        "INSERT INTO public.carriers (business_name, operational_status) VALUES ($1, 'ACTIVE') RETURNING id",
+        f"ZZ-EX-{uuid.uuid4().hex[:6]}")
+    await conexion_revertida.execute(
+        "INSERT INTO public.carrier_shippers (carrier_id, shipper_id, status) VALUES ($1, $2::uuid, 'INACTIVE')",
+        terminada, sid)
+    res = await list_carriers(q="", operational_status="", enablement="", shipper_id=uuid.UUID(sid), page=1, limit=50,
+                              pool=PoolDeUnaConexion(conexion_revertida), _=None)
+    assert [c["business_name"][:11] for c in res["data"]] == ["ZZ-EMPRESA-"]
+    assert res["facets"]["total"] == 1
+
+
+async def test_los_nombres_del_tms_se_filtran_por_cliente_y_sin_vincular(conexion_revertida):
+    from app.routers.tms_clients import listar
+    sid = await _cliente_con_todo(conexion_revertida)
+    pool = PoolDeUnaConexion(conexion_revertida)
+    del_cliente = await listar(shipper_id=uuid.UUID(sid), unlinked=False, pool=pool, _=None)
+    assert [(f["source_client"], f["trips"]) for f in del_cliente] == [("zz-cliente", 1)]
+    sin_vincular = await listar(shipper_id=None, unlinked=True, pool=pool, _=None)
+    assert all(f["shipper_id"] is None for f in sin_vincular)
+    todos = await listar(shipper_id=None, unlinked=False, pool=pool, _=None)
+    assert len(todos) > len(sin_vincular)
