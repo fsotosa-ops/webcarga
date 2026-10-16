@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { DOMINIOS, dominioPorClave, puedeVerDominio } from './dominios'
+import { DOMINIOS, areasVisibles, dominioPorClave, puedeVerArea } from './dominios'
 import { SECCION_DE_TAXONOMIA } from './settings-sources'
 import { PERMISO_DE_SECCION } from './secciones'
 
@@ -80,16 +80,19 @@ describe('registro de dominios', () => {
   })
 })
 
-describe('quién ve cada dominio', () => {
-  it('Personas y accesos solo con users.manage: la API no deja listar personas sin él', () => {
+describe('quién ve cada área (Parte 1)', () => {
+  it('un área se ve con el permiso de alguna de sus secciones', () => {
     const personas = dominioPorClave('people')!
-    expect(puedeVerDominio(personas, ['operations.configure'])).toBe(false)
-    expect(puedeVerDominio(personas, ['users.manage'])).toBe(true)
+    expect(puedeVerArea(personas, ['operations.configure'])).toBe(false)
+    expect(puedeVerArea(personas, ['users.manage'])).toBe(true)
+    expect(puedeVerArea(personas, ['roles.manage'])).toBe(true)
   })
   it('Personas y accesos tiene las secciones Personas y Roles', () => {
     expect(dominioPorClave('people')!.secciones.map(s => s.titulo)).toEqual(['Personas', 'Roles'])
   })
-  it('un dominio sin permiso declarado lo ve quien entra a Configuración', () => {
-    expect(puedeVerDominio(dominioPorClave('operations')!, [])).toBe(true)
+  it('sin ningún permiso de configuración no se ve ningún área; la reservada nunca', () => {
+    expect(areasVisibles([])).toEqual([])
+    expect(areasVisibles(['users.manage', 'operations.configure', 'certification.configure', 'insurance.configure'])
+      .map(a => a.clave)).not.toContain('billing')
   })
 })

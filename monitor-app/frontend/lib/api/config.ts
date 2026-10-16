@@ -145,6 +145,8 @@ export interface DominioDelInventario {
    *  nada revisable —Personas y accesos—, que NO es lo mismo que cero: un cero
    *  ahí sería otro número con dos significados. */
   revision: { total: number; sin_revisar: number } | null
+  /** Lo sin revisar de cada sección (el índice de Configuración). */
+  secciones: Record<string, number>
 }
 
 export type InventarioConfig = Record<string, DominioDelInventario>

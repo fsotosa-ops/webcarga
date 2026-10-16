@@ -19,7 +19,7 @@ from app.routers.config_reviews import buscador as search_router
 from app.routers.config_reviews import router as reviews_router
 from app.routers.status_taxonomies import router as taxonomies_router
 from app.services.revisiones import (
-    POR_SECCION, REVISABLES, SECCION_DE_TAXONOMIA, SQL_BUSQUEDA, SQL_PENDIENTES_POR_DOMINIO,
+    POR_SECCION, REVISABLES, SECCION_DE_TAXONOMIA, SQL_BUSQUEDA, SQL_PENDIENTES_POR_SECCION,
     exigir_seccion, registrar_revision,
 )
 from tests.conftest import usuario
@@ -250,18 +250,18 @@ async def test_integracion_cada_enumeracion_corre_y_devuelve_id(conexion_reverti
 @pytest.mark.asyncio
 async def test_integracion_revisar_baja_el_contador_de_su_dominio(conexion_revertida):
     conn = conexion_revertida
-    antes = {r["domain"]: r["sin_revisar"] for r in await conn.fetch(SQL_PENDIENTES_POR_DOMINIO)}
+    antes = {(r["domain"], r["section"]): r["sin_revisar"] for r in await conn.fetch(SQL_PENDIENTES_POR_SECCION)}
 
     elemento = await conn.fetchval(
         "SELECT id::text FROM public.compliance_requirements ORDER BY id LIMIT 1")
     revisor = await conn.fetchval("SELECT id FROM public.profiles LIMIT 1")
     await registrar_revision(conn, "certification", "conditions", elemento, str(revisor))
 
-    despues = {r["domain"]: r["sin_revisar"] for r in await conn.fetch(SQL_PENDIENTES_POR_DOMINIO)}
-    assert despues["certification"] == antes["certification"] - 1
-    # Y no toca a los otros dominios: el contador es por dominio, no global.
-    assert despues["operations"] == antes["operations"]
-    assert despues["fleet"] == antes["fleet"]
+    despues = {(r["domain"], r["section"]): r["sin_revisar"] for r in await conn.fetch(SQL_PENDIENTES_POR_SECCION)}
+    assert despues[("certification", "conditions")] == antes[("certification", "conditions")] - 1
+    # Y no toca a las otras secciones: el contador es por sección, no global.
+    assert {k: v for k, v in despues.items() if k != ("certification", "conditions")} == \
+           {k: v for k, v in antes.items() if k != ("certification", "conditions")}
 
 
 @pytest.mark.integracion

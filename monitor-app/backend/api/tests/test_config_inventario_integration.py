@@ -29,3 +29,16 @@ async def test_los_roles_son_los_que_tienen_las_personas_activas(conexion_revert
         """)
     fila = await conexion_revertida.fetchrow(_INVENTARIO_SQL)
     assert fila["roles"] == esperado
+
+
+async def test_el_inventario_desglosa_lo_sin_revisar_por_seccion(conexion_revertida):
+    """El índice de Configuración (Parte 1) muestra cuánto falta revisar en cada
+    sección, no solo en el área. La suma de las secciones es la del área."""
+    from app.routers.config import inventario_configuracion
+    from tests.conftest import USER, PoolDeUnaConexion
+
+    inv = await inventario_configuracion(pool=PoolDeUnaConexion(conexion_revertida), usuario=USER)
+    ops = inv["operations"]
+    assert "driver-reasons" in ops["secciones"]
+    assert sum(ops["secciones"].values()) == ops["revision"]["sin_revisar"]
+    assert set(inv["insurance"]["secciones"]) == {"expiry-alerts"}

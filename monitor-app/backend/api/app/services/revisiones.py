@@ -148,17 +148,17 @@ def _union_de_elementos(columnas: str) -> str:
     )
 
 
-SQL_PENDIENTES_POR_DOMINIO = f"""
+SQL_PENDIENTES_POR_SECCION = f"""
 WITH elementos AS (
 {_union_de_elementos("e.id::text AS id")}
 )
-SELECT e.domain,
+SELECT e.domain, e.section,
        count(*)                                        AS total,
        count(*) FILTER (WHERE r.element_id IS NULL)    AS sin_revisar
   FROM elementos e
   LEFT JOIN app.config_reviews r
          ON r.domain = e.domain AND r.section = e.section AND r.element_id = e.id
- GROUP BY e.domain
+ GROUP BY e.domain, e.section
 """
 
 

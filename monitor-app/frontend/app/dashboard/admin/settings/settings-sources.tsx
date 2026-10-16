@@ -20,7 +20,6 @@ export interface SettingsSource<Row extends { id: string }> {
   /** Área y sección: `area/section` es la clave del permiso (secciones.ts). */
   area:        string
   section:     string
-  description: string
   queryKey:    readonly unknown[]
   list:        () => Promise<Row[]>
   /** Cómo se llama el elemento en el panel. */
@@ -58,7 +57,6 @@ const porColumna = <Row extends { group?: string | null }>(rows: Row[]) =>
  *  nombre visible, su columna (que da el tono) y su orden. */
 export const boardStatusSource: SettingsSource<TripStatusRow> = {
   area: 'operations', section: 'tms-statuses',
-  description: 'Cómo se ve cada estado del TMS y en qué columna del tablero aparece.',
   queryKey: ['tms-statuses'],
   list: () => configApi.getStatuses(),
   title: s => s.label,
@@ -82,41 +80,34 @@ export const boardStatusSource: SettingsSource<TripStatusRow> = {
 
 /** Los vocabularios de `app.status_taxonomies`: un registro, una fuente. */
 const VOCABULARIOS: Record<TaxonomyDomain, {
-  area: string; section: string; noun: string; description: string; columna: string
+  area: string; section: string; noun: string; columna: string
   grupo?: { label: string; help: string; options: { id: string; label: string }[]; porDefecto: string; conTono?: boolean }
 }> = {
   OPERATIONAL_STATE: {
     area: 'operations', section: 'operational-statuses', noun: 'estado', columna: 'Estado',
-    description: 'El vocabulario que usa el equipo para un viaje.',
     grupo: { label: 'Columna del tablero', help: 'Define en qué columna del tablero aparecen sus viajes y con qué tono se ve.',
              options: BOARD_COLUMNS, porDefecto: 'otro', conTono: true },
   },
   EQUIPMENT_STATE: {
     area: 'operations', section: 'equipment-statuses', noun: 'estado', columna: 'Estado',
-    description: 'El motivo cuando un equipo no sale.',
   },
   DRIVER_REASON: {
     area: 'operations', section: 'driver-reasons', noun: 'motivo', columna: 'Motivo',
-    description: 'Por qué un conductor no está disponible. Lo usa el Cierre del día.',
     grupo: { label: 'Qué significa', porDefecto: 'no_trabajando',
              help: 'Define si el conductor cuenta como No trabajando o como No asignado (trabajó sin carga) en el Cierre.',
              options: [{ id: 'no_trabajando', label: 'No trabajó' }, { id: 'trabajando_sin_asignacion', label: 'Trabajó sin asignación' }] },
   },
   TRIP_UNASSIGNED_REASON: {
     area: 'operations', section: 'unassigned-reasons', noun: 'motivo', columna: 'Motivo',
-    description: 'Por qué WebCarga no tomó una carga que le ofrecieron.',
   },
   TRIP_VOID_REASON: {
     area: 'operations', section: 'void-reasons', noun: 'motivo', columna: 'Motivo',
-    description: 'Por qué se anula un viaje cargado en la app.',
   },
   FLEET_SERVICE_TYPE: {
     area: 'fleet', section: 'subtypes', noun: 'subtipo', columna: 'Subtipo',
-    description: 'La carrocería de un equipo. Lo usan Certificación y Operaciones.',
   },
   WEBCARGA_OPERATION_TYPE: {
     area: 'fleet', section: 'operation-types', noun: 'tipo de operación', columna: 'Tipo de operación',
-    description: 'Tractoreo o equipo completo. Lo usan Certificación y Operaciones.',
   },
 }
 
@@ -131,7 +122,7 @@ export function vocabularySource(domain: TaxonomyDomain): SettingsSource<Taxonom
   const grupo = v.grupo
   const etiquetaDe = (id: string | null | undefined) => grupo?.options.find(o => o.id === id)?.label ?? '—'
   return {
-    area: v.area, section: v.section, description: v.description,
+    area: v.area, section: v.section,
     queryKey: taxonomyKey(domain),
     list: () => taxonomiesApi.list(domain),
     title: r => r.label,
@@ -163,17 +154,16 @@ export function vocabularySource(domain: TaxonomyDomain): SettingsSource<Taxonom
 const dias = (n: number) => `${n} ${n === 1 ? 'día' : 'días'}`
 
 /** Un umbral de vencimiento, en su área (backend: vencimientos.UMBRALES). */
-const UMBRALES: Record<string, { area: string; description: string }> = {
-  documento_por_vencer: { area: 'certification', description: 'Con cuántos días de anticipación se avisa que un documento vence.' },
-  poliza_por_vencer:    { area: 'insurance',     description: 'Con cuántos días de anticipación se avisa que una póliza vence.' },
+const AREA_DEL_UMBRAL: Record<string, string> = {
+  documento_por_vencer: 'certification',
+  poliza_por_vencer:    'insurance',
 }
 
 type ThresholdRow = AlertThresholdMeta & { id: string }
 
 export function thresholdSource(docType: string): SettingsSource<ThresholdRow> {
-  const u = UMBRALES[docType]
   return {
-    area: u.area, section: 'expiry-alerts', description: u.description,
+    area: AREA_DEL_UMBRAL[docType], section: 'expiry-alerts',
     queryKey: ['config', 'alert-thresholds'],
     list: () => configApi.getAlertThresholds()
       .then(rows => rows.filter(r => r.doc_type === docType).map(r => ({ ...r, id: r.doc_type }))),
@@ -199,7 +189,6 @@ type TemperatureRow = TemperatureRangeMeta & { id: string }
 
 export const temperatureRangeSource: SettingsSource<TemperatureRow> = {
   area: 'operations', section: 'temperature-ranges',
-  description: 'Qué rango corresponde a cada tipo de carga.',
   queryKey: ['config', 'temperature-ranges'],
   list: () => configApi.getTemperatureRanges().then(rows => rows.map(r => ({ ...r, id: r.cargo_type }))),
   title: r => r.label,
@@ -247,7 +236,6 @@ type RuleRow = { id: string; label: string; unit: string; help: string; value: n
 
 export const monitorRulesSource: SettingsSource<RuleRow> = {
   area: 'operations', section: 'alert-thresholds',
-  description: 'Cuándo el Monitor considera que algo va mal.',
   queryKey: ['config', 'monitor-alert-rules'],
   list: () => configApi.getMonitorAlertRules().then(r => REGLAS_DEL_MONITOR.map(x => ({
     id: x.id, label: x.label, unit: x.unit, help: x.help, value: (r[x.id] as number | null | undefined) ?? null,

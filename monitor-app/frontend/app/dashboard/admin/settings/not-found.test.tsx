@@ -1,33 +1,31 @@
 import { render, screen } from '@testing-library/react'
 import { vi, describe, it, expect } from 'vitest'
-// Quien administra personas: ve todos los dominios (Personas y accesos exige users.manage).
-const acceso = vi.hoisted(() => ({ permissions: ['users.manage'] as string[] }))
-vi.mock('@/lib/authz/PermisosProvider', () => ({ useAcceso: () => acceso }))
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+vi.mock('next/navigation', () => ({ usePathname: () => '/dashboard/admin/settings/facturacion' }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({
+  useAcceso: () => ({ permissions: ['users.manage', 'certification.configure', 'operations.configure'] }),
+}))
+vi.mock('@/lib/api/config', () => ({ inventarioApi: { get: vi.fn().mockResolvedValue({}) } }))
 
 import AreaNoEncontrada from './not-found'
 
-describe('area de configuracion no encontrada', () => {
-  // Antes esto era el 404 pelado de Next: sin la app alrededor y sin salida.
-  it('ofrece la vuelta al inventario', () => {
-    render(<AreaNoEncontrada />)
-    expect(screen.getByRole('link', { name: /^Configuración/ }))
-      .toHaveAttribute('href', '/dashboard/admin/settings')
+function montar() {
+  render(<QueryClientProvider client={new QueryClient()}><AreaNoEncontrada /></QueryClientProvider>)
+}
+
+describe('sección de configuración no encontrada', () => {
+  it('ofrece la vuelta al índice', () => {
+    montar()
+    expect(screen.getByRole('link', { name: /^Configuración/ })).toHaveAttribute('href', '/dashboard/admin/settings')
   })
 
-  // La salida util no es "volver", es la lista de lo que si existe: quien
-  // teclea /facturacion tiene que poder ir a donde queria de un clic.
-  it('nombra las areas que si existen', () => {
-    render(<AreaNoEncontrada />)
-    expect(screen.getByRole('link', { name: 'Certificación' }))
-      .toHaveAttribute('href', '/dashboard/admin/settings/certification')
-    expect(screen.getByRole('link', { name: 'Operaciones' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Flota' })).toBeInTheDocument()
-  })
-
-  // Facturacion es un dominio reservado: listarlo aca seria ofrecer otra vez
-  // la puerta que acaba de no abrir.
-  it('no ofrece un area reservada', () => {
-    render(<AreaNoEncontrada />)
-    expect(screen.queryByRole('link', { name: 'Facturación' })).not.toBeInTheDocument()
+  // La salida útil es la lista de lo que sí existe: quien teclea /facturacion
+  // tiene que poder ir a donde quería de un clic.
+  it('lista las secciones que sí existen, sin el área reservada', () => {
+    montar()
+    expect(screen.getByRole('link', { name: 'Condiciones de documentos' }))
+      .toHaveAttribute('href', '/dashboard/admin/settings/certification/conditions')
+    expect(screen.queryByText('Facturación')).toBeNull()
   })
 })

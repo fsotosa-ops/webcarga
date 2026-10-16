@@ -29,7 +29,6 @@ const ROWS: Row[] = [
 function fuente(over: Partial<SettingsSource<Row>> = {}): SettingsSource<Row> {
   return {
     area: 'operations', section: 'driver-reasons',
-    description: 'Por qué un conductor no está disponible.',
     queryKey: ['prueba', Math.random()],
     list: vi.fn().mockResolvedValue(ROWS),
     title: r => r.label,

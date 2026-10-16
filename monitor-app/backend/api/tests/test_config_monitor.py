@@ -546,12 +546,14 @@ def test_inventario_dice_cuantas_decisiones_faltan_por_dominio():
     pool = AsyncMock()
     pool.fetchrow.return_value = _FILA_INVENTARIO
     pool.fetch.return_value = [
-        {"domain": "certification", "total": 46, "sin_revisar": 12},
-        {"domain": "operations", "total": 55, "sin_revisar": 0},
+        {"domain": "certification", "section": "conditions", "total": 45, "sin_revisar": 12},
+        {"domain": "certification", "section": "expiry-alerts", "total": 1, "sin_revisar": 0},
+        {"domain": "operations", "section": "tms-statuses", "total": 55, "sin_revisar": 0},
     ]
     cuerpo = make_client(pool).get("/api/v1/config/inventario").json()
 
     assert cuerpo["certification"]["revision"] == {"total": 46, "sin_revisar": 12}
+    assert cuerpo["certification"]["secciones"] == {"conditions": 12, "expiry-alerts": 0}
     assert cuerpo["operations"]["revision"] == {"total": 55, "sin_revisar": 0}
 
 
@@ -561,7 +563,7 @@ def test_un_dominio_sin_nada_revisable_no_trae_insignia():
     portada distingue "no aplica" de "cero pendientes"."""
     pool = AsyncMock()
     pool.fetchrow.return_value = _FILA_INVENTARIO
-    pool.fetch.return_value = [{"domain": "certification", "total": 46, "sin_revisar": 12}]
+    pool.fetch.return_value = [{"domain": "certification", "section": "conditions", "total": 46, "sin_revisar": 12}]
     cuerpo = make_client(pool).get("/api/v1/config/inventario").json()
 
     assert cuerpo["people"]["revision"] is None

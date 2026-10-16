@@ -11,7 +11,7 @@ import {
 } from './paneles'
 import { UsuariosTab } from './usuarios-tab'
 import { RolesTab } from './roles-tab'
-import type { PermissionCode } from '@/lib/authz/permisos.generated'
+import { PERMISO_DE_SECCION, type ClaveDeSeccion } from './secciones'
 import { OrigenesTab } from './origenes'
 import { ClientesDelTmsTab } from './clientes-del-tms'
 
@@ -37,10 +37,6 @@ export interface Dominio {
   secciones: Seccion[]
   /** Reservado, sin contenido todavia. Se dibuja apagado y no es visitable. */
   proximamente?: boolean
-  /** Si la API exige un permiso para LEER el dominio, sin él no se muestra:
-   *  una tarjeta que lleva a un 403 no orienta a nadie. Sin permiso declarado,
-   *  lo ve quien entra a Configuración (cada sección decide qué se edita). */
-  permiso?: PermissionCode
 }
 
 /** FUENTE DE VERDAD del modulo de Configuracion.
@@ -123,7 +119,6 @@ export const DOMINIOS: Dominio[] = [
     icono: Users,
     titulo: 'Personas y accesos',
     proposito: 'Quién entra y qué puede hacer',
-    permiso: 'users.manage',
     secciones: [
       { clave: 'users', titulo: 'Personas',
         proposito: 'Quién tiene cuenta y con qué roles', Panel: UsuariosTab },
@@ -154,6 +149,19 @@ export const PARAM_DE_SECCION: Record<string, string> = {
 }
 
 
-export function puedeVerDominio(d: Dominio, permisos: readonly string[]): boolean {
-  return !d.permiso || permisos.includes(d.permiso)
+/** Un área se ve si la persona tiene el permiso de alguna de sus secciones
+ *  (Configuración, Parte 1); dentro, las demás secciones se ven en solo lectura.
+ *  Un área reservada (Facturación) no se ve. */
+export function puedeVerArea(d: Dominio, permisos: readonly string[]): boolean {
+  return !d.proximamente && d.secciones.some(s =>
+    permisos.includes(PERMISO_DE_SECCION[`${d.clave}/${s.clave}` as ClaveDeSeccion]))
+}
+
+/** Las áreas que la persona ve, en el orden del registro. */
+export function areasVisibles(permisos: readonly string[]): Dominio[] {
+  return DOMINIOS.filter(d => puedeVerArea(d, permisos))
+}
+
+export function rutaDeSeccion(area: string, seccion: string): string {
+  return `/dashboard/admin/settings/${area}/${seccion}`
 }

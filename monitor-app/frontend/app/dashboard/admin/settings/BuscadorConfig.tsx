@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { Search } from 'lucide-react'
 import { busquedaConfigApi } from '@/lib/api/config'
-import { DOMINIOS, PARAM_DE_SECCION } from './dominios'
+import { DOMINIOS, PARAM_DE_SECCION, rutaDeSeccion } from './dominios'
 import { INPUT } from './shared'
 
 /** Dónde vive un resultado, en el idioma de la pantalla. Sale del registro de
@@ -17,7 +17,7 @@ function ubicacion(dominio: string, seccion: string): string {
 }
 
 function enlace(dominio: string, seccion: string, abre: string): string {
-  const base = `/dashboard/admin/settings/${dominio}?section=${seccion}`
+  const base = rutaDeSeccion(dominio, seccion)
   // Dos secciones abren el elemento directo porque su panel viaja en la URL;
   // el resto lleva a la sección, que es lo más cerca que se puede llegar sin
   // inventarle un panel a una tabla que no lo tiene.
@@ -26,7 +26,7 @@ function enlace(dominio: string, seccion: string, abre: string): string {
   // dejaba un enlace que llevaba a la lista correcta y no abría nada — el
   // click-through lo encontró.
   const param = PARAM_DE_SECCION[seccion]
-  return param ? `${base}&${param}=${encodeURIComponent(abre)}` : base
+  return param ? `${base}?${param}=${encodeURIComponent(abre)}` : base
 }
 
 /** El buscador del módulo, presente en las dos pantallas.

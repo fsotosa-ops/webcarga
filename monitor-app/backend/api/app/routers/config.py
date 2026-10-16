@@ -13,7 +13,7 @@ from ..services.reordenamiento import (
 )
 from ..services.reglas_del_monitor import SQL_REGLAS_DEL_MONITOR
 from ..services.vencimientos import UMBRALES
-from ..services.revisiones import SQL_PENDIENTES_POR_DOMINIO, registrar_revision
+from ..services.revisiones import SQL_PENDIENTES_POR_SECCION, registrar_revision
 
 # Cada ruta declara su permiso (RBAC): ver tests/test_toda_ruta_declara_permiso.py.
 router = APIRouter(prefix="/config", tags=["config"])
@@ -477,10 +477,14 @@ async def inventario_configuracion(pool=Depends(get_pool), usuario=Depends(requi
     f = await pool.fetchrow(_INVENTARIO_SQL)
     # Cuántas decisiones nadie tomó todavía, por dominio. "Sin revisar" no es un
     # adorno: es el camino corto entre "algo falta" y "lo estoy resolviendo".
-    pendientes = {
-        r["domain"]: {"total": r["total"], "sin_revisar": r["sin_revisar"]}
-        for r in await pool.fetch(SQL_PENDIENTES_POR_DOMINIO)
-    }
+    # Por sección para el índice de Configuración; el área suma sus secciones.
+    pendientes: dict[str, dict] = {}
+    por_seccion: dict[str, dict[str, int]] = {}
+    for r in await pool.fetch(SQL_PENDIENTES_POR_SECCION):
+        area = pendientes.setdefault(r["domain"], {"total": 0, "sin_revisar": 0})
+        area["total"] += r["total"]
+        area["sin_revisar"] += r["sin_revisar"]
+        por_seccion.setdefault(r["domain"], {})[r["section"]] = r["sin_revisar"]
     contenido = {
         "certification": _pares(
             f,
@@ -503,6 +507,8 @@ async def inventario_configuracion(pool=Depends(get_pool), usuario=Depends(requi
             ("subtipos", "subtipo", "subtipos"),
             ("tipos_operacion", "tipo de operación", "tipos de operación"),
         ),
+        # Seguros (Parte 1): un umbral; su contenido es la sección misma.
+        "insurance": [],
         "people": _pares(
             f,
             ("usuarios", "usuario", "usuarios"),
@@ -518,6 +524,6 @@ async def inventario_configuracion(pool=Depends(get_pool), usuario=Depends(requi
     if Permission.USERS_MANAGE.value not in usuario["permissions"]:
         contenido.pop("people")
     return {
-        clave: {"pares": pares, "revision": pendientes.get(clave)}
+        clave: {"pares": pares, "revision": pendientes.get(clave), "secciones": por_seccion.get(clave, {})}
         for clave, pares in contenido.items()
     }

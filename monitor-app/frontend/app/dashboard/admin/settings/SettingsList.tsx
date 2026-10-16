@@ -83,8 +83,7 @@ export function SettingsList<Row extends { id: string }>({ source }: { source: S
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <p className="text-dato text-informativo">{source.description}</p>
+      <div className="flex flex-wrap items-start justify-end gap-3">
         {source.create && puedeEditar && (
           <button type="button" onClick={() => abrir(NUEVO)}
                   className="rounded-md bg-accent px-3 py-1.5 text-dato font-semibold text-white hover:bg-accent/90">
