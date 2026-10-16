@@ -65,4 +65,11 @@ describe('SettingsIndex (P1.1)', () => {
     await waitFor(() => expect(screen.getByRole('link', { name: /Motivos de conductor/ })).toHaveTextContent('21'))
     expect(screen.getByRole('link', { name: /Estados del tablero/ })).not.toHaveTextContent(/\d/)
   })
+
+  it('roles.manage sin users.manage no ve Personas y accesos: la API no le deja listar ni personas ni roles', () => {
+    permisos = ['roles.manage', 'operations.configure']
+    montar()
+    expect(screen.queryByText('Personas y accesos')).toBeNull()
+  })
 })
+

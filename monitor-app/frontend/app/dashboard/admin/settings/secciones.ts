@@ -29,6 +29,13 @@ export const PERMISO_DE_SECCION = {
   'people/roles':                    'roles.manage',
 } as const satisfies Record<string, PermissionCode>
 
+/** Las secciones que ni siquiera se pueden LEER sin un permiso: la API no lista
+ *  personas ni roles sin `users.manage`. Las demás se leen dentro de un área visible. */
+export const LECTURA_DE_SECCION: Partial<Record<keyof typeof PERMISO_DE_SECCION, PermissionCode>> = {
+  'people/users': 'users.manage',
+  'people/roles': 'users.manage',
+}
+
 /** `area/section`: la misma sección corta (p. ej. `expiry-alerts`) existe en más de
  *  un área (Certificación y Seguros). */
 export type ClaveDeSeccion = keyof typeof PERMISO_DE_SECCION

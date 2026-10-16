@@ -46,4 +46,11 @@ describe('/settings/[area] (P1.7)', () => {
     await expect(montar('inventada')).rejects.toThrow('NEXT_NOT_FOUND')
     await expect(montar('people')).rejects.toThrow('NEXT_NOT_FOUND')
   })
+
+  it('una sección inválida en un enlace viejo cae en la primera del área (no en un 404)', async () => {
+    busqueda = 'section=inventada&estado=x'
+    await montar('operations')
+    expect(reemplazar).toHaveBeenCalledWith('/dashboard/admin/settings/operations/tms-statuses?item=x')
+  })
 })
+

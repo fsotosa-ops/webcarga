@@ -35,4 +35,14 @@ describe('/settings', () => {
     render(<ConfiguracionPage />)
     expect(reemplazar).toHaveBeenCalledWith('/dashboard/admin/settings/certification/conditions')
   })
+
+  it('aterriza en la primera sección que la persona puede editar, no en una de solo lectura', () => {
+    pantalla(true); permisos = ['commercial.edit']
+    render(<ConfiguracionPage />)
+    expect(reemplazar).toHaveBeenCalledWith('/dashboard/admin/settings/operations/origins')
+    reemplazar.mockClear(); permisos = ['insurance.configure']
+    render(<ConfiguracionPage />)
+    expect(reemplazar).toHaveBeenCalledWith('/dashboard/admin/settings/insurance/expiry-alerts')
+  })
 })
+

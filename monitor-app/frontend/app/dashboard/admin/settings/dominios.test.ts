@@ -85,7 +85,8 @@ describe('quién ve cada área (Parte 1)', () => {
     const personas = dominioPorClave('people')!
     expect(puedeVerArea(personas, ['operations.configure'])).toBe(false)
     expect(puedeVerArea(personas, ['users.manage'])).toBe(true)
-    expect(puedeVerArea(personas, ['roles.manage'])).toBe(true)
+    // Roles sin users.manage no alcanza: la API no lista ni personas ni roles sin él.
+    expect(puedeVerArea(personas, ['roles.manage'])).toBe(false)
   })
   it('Personas y accesos tiene las secciones Personas y Roles', () => {
     expect(dominioPorClave('people')!.secciones.map(s => s.titulo)).toEqual(['Personas', 'Roles'])

@@ -12,11 +12,12 @@ import type { Direccion } from '@/lib/api/config'
 import { BotonConfirmar, MarcaDeRevision, SIN_REVISAR, useRevisiones } from './revision'
 import { usePuedeEditarSeccion, type ClaveDeSeccion } from './secciones'
 import type { SettingsField, SettingsSource, SettingsValues } from './settings-sources'
+import { INPUT } from './shared'
 
 const NUEVO = 'nuevo'
 const TODOS = 'todos'
-const CAMPO = 'mt-1 w-full rounded-md border border-border bg-white px-2.5 py-1.5 text-dato text-text-primary '
-  + 'focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:bg-bg-main disabled:text-informativo'
+// El campo de texto del módulo (shared.INPUT), a todo el ancho del panel.
+const CAMPO = `${INPUT} mt-1 w-full disabled:bg-bg-main disabled:text-informativo`
 const BOTON = 'inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-dato font-semibold '
   + 'text-text-primary hover:bg-bg-main disabled:opacity-50'
 
@@ -79,7 +80,11 @@ export function SettingsList<Row extends { id: string }>({ source }: { source: S
       badge: revisiones.cargando ? undefined : String(new Set(filas.map(rid).filter(id => revisiones.sinRevisar(id))).size) },
     ...extra.map(e => ({ id: e.id, label: e.label, badge: String(filas.filter(e.match).length) })),
   ]
-  const fila = abierto && abierto !== NUEVO ? filas.find(r => r.id === abierto) : undefined
+  // El elemento abierto: por su id o, si la sección se revisa como un formulario
+  // (las reglas del Monitor), por ese id de revisión (lo que enlaza el buscador).
+  const fila = abierto && abierto !== NUEVO
+    ? filas.find(r => r.id === abierto) ?? filas.find(r => source.revisionId?.(r) === abierto)
+    : undefined
   const creando = abierto === NUEVO && !!source.create && puedeEditar
 
   return (
@@ -171,7 +176,7 @@ function PanelElemento<Row extends { id: string }>({
   const cambios = useMemo(() => Object.fromEntries(
     Object.entries(valores).filter(([k, v]) => v !== originales[k])), [valores, originales])
   const sucio = Object.keys(cambios).length > 0
-  const invalido = source.validate?.(valores) ?? null
+  const invalido = source.validate?.(valores, fila) ?? null
 
   const guardar = useMutation({
     mutationFn: () => (fila ? source.save(fila, cambios) : source.create!.run(valores)),
@@ -254,6 +259,8 @@ function Campo({ campo, valor, disabled, onChange }: {
       {campo.kind === 'select' ? (
         <select aria-label={campo.label} value={String(valor ?? '')} disabled={disabled}
                 onChange={e => onChange(e.target.value)} className={CAMPO}>
+          {/* Sin valor (un estado que llegó sin columna): se pide elegirlo. */}
+          {(valor ?? '') === '' && <option value="" disabled>Elige…</option>}
           {campo.options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
       ) : (

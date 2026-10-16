@@ -49,6 +49,7 @@ describe('temperatureRangeSource', () => {
     await src.deactivate!.run(fila)
     expect(configApi.deleteTemperatureRange).toHaveBeenCalledWith('congelado')
     expect(src.validate!({ min_c: 5, max_c: 2 })).toMatch(/mínimo/)
+    expect(src.validate!({ min_c: null, max_c: 2 })).toMatch(/Completa/)
   })
 })
 
@@ -67,3 +68,28 @@ describe('monitorRulesSource', () => {
     expect(configApi.patchMonitorAlertRules).toHaveBeenCalledWith({ dwell_red_min: 120 })
   })
 })
+
+describe('thresholdSource: cada umbral con su caché (revisión final #1)', () => {
+  it('Certificación y Seguros no comparten la clave: uno no puede mostrar ni guardar el del otro', () => {
+    const doc = thresholdSource('documento_por_vencer').queryKey
+    const pol = thresholdSource('poliza_por_vencer').queryKey
+    expect(doc).not.toEqual(pol)
+    // Mismo prefijo: guardar uno invalida los dos.
+    expect(doc.slice(0, 2)).toEqual(pol.slice(0, 2))
+  })
+})
+
+describe('#10: un número obligatorio vacío se dice antes de enviar', () => {
+  it('umbral: los dos plazos son obligatorios', () => {
+    expect(thresholdSource('poliza_por_vencer').validate!({ warning_days: null, error_days: 0 })).toMatch(/Completa/)
+  })
+  it('regla del Monitor: obligatoria salvo la opcional', async () => {
+    vi.mocked(configApi.getMonitorAlertRules).mockResolvedValue({ stale_report_hours: 4, stale_trip_days: null } as never)
+    const filas = await monitorRulesSource.list()
+    const obligatoria = filas.find(f => f.id === 'stale_report_hours')!
+    const opcional = filas.find(f => f.id === 'stale_trip_days')!
+    expect(monitorRulesSource.validate!({ value: null }, obligatoria)).toMatch(/Completa/)
+    expect(monitorRulesSource.validate!({ value: null }, opcional)).toBeNull()
+  })
+})
+

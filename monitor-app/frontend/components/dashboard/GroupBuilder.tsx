@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { boardColumnStyle } from '@/lib/states'
 import { X, Check, Loader2 } from 'lucide-react'
 import type { FilterGroup, GroupColor } from '@/lib/api/filterGroups'
 import { filterGroupsApi } from '@/lib/api/filterGroups'
@@ -15,11 +16,6 @@ const STATUS_SECTIONS_FALLBACK = [
   { label: 'Problema',   statuses: ['CANCELADO', 'EN PANA', 'DEVUELTO'] },
 ]
 
-const GROUP_LABELS: Record<string, string> = {
-  en_ruta: 'En Ruta', en_local: 'En Local', retornando: 'Retornando',
-  cerrado: 'Cerrado', problema: 'Problema', otro: 'Otro',
-}
-
 function buildSections(statuses?: StatusMeta[]) {
   if (!statuses?.length) {
     return STATUS_SECTIONS_FALLBACK.map(s => ({
@@ -29,12 +25,13 @@ function buildSections(statuses?: StatusMeta[]) {
   }
   const grouped: Record<string, { id: string; label: string }[]> = {}
   for (const s of statuses) {
-    if (!grouped[s.group]) grouped[s.group] = []
+    const g = s.group ?? 'otro'
+    if (!grouped[g]) grouped[g] = []
     // label configurado en vez del id crudo (los ids TMS son jerga interna)
-    grouped[s.group].push({ id: s.id, label: s.label || s.id })
+    grouped[g].push({ id: s.id, label: s.label || s.id })
   }
   return Object.entries(grouped).map(([group, items]) => ({
-    label: GROUP_LABELS[group] ?? group,
+    label: boardColumnStyle(group).label,
     statuses: items,
   }))
 }

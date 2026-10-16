@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { useAcceso } from '@/lib/authz/PermisosProvider'
 import { inventarioApi } from '@/lib/api/config'
-import { areasVisibles, rutaDeSeccion } from './dominios'
+import { areasVisibles, rutaDeSeccion, seccionesVisibles } from './dominios'
 
 /** El índice de Configuración (Parte 1): un solo nivel bajo el menú de la app,
  *  agrupado por área, como Linear, GitHub o Vercel. Muestra solo las áreas que la
@@ -24,7 +24,7 @@ export function SettingsIndex() {
             <area.icono size={13} aria-hidden="true" /> {area.titulo}
           </p>
           <ul className="mt-1 space-y-0.5">
-            {area.secciones.map(s => {
+            {seccionesVisibles(area, permissions).map(s => {
               const href = rutaDeSeccion(area.clave, s.clave)
               const activa = ruta === href
               // Sin cifra mientras carga ni cuando es cero: un "0" no orienta.

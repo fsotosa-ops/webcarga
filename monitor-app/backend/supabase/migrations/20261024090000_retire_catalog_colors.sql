@@ -9,7 +9,7 @@
 --
 -- Las dos vistas materializadas que guardaban el color del subtipo se recrean sin él
 -- (definición vigente leída en la real el 2026-10-16 con pg_get_viewdef; sin permisos
--- extra ni dependientes; las refresca app.refresh_carrier_view por nombre).
+-- extra ni dependientes; las refresca public.refresh_carrier_view por nombre).
 -- Mage no lee estos colores ni estas vistas (código fuente del proyecto, 2026-10-16).
 -- Re-ejecutable.
 

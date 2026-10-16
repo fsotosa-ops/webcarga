@@ -11,7 +11,7 @@ import {
 } from './paneles'
 import { UsuariosTab } from './usuarios-tab'
 import { RolesTab } from './roles-tab'
-import { PERMISO_DE_SECCION, type ClaveDeSeccion } from './secciones'
+import { LECTURA_DE_SECCION, PERMISO_DE_SECCION, type ClaveDeSeccion } from './secciones'
 import { OrigenesTab } from './origenes'
 import { ClientesDelTmsTab } from './clientes-del-tms'
 
@@ -152,9 +152,24 @@ export const PARAM_DE_SECCION: Record<string, string> = {
 /** Un área se ve si la persona tiene el permiso de alguna de sus secciones
  *  (Configuración, Parte 1); dentro, las demás secciones se ven en solo lectura.
  *  Un área reservada (Facturación) no se ve. */
+const clave = (d: Dominio, s: Seccion) => `${d.clave}/${s.clave}` as ClaveDeSeccion
+
+/** Las secciones de un área que la persona puede leer (Personas y Roles exigen
+ *  `users.manage` hasta para leerse, como la API). */
+export function seccionesVisibles(d: Dominio, permisos: readonly string[]): Seccion[] {
+  return d.secciones.filter(s => {
+    const lectura = LECTURA_DE_SECCION[clave(d, s)]
+    return !lectura || permisos.includes(lectura)
+  })
+}
+
+/** La primera sección que la persona puede editar: ahí aterriza al entrar al área. */
+export function primeraEditable(d: Dominio, permisos: readonly string[]): Seccion | undefined {
+  return seccionesVisibles(d, permisos).find(s => permisos.includes(PERMISO_DE_SECCION[clave(d, s)]))
+}
+
 export function puedeVerArea(d: Dominio, permisos: readonly string[]): boolean {
-  return !d.proximamente && d.secciones.some(s =>
-    permisos.includes(PERMISO_DE_SECCION[`${d.clave}/${s.clave}` as ClaveDeSeccion]))
+  return !d.proximamente && !!primeraEditable(d, permisos)
 }
 
 /** Las áreas que la persona ve, en el orden del registro. */

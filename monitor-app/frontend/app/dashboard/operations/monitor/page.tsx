@@ -41,22 +41,21 @@ import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { EntityQuickView } from '@/components/dashboard/EntityQuickView'
 import { useQuickView } from '@/lib/quickView'
 import { MONITOR } from '@/lib/navegacion/viaje'
+import { BOARD_COLUMNS, boardColumnStyle } from '@/lib/states'
+import { STATUS_TONE_CLASS, STATUS_TONE_DOT } from '@/components/ui/StatusChip'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
 
-// ── Group display config (labels + chip colors only — membership comes from meta.statuses) ──
-const GROUP_DISPLAY: Record<string, { label: string; on: string; off: string }> = {
-  en_ruta:    { label: 'En Ruta',    on: 'bg-blue-500   border-blue-500   text-white', off: 'text-blue-600   border-blue-200   bg-blue-50/70   hover:border-blue-300'   },
-  en_local:   { label: 'En Local',   on: 'bg-orange-500 border-orange-500 text-white', off: 'text-orange-600 border-orange-200 bg-orange-50/70 hover:border-orange-300' },
-  retornando: { label: 'Retornando', on: 'bg-cyan-500   border-cyan-500   text-white', off: 'text-cyan-700   border-cyan-200   bg-cyan-50/70   hover:border-cyan-300'   },
-  // Ítem 6 (minuta 09/10): el token `espera` ya existe; no se agrega un color nuevo.
-  pendiente_cierre_tms: { label: 'Pendiente cierre TMS', on: 'bg-espera border-espera text-white', off: 'text-espera border-espera/30 bg-espera/5 hover:border-espera/50' },
-  cerrado:    { label: 'Cerrados',   on: 'bg-slate-500  border-slate-500  text-white', off: 'text-slate-600  border-slate-200  bg-slate-50/70  hover:border-slate-300'  },
-  problema:   { label: 'Problema',   on: 'bg-red-500    border-red-500    text-white', off: 'text-red-600    border-red-200    bg-red-50/70    hover:border-red-300'     },
-  otro:       { label: 'Otro',       on: 'bg-gray-500   border-gray-500   text-white', off: 'text-gray-600   border-gray-200   bg-gray-50/70   hover:border-gray-300'    },
+// Los grupos por defecto del Monitor son las columnas del tablero: etiqueta, orden y
+// tono salen del glosario (lib/states.ts), no de un mapa propio (Configuración, Parte 1).
+const chipDeColumna = (group: string) => {
+  const { label, tone } = boardColumnStyle(group)
+  return {
+    label,
+    on:  `${STATUS_TONE_DOT[tone]} border-transparent text-white`,
+    off: `${STATUS_TONE_CLASS[tone]} border-border hover:border-informativo`,
+  }
 }
-
-const GROUP_ORDER = ['en_ruta', 'en_local', 'retornando', 'pendiente_cierre_tms', 'cerrado', 'problema', 'otro']
 
 function todayISO() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date())
@@ -131,13 +130,9 @@ function DiarioPageInner() {
       if (!grouped[g]) grouped[g] = []
       grouped[g].push(s.id)
     }
-    return GROUP_ORDER
-      .filter(g => grouped[g]?.length > 0)
-      .map(g => ({
-        id:       g,
-        statuses: grouped[g],
-        ...(GROUP_DISPLAY[g] ?? { label: g, on: GROUP_DISPLAY.otro.on, off: GROUP_DISPLAY.otro.off }),
-      }))
+    return BOARD_COLUMNS
+      .filter(c => grouped[c.id]?.length > 0)
+      .map(c => ({ id: c.id, statuses: grouped[c.id], ...chipDeColumna(c.id) }))
   }, [tripsMeta?.statuses])
 
   // Resolve active group statuses

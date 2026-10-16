@@ -29,7 +29,7 @@ export interface SettingsSource<Row extends { id: string }> {
   fields:      (row: Row | undefined) => SettingsField[]
   values:      (row: Row) => SettingsValues
   /** Un error que impide guardar, antes de enviar. */
-  validate?:   (values: SettingsValues) => string | null
+  validate?:   (values: SettingsValues, row?: Row) => string | null
   /** El elemento que se revisa, si no es la fila (las reglas del Monitor se
    *  revisan como un formulario). */
   revisionId?: (row: Row) => string
@@ -134,7 +134,9 @@ export function vocabularySource(domain: TaxonomyDomain): SettingsSource<Taxonom
       { key: 'label', label: 'Nombre', kind: 'text' },
       ...(grupo ? [{ key: 'group', label: grupo.label, kind: 'select' as const, options: grupo.options, help: grupo.help }] : []),
     ],
-    values: r => (grupo ? { label: r.label, group: r.group ?? grupo.porDefecto } : { label: r.label }),
+    // Sin grupo (llegó así) se muestra vacío y se pide elegirlo: mostrar el de
+    // por defecto haría que elegirlo no contara como cambio.
+    values: r => (grupo ? { label: r.label, group: r.group ?? '' } : { label: r.label }),
     save: (r, c) => taxonomiesApi.patch(r.id, c as { label?: string; group?: string }),
     move: (r, d) => taxonomiesApi.move(r.id, d),
     create: {
@@ -164,7 +166,7 @@ type ThresholdRow = AlertThresholdMeta & { id: string }
 export function thresholdSource(docType: string): SettingsSource<ThresholdRow> {
   return {
     area: AREA_DEL_UMBRAL[docType], section: 'expiry-alerts',
-    queryKey: ['config', 'alert-thresholds'],
+    queryKey: ['config', 'alert-thresholds', docType],
     list: () => configApi.getAlertThresholds()
       .then(rows => rows.filter(r => r.doc_type === docType).map(r => ({ ...r, id: r.doc_type }))),
     title: r => r.label,
@@ -179,7 +181,8 @@ export function thresholdSource(docType: string): SettingsSource<ThresholdRow> {
         help: 'Un tramo dentro del aviso: tiene que ser menor que el aviso. 0 = al vencer.' },
     ],
     values: r => ({ warning_days: r.warning_days, error_days: r.error_days }),
-    validate: v => (Number(v.error_days) >= Number(v.warning_days) ? 'El crítico tiene que ser menor que el aviso.' : null),
+    validate: v => (v.warning_days == null || v.error_days == null ? 'Completa los dos plazos.'
+      : Number(v.error_days) >= Number(v.warning_days) ? 'El crítico tiene que ser menor que el aviso.' : null),
     save: (r, c) => configApi.patchAlertThreshold(r.doc_type, c as { warning_days?: number; error_days?: number }),
     emptyText: 'Este umbral no está en la base.',
   }
@@ -203,8 +206,8 @@ export const temperatureRangeSource: SettingsSource<TemperatureRow> = {
     { key: 'max_c', label: 'Máximo (°C)', kind: 'number' },
   ],
   values: r => ({ label: r.label, min_c: r.min_c, max_c: r.max_c }),
-  validate: v => (v.min_c != null && v.max_c != null && Number(v.min_c) >= Number(v.max_c)
-    ? 'El mínimo tiene que ser menor que el máximo.' : null),
+  validate: v => (v.min_c == null || v.max_c == null ? 'Completa el mínimo y el máximo.'
+    : Number(v.min_c) >= Number(v.max_c) ? 'El mínimo tiene que ser menor que el máximo.' : null),
   save: (r, c) => configApi.patchTemperatureRange(r.cargo_type, c as Partial<Pick<TemperatureRangeMeta, 'label' | 'min_c' | 'max_c'>>),
   create: {
     noun: 'rango',
@@ -232,13 +235,14 @@ const REGLAS_DEL_MONITOR: { id: keyof MonitorAlertRules; label: string; unit: st
     help: 'Días desde la última entrega tras los cuales un viaje que el TMS no cerró sale del cierre del día. Vacío: no ocultar ninguno.' },
 ]
 
-type RuleRow = { id: string; label: string; unit: string; help: string; value: number | null }
+type RuleRow = { id: string; label: string; unit: string; help: string; optional: boolean; value: number | null }
 
 export const monitorRulesSource: SettingsSource<RuleRow> = {
   area: 'operations', section: 'alert-thresholds',
   queryKey: ['config', 'monitor-alert-rules'],
   list: () => configApi.getMonitorAlertRules().then(r => REGLAS_DEL_MONITOR.map(x => ({
-    id: x.id, label: x.label, unit: x.unit, help: x.help, value: (r[x.id] as number | null | undefined) ?? null,
+    id: x.id, label: x.label, unit: x.unit, help: x.help, optional: !!x.optional,
+    value: (r[x.id] as number | null | undefined) ?? null,
   }))),
   title: r => r.label,
   columns: [
@@ -248,6 +252,7 @@ export const monitorRulesSource: SettingsSource<RuleRow> = {
   fields: row => [{ key: 'value', label: row ? `Valor (${row.unit})` : 'Valor', kind: 'number', min: 0, help: row?.help }],
   values: r => ({ value: r.value }),
   revisionId: () => 'reglas',
+  validate: (v, row) => (v.value == null && !row?.optional ? 'Completa el valor.' : null),
   save: (r, c) => configApi.patchMonitorAlertRules({ [r.id]: c.value ?? null } as Partial<MonitorAlertRules>),
   emptyText: 'No hay reglas del Monitor.',
 }

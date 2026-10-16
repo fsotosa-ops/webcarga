@@ -75,14 +75,14 @@ const REQS: RequirementOption[] = [
 // estable: la etiqueta es sólo el nombre visible, y renombrarla no puede
 // cambiar a quién alcanza una regla.
 const GESTIONES = [
-  { id: 'g1', label: 'Tractoreo', bg_color: '#fff', text_color: '#000', sort_order: 1, active: true, code: 'TRACTOREO' },
-  { id: 'g2', label: 'Equipo Completo', bg_color: '#fff', text_color: '#000', sort_order: 2, active: true, code: 'EQUIPO_COMPLETO' },
+  { id: 'g1', label: 'Tractoreo', sort_order: 1, active: true, code: 'TRACTOREO' },
+  { id: 'g2', label: 'Equipo Completo', sort_order: 2, active: true, code: 'EQUIPO_COMPLETO' },
 ]
 
 const SUBTIPOS = [
-  { id: 't1', label: 'Furgón Congelado', bg_color: '#fff', text_color: '#000', sort_order: 1, active: true, code: null },
-  { id: 't2', label: 'Sider', bg_color: '#fff', text_color: '#000', sort_order: 2, active: true, code: null },
-  { id: 't3', label: 'Rampla Plana', bg_color: '#fff', text_color: '#000', sort_order: 3, active: true, code: null },
+  { id: 't1', label: 'Furgón Congelado', sort_order: 1, active: true, code: null },
+  { id: 't2', label: 'Sider', sort_order: 2, active: true, code: null },
+  { id: 't3', label: 'Rampla Plana', sort_order: 3, active: true, code: null },
 ]
 
 function montar() {

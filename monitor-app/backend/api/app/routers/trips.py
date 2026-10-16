@@ -1074,7 +1074,8 @@ _CSV_COLUMNS = [
 class StatusMeta(BaseModel):
     id:         str
     label:      str
-    group:      str  # group_id aliased for frontend compat
+    # group_id con el nombre que usa el frontend; nulo = "Sin columna" (se ve neutro).
+    group:      Optional[str] = None
 
 
 class TmsSourceMeta(BaseModel):
@@ -1101,7 +1102,7 @@ class OperationalStateMeta(BaseModel):
     label:      str
     # Grupo del tablero (misma taxonomía que StatusMeta.group) — permite que un
     # override manual (manual_status) bucketee a su columna en vez de caer a "Otro"
-    group:      str = "otro"
+    group:      Optional[str] = None
 
 
 class MonitorAlertRulesMeta(BaseModel):

@@ -221,4 +221,25 @@ describe('SettingsList: una lista de lectura y un panel', () => {
     const filtros = await screen.findByRole('group', { name: 'Filtrar' })
     await waitFor(() => expect(within(filtros).getByRole('button', { name: /Sin revisar/ })).toHaveTextContent('1'))
   })
+
+  it('#5: un enlace con el elemento revisable (?item=reglas) abre la primera fila de ese formulario', async () => {
+    search = 'item=reglas'
+    renderLista(fuente({ revisionId: () => 'reglas' }))
+    const panel = await screen.findByRole('dialog')
+    expect(within(panel).getByRole('textbox', { name: 'Nombre' })).toHaveValue('Panne')
+  })
+
+  it('#6: un elemento sin grupo pide elegirlo, y elegir el primero cuenta como cambio', async () => {
+    search = 'item=s'
+    const sinGrupo = { id: 's', label: 'Sin grupo', group: null as unknown as string }
+    const src = fuente({ list: vi.fn().mockResolvedValue([...ROWS, sinGrupo]), values: r => ({ label: r.label, group: r.group ?? '' }) })
+    renderLista(src)
+    const panel = await screen.findByRole('dialog')
+    const grupo = within(panel).getByRole('combobox', { name: 'Qué significa' })
+    expect(grupo).toHaveValue('')
+    fireEvent.change(grupo, { target: { value: 'no_trabajando' } })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(src.save).toHaveBeenCalledWith(sinGrupo, { group: 'no_trabajando' }))
+  })
 })
+
