@@ -21,9 +21,12 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const tokenHash = searchParams.get('token_hash')
   const type = searchParams.get('type') as EmailOtpType | null
+  // La invitación y la recuperación terminan en "crea tu contraseña": una cuenta
+  // invitada que entra directo al panel queda sin clave y no puede volver a entrar
+  // con su correo (16/10, caso de una cuenta nueva de WebCarga).
   const next = destinoSeguro(
     searchParams.get('next'),
-    type === 'recovery' ? '/auth/reset-password' : '/dashboard/operations/monitor',
+    type === 'recovery' || type === 'invite' ? '/auth/reset-password' : '/dashboard/operations/monitor',
   )
 
   // Cloud Run: request.url trae la dirección interna; el origen público viene
