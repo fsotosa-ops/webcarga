@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import TarifarioPage from './page'
-import { locationsApi, shippersApi, type Shipper, type LocationListParams } from '@/lib/api/locations'
+import { locationsApi, shippersApi, type ShipperRow, type LocationListParams } from '@/lib/api/locations'
 import type { Location } from '@/lib/types'
 
 vi.mock('@/lib/api/locations', () => ({
@@ -13,7 +13,7 @@ vi.mock('@/hooks/useTripsMeta', () => ({ useTripsMeta: () => ({ data: { operatio
 let canEdit = true
 vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => canEdit }))
 
-const SHIPPER: Shipper = { id: 'shipper-1', name: 'Walmart', status: 'ACTIVE' }
+const SHIPPER: ShipperRow = { id: 'shipper-1', name: 'Walmart', status: 'ACTIVE', tms_names: 1, locations: 2, origins: 0, carriers: 1, trips_30d: 10 }
 const PENDING: Location = {
   id: 'loc-9', entity_type: 'SHIPPER', entity_id: 'shipper-1', site_number: null,
   name: 'Empresas Carozzi S.A.', country_code: 'CL', format: null, address: null,

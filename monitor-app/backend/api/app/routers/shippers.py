@@ -10,7 +10,7 @@ salen de GET /tms-clients?shipper_id=."""
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from ..authz import Permission, require
@@ -68,21 +68,10 @@ async def _detalle(conn, shipper_id: str):
 
 
 @router.get("")
-async def list_shippers(
-    q: str = Query(""),
-    status: Literal["", "ACTIVE", "INACTIVE"] = Query(""),
-    pool=Depends(get_pool),
-    _=Depends(require(Permission.COMMERCIAL_READ)),
-):
-    params, clauses = [], []
-    if q.strip():
-        params.append(q.strip())
-        clauses.append(f"sh.name ILIKE '%' || ${len(params)} || '%'")
-    if status:
-        params.append(status)
-        clauses.append(f"sh.status = ${len(params)}")
-    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-    rows = await pool.fetch(_SQL_CLIENTES + where + " ORDER BY sh.name", *params)
+async def list_shippers(pool=Depends(get_pool), _=Depends(require(Permission.COMMERCIAL_READ))):
+    """Todos: los clientes son pocos y Directorio › Clientes filtra y cuenta en
+    la pantalla, así las cifras de sus filtros son las de lo que se ve."""
+    rows = await pool.fetch(_SQL_CLIENTES + " ORDER BY sh.name")
     return [dict(r) for r in rows]
 
 

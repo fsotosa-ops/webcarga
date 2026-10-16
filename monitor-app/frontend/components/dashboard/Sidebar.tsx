@@ -69,6 +69,7 @@ const NAV_GROUPS: NavGroupDef[] = [
       { href: '/dashboard/carriers', label: 'Empresas' },
       { href: '/dashboard/drivers',  label: 'Conductores' },
       { href: '/dashboard/assets',   label: 'Equipos' },
+      { href: '/dashboard/clients',  label: 'Clientes' },
     ],
   },
   {

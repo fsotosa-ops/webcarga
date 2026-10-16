@@ -64,15 +64,6 @@ def _con(pool, quien):
     return client
 
 
-def test_la_lista_filtra_por_texto_y_estado_con_parametros():
-    pool = AsyncMock()
-    pool.fetch.return_value = []
-    make_client(pool).get("/api/v1/shippers", params={"q": "col", "status": "INACTIVE"})
-    sql, *params = pool.fetch.call_args.args
-    assert params == ["col", "INACTIVE"]
-    assert "ILIKE" in sql
-
-
 def test_el_detalle_de_un_cliente_que_no_existe_es_404():
     pool = AsyncMock()
     pool.fetchrow.return_value = None

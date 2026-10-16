@@ -39,6 +39,18 @@ export type Shipper = {
   status: string
 }
 
+/** Un cliente con lo que muestran Directorio › Clientes y su ficha. Viajes:
+ *  los planificados en los últimos 30 días. */
+export type ShipperRow = Shipper & {
+  tms_names: number
+  locations: number
+  origins:   number
+  carriers:  number
+  trips_30d: number
+}
+
+export type ShipperPatch = { name?: string; status?: 'ACTIVE' | 'INACTIVE' }
+
 export const locationsApi = {
   list: (params?: LocationListParams) => {
     const qs = new URLSearchParams()
@@ -76,7 +88,12 @@ export const locationsApi = {
 }
 
 export const shippersApi = {
-  list: () => apiFetch<Shipper[]>('/api/v1/shippers'),
+  list: () => apiFetch<ShipperRow[]>('/api/v1/shippers'),
+
+  get: (id: string) => apiFetch<ShipperRow>(`/api/v1/shippers/${encodeURIComponent(id)}`),
+
+  patch: (id: string, body: ShipperPatch) =>
+    apiFetch<ShipperRow>(`/api/v1/shippers/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   create: (body: { name: string }) =>
     apiFetch<Shipper>('/api/v1/shippers', { method: 'POST', body: JSON.stringify(body) }),

@@ -158,7 +158,7 @@ const NO_DEPENDEN_DEL_DIRECTORIO = new Set([
   'closure-signatures', 'daily-closures-report',                       // la firma es inmutable; el reporte se pide al abrir
   'ingest-preview',                                                    // la URL firmada de un archivo, no el maestro
   'entity-documents', 'certification-requests',                        // documentos y pedidos (Entrega B): no cambian con el maestro
-  'tms-clients',                                                       // Directorio › Clientes (Parte 3): las invalida invalidateClients
+  'clients', 'tms-clients',                                            // Directorio › Clientes (Parte 3): las invalida invalidateClients
 ])
 
 // Las fábricas de claves: una pantalla que lee `directoryKeys.x(…)` lee la raíz

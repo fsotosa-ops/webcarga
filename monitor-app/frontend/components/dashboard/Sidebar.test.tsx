@@ -157,6 +157,8 @@ describe('Sidebar — Certificación se abre en Empresas y Por asignar', () => {
     const lateral = screen.getByRole('navigation', { name: /principal/i })
     expect(within(lateral).getByRole('link', { name: /^conductores$/i })).toHaveAttribute('href', '/dashboard/drivers')
     expect(within(lateral).getByRole('link', { name: /^equipos$/i })).toHaveAttribute('href', '/dashboard/assets')
+    // Configuración, Parte 3: Clientes es el cuarto objeto del Directorio.
+    expect(within(lateral).getByRole('link', { name: /^clientes$/i })).toHaveAttribute('href', '/dashboard/clients')
     // Y estando parado en él, el grupo Certificación NO se abre: ya no es su
     // casa. Antes se abría solo, que era la señal de que estaba adentro.
     expect(await screen.findByRole('button', { name: /certificación/i }))

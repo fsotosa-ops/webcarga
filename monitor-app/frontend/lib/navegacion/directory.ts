@@ -9,6 +9,7 @@ import { INSTALLMENTS, POLICIES } from './insurance'
 const CARRIERS = '/dashboard/carriers'
 const DRIVERS = '/dashboard/drivers'
 const ASSETS = '/dashboard/assets'
+export const CLIENTS = '/dashboard/clients'
 
 function withReturn(url: string, returnTo?: string): string {
   if (!returnTo) return url
@@ -18,6 +19,7 @@ function withReturn(url: string, returnTo?: string): string {
 export const carrierHref = (id: string, returnTo?: string) => withReturn(`${CARRIERS}/${id}`, returnTo)
 export const driverHref = (id: string, returnTo?: string) => withReturn(`${DRIVERS}/${id}`, returnTo)
 export const assetHref = (id: string, returnTo?: string) => withReturn(`${ASSETS}/${id}`, returnTo)
+export const clientHref = (id: string, returnTo?: string) => withReturn(`${CLIENTS}/${id}`, returnTo)
 
 /** La ficha de la empresa con el panel del conductor o del equipo abierto: adonde
  *  lleva la dirección canónica una vez que conoce la empresa. */
@@ -39,6 +41,8 @@ export function returnLink(next: string | null | undefined): { href: string; lab
     // Las listas del Directorio, con sus filtros (N3, Entrega 1 de fichas).
     : href.startsWith(DRIVERS) ? 'Volver a Conductores'
     : href.startsWith(ASSETS) ? 'Volver a Equipos'
+    : href.startsWith(`${CLIENTS}/`) ? 'Volver al cliente'
+    : href.startsWith(CLIENTS) ? 'Volver a Clientes'
     : href.startsWith(INSTALLMENTS) ? 'Volver a Cuotas'
     : href.startsWith(`${POLICIES}/policies/`) ? 'Volver a la póliza'
     : href.startsWith(POLICIES) ? 'Volver a Pólizas'
