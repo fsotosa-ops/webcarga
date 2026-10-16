@@ -1,28 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, Loader2, RefreshCw } from 'lucide-react'
 
 export const INPUT = 'text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all'
 
-// ── Carga de listas con error visible + reintentar ───────────────────────────
-
-export function useConfigList<T>(fetcher: () => Promise<T[]>) {
-  const [items, setItems]     = useState<T[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState<string | null>(null)
-
-  const load = useCallback(() => {
-    setLoading(true); setError(null)
-    fetcher()
-      .then(setItems)
-      .catch(e => setError(e instanceof Error ? e.message : 'Error al cargar'))
-      .finally(() => setLoading(false))
-  }, [fetcher])
-
-  useEffect(() => { load() }, [load])
-  return { items, setItems, loading, error, reload: load }
-}
+// ── Estado de carga con error visible + reintentar ───────────────────────────
 
 export function LoadState({ loading, error, onRetry }: { loading: boolean; error: string | null; onRetry: () => void }) {
   if (loading) {

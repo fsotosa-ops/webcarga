@@ -5,12 +5,15 @@ import { locationsApi, type Shipper } from '@/lib/api/locations'
 import { invalidateClients } from '@/lib/queries/clientes'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { LocationsTable } from '@/components/dashboard/LocationsTable'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { INPUT, LoadState } from '@/app/dashboard/admin/settings/shared'
 
 const LIMIT = 50
 
-export type LocationFilters = { shipperId: string; q: string; page: number }
-export const NO_LOCATION_FILTERS: LocationFilters = { shipperId: '', q: '', page: 1 }
+/** `origin`: solo los lugares desde los que sale carga (ex Configuración ›
+ *  Orígenes, Parte 3). */
+export type LocationFilters = { shipperId: string; q: string; origin: boolean; page: number }
+export const NO_LOCATION_FILTERS: LocationFilters = { shipperId: '', q: '', origin: false, page: 1 }
 
 /** Los lugares de carga con su búsqueda y sus páginas: "Todos los locales" del
  *  Tarifario y la pestaña Lugares de la ficha de un cliente. Con `shippers` se
@@ -27,10 +30,12 @@ export function LocationsBrowser({ filters, onFiltersChange, shippers, canEdit, 
 }) {
   const qc = useQueryClient()
   const q = useDebouncedValue(filters.q, 300)
+  // Con todos los clientes a la vista, cada lugar dice de quién es.
+  const clientOf = (entityId: string) => shippers?.find(s => s.id === entityId)?.name ?? '—'
   const query = useQuery({
-    queryKey: ['tarifario-all', filters.shipperId, q, filters.page],
+    queryKey: ['tarifario-all', filters.shipperId, q, filters.origin, filters.page],
     queryFn: () => locationsApi.list({
-      entity_type: 'SHIPPER', entity_id: filters.shipperId, q,
+      entity_type: 'SHIPPER', entity_id: filters.shipperId, q, origin: filters.origin,
       include_rate: true, page: filters.page, limit: LIMIT,
     }),
   })
@@ -49,12 +54,16 @@ export function LocationsBrowser({ filters, onFiltersChange, shippers, canEdit, 
           </select>
         )}
         <input value={filters.q} onChange={e => set({ q: e.target.value })} placeholder="Buscar por nombre o N° de local…" aria-label="Buscar local" className={INPUT + ' w-64'} />
+        <SegmentedControl label="Lugares" value={filters.origin ? 'origins' : 'all'}
+          options={[{ id: 'all', label: 'Todos' }, { id: 'origins', label: 'Orígenes' }]}
+          onChange={id => set({ origin: id === 'origins' })} />
       </div>
 
       <LoadState loading={query.isPending} error={query.error ? 'Error al cargar' : null} onRetry={() => query.refetch()} />
       {query.isSuccess && (
         <LocationsTable items={query.data.data} onChanged={() => invalidateClients(qc)} canEdit={canEdit}
-          emptyTitle={!filters.q && emptyTitle ? emptyTitle : undefined} />
+          emptyTitle={!filters.q && !filters.origin && emptyTitle ? emptyTitle : undefined}
+          clientOf={shippers && !filters.shipperId ? clientOf : undefined} />
       )}
 
       {query.isSuccess && totalPages > 1 && (

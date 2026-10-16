@@ -36,11 +36,14 @@ describe('/settings', () => {
     expect(reemplazar).toHaveBeenCalledWith('/dashboard/admin/settings/certification/conditions')
   })
 
-  it('aterriza en la primera sección que la persona puede editar, no en una de solo lectura', () => {
+  it('commercial.edit ya no edita nada aquí (Parte 3: sus secciones se mudaron al Directorio y al Tarifario)', () => {
     pantalla(true); permisos = ['commercial.edit']
     render(<ConfiguracionPage />)
-    expect(reemplazar).toHaveBeenCalledWith('/dashboard/admin/settings/operations/origins')
-    reemplazar.mockClear(); permisos = ['insurance.configure']
+    expect(reemplazar).not.toHaveBeenCalled()
+  })
+
+  it('aterriza en la primera sección que la persona puede editar, no en una de solo lectura', () => {
+    pantalla(true); permisos = ['insurance.configure']
     render(<ConfiguracionPage />)
     expect(reemplazar).toHaveBeenCalledWith('/dashboard/admin/settings/insurance/expiry-alerts')
   })

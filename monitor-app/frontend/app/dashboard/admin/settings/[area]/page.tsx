@@ -3,7 +3,7 @@
 import { Suspense, use, useEffect } from 'react'
 import { notFound, useRouter, useSearchParams } from 'next/navigation'
 import { useAcceso } from '@/lib/authz/PermisosProvider'
-import { dominioPorClave, primeraEditable, puedeVerArea, rutaDeSeccion, seccionesVisibles } from '../dominios'
+import { destinoMudado, dominioPorClave, primeraEditable, puedeVerArea, rutaDeSeccion, seccionesVisibles } from '../dominios'
 
 /** `/settings/[area]`: lleva a una sección (Configuración, Parte 1). Atiende los
  *  enlaces viejos `?section=<s>[&estado=<id>]`: la sección pasa a la ruta y el
@@ -28,6 +28,8 @@ function Redirigir({ area, primera, validas }: { area: string; primera: string; 
     const sp = new URLSearchParams(params.toString())
     // Una sección que no existe (o que no puede leer) cae en la primera editable.
     const pedida = sp.get('section')
+    const mudada = destinoMudado(area, pedida)
+    if (mudada) { router.replace(mudada); return }
     const seccion = pedida && validas.includes(pedida) ? pedida : primera
     sp.delete('section')
     const estado = sp.get('estado')

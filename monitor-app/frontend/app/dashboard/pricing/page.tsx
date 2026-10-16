@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { locationsApi, shippersApi, type Shipper } from '@/lib/api/locations'
 import { invalidateClients } from '@/lib/queries/clientes'
@@ -19,11 +20,17 @@ type Tab = 'pending' | 'all'
  *  generador de carga como filtro opcional). Ver
  *  docs/superpowers/specs/2026-07-27-tarifario-robustecimiento-design.md. */
 export default function TarifarioPage() {
+  return <Suspense fallback={null}><Tarifario /></Suspense>
+}
+
+function Tarifario() {
   const queryClient = useQueryClient()
   const canEdit = usePermiso('commercial.edit')
-  const [tab, setTab] = useState<Tab>('pending')
+  // `?origen=1` (ex Configuración › Orígenes) abre los lugares de origen.
+  const desdeOrigenes = useSearchParams().get('origen') === '1'
+  const [tab, setTab] = useState<Tab>(desdeOrigenes ? 'all' : 'pending')
   const [shippers, setShippers] = useState<Shipper[]>([])
-  const [filters, setFilters] = useState<LocationFilters>(NO_LOCATION_FILTERS)
+  const [filters, setFilters] = useState<LocationFilters>({ ...NO_LOCATION_FILTERS, origin: desdeOrigenes })
 
   useEffect(() => { shippersApi.list().then(setShippers).catch(() => setShippers([])) }, [])
 

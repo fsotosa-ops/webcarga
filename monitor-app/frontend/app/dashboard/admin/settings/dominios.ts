@@ -12,8 +12,6 @@ import {
 import { UsuariosTab } from './usuarios-tab'
 import { RolesTab } from './roles-tab'
 import { LECTURA_DE_SECCION, PERMISO_DE_SECCION, type ClaveDeSeccion } from './secciones'
-import { OrigenesTab } from './origenes'
-import { ClientesDelTmsTab } from './clientes-del-tms'
 
 export interface Seccion {
   /** La parte corta de la URL; `area/clave` tiene que estar en PERMISO_DE_SECCION
@@ -86,10 +84,6 @@ export const DOMINIOS: Dominio[] = [
         proposito: 'Por qué WebCarga no tomó una carga que le ofrecieron', Panel: MotivosDeNoAsignacionPanel },
       { clave: 'void-reasons', titulo: 'Motivos de anulación',
         proposito: 'Por qué se anula un viaje cargado en la app', Panel: MotivosDeAnulacionPanel },
-      { clave: 'origins', titulo: 'Orígenes',
-        proposito: 'Los lugares desde los que sale carga', Panel: OrigenesTab },
-      { clave: 'tms-clients', titulo: 'Clientes del TMS',
-        proposito: 'A qué cliente del directorio corresponde cada cliente de cada TMS', Panel: ClientesDelTmsTab },
     ],
   },
   {
@@ -135,6 +129,18 @@ export const DOMINIOS: Dominio[] = [
     proximamente: true,
   },
 ]
+
+/** Secciones que salieron de Configuración (Parte 3): un origen es un lugar del
+ *  cliente y un nombre del TMS es cómo se llama el cliente, así que viven con él.
+ *  Sus direcciones viejas llevan a su lugar nuevo. */
+const MUDADAS: Record<string, string> = {
+  'operations/origins':     '/dashboard/pricing?origen=1',
+  'operations/tms-clients': '/dashboard/clients?vista=sin-vincular',
+}
+
+export function destinoMudado(area: string, seccion: string | null): string | undefined {
+  return seccion ? MUDADAS[`${area}/${seccion}`] : undefined
+}
 
 export function dominioPorClave(clave: string): Dominio | undefined {
   return DOMINIOS.find(d => d.clave === clave)

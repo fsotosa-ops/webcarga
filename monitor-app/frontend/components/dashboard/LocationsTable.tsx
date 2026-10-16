@@ -60,10 +60,12 @@ const CELDA = 'py-2.5 px-2'
  *
  *  Sin `canEdit` (la API exige commercial.edit) se lee todo y no hay un solo
  *  control. Las zonas salen del catálogo de la API (`meta.operation_types`). */
-export function LocationsTable({ items, onChanged, canEdit, emptyTitle = 'Sin lugares para este filtro' }: {
+export function LocationsTable({ items, onChanged, canEdit, emptyTitle = 'Sin lugares para este filtro', clientOf }: {
   items: Location[]; onChanged: () => void; canEdit: boolean
   /** Qué decir sin lugares; la ficha de un cliente sin filtros dice otra cosa. */
   emptyTitle?: string
+  /** Con lugares de varios clientes, la columna Cliente. */
+  clientOf?: (entityId: string) => string
 }) {
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({})
   const [editingRate, setEditingRate] = useState<string | null>(null)
@@ -126,6 +128,7 @@ export function LocationsTable({ items, onChanged, canEdit, emptyTitle = 'Sin lu
         <thead>
           <tr className="border-b border-border bg-bg-main">
             <th scope="col" className={CABECERA}>Nombre</th>
+            {clientOf && <th scope="col" className={CABECERA}>Cliente</th>}
             <th scope="col" className={CABECERA}>Formato</th>
             <th scope="col" className={CABECERA}>Dirección</th>
             <th scope="col" className={CABECERA}>Región</th>
@@ -157,6 +160,7 @@ export function LocationsTable({ items, onChanged, canEdit, emptyTitle = 'Sin lu
                       : <span className="font-semibold text-text-primary">{loc.name}</span>}
                   </div>
                 </td>
+                {clientOf && <td className={`${CELDA} text-informativo`}>{clientOf(loc.entity_id)}</td>}
                 <td className={CELDA}>
                   {canEdit
                     ? <input value={d.format} onChange={e => setDraft(loc, { format: e.target.value })}

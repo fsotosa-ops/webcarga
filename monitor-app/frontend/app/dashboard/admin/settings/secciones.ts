@@ -20,8 +20,6 @@ export const PERMISO_DE_SECCION = {
   'operations/driver-reasons':       'operations.configure',
   'operations/unassigned-reasons':   'operations.configure',
   'operations/void-reasons':         'operations.configure',
-  'operations/origins':              'commercial.edit',
-  'operations/tms-clients':          'commercial.edit',
   'fleet/subtypes':                  'operations.configure',
   'fleet/operation-types':           'operations.configure',
   'insurance/expiry-alerts':         'insurance.configure',

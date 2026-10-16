@@ -3,8 +3,10 @@ import { act, render, screen } from '@testing-library/react'
 import { Suspense } from 'react'
 
 const noEncontrado = vi.fn()
+const reemplazar = vi.fn()
 vi.mock('next/navigation', () => ({
   notFound: () => { noEncontrado(); throw new Error('NEXT_NOT_FOUND') },
+  useRouter: () => ({ replace: reemplazar }),
 }))
 let permisos: string[] = ['operations.configure']
 vi.mock('@/lib/authz/PermisosProvider', () => ({ useAcceso: () => ({ permissions: permisos }) }))
@@ -21,8 +23,6 @@ vi.mock('../../paneles', () => ({
 vi.mock('../../condiciones-tabla', () => ({ CondicionesTabla: () => null }))
 vi.mock('../../usuarios-tab', () => ({ UsuariosTab: () => null }))
 vi.mock('../../roles-tab', () => ({ RolesTab: () => null }))
-vi.mock('../../origenes', () => ({ OrigenesTab: () => null }))
-vi.mock('../../clientes-del-tms', () => ({ ClientesDelTmsTab: () => null }))
 
 import SectionPage from './page'
 
@@ -32,7 +32,7 @@ async function montar(area: string, section: string) {
   })
 }
 
-beforeEach(() => { noEncontrado.mockClear(); permisos = ['operations.configure'] })
+beforeEach(() => { noEncontrado.mockClear(); reemplazar.mockClear(); permisos = ['operations.configure'] })
 
 describe('/settings/[area]/[section]', () => {
   it('dibuja la sección: su título, su propósito y su panel', async () => {
@@ -45,6 +45,14 @@ describe('/settings/[area]/[section]', () => {
   it('P1.8: ofrece volver al índice ("‹ Configuración") para el teléfono', async () => {
     await montar('operations', 'driver-reasons')
     expect(screen.getByRole('link', { name: /Configuración/ })).toHaveAttribute('href', '/dashboard/admin/settings')
+  })
+
+  it('P3.7: Orígenes y Clientes del TMS se mudaron: sus direcciones llevan a su lugar nuevo', async () => {
+    await montar('operations', 'origins')
+    expect(reemplazar).toHaveBeenCalledWith('/dashboard/pricing?origen=1')
+    await montar('operations', 'tms-clients')
+    expect(reemplazar).toHaveBeenCalledWith('/dashboard/clients?vista=sin-vincular')
+    expect(noEncontrado).not.toHaveBeenCalled()
   })
 
   it('una sección inexistente o de un área que no ve es un 404', async () => {

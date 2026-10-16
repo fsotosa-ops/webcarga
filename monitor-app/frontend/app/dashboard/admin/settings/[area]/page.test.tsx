@@ -30,6 +30,12 @@ describe('/settings/[area] (P1.7)', () => {
     expect(reemplazar).toHaveBeenCalledWith('/dashboard/admin/settings/operations/driver-reasons?item=x')
   })
 
+  it('P3.7: el enlace viejo ?section=origins va al Tarifario con Orígenes', async () => {
+    busqueda = 'section=origins'
+    await montar('operations')
+    expect(reemplazar).toHaveBeenCalledWith('/dashboard/pricing?origen=1')
+  })
+
   it('?doc= de Condiciones se conserva', async () => {
     permisos = ['certification.configure']
     busqueda = 'section=conditions&doc=MANTENCION_FRIO'

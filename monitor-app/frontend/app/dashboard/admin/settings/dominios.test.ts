@@ -51,9 +51,9 @@ describe('registro de dominios', () => {
       certification: ['conditions', 'expiry-alerts'],
       operations: [
         'alert-thresholds', 'driver-reasons', 'equipment-statuses',
-        'operational-statuses', 'origins', 'temperature-ranges',
-        // Spec 2026-10-11: la correspondencia cliente del TMS → cliente del directorio.
-        'tms-clients', 'tms-statuses', 'unassigned-reasons', 'void-reasons',
+        'operational-statuses', 'temperature-ranges',
+        // Orígenes y Clientes del TMS se mudaron a Directorio y Tarifario (Parte 3): MUDADAS.
+        'tms-statuses', 'unassigned-reasons', 'void-reasons',
       ],
       fleet:    ['operation-types', 'subtypes'],
       insurance: ['expiry-alerts'],

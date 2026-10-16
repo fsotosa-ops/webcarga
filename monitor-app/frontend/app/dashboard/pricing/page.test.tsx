@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import TarifarioPage from './page'
 import { locationsApi, shippersApi, type ShipperRow, type LocationListParams } from '@/lib/api/locations'
@@ -9,6 +9,8 @@ vi.mock('@/lib/api/locations', () => ({
   locationsApi: { list: vi.fn(), create: vi.fn(), patch: vi.fn(), createRate: vi.fn(), patchRate: vi.fn(), listRates: vi.fn() },
   shippersApi: { list: vi.fn() },
 }))
+let busqueda = ''
+vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(busqueda) }))
 vi.mock('@/hooks/useTripsMeta', () => ({ useTripsMeta: () => ({ data: { operation_types: [{ id: 'RM', label: 'RM' }] } }) }))
 let canEdit = true
 vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => canEdit }))
@@ -37,6 +39,7 @@ function renderPage() {
 
 beforeEach(() => {
   canEdit = true
+  busqueda = ''
   vi.mocked(shippersApi.list).mockReset().mockResolvedValue([SHIPPER])
   vi.mocked(locationsApi.list).mockReset().mockImplementation(async (params?: LocationListParams) => {
     if (params?.needs_manual_classification) return { data: [PENDING], count: 1, page: 1, limit: 50 }
@@ -97,5 +100,23 @@ describe('TarifarioPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Todos los locales/ }))
     expect(await screen.findByText('Error al cargar')).toBeInTheDocument()
     expect(screen.queryByText('Sin lugares para este filtro')).not.toBeInTheDocument()
+  })
+
+  it('P3.6: ?origen=1 abre Todos los locales filtrando Orígenes, con el cliente de cada uno', async () => {
+    busqueda = 'origen=1'
+    renderPage()
+    expect(await screen.findByRole('button', { name: /Todos los locales/, pressed: true })).toBeInTheDocument()
+    await waitFor(() => expect(locationsApi.list).toHaveBeenCalledWith(expect.objectContaining({ origin: true })))
+    expect(within(screen.getByRole('group', { name: 'Lugares' })).getByRole('button', { name: 'Orígenes' })).toHaveAttribute('aria-pressed', 'true')
+    expect(await screen.findByRole('columnheader', { name: 'Cliente' })).toBeInTheDocument()
+    expect(within(screen.getAllByRole('row')[1]).getByText('Walmart')).toBeInTheDocument()
+  })
+
+  it('P3.6: el filtro Orígenes se prende y se apaga desde la barra', async () => {
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /Todos los locales/ }))
+    await screen.findByDisplayValue('Alameda')
+    fireEvent.click(within(screen.getByRole('group', { name: 'Lugares' })).getByRole('button', { name: 'Orígenes' }))
+    await waitFor(() => expect(locationsApi.list).toHaveBeenLastCalledWith(expect.objectContaining({ origin: true })))
   })
 })
