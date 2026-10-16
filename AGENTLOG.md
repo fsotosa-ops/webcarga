@@ -298,10 +298,25 @@ sin override por campo, pedidos = Operador y Supervisor de Operaciones, RUT/pate
        `_legacy_*` para el frontend de hoy. Revisión final (opus): 6 importantes corregidos con test (R1-R6); 8 menores
        llevados al plan E2. Verificación: backend 492 sin fallos nuevos, vitest 1.829/1.829, humo 20/20 (la 1.ª corrida
        reprodujo el corte de la matview con la API local vieja), dev: Aguilera Vencida/3/19, 0 errores de API.
-     **Siguiente:** Seguros E2 (`docs/superpowers/plans/2026-10-16-seguros-e2-pantallas.md`): submódulos Pólizas y
-       Cuotas, ficha de póliza, glosario; al final la contracción (borra columnas viejas + matview, con copia en
-       audit_log; verificar Mage antes; autorización aparte). Después: Configuración. Con eso la spec de fichas y
-     navegación queda cerrada (fuera: Cmd+K).
+     - **Seguros E2 (pantallas + renovar/extender + contracción) HECHA en local, SIN PUSH (15/10, `1ac143bf..9e9746fb`).**
+       Pólizas (por póliza o por empresa), ficha de póliza (cuotas, documentos, renovar/extender/cancelar/eliminar),
+       Cuotas (cola de pagos con selección), Seguros como grupo del menú, pestaña Seguros de la empresa con la misma tabla;
+       fuera el modal viejo, `lib/insurance.tsx`, `insurance-overview`, el PATCH de cuota y `generate` (todo es append).
+       Migraciones SIN aplicar en la real: `20261021090000_insurance_renewals_and_term_changes.sql` (solo agrega:
+       renews_policy_id, policy_term_changes, RENEWED en las vistas) y `20261022090000_insurance_retire_stored_states.sql`
+       (contracción: copia en audit_log y DROP de status, expiration_alert_days, payment_status, total_installments,
+       paid_at, la matview, su función y triggers; se frena si hay cuotas sin póliza). Ensayo BEGIN…ROLLBACK de las dos
+       en la real (15/10): 33 pólizas y 294 cuotas copiadas, 60 pagadas intactas, empresas 7 vencidas/1 sin fechas/15 vigentes.
+       Verificación: backend del área 112/112 (+1), vitest 1.822/1.822, tsc, build, humo 22/22 (nuevo S12 y rol
+       Supervisor de Seguros con `seg@sim.local`, creado en la copia local), capturas 1440/390. Revisión final opus:
+       I1-I3 + M2-M3 corregidos con test; menores diferidos M1, M4-M9 (ledger
+       `.superpowers/sdd/2026-10-16-seguros-e2-pantallas/progress.md`). Trinquetes: color 962, <11px 130.
+       Mage: `bronze_to_silver_insurance_sync` (manual, sin triggers) escribe las columnas que se borran; correrlo a mano
+       después de la contracción falla (no corrompe). No se tocó.
+     **Siguiente (exacto):** con autorización del usuario: (1) aplicar 20261021 en la real; (2) push a dev y esperar
+       Deploy API + Deploy Frontend en verde, en la misma ventana; (3) aplicar 20261022 en la real; (4) recorrer dev
+       (Pólizas, ficha, Cuotas, empresa › Seguros); (5) archivar el checkpoint de Seguros y borrar el workspace del ledger.
+       Después: Configuración. Con eso la spec de fichas y navegación queda cerrada (fuera: Cmd+K).
   2. ~~Alta del Cierre ante un RUT existente~~ **HECHO 15/10** (`2bd6dadf`, desplegado): el 409 en el Cierre ofrece
      "Ya está registrado: actualizar el cierre" (relee el cierre; el pendiente busca el RUT igual que el alta, así que
      el 409 solo ocurre con la pantalla vieja). La salida del 409 en `AltaDeFlota` pasó a ser del anfitrión
