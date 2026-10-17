@@ -21,4 +21,12 @@ describe('next/navigation en memoria', () => {
     expect(memoryUrl.current()).toBe('/x?tab=trips')
     expect(memoryUrl.router.replace).toHaveBeenCalledWith('/x?tab=trips')
   })
+
+  it('como Next: history.replaceState con una URL también cambia lo que leen useSearchParams y usePathname', () => {
+    memoryUrl.reset('/x?tab=fleet')
+    render(<Pantalla />)
+    act(() => window.history.replaceState(null, '', '/x?tab=report'))
+    expect(screen.getByRole('button')).toHaveTextContent('report')
+    expect(memoryUrl.current()).toBe('/x?tab=report')
+  })
 })

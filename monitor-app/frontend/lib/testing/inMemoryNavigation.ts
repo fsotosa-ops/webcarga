@@ -18,6 +18,17 @@ function cambiar(destino: string) {
   listeners.forEach(l => l())
 }
 
+// Como el App Router de Next (`app-router.js`): `history.replaceState` y `pushState`
+// con una URL cambian lo que leen useSearchParams y usePathname, sin navegar. Así se
+// escribe la vista de una tabla (`useUrlView`). Se envuelve una sola vez, al cargar.
+for (const metodo of ['replaceState', 'pushState'] as const) {
+  const nativo = window.history[metodo].bind(window.history)
+  window.history[metodo] = (data: unknown, unused: string, destino?: string | URL | null) => {
+    nativo(data, unused, destino)
+    if (destino) cambiar(String(destino))
+  }
+}
+
 const router = {
   replace: vi.fn((destino: string) => cambiar(destino)),
   push: vi.fn((destino: string) => cambiar(destino)),

@@ -34,7 +34,9 @@ export function ShortcutTiles<T>({ model, columnId, tiles, loading = false }: {
   }
 
   return (
-    <div className="grid gap-2.5" style={{ gridTemplateColumns: `repeat(${tiles.length}, minmax(0, 1fr))` }}>
+    // En una fila en escritorio; en un teléfono pasan a la siguiente en vez de cortar
+    // la etiqueta ("No trabajand…" a 390 px).
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(7.5rem,1fr))] gap-2.5">
       {tiles.map(t => {
         const n = loading ? null
           : t.value === null ? model.facetTotal(columnId)
