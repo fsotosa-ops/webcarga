@@ -1,13 +1,10 @@
 'use client'
 
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ChevronsUpDown, KeyRound, LogOut, Settings } from 'lucide-react'
+import { ChevronsUpDown } from 'lucide-react'
 import { getInitials } from '@/lib/utils/avatar'
-
-export const SETTINGS_HREF = '/dashboard/admin/settings'
-const CHANGE_PASSWORD_HREF = '/auth/reset-password'
+import { AccountActions, SETTINGS_HREF } from './AccountActions'
 
 interface SidebarAccountProps {
   displayName:  string
@@ -76,8 +73,6 @@ export default function SidebarAccount({
     items[next].focus()
   }
 
-  const itemClass = 'flex items-center gap-2.5 w-full px-3 py-2 text-left text-dato text-text-primary hover:bg-bg-main focus-visible:bg-bg-main focus-visible:outline-none transition-colors'
-
   return (
     <div className="relative px-2.5 pb-3 pt-3 border-t border-white/8">
       <button
@@ -123,28 +118,7 @@ export default function SidebarAccount({
             <p className="text-dato font-medium text-text-primary truncate" title={displayName}>{displayName}</p>
             <p className="text-xs text-informativo truncate" title={email}>{email}</p>
           </div>
-          {canConfigure && (
-            <Link href={SETTINGS_HREF} role="menuitem" prefetch={false} className={itemClass}>
-              <Settings size={14} className="text-informativo shrink-0" aria-hidden="true" />
-              Configuración
-            </Link>
-          )}
-          {/* Cambiar la contraseña con la sesión abierta (seguridad, 09/10).
-              Misma pantalla que la recuperación por correo. */}
-          <Link href={CHANGE_PASSWORD_HREF} role="menuitem" className={itemClass}>
-            <KeyRound size={14} className="text-informativo shrink-0" aria-hidden="true" />
-            Cambiar contraseña
-          </Link>
-          <div role="separator" className="my-1 border-t border-border" />
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => { setOpen(false); onSignOut() }}
-            className={itemClass}
-          >
-            <LogOut size={14} className="text-informativo shrink-0" aria-hidden="true" />
-            Cerrar sesión
-          </button>
+          <AccountActions canConfigure={canConfigure} onSignOut={() => { setOpen(false); onSignOut() }} />
         </div>
       )}
     </div>

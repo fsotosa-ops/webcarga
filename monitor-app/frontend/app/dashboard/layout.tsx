@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { leerSesion, RUTA_AUTH_NO_DISPONIBLE } from '@/lib/supabase/sesion'
+import { MobileMenuProvider, MobileNav } from '@/components/dashboard/MobileNav'
 import Sidebar from '@/components/dashboard/Sidebar'
 import Topbar from '@/components/dashboard/Topbar'
 import { Providers } from './providers'
@@ -36,8 +37,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <Providers>
+      <MobileMenuProvider>
       <div className="flex h-screen overflow-hidden">
         <Sidebar acceso={acceso} />
+        <MobileNav acceso={acceso} />
         <div className="flex flex-col flex-1 overflow-hidden min-w-0">
           <Topbar displayName={getDisplayName(acceso)} roleName={acceso.role_names[0] ?? null} />
           {/* Lo que tapa la barra del teléfono (`--mobile-nav-height`, 0 desde md). */}
@@ -46,6 +49,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </main>
         </div>
       </div>
+      </MobileMenuProvider>
     </Providers>
   )
 }

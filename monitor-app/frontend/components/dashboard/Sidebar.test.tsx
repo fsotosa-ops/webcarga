@@ -115,33 +115,6 @@ describe('Sidebar — Certificación se abre en Empresas y Por asignar', () => {
     expect(sinClasificar).not.toHaveTextContent('0')
   })
 
-  // El bottom nav mobile no tiene el concepto de grupo desplegable: aplana
-  // NAV_GROUPS a mano (ver comentario junto a MOBILE_NAV_ITEMS). Sin este
-  // test, volver a listar Monitor "a mano" en vez de aplanar los grupos deja
-  // a Certificacion afuera del mobile EN SILENCIO — nada se pone rojo.
-  it('en mobile, con más entradas de las que caben, la barra se desplaza en vez de encimar las etiquetas', async () => {
-    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
-    setup()
-    const navMobile = await screen.findByRole('navigation', { name: /móvil/i })
-    expect(navMobile).toHaveClass('overflow-x-auto')
-    for (const a of within(navMobile).getAllByRole('link')) expect(a).toHaveClass('shrink-0')
-  })
-
-  it('en mobile las entradas de Certificación existen', async () => {
-    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
-    setup()
-
-    const navMobile = await screen.findByRole('navigation', { name: /móvil/i })
-    expect(within(navMobile).getByRole('link', { name: /^certificación$/i }))
-      .toHaveAttribute('href', '/dashboard/compliance')
-    expect(within(navMobile).getByRole('link', { name: /^directorio$/i }))
-      .toHaveAttribute('href', '/dashboard/carriers')
-    expect(within(navMobile).getByRole('link', { name: /por asignar/i }))
-      .toHaveAttribute('href', '/dashboard/compliance/inbox')
-    expect(within(navMobile).getByRole('link', { name: /^pendientes$/i }))
-      .toHaveAttribute('href', '/dashboard/compliance/pending')
-  })
-
   // El Directorio SALIÓ de Certificación el 2026-09-07 y quedó como módulo
   // propio. Pablo, 04/09: *"directorio sacarlo de certificación y dejarlo
   // arriba"* / *"lo que es empresas, manténlo solo para subir documentos"*.
@@ -177,8 +150,6 @@ describe('Sidebar — Certificación se abre en Empresas y Por asignar', () => {
     const cierre = within(lateral).getByRole('link', { name: /^cierre del día$/i })
     expect(cierre).toHaveAttribute('href', '/dashboard/operations/closures')
     expect(cierre).toHaveAttribute('aria-current', 'page')
-    const navMobile = screen.getByRole('navigation', { name: /móvil/i })
-    expect(within(navMobile).getByRole('link', { name: /^cierre del día$/i })).toHaveAttribute('href', '/dashboard/operations/closures')
   })
 
   it('va ENTRE Operaciones y Certificación, no al final del menú', async () => {

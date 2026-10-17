@@ -3,21 +3,13 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
-import { Users, LogOut, ChevronLeft, ChevronDown } from 'lucide-react'
+import { ChevronLeft, ChevronDown } from 'lucide-react'
 import { getDisplayName, puedeVerConfiguracion, type Acceso } from '@/lib/authz/acceso'
 import { NAV, activeHref, isGroup, visibleNav, type NavBadge, type NavGroup } from '@/lib/navegacion/menu'
 import { useNavCounts } from '@/hooks/useNavCounts'
 import LogoWebCarga from '@/components/brand/LogoWebCarga'
-import SidebarAccount, { SETTINGS_HREF } from './SidebarAccount'
-
-// Solo para la barra del teléfono, hasta que la reemplace `MobileNav` (navegación en
-// el teléfono, Task 3): aplana el menú y, a una etiqueta repetida entre grupos
-// ("Empresas"), le pone el nombre de su grupo.
-const REPEATED_LABELS = new Set(
-  NAV.flatMap(e => (isGroup(e) ? e.items.map(i => i.label) : [])).filter((l, i, all) => all.indexOf(l) !== i),
-)
+import SidebarAccount from './SidebarAccount'
+import { useSignOut } from '@/hooks/useSignOut'
 
 /** Grupo expandible del sidebar. Existe una sola vez: antes el bloque estaba
  *  escrito a mano para Operaciones, y sumar un segundo grupo obligaba a
@@ -123,8 +115,6 @@ interface SidebarProps {
 
 export default function Sidebar({ acceso }: SidebarProps) {
   const pathname = usePathname()
-  const router   = useRouter()
-  const supabase = createClient()
   const [collapsed, setCollapsed] = useState(false)
 
   // Match más específico primero — evita 2 items activos a la vez. Hoy
@@ -132,14 +122,6 @@ export default function Sidebar({ acceso }: SidebarProps) {
   // acá y no en cada item.
   const nav = visibleNav(acceso.permissions)
   const topActive = activeHref(pathname, nav.flatMap(e => (isGroup(e) ? [] : [e.href])))
-
-  // El bottom nav mobile no tiene el concepto de grupo (§ MOBILE_NAV_ITEMS):
-  // el match más específico se calcula sobre TODOS los hrefs juntos, para que
-  // /dashboard/compliance/inbox no resalte también "Empresas".
-  const mobileItems = nav.flatMap(e => (isGroup(e)
-    ? e.items.map(i => ({ ...i, label: REPEATED_LABELS.has(i.label) ? e.label : i.label, icon: i.icon ?? e.icon }))
-    : [e]))
-  const mobileActiveHref = activeHref(pathname, mobileItems.map(i => i.href))
 
   const counts = useNavCounts(acceso.permissions)
 
@@ -153,13 +135,8 @@ export default function Sidebar({ acceso }: SidebarProps) {
     return next
   })
 
-  async function signOut() {
-    await supabase.auth.signOut()
-    router.push('/login')
-    router.refresh()
-  }
+  const signOut = useSignOut()
 
-  const isAdmin       = pathname.startsWith('/dashboard/admin')
   // Configuración: quien administra o configura alguna área (misma regla que
   // el layout de admin, lib/authz/acceso.ts).
   const canAdmin      = puedeVerConfiguracion(acceso)
@@ -252,51 +229,6 @@ export default function Sidebar({ acceso }: SidebarProps) {
         />
       </aside>
 
-      {/* ── Mobile bottom nav ─────────────────────────────────── */}
-      {/* z-30: bajo el fondo de una ventana (40) y la ventana (50, `Dialog`); con una
-          ventana abierta no se navega desde aquí. */}
-      <nav aria-label="Navegación móvil" className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-sidebar border-t border-white/8 flex items-stretch overflow-x-auto safe-area-inset-bottom">
-        {mobileItems.map(({ href, label, icon: Icon }) => {
-          const active = href === mobileActiveHref
-            && (href !== '/dashboard/operations/monitor' || pathname === href)
-          return (
-            <Link
-              key={href}
-              href={href}
-              aria-current={active ? 'page' : undefined}
-              className={`flex-1 shrink-0 min-w-16 flex flex-col items-center justify-center gap-1 px-1 py-2.5 transition-colors ${
-                active ? 'text-white' : 'text-white/40 hover:text-white/70'
-              }`}
-            >
-              <Icon size={20} className={active ? 'text-accent' : ''} />
-              <span className="whitespace-nowrap text-etiqueta font-semibold tracking-wide uppercase">{label}</span>
-              {active && <span className="w-1 h-1 rounded-full bg-accent" />}
-            </Link>
-          )
-        })}
-
-        {canAdmin && (
-          <Link
-            href={SETTINGS_HREF}
-            prefetch={false}
-            className={`flex-1 shrink-0 min-w-16 flex flex-col items-center justify-center gap-1 px-1 py-2.5 transition-colors ${
-              isAdmin ? 'text-white' : 'text-white/40 hover:text-white/70'
-            }`}
-          >
-            <Users size={20} className={isAdmin ? 'text-accent' : ''} />
-            <span className="whitespace-nowrap text-etiqueta font-semibold tracking-wide uppercase">Admin</span>
-            {isAdmin && <span className="w-1 h-1 rounded-full bg-accent" />}
-          </Link>
-        )}
-
-        <button
-          onClick={signOut}
-          className="flex-1 shrink-0 min-w-16 flex flex-col items-center justify-center gap-1 px-1 py-2.5 text-white/35 hover:text-white/65 transition-colors"
-        >
-          <LogOut size={20} />
-          <span className="whitespace-nowrap text-etiqueta font-semibold tracking-wide uppercase">Salir</span>
-        </button>
-      </nav>
     </>
   )
 }
