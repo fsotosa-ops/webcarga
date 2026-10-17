@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import type { PermissionCode } from '@/lib/authz/permisos.generated'
 import { NAV, MOBILE_DESTINATIONS, activeHref, isGroup, mobileBar, mobileProfile, visibleNav } from './menu'
 
@@ -64,5 +66,22 @@ describe('la entrada activa', () => {
   })
   it('un prefijo de texto no es una ruta: /dashboard/compliance-x no marca Certificación', () => {
     expect(activeHref('/dashboard/compliance-x', todas)).toBeNull()
+  })
+})
+
+describe('una sola definición del menú (N1)', () => {
+  const RAIZ = join(__dirname, '..', '..')
+  const recorrer = (dir: string): string[] => readdirSync(dir).flatMap(n => {
+    const ruta = join(dir, n)
+    if (n === 'node_modules' || n.startsWith('.')) return []
+    return statSync(ruta).isDirectory() ? recorrer(ruta) : /\.tsx?$/.test(n) && !/\.test\./.test(n) ? [ruta] : []
+  })
+  it('las listas del menú solo se declaran en lib/navegacion/menu.ts', () => {
+    const DECLARA = /\b(?:const|let)\s+(?:NAV|NAV_GROUPS|NAV_ITEMS|NAV_ORDEN|MOBILE_NAV_ITEMS|MOBILE_DESTINATIONS)\b/
+    const fuera = ['app', 'components', 'lib', 'hooks'].flatMap(d => recorrer(join(RAIZ, d)))
+      .filter(r => !r.endsWith(join('lib', 'navegacion', 'menu.ts')))
+      .filter(r => DECLARA.test(readFileSync(r, 'utf8')))
+      .map(r => relative(RAIZ, r))
+    expect(fuera).toEqual([])
   })
 })

@@ -6,13 +6,9 @@ import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Users, LogOut, ChevronLeft, ChevronDown } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
-import { documentIngestApi } from '@/lib/api/documentIngest'
-import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { getDisplayName, puedeVerConfiguracion, type Acceso } from '@/lib/authz/acceso'
-import { NAV, activeHref, isGroup, visibleNav, type NavGroup, type NavLeaf } from '@/lib/navegacion/menu'
-import { certificationRequestsApi } from '@/lib/api/certificationRequests'
-import { insuranceApi } from '@/lib/api/insurance'
+import { NAV, activeHref, isGroup, visibleNav, type NavBadge, type NavGroup } from '@/lib/navegacion/menu'
+import { useNavCounts } from '@/hooks/useNavCounts'
 import LogoWebCarga from '@/components/brand/LogoWebCarga'
 import SidebarAccount, { SETTINGS_HREF } from './SidebarAccount'
 
@@ -29,20 +25,15 @@ const REPEATED_LABELS = new Set(
  *  Bandeja termino colgando del primer nivel en vez de vivir dentro de
  *  Certificacion, como manda la HU-04. */
 function SidebarGroup({
-  group, pathname, collapsed, inboxCount, requestsCount = 0, installmentsCount = 0,
+  group, pathname, collapsed, counts,
 }: {
-  group:      NavGroup
-  pathname:   string
-  collapsed:  boolean
-  inboxCount: number
-  /** Pedidos de Operaciones abiertos (Entrega B): el contador de Pendientes. */
-  requestsCount?: number
-  /** Cuotas de seguro vencidas (Seguros E2): el contador de Cuotas. */
-  installmentsCount?: number
+  group:     NavGroup
+  pathname:  string
+  collapsed: boolean
+  /** Los contadores del menú (`useNavCounts`): Por asignar, Pendientes y Cuotas. */
+  counts:    Partial<Record<NavBadge, number>>
 }) {
-  const countOf = (badge?: NavLeaf['badge']) =>
-    badge === 'inbox' ? inboxCount : badge === 'requests' ? requestsCount
-      : badge === 'installments' ? installmentsCount : 0
+  const countOf = (badge?: NavBadge) => (badge ? counts[badge] ?? 0 : 0)
   const current = activeHref(pathname, group.items.map(i => i.href))
   const groupActive = !!current
 
@@ -145,35 +136,12 @@ export default function Sidebar({ acceso }: SidebarProps) {
   // El bottom nav mobile no tiene el concepto de grupo (§ MOBILE_NAV_ITEMS):
   // el match más específico se calcula sobre TODOS los hrefs juntos, para que
   // /dashboard/compliance/inbox no resalte también "Empresas".
-  const puedeClasificar = acceso.permissions.includes('documents.review')
   const mobileItems = nav.flatMap(e => (isGroup(e)
     ? e.items.map(i => ({ ...i, label: REPEATED_LABELS.has(i.label) ? e.label : i.label, icon: i.icon ?? e.icon }))
     : [e]))
   const mobileActiveHref = activeHref(pathname, mobileItems.map(i => i.href))
 
-  // Cuánto trabajo hay esperando en la bandeja. Se pide con limit=1: de la
-  // respuesta solo interesa `total`.
-  const inboxCount = useQuery({
-    queryKey: clavesCertificacion.colaTotal(),
-    queryFn: () => documentIngestApi.listQueue({ limit: 1 }),
-    staleTime: 60_000,
-    enabled: puedeClasificar,
-  }).data?.total ?? 0
-  // Pedidos de Operaciones (Entrega B): los ve y los resuelve quien revisa documentos.
-  const requestsCount = useQuery({
-    queryKey: ['certification-requests', 'open'],
-    queryFn: () => certificationRequestsApi.listOpen(),
-    staleTime: 60_000,
-    enabled: puedeClasificar,
-  }).data?.total ?? 0
-
-  // Cuotas de seguro vencidas: la API las cuenta con la fecha de Chile (limit=1:
-  // solo interesa la cifra).
-  const installmentsCount = useQuery({
-    queryKey: ['insurance', 'installments', 'overdue-count'],
-    queryFn: () => insuranceApi.listInstallments({ state: 'OVERDUE', limit: 1 }),
-    staleTime: 60_000,
-  }).data?.facets.OVERDUE ?? 0
+  const counts = useNavCounts(acceso.permissions)
 
   useEffect(() => {
     if (localStorage.getItem('sidebar-collapsed') === 'true') setCollapsed(true)
@@ -243,9 +211,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
                   group={entrada}
                   pathname={pathname}
                   collapsed={collapsed}
-                  inboxCount={inboxCount}
-                  requestsCount={requestsCount}
-                  installmentsCount={installmentsCount}
+                  counts={counts}
                 />
               )
             }
