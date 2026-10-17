@@ -165,6 +165,22 @@ describe('Sidebar — Certificación se abre en Empresas y Por asignar', () => {
       .toHaveAttribute('aria-expanded', 'false')
   })
 
+  // El Cierre del día es el segundo trabajo diario de Operaciones (el primero es
+  // seguir los viajes): un destino del menú, no solo un botón dentro del Monitor.
+  it('Operaciones lleva al Monitor y al Cierre del día; el Cierre queda marcado también en su histórico', async () => {
+    vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
+    nav.ruta = '/dashboard/operations/closures/history'
+    setup()
+    expect(await screen.findByRole('button', { name: /operaciones/i })).toHaveAttribute('aria-expanded', 'true')
+    const lateral = screen.getByRole('navigation', { name: /principal/i })
+    expect(within(lateral).getByRole('link', { name: /^monitor$/i })).toHaveAttribute('href', '/dashboard/operations/monitor')
+    const cierre = within(lateral).getByRole('link', { name: /^cierre del día$/i })
+    expect(cierre).toHaveAttribute('href', '/dashboard/operations/closures')
+    expect(cierre).toHaveAttribute('aria-current', 'page')
+    const navMobile = screen.getByRole('navigation', { name: /móvil/i })
+    expect(within(navMobile).getByRole('link', { name: /^cierre del día$/i })).toHaveAttribute('href', '/dashboard/operations/closures')
+  })
+
   it('va ENTRE Operaciones y Certificación, no al final del menú', async () => {
     // Renderizar los grupos y las hojas en dos bloques dejaba al Directorio
     // debajo de Certificación, que es justo de donde acaba de salir.

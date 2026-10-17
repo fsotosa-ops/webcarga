@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import {
   Truck, Users, LogOut, BookUser,
-  ChevronLeft, ChevronDown, Shield, Receipt, BadgeCheck,
+  ChevronLeft, ChevronDown, Shield, Receipt, BadgeCheck, ClipboardCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
@@ -19,15 +19,18 @@ import { insuranceApi } from '@/lib/api/insurance'
 import LogoWebCarga from '@/components/brand/LogoWebCarga'
 import SidebarAccount, { SETTINGS_HREF } from './SidebarAccount'
 
-// "Operaciones" agrupa Monitor bajo un solo item expandible —
-// Empresas/Seguros no tienen esa profundidad todavía, se quedan planos.
-// "Cerrar el día" (ex-Cuadratura) dejó de ser un item de nav — ahora es
-// un botón dentro del propio Monitor (spec
-// 2026-07-21-cuadratura-reporteria-redesign-design.md).
-// "Cierres" (ex-Reportería, ahora en /operations/closures/history) se sacó
-// del Sidebar — /dashboard/operations/closures pasará a ser el Centro de
-// Cierre del Día (tarea futura), que todavía no tiene link de nav propio.
-type NavLeaf  = { href: string; label: string; badge?: 'inbox' | 'requests' | 'installments' }
+// "Operaciones" son los dos trabajos del día: seguir los viajes (Monitor) y
+// cerrar el día (Cierre del día). El Cierre salió del menú en julio, cuando era
+// la vieja Cuadratura, y quedó como un botón del Monitor hasta que existiera el
+// Centro de Cierre; desde que existe es un destino propio (17/10). Su histórico
+// (/operations/closures/history) es una vista del Cierre, no otra entrada.
+type NavLeaf  = {
+  href: string
+  label: string
+  badge?: 'inbox' | 'requests' | 'installments'
+  /** Su ícono en la barra del teléfono, que no agrupa; sin él, el del grupo. */
+  icon?: LucideIcon
+}
 type NavGroupDef = { label: string; icon: LucideIcon; items: NavLeaf[] }
 
 // Un modulo por objeto de trabajo, con sus vistas adentro (HU-04). La
@@ -39,6 +42,7 @@ const NAV_GROUPS: NavGroupDef[] = [
     icon:  Truck,
     items: [
       { href: '/dashboard/operations/monitor', label: 'Monitor' },
+      { href: '/dashboard/operations/closures', label: 'Cierre del día', icon: ClipboardCheck },
     ],
   },
   // Certificación se abre en TRES porque son tres trabajos, no tres vistas: la
@@ -132,7 +136,7 @@ const REPEATED_LABELS = new Set(
   NAV_GROUPS.flatMap(g => g.items.map(i => i.label)).filter((l, i, all) => all.indexOf(l) !== i),
 )
 const MOBILE_NAV_ITEMS = [
-  ...NAV_GROUPS.flatMap(g => g.items.map(i => ({ ...i, label: REPEATED_LABELS.has(i.label) ? g.label : i.label, icon: g.icon }))),
+  ...NAV_GROUPS.flatMap(g => g.items.map(i => ({ ...i, label: REPEATED_LABELS.has(i.label) ? g.label : i.label, icon: i.icon ?? g.icon }))),
   ...NAV_ITEMS,
 ]
 
@@ -224,6 +228,7 @@ function NavGroup({
               <Link
                 key={href}
                 href={href}
+                aria-current={active ? 'page' : undefined}
                 className={`relative flex items-center gap-2 rounded-lg text-[12.5px] px-2.5 py-2 transition-colors ${
                   active ? 'bg-white/12 text-white font-medium' : 'text-white/40 hover:bg-white/6 hover:text-white/75'
                 }`}
@@ -375,6 +380,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
               <Link
                 key={href}
                 href={href}
+                aria-current={active ? 'page' : undefined}
                 title={collapsed ? label : undefined}
                 className={`group relative flex items-center rounded-xl text-[13px] transition-all duration-150 ${
                   collapsed ? 'justify-center h-10 w-10 mx-auto' : 'gap-3 px-3 py-2.5'
@@ -414,6 +420,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
             <Link
               key={href}
               href={href}
+              aria-current={active ? 'page' : undefined}
               className={`flex-1 shrink-0 min-w-16 flex flex-col items-center justify-center gap-1 px-1 py-2.5 transition-colors ${
                 active ? 'text-white' : 'text-white/40 hover:text-white/70'
               }`}
