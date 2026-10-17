@@ -33,6 +33,7 @@ from ..services.anular_viajes import (
 from ..services.cierre_lineas import frescura_del_dia, ultima_firma
 from ..services.cierre_viajes import SQL_CON_MOTIVO, SQL_GRUPOS_CIERRE
 from ..services.origen_del_viaje import origen_del_viaje
+from ..services.destination_zone import load_operation_type_buckets, resolve_operation_type, trip_zones
 from ..utils.identity import canonical_plate, plate_matches_sql, rut_matches_sql
 
 
@@ -366,86 +367,6 @@ async def _load_trip_stops(pool, trip_ids: set[str]) -> dict[str, list[dict]]:
     return stops_by_trip
 
 
-_LOCAL_NUMBER_PATTERN = re.compile(r"^(.*?)\s*-\s*(\d+)\s*$")
-
-
-def _split_local(local: str | None) -> tuple[str | None, str | None]:
-    """Extrae (nombre, número) de un string de local tipo "ALAMEDA - 72"
-    (patrón real de stops[].local para Walmart). Si no matchea (ej. los CDs
-    de origen: "CD LO AGUIRRE", que nunca traen número) el string completo
-    se trata como nombre, sin número — resuelve por nombre solo."""
-    if not local:
-        return None, None
-    local = local.strip()
-    m = _LOCAL_NUMBER_PATTERN.match(local)
-    if m:
-        return m.group(1).strip(), m.group(2)
-    return local, None
-
-
-def _normalize_location_name(name: str) -> str:
-    name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
-    return re.sub(r"\s+", " ", name).strip().upper()
-
-
-async def _load_operation_type_buckets(pool, shipper_ids: set[str]) -> dict:
-    """shipper_id -> {"by_number": {site_number: [(nombre_norm, operation_type)]},
-    "by_name": {nombre_norm: operation_type}} — resuelve operation_type contra
-    public.locations, siempre scopeado por shipper (nunca un lookup global de
-    site_number, que sería ambiguo si dos shippers reusan el mismo número)."""
-    if not shipper_ids:
-        return {}
-    rows = await pool.fetch(
-        """
-        SELECT s.id::text AS shipper_id, l.name, l.site_number, l.operation_type
-        FROM public.locations l
-        JOIN public.shippers s ON s.id = l.entity_id AND l.entity_type = 'SHIPPER'
-        WHERE s.id = ANY($1::uuid[])
-          AND l.operational_status = 'ACTIVE' AND l.operation_type IS NOT NULL
-        """,
-        list(shipper_ids),
-    )
-    buckets: dict = {}
-    for r in rows:
-        bucket = buckets.setdefault(r["shipper_id"], {"by_number": {}, "by_name": {}})
-        norm_name = _normalize_location_name(r["name"])
-        if r["site_number"]:
-            bucket["by_number"].setdefault(r["site_number"], []).append((norm_name, r["operation_type"]))
-        bucket["by_name"].setdefault(norm_name, r["operation_type"])
-    return buckets
-
-
-def _resolve_operation_type(bucket: dict | None, local: str | None) -> str | None:
-    """Resuelve primero por número (clave más exacta cuando existe); si el
-    número aparece más de una vez para el shipper (pasa en 3/490 casos
-    reales — ver plan maestro H2.6), desempata por nombre normalizado.
-    Sin número (o sin match), cae a lookup por nombre solo."""
-    if not bucket or not local:
-        return None
-    name, number = _split_local(local)
-    if number:
-        candidates = bucket["by_number"].get(number, [])
-        if len(candidates) == 1:
-            return candidates[0][1]
-        if len(candidates) > 1:
-            if name:
-                norm = _normalize_location_name(name)
-                for cand_name, op in candidates:
-                    if cand_name == norm:
-                        return op
-                # El nombre que reporta el TMS a veces trae el formato como
-                # prefijo (ej. parada real "SBA San Bernardo Eucaliptus" vs
-                # nombre maestro "San Bernardo Eucaliptus", formato "SBA"
-                # aparte) — contención en cualquier sentido, verificado en
-                # vivo contra un viaje real 2026-07-17. Solo se acepta si
-                # desambigua a un único candidato.
-                contained = [op for cand_name, op in candidates if cand_name in norm or norm in cand_name]
-                if len(contained) == 1:
-                    return contained[0]
-            return None
-    if name:
-        return bucket["by_name"].get(_normalize_location_name(name))
-    return None
 
 
 def _attach_origin(d: dict) -> None:
@@ -460,11 +381,11 @@ def _attach_origin(d: dict) -> None:
 
 def _apply_operation_types(d: dict, buckets: dict) -> None:
     bucket = buckets.get(str(d["shipper_id"])) if d.get("shipper_id") else None
-    d["origin_operation_type"] = _resolve_operation_type(bucket, d.get("origin"))
+    d["origin_operation_type"] = resolve_operation_type(bucket, d.get("origin"))
     stops = d.get("stops")
     if stops:
         for stop in stops:
-            stop["operation_type"] = _resolve_operation_type(bucket, stop.get("local"))
+            stop["operation_type"] = resolve_operation_type(bucket, stop.get("local"))
 
 
 router = APIRouter(prefix="/trips", tags=["trips"])
@@ -1004,7 +925,7 @@ async def list_trips(
 
     await _attach_carrier_can_operate(pool, data)
     stops_by_trip = await _load_trip_stops(pool, trip_ids)
-    op_type_buckets = await _load_operation_type_buckets(pool, shipper_ids)
+    op_type_buckets = await load_operation_type_buckets(pool, shipper_ids)
     temp_ranges = await _load_temperature_ranges(pool)
     dropped_ctx = await _load_tms_dropped_context(pool)
     for d in data:
@@ -2247,6 +2168,8 @@ async def cierre_viajes(
     # Origen y destinos con la misma lectura de paradas que el Monitor
     # (_load_trip_stops colapsa los duplicados por posición): HU-D2.
     paradas = await _load_trip_stops(pool, {str(r["trip_id"]) for r in filas})
+    # La zona de su último destino (RM, Z0, Región…), la misma del Reporte.
+    zonas = await trip_zones(pool, [str(r["trip_id"]) for r in filas])
 
     grupos: dict[str, list] = {
         "hoy": [], "rezago": [], "en_curso": [], "abandonado": [], "con_motivo": [],
@@ -2267,6 +2190,7 @@ async def cierre_viajes(
             "carrier_name": r["carrier_name"],
             "origin": origen,
             "destinations": [p["local"] for p in stops if p.get("stop_type") == "DESTINATION" and p.get("local")],
+            "destination_zone": zonas.get(str(r["trip_id"])),
             "dias_sin_novedad": float(r["dias_sin_novedad"] or 0),
             "unassigned_reason_id": str(r["unassigned_reason_id"]) if r["unassigned_reason_id"] else None,
             "unassigned_reason_label": r["unassigned_reason_label"],
@@ -2311,7 +2235,7 @@ async def get_trip(
     _annotate_stop_temp_status(d["stops"], d.get("cargo_type"), temp_ranges)
     _attach_origin(d)
     shipper_ids = {str(d["shipper_id"])} if d.get("shipper_id") else set()
-    op_type_buckets = await _load_operation_type_buckets(pool, shipper_ids)
+    op_type_buckets = await load_operation_type_buckets(pool, shipper_ids)
     _apply_operation_types(d, op_type_buckets)
     # Abrir un viaje no escribe nada: la Divergencia TMS la anota la base cuando
     # llega el dato del TMS (app.log_tms_divergence, migración 20261016090000).

@@ -20,7 +20,9 @@ def servicio_de_cierre(monkeypatch):
     solo la forma de la respuesta del router: el servicio queda como stub, y un
     test puede darle a `periodo` un dia cerrado."""
     import app.routers.equipment_closures as modulo
-    stubs = {"periodo": AsyncMock(return_value=None), "frescura_del_dia": AsyncMock(return_value={"calculado_a": None, "pendiente_desde": None})}
+    stubs = {"periodo": AsyncMock(return_value=None), "frescura_del_dia": AsyncMock(return_value={"calculado_a": None, "pendiente_desde": None}),
+             # La zona del destino se prueba en test_destination_zone.py.
+             "trip_zones": AsyncMock(return_value={})}
     for nombre, stub in stubs.items():
         monkeypatch.setattr(modulo, nombre, stub)
     return stubs
@@ -97,6 +99,19 @@ def test_get_equipment_closure_status_splits_tractoreo_y_equipos_completos():
     # "Flota del día" necesita una fila plana por equipo, no solo el
     # agregado por empresa, para mostrar conductor/estado editable.
     assert [e["asset_id"] for e in body["equipos_completos"]["equipment"]] == ["a3", "a4"]
+
+
+def test_cada_equipo_trae_la_zona_de_su_viaje_del_dia(servicio_de_cierre):
+    """La Flota del día muestra la zona (RM, Z0, Región…) del viaje de hoy, la misma del Reporte."""
+    servicio_de_cierre["trip_zones"].return_value = {"t9": "Región"}
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _equipment_row(asset_id="a1", status="ASSIGNED", trip_id="t9"),
+        _equipment_row(asset_id="a2", status="UNASSIGNED"),
+    ]
+    pool.fetchrow.return_value = None
+    body = make_client(pool).get("/api/v1/equipment-closures?fecha=2026-08-02").json()
+    assert [e["destination_zone"] for e in body["tractoreo"]["equipment"]] == ["Región", None]
 
 
 def test_get_equipment_closure_status_pending_count_solo_cuenta_tractoreo_sin_motivo():

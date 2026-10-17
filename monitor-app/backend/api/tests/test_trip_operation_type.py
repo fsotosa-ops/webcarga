@@ -2,12 +2,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.routers.trips import (
-    _apply_operation_types,
-    _load_operation_type_buckets,
-    _normalize_location_name,
-    _resolve_operation_type,
-    _split_local,
+from app.routers.trips import _apply_operation_types
+from app.services.destination_zone import (
+    load_operation_type_buckets,
+    normalize_location_name,
+    resolve_operation_type,
+    split_local,
 )
 
 # Casos reales verificados en vivo contra bronze.raw_shipper_locations /
@@ -18,24 +18,24 @@ from app.routers.trips import (
 
 
 def test_split_local_extracts_name_and_number():
-    assert _split_local("SANTA ROSA - 87") == ("SANTA ROSA", "87")
-    assert _split_local("CURICÓ, CAMILO HENRÍQUEZ - 279") == ("CURICÓ, CAMILO HENRÍQUEZ", "279")
+    assert split_local("SANTA ROSA - 87") == ("SANTA ROSA", "87")
+    assert split_local("CURICÓ, CAMILO HENRÍQUEZ - 279") == ("CURICÓ, CAMILO HENRÍQUEZ", "279")
 
 
 def test_split_local_without_number_returns_whole_string_as_name():
     # Los CDs de origen (Walmart) nunca traen número — mismo patrón que
     # cualquier local sin site_number en la planilla (Iansa/Sodimac/Colun).
-    assert _split_local("CD LO AGUIRRE") == ("CD LO AGUIRRE", None)
+    assert split_local("CD LO AGUIRRE") == ("CD LO AGUIRRE", None)
 
 
 def test_split_local_handles_empty():
-    assert _split_local(None) == (None, None)
-    assert _split_local("") == (None, None)
+    assert split_local(None) == (None, None)
+    assert split_local("") == (None, None)
 
 
 def test_normalize_location_name_strips_accents_and_case():
-    assert _normalize_location_name("Curicó") == "CURICO"
-    assert _normalize_location_name("  El   Belloto ") == "EL BELLOTO"
+    assert normalize_location_name("Curicó") == "CURICO"
+    assert normalize_location_name("  El   Belloto ") == "EL BELLOTO"
 
 
 def _bucket_walmart():
@@ -54,13 +54,13 @@ def _bucket_walmart():
 
 
 def test_resolve_operation_type_by_number_when_unambiguous():
-    assert _resolve_operation_type(_bucket_walmart(), "SANTA ROSA - 87") == "RM"
+    assert resolve_operation_type(_bucket_walmart(), "SANTA ROSA - 87") == "RM"
 
 
 def test_resolve_operation_type_disambiguates_repeated_number_by_name():
     bucket = _bucket_walmart()
-    assert _resolve_operation_type(bucket, "LINARES - 171") == "Z0"
-    assert _resolve_operation_type(bucket, "SAN BERNARDO EUCALIPTUS - 171") == "RM"
+    assert resolve_operation_type(bucket, "LINARES - 171") == "Z0"
+    assert resolve_operation_type(bucket, "SAN BERNARDO EUCALIPTUS - 171") == "RM"
 
 
 def test_resolve_operation_type_disambiguates_by_containment_when_tms_adds_format_prefix():
@@ -70,29 +70,29 @@ def test_resolve_operation_type_disambiguates_by_containment_when_tms_adds_forma
     # en una columna aparte) — el match exacto normalizado falla, pero la
     # contención desambigua igual sin arriesgar el otro candidato ("Linares").
     bucket = _bucket_walmart()
-    assert _resolve_operation_type(bucket, "SBA San Bernardo Eucaliptus - 171") == "RM"
+    assert resolve_operation_type(bucket, "SBA San Bernardo Eucaliptus - 171") == "RM"
 
 
 def test_resolve_operation_type_unresolved_when_number_ambiguous_and_name_unknown():
     # Número repetido y el nombre del stop no matchea ninguno de los 2
     # candidatos — no hay forma segura de elegir, debe quedar sin resolver.
     bucket = _bucket_walmart()
-    assert _resolve_operation_type(bucket, "OTRO NOMBRE - 171") is None
+    assert resolve_operation_type(bucket, "OTRO NOMBRE - 171") is None
 
 
 def test_resolve_operation_type_falls_back_to_name_when_no_number():
     bucket = _bucket_walmart()
-    assert _resolve_operation_type(bucket, "Santa Rosa") == "RM"
+    assert resolve_operation_type(bucket, "Santa Rosa") == "RM"
 
 
 def test_resolve_operation_type_none_when_no_match():
     bucket = _bucket_walmart()
-    assert _resolve_operation_type(bucket, "CD LO AGUIRRE") is None
+    assert resolve_operation_type(bucket, "CD LO AGUIRRE") is None
 
 
 def test_resolve_operation_type_none_without_bucket_or_local():
-    assert _resolve_operation_type(None, "SANTA ROSA - 87") is None
-    assert _resolve_operation_type(_bucket_walmart(), None) is None
+    assert resolve_operation_type(None, "SANTA ROSA - 87") is None
+    assert resolve_operation_type(_bucket_walmart(), None) is None
 
 
 def test_apply_operation_types_sets_origin_and_per_stop():
@@ -128,17 +128,17 @@ async def test_load_operation_type_buckets_scopes_by_shipper_and_skips_null_oper
         {"shipper_id": "s-walmart", "name": "Linares", "site_number": "171", "operation_type": "Z0"},
         {"shipper_id": "s-iansa", "name": "Iansa Chillan", "site_number": None, "operation_type": "Region Sur"},
     ]
-    buckets = await _load_operation_type_buckets(pool, {"s-walmart", "s-iansa"})
-    assert _resolve_operation_type(buckets["s-walmart"], "SANTA ROSA - 87") == "RM"
-    assert _resolve_operation_type(buckets["s-iansa"], "Iansa Chillan") == "Region Sur"
+    buckets = await load_operation_type_buckets(pool, {"s-walmart", "s-iansa"})
+    assert resolve_operation_type(buckets["s-walmart"], "SANTA ROSA - 87") == "RM"
+    assert resolve_operation_type(buckets["s-iansa"], "Iansa Chillan") == "Region Sur"
     # Nunca cruza entre shippers: un local de Iansa no debe resolver contra el bucket de Walmart
-    assert _resolve_operation_type(buckets["s-walmart"], "Iansa Chillan") is None
+    assert resolve_operation_type(buckets["s-walmart"], "Iansa Chillan") is None
     assert "s.id = ANY($1::uuid[])" in pool.fetch.call_args.args[0]
 
 
 @pytest.mark.asyncio
 async def test_load_operation_type_buckets_empty_for_no_client_names():
     pool = AsyncMock()
-    buckets = await _load_operation_type_buckets(pool, set())
+    buckets = await load_operation_type_buckets(pool, set())
     assert buckets == {}
     pool.fetch.assert_not_called()

@@ -5,8 +5,8 @@ equipo-céntrico del Cierre del Día. Reusa:
   - la clasificación Tractoreo/Equipo Completo/Sin clasificar de Fase 1/2.
   - el criterio "con carga hoy": app.trips_del_dia(), el mismo del Cierre.
   - la resolución RM/Z0/Región por COMUNA DEL DESTINO (§7.6 de la HU) vía
-    los mismos helpers de trips.py que ya resuelven esto para el Diario
-    (_load_operation_type_buckets/_resolve_operation_type) — una sola
+    los mismos helpers que ya resuelven esto para el Diario
+    (services/destination_zone.py) — una sola
     fuente de verdad, no una copia nueva de esa lógica en SQL.
   - las vueltas (Fase 0.3, app.v_driver_daily_trip_legs — ya unificado
     conductor O tracto).
@@ -51,7 +51,7 @@ from ..services.cierre_lineas import (
 )
 from ..services.closure_scope import EQUIPO_COMPLETO, OPERATION_TYPE_CODE, TRACTOREO
 from ..services.driver_roster import TRACTOREO_ROSTER_CTE
-from .trips import _load_operation_type_buckets, _resolve_operation_type
+from ..services.destination_zone import last_destination_sql, zones_by_destination
 
 router = APIRouter(prefix="/status-report", tags=["status-report"])
 
@@ -65,16 +65,6 @@ def _parse_business_date(fecha: str) -> _date:
         return _date.fromisoformat(fecha)
     except ValueError:
         raise HTTPException(422, f"Fecha inválida: '{fecha}' (formato esperado YYYY-MM-DD)")
-
-
-def _zone_bucket(operation_type: str | None) -> str:
-    if operation_type == "RM":
-        return "RM"
-    if operation_type == "Z0":
-        return "Z0"
-    if operation_type in ("Region Norte", "Region Sur"):
-        return "Región"
-    return "Sin clasificar"
 
 
 _ROSTER_SQL = """
@@ -105,11 +95,7 @@ SELECT
     d.full_name AS driver_name,
     t.status_reported_at,
     {origen_del_viaje('t')} AS origin_cd,
-    (
-        SELECT ts.local FROM app.trip_stops ts
-        WHERE ts.trip_id = t.id AND ts.stop_type = 'DESTINATION'
-        ORDER BY ts.stop_order DESC LIMIT 1
-    ) AS last_destination_local
+    {last_destination_sql('t')} AS last_destination_local
 FROM app.trips t
 JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
 LEFT JOIN public.drivers d ON d.id = vfr.resolved_driver_id
@@ -175,8 +161,7 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
     for r in trip_rows:
         trips_by_asset.setdefault(r["asset_id"], []).append(r)
 
-    shipper_ids = {r["shipper_id"] for r in trip_rows if r["shipper_id"]}
-    buckets = await _load_operation_type_buckets(pool, shipper_ids)
+    zonas = await zones_by_destination(pool, ((r["shipper_id"], r["last_destination_local"]) for r in trip_rows))
 
     trip_ids = [r["trip_id"] for r in trip_rows]
     leg_rows = await pool.fetch(
@@ -223,9 +208,7 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
         destination_zone = None
         dias_en_curso = None
         if latest:
-            bucket = buckets.get(latest["shipper_id"])
-            op_type = _resolve_operation_type(bucket, latest["last_destination_local"])
-            destination_zone = _zone_bucket(op_type)
+            destination_zone = zonas[(latest["shipper_id"], latest["last_destination_local"])]
             if latest["planning_date"]:
                 dias_en_curso = (business_date - latest["planning_date"]).days
 

@@ -92,3 +92,6 @@ async def test_la_propuesta_de_vinculo_corre_y_nunca_contradice_al_padron(conexi
         assert tiene is None, f"se propuso empresa para {p['driver_name']}, que ya tiene una"
         assert p["carrier_id"] and p["carrier_name"]
         assert p["viajes"] >= 1
+        # Cada viaje con la zona de su destino (D8 y zona en Pendientes, 16/10).
+        from app.services.destination_zone import ZONES
+        assert all(t["zone"] in ZONES for t in p["trips"])

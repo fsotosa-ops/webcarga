@@ -25,6 +25,7 @@ from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.daily_closures import DriverBatchReasonBody, DriverDayStatusPatchBody
+from ..services.destination_zone import trip_zones
 from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente
 from ..services.origen_del_viaje import origen_del_viaje
 from ..services.cierre_lineas import LINEAS_CONDUCTORES, ajustes_posteriores, frescura_del_dia, periodo, poner_motivo
@@ -203,6 +204,10 @@ async def get_daily_closure_status(fecha: str, pool=Depends(get_pool), _=Depends
 
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     drivers = [dict(r) for r in rows]
+    # La zona del destino del viaje de hoy (RM, Z0, Región…), la misma del Reporte.
+    zonas = await trip_zones(pool, [str(d["today_trip_id"]) for d in drivers if d["today_trip_id"]])
+    for d in drivers:
+        d["destination_zone"] = zonas.get(str(d["today_trip_id"])) if d["today_trip_id"] else None
 
     # El estado del día sale del período, no de una cabecera por eje: un día
     # está cerrado o abierto, no "cerrado en conductores y abierto en tractos".

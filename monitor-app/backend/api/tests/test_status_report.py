@@ -25,9 +25,9 @@ from app.routers.status_report import (
     _resumen_del_tipo,
     _segundas_vueltas,
     _trabajaron_sin_asignacion,
-    _zone_bucket,
     router,
 )
+from app.services.destination_zone import zone_of
 from tests.conftest import USER, wire_transactional_conn
 
 
@@ -74,12 +74,12 @@ def _driver_row(**overrides):
 
 
 def test_zone_bucket_maps_region_norte_y_sur_a_region():
-    assert _zone_bucket("RM") == "RM"
-    assert _zone_bucket("Z0") == "Z0"
-    assert _zone_bucket("Region Norte") == "Región"
-    assert _zone_bucket("Region Sur") == "Región"
-    assert _zone_bucket(None) == "Sin clasificar"
-    assert _zone_bucket("algo raro") == "Sin clasificar"
+    assert zone_of("RM") == "RM"
+    assert zone_of("Z0") == "Z0"
+    assert zone_of("Region Norte") == "Región"
+    assert zone_of("Region Sur") == "Región"
+    assert zone_of(None) == "Sin clasificar"
+    assert zone_of("algo raro") == "Sin clasificar"
 
 
 # El cliente es un dato del viaje (decisión del usuario 11/10, "estás mezclando

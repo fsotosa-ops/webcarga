@@ -35,6 +35,7 @@ from ..auth import get_current_user
 from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.equipment_closures import EquipmentBatchReasonBody, EquipmentDayStatusPatchBody
+from ..services.destination_zone import trip_zones
 from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente
 from ..services.origen_del_viaje import origen_del_viaje
 from ..services.cierre_lineas import LINEAS_TRACTOS, frescura_del_dia, periodo, poner_motivo
@@ -141,6 +142,10 @@ async def get_equipment_closure_status(fecha: str, pool=Depends(get_pool), _=Dep
 
     rows = await pool.fetch(_DETAIL_SQL, business_date)
     equipment = [dict(r) for r in rows]
+    # La zona del destino del viaje de hoy (RM, Z0, Región…), la misma del Reporte.
+    zonas = await trip_zones(pool, [str(e["trip_id"]) for e in equipment if e["trip_id"]])
+    for e in equipment:
+        e["destination_zone"] = zonas.get(str(e["trip_id"])) if e["trip_id"] else None
 
     info = await periodo(pool, business_date)
     cerrado = bool(info and info["status"] == "CLOSED")

@@ -23,7 +23,9 @@ def servicio_de_cierre(monkeypatch):
     import app.routers.daily_closures as modulo
     stubs = {"periodo": AsyncMock(return_value=None), "frescura_del_dia": AsyncMock(return_value={"calculado_a": None, "pendiente_desde": None}),
              "avisos_del_dia": AsyncMock(return_value={"auto_resolved": [], "escalations": {}}),
-             "ajustes_posteriores": AsyncMock(return_value=[])}
+             "ajustes_posteriores": AsyncMock(return_value=[]),
+             # La zona del destino se prueba en test_destination_zone.py.
+             "trip_zones": AsyncMock(return_value={})}
     for nombre, stub in stubs.items():
         monkeypatch.setattr(modulo, nombre, stub)
     return stubs
@@ -159,6 +161,20 @@ def test_get_daily_closure_status_returns_counts_and_drivers():
     assert body["unassigned_count"] == 1
     assert body["mismatch_count"] == 1
     assert body["pending_count"] == 2  # 1 unassigned sin motivo + 1 mismatch
+
+
+def test_cada_conductor_trae_la_zona_de_su_viaje_del_dia(servicio_de_cierre):
+    """La Flota del día muestra la zona (RM, Z0, Región…) del viaje de hoy, la misma del Reporte."""
+    servicio_de_cierre["trip_zones"].return_value = {"t1": "RM"}
+    pool = AsyncMock()
+    pool.fetch.return_value = [
+        _driver_row(driver_id="d1", status="ASSIGNED", today_trip_id="t1"),
+        _driver_row(driver_id="d2", status="UNASSIGNED"),
+    ]
+    pool.fetchrow.return_value = None
+    drivers = make_client(pool).get("/api/v1/daily-closures?fecha=2026-07-21").json()["drivers"]
+    assert [d["destination_zone"] for d in drivers] == ["RM", None]
+    assert servicio_de_cierre["trip_zones"].await_args.args[1] == ["t1"]
 
 
 def test_get_daily_closure_status_includes_carrier_id_for_linking_to_empresas():

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date as _date
 
 from .closure_scope import scope_sql, tractor_scope_join
+from .destination_zone import trip_zones
 
 
 def _single_value(values: list[str]) -> str | None:
@@ -237,7 +238,11 @@ async def avisos_del_dia(conn, fecha: _date) -> dict:
         {**dict(r), "scope": None} for r in await conn.fetch(_SQL_ONBOARDING, fecha)]
     escalations["SIN_TIPO_OPERACION"] = [
         {**dict(r), "scope": None} for r in await conn.fetch(_SQL_SIN_TIPO, fecha)]
-    escalations["CONDUCTOR_SIN_EMPRESA"] = [
-        {**dict(r), "trips": json.loads(r["trips"])} for r in await conn.fetch(_SQL_SIN_EMPRESA, fecha)]
+    sin_empresa = [{**dict(r), "trips": json.loads(r["trips"])} for r in await conn.fetch(_SQL_SIN_EMPRESA, fecha)]
+    # Cada viaje con la zona de su destino (RM, Z0, Región…), la misma del Reporte.
+    zonas = await trip_zones(conn, [t["id"] for a in sin_empresa for t in a["trips"]])
+    for aviso in sin_empresa:
+        aviso["trips"] = [{**t, "zone": zonas.get(t["id"], "Sin clasificar")} for t in aviso["trips"]]
+    escalations["CONDUCTOR_SIN_EMPRESA"] = sin_empresa
     auto_resolved = [_resuelta(r) for r in await conn.fetch(_SQL_RESUELTAS, fecha)]
     return {"auto_resolved": auto_resolved, "escalations": escalations}

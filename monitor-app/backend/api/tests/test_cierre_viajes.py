@@ -679,6 +679,9 @@ async def test_cada_viaje_trae_el_contexto_del_monitor(conexion_revertida):
     assert v["carrier_name"] == "EETT TMS"
     assert v["origin"] == "CD Prueba"
     assert v["destinations"] == ["Tienda A", "Tienda B"]
+    # La zona de su último destino (services/destination_zone.py), la misma del Reporte:
+    # sin cliente en el catálogo, "Sin clasificar".
+    assert v["destination_zone"] == "Sin clasificar"
 
 
 async def test_un_viaje_declarado_queda_en_con_motivo_y_deshacer_lo_devuelve(conexion_revertida):
