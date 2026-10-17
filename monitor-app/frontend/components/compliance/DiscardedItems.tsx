@@ -37,24 +37,24 @@ export function DiscardedItems() {
       <button
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
-        className="w-full flex items-center gap-2 px-4 py-3 text-sm font-semibold text-text-primary"
+        className="w-full flex items-center gap-2 px-4 py-3 text-lectura font-semibold text-text-primary"
       >
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         Descartados
-        {query.data && <span className="text-xs font-normal text-informativo">({query.data.total})</span>}
+        {query.data && <span className="text-dato font-normal text-informativo">({query.data.total})</span>}
       </button>
 
       {open && (
         <div className="px-4 pb-3">
-          {query.isLoading && <p className="text-xs text-informativo flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>}
-          {query.isError && <p className="text-xs text-status-incidente">No se pudieron cargar los descartados.</p>}
-          {query.data && rows.length === 0 && <p className="text-xs text-informativo">No hay documentos descartados.</p>}
+          {query.isLoading && <p className="text-dato text-informativo flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</p>}
+          {query.isError && <p className="text-dato text-status-incidente">No se pudieron cargar los descartados.</p>}
+          {query.data && rows.length === 0 && <p className="text-dato text-informativo">No hay documentos descartados.</p>}
           <ul className="divide-y divide-border">
             {rows.map(r => (
-              <li key={r.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+              <li key={r.id} className="flex items-center justify-between gap-3 py-2 text-dato">
                 <div className="min-w-0">
                   <p className="truncate text-text-primary">{r.file_name}</p>
-                  <p className="text-xs text-informativo">
+                  <p className="text-dato text-informativo">
                     {r.carrier_name ?? 'Sin empresa'}
                     {r.discard_reason ? ` · ${r.discard_reason}` : ''}
                   </p>
@@ -63,7 +63,7 @@ export function DiscardedItems() {
                   <button
                     onClick={() => restore.mutate(r.id)}
                     disabled={restore.isPending}
-                    className="shrink-0 flex items-center gap-1 text-xs font-semibold text-accent hover:underline disabled:opacity-50"
+                    className="shrink-0 flex items-center gap-1 text-dato font-semibold text-accent hover:underline disabled:opacity-50"
                   >
                     <RotateCcw size={12} /> Restaurar
                   </button>
@@ -71,7 +71,7 @@ export function DiscardedItems() {
               </li>
             ))}
           </ul>
-          {err && <p className="text-xs text-status-incidente mt-2">{err}</p>}
+          {err && <p className="text-dato text-status-incidente mt-2">{err}</p>}
         </div>
       )}
     </section>

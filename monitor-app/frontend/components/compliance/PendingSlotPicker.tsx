@@ -45,7 +45,7 @@ export function PendingSlotPicker({ rows, selected, onPick }: Props) {
 
   return (
     <div className="space-y-2">
-      <p className="text-[11px] font-semibold text-gray-600">
+      <p className="text-etiqueta font-semibold text-text-primary">
         {rows.length === 1 ? 'Le falta 1 documento' : `Le faltan ${rows.length} documentos`}
       </p>
 
@@ -57,7 +57,7 @@ export function PendingSlotPicker({ rows, selected, onPick }: Props) {
 
           return (
             <div key={tipo}>
-              <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-gray-500 mb-1">
+              <p className="flex items-center gap-1.5 text-etiqueta text-informativo mb-1">
                 <Icono size={11} /> {GRUPO[tipo]}
               </p>
               <ul className="space-y-0.5">
@@ -76,15 +76,15 @@ export function PendingSlotPicker({ rows, selected, onPick }: Props) {
                           document_name:  r.document_name,
                         })}
                         aria-pressed={activo}
-                        className={`w-full text-left rounded-md px-2 py-1.5 text-[11px] transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40 ${
+                        className={`w-full text-left rounded-md px-2 py-1.5 text-etiqueta transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40 ${
                           activo
                             ? 'bg-accent text-white font-semibold'
-                            : 'bg-gray-50 hover:bg-gray-100 text-slate-700'
+                            : 'bg-bg-main hover:bg-bg-main text-text-primary'
                         }`}
                       >
                         <span className="block truncate">{r.document_name}</span>
                         {r.subject_name && tipo !== 'CARRIER' && (
-                          <span className={`block truncate text-[10px] ${activo ? 'text-white/80' : 'text-gray-500'}`}>
+                          <span className={`block truncate text-etiqueta ${activo ? 'text-white/80' : 'text-informativo'}`}>
                             {r.subject_name}
                           </span>
                         )}

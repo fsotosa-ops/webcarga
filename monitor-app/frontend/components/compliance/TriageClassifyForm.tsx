@@ -152,10 +152,10 @@ export function TriageClassifyForm({
   if (!targetIds.length) {
     return (
       <div className="px-3 py-6 text-center">
-        <p className="text-xs font-medium text-gray-500">
+        <p className="text-dato font-medium text-informativo">
           Selecciona uno o más documentos de la lista
         </p>
-        <p className="text-[11px] text-gray-500 mt-1.5 leading-relaxed">
+        <p className="text-etiqueta text-informativo mt-1.5 leading-relaxed">
           Clasificar es de a un archivo: cada uno va a un requisito distinto.
           Marcar varios sirve para moverlos o descartarlos en lote.
         </p>
@@ -163,7 +163,7 @@ export function TriageClassifyForm({
     )
   }
 
-  const SELECT = 'w-full mt-1 text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-all disabled:bg-gray-50 disabled:text-gray-400'
+  const SELECT = 'w-full mt-1 text-dato border border-border rounded-lg px-2 py-1.5 bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-all disabled:bg-bg-main disabled:text-informativo'
 
   return (
     // Enter asigna, como en una bandeja de triage (Gmail, Linear): el gesto más
@@ -173,8 +173,8 @@ export function TriageClassifyForm({
         e.preventDefault(); void apply()
       }
     }}>
-      <p className="text-[11px] text-gray-500">
-        <span className="font-semibold text-slate-700 tabular-nums">
+      <p className="text-etiqueta text-informativo">
+        <span className="font-semibold text-text-primary tabular-nums">
           {targetIds.length === 1 ? '1 documento' : `${targetIds.length} documentos`}
         </span>
         {carrierLabel && <span> · <EntityCell kind="carrier" id={carrierId} label={carrierLabel} /></span>}
@@ -187,7 +187,7 @@ export function TriageClassifyForm({
           proyecto prohibe: nombrar por el trabajo, no por el modelo de datos.
           Una pantalla no advierte sobre algo que no ofrece. */}
       {loteInvalido ? (
-        <p className="text-[11px] text-informativo leading-relaxed">
+        <p className="text-etiqueta text-informativo leading-relaxed">
           En lote puedes moverlos a una empresa o descartarlos, con la barra de
           selección. Para decir qué documento es cada uno, deja marcado uno solo.
         </p>
@@ -202,7 +202,7 @@ export function TriageClassifyForm({
           <button
             type="button"
             onClick={() => { setManual(true); setSlot(null) }}
-            className="text-[10px] text-gray-500 hover:text-accent underline cursor-pointer"
+            className="text-etiqueta text-informativo hover:text-accent underline cursor-pointer"
           >
             No está en la lista
           </button>
@@ -222,7 +222,7 @@ export function TriageClassifyForm({
               Sin empresa hay UNA pregunta contestable, y es la de más abajo. */}
           {!!subjects.length && (
           <label className="block">
-            <span className="text-[11px] font-semibold text-gray-600">¿A quién pertenece?</span>
+            <span className="text-etiqueta font-semibold text-text-primary">¿A quién pertenece?</span>
             <select
               aria-label="¿A quién pertenece?"
               value={subjectKey}
@@ -259,19 +259,19 @@ export function TriageClassifyForm({
               </Estado>
             ) : (
               carrierLabel ? (
-                <p className="text-[11px] text-informativo bg-accent/5 border border-border rounded-lg px-2 py-1.5">
+                <p className="text-etiqueta text-informativo bg-accent/5 border border-border rounded-lg px-2 py-1.5">
                   Esta empresa no tiene requisitos pendientes que se puedan asignar. Suele pasar cuando la empresa no está activa.
                 </p>
               ) : onPickCarrier ? (
                 <label className="block">
-                  <span className="text-[11px] font-semibold text-gray-600">Este documento todavía no tiene empresa. ¿De qué empresa es?</span>
+                  <span className="text-etiqueta font-semibold text-text-primary">Este documento todavía no tiene empresa. ¿De qué empresa es?</span>
                   <div className="mt-1">
                     <CarrierSearchPicker query={busquedaEmpresa} onQueryChange={setBusquedaEmpresa} onPick={onPickCarrier}
                                          size="sm" showMinCharsHint placeholder="Buscar empresa…" />
                   </div>
                 </label>
               ) : (
-                <p className="text-[11px] text-informativo bg-accent/5 border border-border rounded-lg px-2 py-1.5">
+                <p className="text-etiqueta text-informativo bg-accent/5 border border-border rounded-lg px-2 py-1.5">
                   Este documento todavía no tiene empresa.
                 </p>
               )
@@ -280,7 +280,7 @@ export function TriageClassifyForm({
 
           {subject && (
             <label className="block">
-              <span className="text-[11px] font-semibold text-gray-600">¿Qué documento es?</span>
+              <span className="text-etiqueta font-semibold text-text-primary">¿Qué documento es?</span>
               <select
                 aria-label="¿Qué documento es?"
                 value={requirementId}
@@ -298,7 +298,7 @@ export function TriageClassifyForm({
             <button
               type="button"
               onClick={() => { setManual(false); setRequirementId('') }}
-              className="text-[10px] text-gray-500 hover:text-accent underline cursor-pointer"
+              className="text-etiqueta text-informativo hover:text-accent underline cursor-pointer"
             >
               Volver a los pendientes
             </button>
@@ -308,7 +308,7 @@ export function TriageClassifyForm({
 
       {pide && (
         <label className="block">
-          <span className="text-[11px] font-semibold text-gray-600">{ETIQUETA_DEL_DATO[pide.dato]}</span>
+          <span className="text-etiqueta font-semibold text-text-primary">{ETIQUETA_DEL_DATO[pide.dato]}</span>
           <input
             type={pide.dato === 'periodo' ? 'month' : 'date'}
             aria-label={ETIQUETA_DEL_DATO[pide.dato]}
@@ -319,7 +319,7 @@ export function TriageClassifyForm({
         </label>
       )}
 
-      {error && <p className="text-[11px] text-red-500">{error}</p>}
+      {error && <p className="text-etiqueta text-status-incidente">{error}</p>}
 
       </>
       )}
@@ -330,14 +330,14 @@ export function TriageClassifyForm({
           type="button"
           onClick={apply}
           disabled={!canApply}
-          className="flex-1 flex items-center justify-center gap-2 text-xs font-semibold px-4 py-2 rounded-lg transition-colors bg-accent text-white hover:bg-accent/90 focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+          className="flex-1 flex items-center justify-center gap-2 text-dato font-semibold px-4 py-2 rounded-lg transition-colors bg-accent text-white hover:bg-accent/90 focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:bg-bg-main disabled:text-informativo disabled:cursor-not-allowed"
         >
           {saving && <Loader2 size={14} className="motion-safe:animate-spin" />}
           Asignar
         </button>
         {onDiscard && (
           <button type="button" onClick={onDiscard} disabled={saving}
-                  className="text-xs font-semibold px-3 py-2 rounded-lg border border-border bg-white text-text-primary hover:bg-bg-main disabled:opacity-50">
+                  className="text-dato font-semibold px-3 py-2 rounded-lg border border-border bg-white text-text-primary hover:bg-bg-main disabled:opacity-50">
             Descartar
           </button>
         )}

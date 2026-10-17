@@ -272,7 +272,7 @@ export function CondicionPanel({
               type="button"
               onClick={() => guardar.mutate()}
               disabled={guardar.isPending || vigenciaIncompleta}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-dato
                          font-semibold text-white hover:bg-accent/90 disabled:opacity-50
                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             >
@@ -298,7 +298,7 @@ export function CondicionPanel({
               // habilitado invitaba a una escritura que no cambia nada y se
               // leía como "queda algo pendiente".
               disabled={sucio || aplicar.isPending || sinCambios}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accion px-3 py-1.5 text-xs
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accion px-3 py-1.5 text-dato
                          font-semibold text-white disabled:opacity-50 focus-visible:outline-none
                          focus-visible:ring-2 focus-visible:ring-accent/40"
             >
@@ -328,7 +328,7 @@ export function CondicionPanel({
 
       {canEdit && ver('nombre') && (
         <fieldset className="mt-3">
-          <legend className="text-xs font-semibold text-text-primary">Cómo se llama</legend>
+          <legend className="text-dato font-semibold text-text-primary">Cómo se llama</legend>
 
           {/* El nombre VISIBLE, y por eso no pasa por la vista previa: no
               cambia a quién se le exige nada. Renombrarlo es inocuo porque
@@ -344,7 +344,7 @@ export function CondicionPanel({
             value={nombre}
             onChange={e => setNombre(e.target.value)}
             aria-label="Nombre del documento"
-            className="mt-2 w-full rounded-lg border border-border px-2 py-1.5 text-xs
+            className="mt-2 w-full rounded-lg border border-border px-2 py-1.5 text-dato
                        focus:outline-none focus:ring-2 focus:ring-accent/30"
           />
           {!nombre.trim() && (
@@ -357,7 +357,7 @@ export function CondicionPanel({
 
       {canEdit && ver('quien') && (
         <fieldset className="mt-3">
-          <legend className="text-xs font-semibold text-text-primary">¿Es obligatorio?</legend>
+          <legend className="text-dato font-semibold text-text-primary">¿Es obligatorio?</legend>
           {/* NO es una etiqueta de presentación: los disparadores de siembra
               sólo siembran LEGAL_MANDATORY, así que cambiar esto agrega o
               quita registros. Por eso vive del lado de la regla y pasa por la
@@ -366,7 +366,7 @@ export function CondicionPanel({
             ['LEGAL_MANDATORY', 'Obligatorio', 'Se le exige a todos los que califiquen.'],
             ['CONDITIONAL_OPTIONAL', 'Opcional', 'No se le pide a nadie por defecto; se carga si aplica.'],
           ] as const).map(([valor, etiqueta, ayuda]) => (
-            <label key={valor} className="mt-2 flex items-start gap-2 text-xs text-text-primary cursor-pointer">
+            <label key={valor} className="mt-2 flex items-start gap-2 text-dato text-text-primary cursor-pointer">
               <input
                 type="radio"
                 name="nivel-del-requisito"
@@ -390,9 +390,9 @@ export function CondicionPanel({
 
       {!ver('quien') ? null : (esAsset || esCarrier) ? (
         <fieldset className="mt-3">
-          <legend className="text-xs font-semibold text-text-primary">¿A quién se le exige?</legend>
+          <legend className="text-dato font-semibold text-text-primary">¿A quién se le exige?</legend>
 
-          <label className="mt-2 flex items-center gap-2 text-xs text-text-primary cursor-pointer">
+          <label className="mt-2 flex items-center gap-2 text-dato text-text-primary cursor-pointer">
             <input
               type="radio"
               name={`alcance-${requisito.id}`}
@@ -405,7 +405,7 @@ export function CondicionPanel({
             <span className="text-informativo tabular-nums">· {requisito.alcance.universo}</span>
           </label>
 
-          <label className="mt-1 flex items-center gap-2 text-xs text-text-primary cursor-pointer">
+          <label className="mt-1 flex items-center gap-2 text-dato text-text-primary cursor-pointer">
             <input
               type="radio"
               name={`alcance-${requisito.id}`}
@@ -422,7 +422,7 @@ export function CondicionPanel({
           {alcance === 'algunos' && (
             <div className="mt-2 ml-5 rounded-lg border border-border p-2.5">
               {opciones.map(o => (
-                <label key={o.id} className="flex items-center gap-2 text-xs py-0.5 cursor-pointer">
+                <label key={o.id} className="flex items-center gap-2 text-dato py-0.5 cursor-pointer">
                   <input
                     type="checkbox"
                     className="accent-accent"
@@ -444,11 +444,11 @@ export function CondicionPanel({
           )}
         </fieldset>
       ) : (
-        <p className="mt-3 text-xs text-text-primary">Se exige a todos los conductores.</p>
+        <p className="mt-3 text-dato text-text-primary">Se exige a todos los conductores.</p>
       )}
 
       {ver('vigencia') && (
-      <label className="mt-4 flex items-center gap-2 text-xs text-text-primary cursor-pointer">
+      <label className="mt-4 flex items-center gap-2 text-dato text-text-primary cursor-pointer">
         <input
           type="checkbox"
           className="accent-accent"

@@ -12,20 +12,20 @@ import type { TrayItem } from '@/lib/types'
 export function TriagePreview({ items }: { items: TrayItem[] }) {
   if (!items.length) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-200 py-6 text-center">
-        <p className="text-[11px] text-gray-500">Selecciona un documento para verlo</p>
+      <div className="rounded-lg border border-dashed border-border py-6 text-center">
+        <p className="text-etiqueta text-informativo">Selecciona un documento para verlo</p>
       </div>
     )
   }
 
   if (items.length > 1) {
     return (
-      <div className="rounded-lg border border-gray-200 bg-gray-50/60 py-5 flex flex-col items-center justify-center gap-1.5">
+      <div className="rounded-lg border border-border bg-bg-main py-5 flex flex-col items-center justify-center gap-1.5">
         <FileStack size={20} className="text-accent" />
-        <p className="text-xs font-semibold text-text-primary">
+        <p className="text-dato font-semibold text-text-primary">
           {items.length} documentos seleccionados
         </p>
-        <p className="text-[10px] text-gray-500 text-center max-w-[220px]">
+        <p className="text-etiqueta text-informativo text-center max-w-[220px]">
           Lo que elijas arriba se aplica a todos.
         </p>
       </div>
@@ -37,16 +37,16 @@ export function TriagePreview({ items }: { items: TrayItem[] }) {
 
   return (
     <figure className="space-y-1.5">
-      <div className="rounded-lg border border-gray-200 bg-gray-50 h-40 flex items-center justify-center overflow-hidden">
+      <div className="rounded-lg border border-border bg-bg-main h-40 flex items-center justify-center overflow-hidden">
         {item.preview_url && isImage && (
           <img src={item.preview_url} alt={item.file_name} className="max-h-full max-w-full object-contain" />
         )}
         {item.preview_url && !isImage && (
           <iframe src={item.preview_url} title={item.file_name} className="w-full h-full" />
         )}
-        {!item.preview_url && <p className="text-[11px] text-gray-500">Sin vista previa</p>}
+        {!item.preview_url && <p className="text-etiqueta text-informativo">Sin vista previa</p>}
       </div>
-      <figcaption className="text-[10px] text-gray-500 font-mono truncate" title={item.file_name}>
+      <figcaption className="text-etiqueta text-informativo font-mono truncate" title={item.file_name}>
         {item.file_name}
       </figcaption>
     </figure>

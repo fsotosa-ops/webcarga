@@ -141,7 +141,9 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 769 -> 574 el 2026-10-17: el Cierre y el Monitor con el sistema (PageContainer y Button
     //   del kit, tabla de viajes, alertas por significado, Alertas sobre el Popover del kit) y
     //   lo que bajaron el Cierre con un solo patrón y Pendientes/Reporte con el kit.
-    const DEUDA = 574
+    // 574 -> 504 el 2026-10-17: Certificación con tokens (Por asignar, Actualizar por planilla,
+    //   Reasignar, Descartados y los paneles de Documentos exigidos).
+    const DEUDA = 504
 
     const total = usosDeColorCrudo()
     expect(

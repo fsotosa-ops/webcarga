@@ -89,7 +89,8 @@ describe('la escala tipografica', () => {
     // 105 -> 102 el 2026-10-16: Documentos exigidos sale de Configuración; se retiró la tabla editable (Parte 2).
     // 102 -> 97 el 2026-10-16: CondicionPanel con la escala del sistema (menores de la Parte 2).
     // 97 -> 80 el 2026-10-17: el Cierre y el Monitor a la escala (text-etiqueta en vez de 10px).
-    const DEUDA = 80
+    // 80 -> 70 el 2026-10-17: Certificación a la escala (text-etiqueta en vez de 10px).
+    const DEUDA = 70
 
     const hallazgos = tamanosPorDebajoDelMinimo()
     expect(

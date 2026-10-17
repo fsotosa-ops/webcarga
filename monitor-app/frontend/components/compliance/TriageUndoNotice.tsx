@@ -24,12 +24,12 @@ export function TriageUndoNotice({ mensaje, onDeshacer, onCerrar, deshaciendo }:
       className="flex items-center gap-3 rounded-xl bg-text-primary text-white px-4 py-3"
     >
       <Check size={14} className="text-accent shrink-0" />
-      <span className="text-xs flex-1 min-w-0">{mensaje}</span>
+      <span className="text-dato flex-1 min-w-0">{mensaje}</span>
       {onDeshacer && <button
         type="button"
         onClick={onDeshacer}
         disabled={deshaciendo}
-        className="flex items-center gap-1.5 text-[11px] font-semibold text-accent border border-white/25 rounded-lg px-3 py-1.5 hover:bg-white/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer shrink-0"
+        className="flex items-center gap-1.5 text-etiqueta font-semibold text-accent border border-white/25 rounded-lg px-3 py-1.5 hover:bg-white/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer shrink-0"
       >
         {deshaciendo
           ? <><Loader2 size={11} className="motion-safe:animate-spin" /> Deshaciendo…</>

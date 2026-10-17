@@ -52,7 +52,7 @@ export function ReassignDocument({ recordId, carrierId, onDone }: Props) {
       <button
         type="button"
         onClick={() => setAbierto(true)}
-        className="text-[10px] font-semibold text-gray-500 hover:text-accent transition-colors cursor-pointer"
+        className="text-etiqueta font-semibold text-informativo hover:text-accent transition-colors cursor-pointer"
       >
         Reasignar
       </button>
@@ -63,13 +63,13 @@ export function ReassignDocument({ recordId, carrierId, onDone }: Props) {
   const huecos = (pendientes.data?.rows ?? []).filter(r => r.id !== recordId)
 
   return (
-    <div className="w-full mt-2 rounded-lg border border-border bg-gray-50 p-2.5 space-y-2">
-      <p className="text-[11px] font-semibold text-slate-700">
+    <div className="w-full mt-2 rounded-lg border border-border bg-bg-main p-2.5 space-y-2">
+      <p className="text-etiqueta font-semibold text-text-primary">
         ¿A dónde va este documento?
       </p>
 
       {pendientes.isPending ? (
-        <p className="text-[11px] text-gray-500 flex items-center gap-1.5">
+        <p className="text-etiqueta text-informativo flex items-center gap-1.5">
           <Loader2 size={11} className="motion-safe:animate-spin" /> Cargando…
         </p>
       ) : (
@@ -84,7 +84,7 @@ export function ReassignDocument({ recordId, carrierId, onDone }: Props) {
         />
       )}
 
-      {error && <p className="text-[11px] text-red-600">{error}</p>}
+      {error && <p className="text-etiqueta text-status-incidente">{error}</p>}
 
       <div className="flex items-center gap-3 pt-1 border-t border-border">
         {/* La cuarta variante, y también el camino para mandarlo a otra
@@ -93,7 +93,7 @@ export function ReassignDocument({ recordId, carrierId, onDone }: Props) {
           type="button"
           disabled={guardando}
           onClick={() => aplicar({ to_tray: true })}
-          className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-600 hover:text-accent transition-colors disabled:opacity-50 cursor-pointer"
+          className="flex items-center gap-1.5 text-etiqueta font-semibold text-text-primary hover:text-accent transition-colors disabled:opacity-50 cursor-pointer"
         >
           {guardando
             ? <Loader2 size={11} className="motion-safe:animate-spin" />
@@ -103,7 +103,7 @@ export function ReassignDocument({ recordId, carrierId, onDone }: Props) {
         <button
           type="button"
           onClick={() => { setAbierto(false); setError(null) }}
-          className="ml-auto text-[10px] text-gray-500 hover:text-gray-700 cursor-pointer"
+          className="ml-auto text-etiqueta text-informativo hover:text-text-primary cursor-pointer"
         >
           Cancelar
         </button>

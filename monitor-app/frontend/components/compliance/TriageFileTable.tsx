@@ -114,8 +114,8 @@ export function TriageFileTable({
                 // derecho. `aria-current` es el atributo para "el elemento
                 // actual dentro de un conjunto".
                 aria-current={focused ? 'true' : undefined}
-                className={`cursor-pointer transition-colors border-b border-gray-100 ${
-                  checked ? 'bg-accent/10' : focused ? 'bg-slate-100' : 'hover:bg-gray-50'
+                className={`cursor-pointer transition-colors border-b border-border ${
+                  checked ? 'bg-accent/10' : focused ? 'bg-bg-main' : 'hover:bg-bg-main'
                 }`}
               >
                 <td className="py-1.5 pl-3 pr-1 relative">

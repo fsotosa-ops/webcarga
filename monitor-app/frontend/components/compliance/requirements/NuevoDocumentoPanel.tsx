@@ -81,7 +81,7 @@ export function NuevoDocumentoPanel({ onCerrar }: { onCerrar: () => void }) {
           type="button"
           onClick={() => crear.mutate()}
           disabled={!listo}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-xs
+          className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-dato
                      font-semibold text-white hover:bg-accent/90 disabled:opacity-50
                      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
         >
@@ -91,7 +91,7 @@ export function NuevoDocumentoPanel({ onCerrar }: { onCerrar: () => void }) {
       }
     >
       <label className="block">
-        <span className="text-xs font-semibold text-text-primary">Cómo se llama</span>
+        <span className="text-dato font-semibold text-text-primary">Cómo se llama</span>
         <input
           type="text"
           value={nombre}
@@ -112,9 +112,9 @@ export function NuevoDocumentoPanel({ onCerrar }: { onCerrar: () => void }) {
       </label>
 
       <fieldset className="mt-3">
-        <legend className="text-xs font-semibold text-text-primary">¿Quién lo presenta?</legend>
+        <legend className="text-dato font-semibold text-text-primary">¿Quién lo presenta?</legend>
         {ENTIDADES.map(([valor, etiqueta, ayuda]) => (
-          <label key={valor} className="mt-2 flex items-start gap-2 text-xs text-text-primary cursor-pointer">
+          <label key={valor} className="mt-2 flex items-start gap-2 text-dato text-text-primary cursor-pointer">
             <input
               type="radio" name="entidad-del-documento" aria-label={etiqueta}
               checked={entidad === valor} onChange={() => elegirEntidad(valor)}
@@ -126,9 +126,9 @@ export function NuevoDocumentoPanel({ onCerrar }: { onCerrar: () => void }) {
       </fieldset>
 
       <fieldset className="mt-3">
-        <legend className="text-xs font-semibold text-text-primary">¿Es obligatorio?</legend>
+        <legend className="text-dato font-semibold text-text-primary">¿Es obligatorio?</legend>
         {NIVELES.map(([valor, etiqueta, ayuda]) => (
-          <label key={valor} className="mt-2 flex items-start gap-2 text-xs text-text-primary cursor-pointer">
+          <label key={valor} className="mt-2 flex items-start gap-2 text-dato text-text-primary cursor-pointer">
             <input
               type="radio" name="nivel-del-documento" aria-label={etiqueta}
               checked={nivel === valor} onChange={() => setNivel(valor)}

@@ -34,7 +34,7 @@ export function SelectorExigibilidad({ value, onChange, entidad, disabled = fals
 }) {
   return (
     <fieldset className="mt-4">
-      <legend className="text-xs font-semibold text-text-primary">¿Cuándo se exige?</legend>
+      <legend className="text-dato font-semibold text-text-primary">¿Cuándo se exige?</legend>
       {exigibilidadesPara(entidad).map(o => (
         <label key={o.valor} className="mt-2 flex cursor-pointer items-start gap-2 text-dato text-text-primary">
           <input

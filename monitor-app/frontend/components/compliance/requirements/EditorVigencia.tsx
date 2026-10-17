@@ -120,7 +120,7 @@ export function EditorVigencia({ value, onChange, disabled = false }: {
 
   return (
     <fieldset className="mt-4">
-      <legend className="text-xs font-semibold text-text-primary">¿Cuándo vence?</legend>
+      <legend className="text-dato font-semibold text-text-primary">¿Cuándo vence?</legend>
       <div className="mt-2 space-y-1.5">
         {TIPOS.map(t => (
           <Tarjeta

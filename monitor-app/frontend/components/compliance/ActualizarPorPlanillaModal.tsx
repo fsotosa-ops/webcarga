@@ -41,10 +41,10 @@ interface Props {
 }
 
 const BOTON_PRIMARIO =
-  'inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-accent rounded-lg ' +
+  'inline-flex items-center gap-1.5 text-dato font-semibold text-white bg-accent rounded-lg ' +
   'px-3 py-1.5 hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer'
 const BOTON_SECUNDARIO =
-  'inline-flex items-center gap-1.5 text-xs font-semibold text-accion border border-accent/30 ' +
+  'inline-flex items-center gap-1.5 text-dato font-semibold text-accion border border-accent/30 ' +
   'rounded-lg px-3 py-1.5 hover:bg-accent/5 transition-colors disabled:opacity-50 cursor-pointer'
 
 export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEditar }: Props) {
@@ -153,8 +153,8 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div className="min-w-0">
-            <h2 className="font-bold text-sm text-text-primary">Actualizar por planilla</h2>
-            <p className={`text-xs ${TEXTO_APOYO} mt-0.5`}>
+            <h2 className="font-bold text-lectura text-text-primary">Actualizar por planilla</h2>
+            <p className={`text-dato ${TEXTO_APOYO} mt-0.5`}>
               Marca qué documentos tienes y cuándo vencen, sin subir los archivos
             </p>
           </div>
@@ -168,7 +168,7 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
 
         <div className="px-5 py-4 overflow-y-auto space-y-4">
           {error && (
-            <p className="flex items-start gap-1.5 text-xs font-semibold text-espera">
+            <p className="flex items-start gap-1.5 text-dato font-semibold text-espera">
               <AlertTriangle size={14} className="shrink-0 mt-px" aria-hidden="true" />
               {error}
             </p>
@@ -177,22 +177,22 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
           {paso === 'inicio' && (
             <>
               <section className="space-y-2">
-                <p className="text-xs font-bold text-text-primary">1 · Baja la planilla</p>
+                <p className="text-dato font-bold text-text-primary">1 · Baja la planilla</p>
                 {resumen.isLoading && (
-                  <p className={`text-xs ${TEXTO_APOYO}`}>Contando lo que falta…</p>
+                  <p className={`text-dato ${TEXTO_APOYO}`}>Contando lo que falta…</p>
                 )}
                 {vacia && (
-                  <p className={`text-xs ${TEXTO_CUERPO}`}>
+                  <p className={`text-dato ${TEXTO_CUERPO}`}>
                     No hay documentos pendientes
                     {historico ? '' : ' en las empresas activas'}. No hay nada que cargar.
                   </p>
                 )}
                 {resumen.data && !vacia && (<>
-                  <p className={`text-xs ${TEXTO_CUERPO}`}>
+                  <p className={`text-dato ${TEXTO_CUERPO}`}>
                     {resumen.data.filas.toLocaleString('es-CL')} documentos pendientes ·{' '}
                     {resumen.data.empresas} empresas
                   </p>
-                  <p className={`text-xs ${TEXTO_APOYO}`}>
+                  <p className={`text-dato ${TEXTO_APOYO}`}>
                     {resumen.data.con_vencimiento.toLocaleString('es-CL')} llevan
                     vencimiento · {resumen.data.solo_tenencia.toLocaleString('es-CL')} sólo
                     piden confirmar si los tienes
@@ -214,7 +214,7 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
                       : <Download size={13} aria-hidden="true" />}
                     Descargar planilla
                   </button>
-                  <label className={`flex items-center gap-1.5 text-xs ${TEXTO_CUERPO} cursor-pointer`}>
+                  <label className={`flex items-center gap-1.5 text-dato ${TEXTO_CUERPO} cursor-pointer`}>
                     <input
                       type="checkbox" checked={historico}
                       onChange={e => setHistorico(e.target.checked)}
@@ -226,11 +226,11 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
               </section>
 
               <section className="space-y-2">
-                <p className="text-xs font-bold text-text-primary">
+                <p className="text-dato font-bold text-text-primary">
                   2 · Complétala y vuelve a subirla
                 </p>
                 {!puedeEditar ? (
-                  <p className={`text-xs ${TEXTO_CUERPO}`}>
+                  <p className={`text-dato ${TEXTO_CUERPO}`}>
                     Tu perfil puede consultar la planilla, pero no cargarla.
                   </p>
                 ) : (
@@ -247,14 +247,14 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
                     }`}
                   >
                     {trabajando ? (
-                      <p className={`flex items-center justify-center gap-1.5 text-xs ${TEXTO_CUERPO}`}>
+                      <p className={`flex items-center justify-center gap-1.5 text-dato ${TEXTO_CUERPO}`}>
                         <Loader2 size={14} className="motion-safe:animate-spin" aria-hidden="true" />
                         Revisando la planilla…
                       </p>
                     ) : (
                       <>
                         <Upload size={18} className={`mx-auto mb-1.5 ${TEXTO_APOYO}`} aria-hidden="true" />
-                        <p className={`text-xs ${TEXTO_CUERPO}`}>
+                        <p className={`text-dato ${TEXTO_CUERPO}`}>
                           Arrastra la planilla o{' '}
                           <button
                             type="button" onClick={() => inputRef.current?.click()}
@@ -283,12 +283,12 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
 
           {paso === 'previa' && previa && (
             <section className="space-y-3">
-              <p className="text-sm font-bold text-text-primary">
+              <p className="text-lectura font-bold text-text-primary">
                 {previa.cambian === 0
                   ? 'No hay nada nuevo que registrar'
                   : `Se van a actualizar ${previa.cambian.toLocaleString('es-CL')} ${previa.cambian === 1 ? 'documento' : 'documentos'}`}
               </p>
-              <ul className={`text-xs ${TEXTO_CUERPO} space-y-1`}>
+              <ul className={`text-dato ${TEXTO_CUERPO} space-y-1`}>
                 {previa.recibidos > 0 && (
                   <li>
                     {previa.recibidos.toLocaleString('es-CL')}{' '}
@@ -318,13 +318,13 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
               </ul>
               {previa.total_errores > 0 && (
                 <div className="border border-espera/30 rounded-lg p-3 space-y-1.5">
-                  <p className="flex items-center gap-1.5 text-xs font-bold text-espera">
+                  <p className="flex items-center gap-1.5 text-dato font-bold text-espera">
                     <AlertTriangle size={13} aria-hidden="true" />
                     {previa.total_errores.toLocaleString('es-CL')}{' '}
                     {previa.total_errores === 1 ? 'fila con problema' : 'filas con problemas'}
                     {' · '}no se aplica nada hasta resolverlas
                   </p>
-                  <ul className={`text-xs ${TEXTO_CUERPO} space-y-0.5`}>
+                  <ul className={`text-dato ${TEXTO_CUERPO} space-y-0.5`}>
                     {previa.errores.map((e, i) => (
                       <li key={i}>
                         {e.fila ? `Fila ${e.fila}: ` : ''}{e.error}
@@ -332,13 +332,13 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
                     ))}
                   </ul>
                   {previa.total_errores > previa.errores.length && (
-                    <p className={`text-xs ${TEXTO_APOYO}`}>
+                    <p className={`text-dato ${TEXTO_APOYO}`}>
                       y {(previa.total_errores - previa.errores.length).toLocaleString('es-CL')} más
                     </p>
                   )}
                 </div>
               )}
-              <p className={`flex items-center gap-1.5 text-xs ${TEXTO_APOYO}`}>
+              <p className={`flex items-center gap-1.5 text-dato ${TEXTO_APOYO}`}>
                 <FileText size={12} aria-hidden="true" />
                 {archivo?.name}
               </p>
@@ -347,12 +347,12 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
 
           {paso === 'listo' && previa && (
             <section className="space-y-2">
-              <p className="flex items-center gap-1.5 text-sm font-bold text-resuelto">
+              <p className="flex items-center gap-1.5 text-lectura font-bold text-resuelto">
                 <CheckCircle2 size={15} aria-hidden="true" />
                 {previa.cambian.toLocaleString('es-CL')}{' '}
                 {previa.cambian === 1 ? 'documento actualizado' : 'documentos actualizados'}
               </p>
-              <p className={`text-xs ${TEXTO_CUERPO}`}>
+              <p className={`text-dato ${TEXTO_CUERPO}`}>
                 Siguen pendientes de archivo: lo que cambió es lo que sabemos de
                 ellos, no la evidencia.
               </p>

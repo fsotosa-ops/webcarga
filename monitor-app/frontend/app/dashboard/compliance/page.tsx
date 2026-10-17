@@ -50,7 +50,7 @@ const REDIRECCIONES: Record<string, string> = {
   ...Object.fromEntries(AL_DIRECTORIO.map(d => [d.vistaVieja, d.href])),
 }
 
-const INPUT = 'text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all'
+const INPUT = 'text-dato border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all'
 
 export default function CertificationPage() {
   return (
@@ -214,7 +214,7 @@ function CertificationPageInner() {
           {!statusQuery.isPending &&
             group === 'carrier' &&
             (statusQuery.data?.total_unclassified ?? 0) > 0 && (
-              <span className="text-etiqueta text-gray-400">
+              <span className="text-etiqueta text-informativo">
                 · {statusQuery.data?.total_unclassified} por asignar
               </span>
             )}
