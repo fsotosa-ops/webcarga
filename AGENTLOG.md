@@ -91,7 +91,12 @@ Reasignar, Descartados, Documentos exigidos) pasan a los tokens y a la escala; c
    la semántica de radio.
 9. Seguros por empresa: spec `docs/superpowers/specs/2026-10-17-seguros-por-empresa-design.md` (opción C elegida por el
    usuario 17/10: lista plana por empresa que abre en "No al día" + panel con pólizas y cuotas; Pólizas pierde el modo
-   por empresa; marca pagado alguien de WebCarga, como hoy). Falta: que el usuario apruebe el spec y escribir el plan.
+   por empresa; marca pagado alguien de WebCarga, como hoy). Spec aprobado 17/10; plan
+   `docs/superpowers/plans/2026-10-17-seguros-por-empresa.md` (7 tareas; migración de vista con autorización).
+10. Navegación en el teléfono: spec `docs/superpowers/specs/2026-10-17-navegacion-movil-design.md` (aprobado 17/10:
+   barra con hasta 4 destinos según el perfil + "Menú", cajón con el menú completo, cabecera oscura con el logo
+   oficial; etiquetas siempre, no solo íconos) y plan `docs/superpowers/plans/2026-10-17-navegacion-movil.md`
+   (5 tareas). **Orden: navegación primero** (mueve el menú a `lib/navegacion/menu.ts`), después Seguros.
 
 **Decisiones de arquitectura:**
 - Un solo modelo de filtro por pantalla; recuadros, embudos y chips son puertas al mismo filtro; cifras facetadas.
