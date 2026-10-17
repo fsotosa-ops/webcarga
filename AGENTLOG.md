@@ -16,6 +16,44 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### CHECKPOINT VIGENTE — Cierre con un solo patrón (16/10, desplegado en dev)
+
+**Qué hicimos** (plan `docs/superpowers/plans/2026-10-17-cierre-un-solo-patron.md`, spec
+`docs/superpowers/specs/2026-10-16-cierre-un-solo-patron-design.md`; commits 517f5d98..58277e73, push a dev 16/10):
+- Kit de tabla de datos `components/ui/tabla/data/` (TanStack Table): columnas declaradas una vez; filtro por columna con
+  búsqueda y cifras facetadas; columnas de varios valores; filtros del servidor (Cliente del Reporte); recuadros-atajo de
+  uno o varios valores; barra con chips, "+ Filtro", "Columnas" (ocultar/mover, por persona en `app.table_preferences`).
+- La vista vive en la URL y se escribe con `history.replaceState` (`useUrlView`), no con `router.replace`: con el router,
+  dos filtros seguidos podían dejar la URL de antes (hallado en el humo con el router real).
+- Un alcance (Tractoreo / Equipo Completo) arriba de las cuatro pestañas; Flota, Viajes, Pendientes y Reporte con el kit.
+  Reporte: Cliente como filtro (varios; backend acepta `shipper_id` repetido), Nº viaje en Asignados y Segundas vueltas,
+  "Descargar Excel" = lo que estás viendo (con recorte) o todo el día; el PDF no cambió.
+- Migración `20261026090000_table_preferences` APLICADA en la base real (16/10, ensayo con ROLLBACK, autorizada).
+- Fix aparte: la invitación por correo lleva a "crea tu contraseña" (`e7cd93b4`).
+- Verificado: vitest 1924/1924, tsc, build, backend del área 167/167 en la copia local, humo C11 + matriz 25/25,
+  capturas 1440/390. Revisión final opus: 4 Important arreglados (+ 1 re-graduado y 1 hallado en el pase).
+
+**Siguiente paso exacto:**
+1. Confirmar Deploy Frontend y Deploy Monitor API en verde y recorrer el Cierre en dev con sesión.
+2. **Decisión pendiente del usuario (hallazgo 3 de la revisión):** el resumen dice "N sin asignar" (todo menos Asignado) y
+   el recuadro "No asignados" cuenta Sin motivo + Trabajando sin asignación (regla de Operaciones 16/09); Reporte ›
+   Empresas dice "No asignados" con el primer sentido. Hay que nombrarlos distinto o unificar.
+3. Menores diferidos (ledger, sección Final): C7 solo en Flota (llevar al kit); elegir Cliente cierra el filtro;
+   `cancelQueries` en preferencias; `ShortcutTiles.loading`/`ready` sin uso; lista de alcances repetida; alcance de
+   Conductor sin empresa ignora tractos sin tipo.
+4. Prioridad #2 del usuario: descarga de viajes para cuadrar con las fuentes (Propietario/admins, diario y fin de mes).
+5. `SearchInput` compartido en las 12 listas.
+
+**Decisiones de arquitectura:**
+- Un solo modelo de filtro por pantalla; recuadros, embudos y chips son puertas al mismo filtro; cifras facetadas.
+- Secciones del Reporte que son tablas dinámicas con subtotales (Resumen, Asignados, No trabajaron) se quedan como tales;
+  las listas van a la tabla del kit (decisión del usuario 16/10).
+- "No asignados" = Sin motivo + Trabajando sin asignación (regla de Operaciones), contra la D5 de la spec (que partía de
+  un supuesto equivocado).
+- Un tipo `ClosureScope` en `lib/types.ts`; la regla de alcance en `lib/cierre/scope.ts` (`inScope`, `scopeGap`).
+- Enrique Campos (16/10): entra con Microsoft; lo frena la verificación en dos pasos de Administración (factor sin
+  verificar, 0 intentos). No es la contraseña.
+
 ### PARA LA PRÓXIMA SESIÓN (actualizado 14/10, sesión de decisiones hecha)
 
 **Plan aprobado 14/10:** `docs/superpowers/plans/2026-10-14-cerrar-directorio-y-certificacion.md`.
