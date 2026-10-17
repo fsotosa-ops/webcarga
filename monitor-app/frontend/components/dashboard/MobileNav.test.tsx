@@ -51,7 +51,7 @@ describe('MobileNav: la barra', () => {
   it('en una pantalla que no está en la barra, "Menú" queda marcado (N4)', () => {
     nav.ruta = '/dashboard/insurance/installments'
     montar()
-    expect(within(barra()).getByRole('button', { name: /^Menú/ })).toHaveAttribute('aria-current', 'true')
+    expect(within(barra()).getByRole('button', { name: /^Menú/ })).toHaveAttribute('data-state', 'active')
     for (const a of within(barra()).getAllByRole('link')) expect(a).not.toHaveAttribute('aria-current')
   })
 
@@ -106,7 +106,7 @@ describe('MobileNav: la entrada activa se calcula sobre todo el menú', () => {
     nav.ruta = '/dashboard/compliance/inbox'
     montar(GENERAL)
     for (const a of within(barra()).getAllByRole('link')) expect(a).not.toHaveAttribute('aria-current')
-    expect(within(barra()).getByRole('button', { name: /^Menú/ })).toHaveAttribute('aria-current', 'true')
+    expect(within(barra()).getByRole('button', { name: /^Menú/ })).toHaveAttribute('data-state', 'active')
   })
 
   it('en el cajón solo la entrada de la pantalla queda marcada (Cuotas, no también Pólizas)', () => {
@@ -140,5 +140,33 @@ describe('MobileNav: el cajón y el ancho de la pantalla', () => {
     const cajon = screen.getByRole('dialog', { name: 'Menú' })
     expect(within(cajon).queryByRole('menu')).toBeNull()
     expect(within(cajon).getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument()
+  })
+})
+
+describe('MobileNav: el estado de "Menú" y el botón Atrás', () => {
+  it('"Menú" no se anuncia como la ubicación (eso lo dice la entrada del cajón): su estado es solo visual', () => {
+    nav.ruta = '/dashboard/insurance/installments'
+    montar()
+    const boton = within(barra()).getByRole('button', { name: /^Menú/ })
+    expect(boton).not.toHaveAttribute('aria-current')
+    expect(boton).toHaveAttribute('data-state', 'active')
+  })
+
+  it('Atrás del teléfono con el cajón abierto cierra el cajón y no sale de la pantalla', () => {
+    montar()
+    const antes = window.history.length
+    fireEvent.click(within(barra()).getByRole('button', { name: /^Menú/ }))
+    expect(window.history.length).toBe(antes + 1)
+    act(() => { window.dispatchEvent(new PopStateEvent('popstate')) })
+    expect(screen.queryByRole('dialog', { name: 'Menú' })).toBeNull()
+  })
+
+  it('cerrar con ✕ deshace la entrada del historial que abrió el cajón', () => {
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+    montar()
+    fireEvent.click(within(barra()).getByRole('button', { name: /^Menú/ }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Menú' })).getByRole('button', { name: 'Cerrar' }))
+    expect(back).toHaveBeenCalledTimes(1)
+    back.mockRestore()
   })
 })

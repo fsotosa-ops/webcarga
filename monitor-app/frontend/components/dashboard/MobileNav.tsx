@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Menu, X } from 'lucide-react'
@@ -13,24 +13,51 @@ import { AccountActions } from './AccountActions'
 
 // ── Abrir el cajón desde fuera (el avatar de la cabecera) ──────────────────────
 
-const MobileMenuContext = createContext<{ isOpen: boolean; open(): void; close(): void } | null>(null)
+type MobileMenu = {
+  isOpen: boolean
+  open(): void
+  /** Cerrar por decisión de la persona (✕, Escape, el fondo): deshace la entrada del historial. */
+  close(): void
+  /** Cerrar porque se navegó: la entrada del historial ya la reemplazó la pantalla nueva. */
+  dismiss(): void
+}
+const MobileMenuContext = createContext<MobileMenu | null>(null)
 
 /** El cajón "Menú" se abre desde la barra y desde el avatar de la cabecera: el estado vive
  *  aquí para que la cabecera no conozca el cajón. */
 export function MobileMenuProvider({ children }: { children: ReactNode }) {
   const [isOpen, setOpen] = useState(false)
-  // Funciones estables: el cajón se cierra en un efecto que depende de `close`.
-  const open = useCallback(() => setOpen(true), [])
-  const close = useCallback(() => setOpen(false), [])
+  // El cajón abierto es una entrada del historial (el estándar de las hojas en la web): el
+  // botón Atrás del teléfono lo cierra en vez de salir de la pantalla. `pushed` dice si esa
+  // entrada sigue arriba.
+  const pushed = useRef(false)
+  // Funciones estables: el cajón se cierra en efectos que dependen de ellas.
+  const open = useCallback(() => {
+    if (pushed.current) return
+    window.history.pushState({ mobileMenu: true }, '')
+    pushed.current = true
+    setOpen(true)
+  }, [])
+  const dismiss = useCallback(() => { pushed.current = false; setOpen(false) }, [])
+  const close = useCallback(() => {
+    if (pushed.current) { pushed.current = false; window.history.back() }
+    setOpen(false)
+  }, [])
+  // Atrás con el cajón abierto: el navegador ya sacó la entrada; solo se cierra.
+  useEffect(() => {
+    const onPop = () => { if (pushed.current) dismiss() }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [dismiss])
   // El cajón es del teléfono: si la pantalla pasa a escritorio (girar una tableta) con el
   // cajón abierto, se cierra; si no, su fondo oscuro quedaría sobre la barra lateral.
   useEffect(() => {
     const desktop = window.matchMedia('(min-width: 48rem)')
-    const onChange = (e: { matches: boolean }) => { if (e.matches) setOpen(false) }
+    const onChange = (e: { matches: boolean }) => { if (e.matches) close() }
     desktop.addEventListener('change', onChange)
     return () => desktop.removeEventListener('change', onChange)
-  }, [])
-  const value = useMemo(() => ({ isOpen, open, close }), [isOpen, open, close])
+  }, [close])
+  const value = useMemo(() => ({ isOpen, open, close, dismiss }), [isOpen, open, close, dismiss])
   return <MobileMenuContext.Provider value={value}>{children}</MobileMenuContext.Provider>
 }
 
@@ -69,8 +96,8 @@ export function MobileNav({ acceso }: { acceso: Acceso }) {
     .some(l => !barHrefs.includes(l.href) && (countOf(l) ?? 0) > 0))
 
   // Navegar cierra el cajón (un Link no lo desmonta).
-  const { close } = menu
-  useEffect(() => { close() }, [pathname, close])
+  const { dismiss } = menu
+  useEffect(() => { dismiss() }, [pathname, dismiss])
 
   return (
     <>
@@ -90,7 +117,8 @@ export function MobileNav({ acceso }: { acceso: Acceso }) {
             </Link>
           )
         })}
-        <button type="button" onClick={menu.open} aria-current={inBar ? undefined : 'true'}
+        {/* El estado de "Menú" es solo visual: la ubicación la anuncia la entrada del cajón. */}
+        <button type="button" onClick={menu.open} data-state={inBar ? undefined : 'active'}
           aria-label={pendingInMenu ? 'Menú, hay pendientes' : 'Menú'}
           className={`relative flex flex-col items-center justify-center gap-1 transition-colors ${inBar ? 'text-white/45 hover:text-white/75' : 'text-white'}`}>
           <Menu size={20} aria-hidden="true" className={inBar ? '' : 'text-accent'} />
@@ -116,7 +144,9 @@ export function MobileNav({ acceso }: { acceso: Acceso }) {
                 <section key={e.label} className="py-1.5">
                   {isGroup(e) && <h2 className="py-1 text-etiqueta font-semibold text-informativo">{e.label}</h2>}
                   {leaves.map(l => (
-                    <Link key={l.href} href={l.href} onClick={menu.close}
+                    // `replace`: la pantalla nueva reemplaza la entrada del cajón, así Atrás
+                    // vuelve a la pantalla anterior y no a "la misma con el cajón".
+                    <Link key={l.href} href={l.href} replace onClick={menu.dismiss}
                       aria-current={l.href === current ? 'page' : undefined}
                       className="flex items-center justify-between border-b border-border/60 py-2 text-dato text-text-primary aria-[current=page]:font-semibold aria-[current=page]:text-accion">
                       {l.label}
