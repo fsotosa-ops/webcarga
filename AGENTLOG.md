@@ -92,7 +92,23 @@ Reasignar, Descartados, Documentos exigidos) pasan a los tokens y a la escala; c
 9. Seguros por empresa: spec `docs/superpowers/specs/2026-10-17-seguros-por-empresa-design.md` (opción C elegida por el
    usuario 17/10: lista plana por empresa que abre en "No al día" + panel con pólizas y cuotas; Pólizas pierde el modo
    por empresa; marca pagado alguien de WebCarga, como hoy). Spec aprobado 17/10; plan
-   `docs/superpowers/plans/2026-10-17-seguros-por-empresa.md` (7 tareas; migración de vista con autorización).
+   `docs/superpowers/plans/2026-10-17-seguros-por-empresa.md` (7 tareas). **HECHO 17/10** (`274fc4dd..4007c88c`):
+   - Base: `app.carrier_insurance_summary` calcula `insurance_verdict` (EXPIRED > NO_POLICY > OVERDUE > NO_DATES >
+     EXPIRING > UP_TO_DATE), `severe_overdue` y los datos de la razón; se arma desde `public.carriers`. Migración
+     `20261027090000_insurance_verdict` ensayada con ROLLBACK y **APLICADA en la real con autorización** (41 empresas:
+     7 vencidas, 18 sin póliza, 16 con cuotas vencidas, 0 al día; las 7 columnas de antes y las alertas del Monitor
+     sin cambios).
+   - API: `/insurance/carriers` y `/insurance/carriers/{id}`; fuera `group_by` de /policies y `/carriers/{id}/policies`.
+   - Frontend: Seguros › Empresas (abre en "No al día", recuadros, razón, panel con pólizas y cuotas), Pólizas en
+     `/dashboard/insurance/policies`, contador del menú en Empresas (con `insurance.read`), `useUrlView({ initial })`,
+     `formatUf` único, guardia E9 (el veredicto solo por el glosario).
+   - Revisión opus: 2 Important + 4 re-graduados, arreglados con test. Diferidos: quitar el filtro inicial no sobrevive
+     a Atrás; razón de NO_POLICY con una renovada con deuda; coberturas en la tarjeta del panel; `worst_state` sin uso
+     en el frontend; marcadores viejos de Pólizas conservan parámetros.
+   - Verificación: vitest 2.023/2.023, tsc, build, backend del área 110 (copia local), humo 29/29 (8 reintentados por
+     carga de la máquina, load 150; todos timeouts). Backend: 11 fallos previos al plan (D1 Directorio, identity,
+     cliente del viaje, tablero retirado) siguen fuera de alcance.
+   - Falta: mirarlo en dev a 1440 y 390 tras el despliegue.
 10. Navegación en el teléfono: spec `docs/superpowers/specs/2026-10-17-navegacion-movil-design.md` (aprobado 17/10:
    barra con hasta 4 destinos según el perfil + "Menú", cajón con el menú completo, cabecera oscura con el logo
    oficial; etiquetas siempre, no solo íconos) y plan `docs/superpowers/plans/2026-10-17-navegacion-movil.md`
@@ -100,7 +116,8 @@ Reasignar, Descartados, Documentos exigidos) pasan a los tokens y a la escala; c
    definición), contadores en `useNavCounts`, `MobileNav` (barra por perfil + cajón sobre `Dialog`), `AccountActions` y
    `useSignOut` compartidos con la barra lateral, cabecera oscura con el logo oficial. Revisión opus: 3 Important + 1
    re-graduado, arreglados con test. Diferidos: `aria-current` en el botón Menú; Atrás de Android con el cajón abierto.
-   **Siguiente: el plan de Seguros por empresa.**
+   **Siguiente:** revisar Seguros › Empresas en dev; luego los temas diferidos (descarga de viajes para conciliar,
+   SearchInput común).
 
 **Decisiones de arquitectura:**
 - Un solo modelo de filtro por pantalla; recuadros, embudos y chips son puertas al mismo filtro; cifras facetadas.
