@@ -47,3 +47,55 @@ describe('carrierInsuranceStyle', () => {
     expect(carrierInsuranceStyle('VALID').label).toBe('Al día')
   })
 })
+
+// ── Seguros por empresa (17/10): el veredicto y su razón ──────────────────────
+import {
+  INSURANCE_VERDICT_ORDER, insuranceStanding, insuranceVerdictReason, insuranceVerdictStyle,
+} from './states'
+import type { CarrierInsuranceRow } from './api/insurance'
+
+const HOY = '2026-10-17'
+const fila = (p: Partial<CarrierInsuranceRow>): CarrierInsuranceRow => ({
+  carrier_id: 'c', carrier_name: 'Andes', carrier_tax_id: '1-9', operational_status: 'ACTIVE', policies: 1,
+  worst_state: 'VALID', insurance_verdict: 'UP_TO_DATE', insurance_alert: null, severe_overdue: false,
+  unpaid_installments: 0, overdue_installments: 0, unpaid_uf: null, oldest_overdue_date: null, next_due_date: null,
+  reason_insurer: null, reason_valid_to: null, ...p,
+})
+
+describe('el veredicto de una empresa (E5)', () => {
+  it('cada veredicto se explica con sus datos, en una línea', () => {
+    expect(insuranceVerdictReason(fila({ insurance_verdict: 'EXPIRED', reason_insurer: 'HDI', reason_valid_to: '2026-09-23', overdue_installments: 2 }), HOY))
+      .toBe('HDI venció el 23/09 · 2 cuotas vencidas')
+    expect(insuranceVerdictReason(fila({ insurance_verdict: 'NO_POLICY', policies: 0 }), HOY)).toBe('Activa sin pólizas registradas')
+    expect(insuranceVerdictReason(fila({ insurance_verdict: 'NO_POLICY', policies: 0, operational_status: 'INACTIVE' }), HOY)).toBe('Dada de baja, sin pólizas')
+    expect(insuranceVerdictReason(fila({ insurance_verdict: 'OVERDUE', oldest_overdue_date: '2026-08-25', unpaid_uf: 18.4 }), HOY))
+      .toBe('La más antigua venció el 25/08 · 18,4 UF impagas')
+    expect(insuranceVerdictReason(fila({ insurance_verdict: 'NO_DATES', reason_insurer: 'Mapfre' }), HOY)).toBe('Mapfre sin fecha de término')
+    expect(insuranceVerdictReason(fila({ insurance_verdict: 'EXPIRING', reason_insurer: 'Mapfre', reason_valid_to: '2026-11-02' }), HOY)).toBe('Mapfre vence el 02/11')
+    expect(insuranceVerdictReason(fila({ insurance_verdict: 'UP_TO_DATE', next_due_date: '2026-11-15' }), HOY)).toBe('Próxima cuota el 15/11')
+    expect(insuranceVerdictReason(fila({ insurance_verdict: 'UP_TO_DATE' }), HOY)).toBe('Sin cuotas por pagar')
+  })
+
+  it('sin montos cargados, la razón de cuotas vencidas no dice "0 UF"', () => {
+    expect(insuranceVerdictReason(fila({ insurance_verdict: 'OVERDUE', oldest_overdue_date: '2026-08-25', unpaid_uf: null }), HOY))
+      .toBe('La más antigua venció el 25/08')
+  })
+
+  it('una cuota vencida es aviso; dos en la misma póliza, urgente', () => {
+    expect(insuranceVerdictStyle(fila({ insurance_verdict: 'OVERDUE', overdue_installments: 1 })).tone).toBe('warning')
+    const grave = insuranceVerdictStyle(fila({ insurance_verdict: 'OVERDUE', overdue_installments: 3, severe_overdue: true }))
+    expect(grave.tone).toBe('urgent')
+    expect(grave.label).toBe('3 cuotas vencidas')
+    expect(insuranceVerdictStyle(fila({ insurance_verdict: 'EXPIRED' })).label).toBe('Póliza vencida')
+  })
+
+  it('"No al día" junta los cuatro que piden acción; Por vencer y Al día están al día', () => {
+    expect(['EXPIRED', 'NO_POLICY', 'OVERDUE', 'NO_DATES'].map(v => insuranceStanding(v as never))).toEqual(Array(4).fill('not_up_to_date'))
+    expect(insuranceStanding('EXPIRING')).toBe('expiring')
+    expect(insuranceStanding('UP_TO_DATE')).toBe('up_to_date')
+  })
+
+  it('el orden de gravedad es el del spec', () => {
+    expect(INSURANCE_VERDICT_ORDER).toEqual(['EXPIRED', 'NO_POLICY', 'OVERDUE', 'NO_DATES', 'EXPIRING', 'UP_TO_DATE'])
+  })
+})

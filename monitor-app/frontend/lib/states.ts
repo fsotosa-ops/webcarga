@@ -9,6 +9,7 @@ import { hoyEnChile } from './utils/datetime'
 import type { ScopeGap } from './cierre/scope'
 import type { FleetStatus, ReasonType } from './cierre/dayFleet'
 import type { SignalTone } from './utils/alertSignals'
+import type { CarrierInsuranceRow, InsuranceVerdict } from './api/insurance'
 
 /**
  * El glosario de estados en código (spec D1 §3 y §6.4): el ÚNICO lugar del
@@ -327,6 +328,65 @@ export const OUTSIDE_VALIDITY_STYLE: StateStyle = { label: 'Fuera de vigencia', 
  *  póliza" (18 de 36 activas el 15/10), que es lo más urgente. */
 export function carrierInsuranceStyle(state: Exclude<PolicyState, 'CANCELLED' | 'RENEWED'> | 'NO_POLICY'): StateStyle {
   return state === 'NO_POLICY' ? { label: 'Sin póliza', tone: 'urgent', icon: ShieldOff } : POLICY[state]
+}
+
+// ── El veredicto de una empresa (Seguros por empresa, 17/10) ──────────────────
+// Lo calcula la base (app.carrier_insurance_summary); aquí se vuelve palabra, tono,
+// ícono y una razón de una línea con los datos que trae la fila.
+
+/** Por gravedad: el orden de la lista y de los recuadros. */
+export const INSURANCE_VERDICT_ORDER: readonly InsuranceVerdict[] =
+  ['EXPIRED', 'NO_POLICY', 'OVERDUE', 'NO_DATES', 'EXPIRING', 'UP_TO_DATE']
+
+const VERDICT: Record<Exclude<InsuranceVerdict, 'OVERDUE'>, StateStyle> = {
+  EXPIRED:    { label: 'Póliza vencida',    tone: 'urgent',   icon: ShieldAlert },
+  NO_POLICY:  { label: 'Sin póliza',        tone: 'urgent',   icon: ShieldOff },
+  NO_DATES:   { label: 'Póliza sin fechas', tone: 'warning',  icon: CircleDashed },
+  EXPIRING:   { label: 'Por vencer',        tone: 'warning',  icon: Clock },
+  UP_TO_DATE: { label: 'Al día',            tone: 'resolved', icon: ShieldCheck },
+}
+
+/** El chip del veredicto. Cuotas vencidas dice cuántas, y es urgente si alguna póliza
+ *  tiene 2 o más (la regla D2), aviso si no. */
+export function insuranceVerdictStyle(r: Pick<CarrierInsuranceRow, 'insurance_verdict' | 'overdue_installments' | 'severe_overdue'>): StateStyle {
+  if (r.insurance_verdict !== 'OVERDUE') return VERDICT[r.insurance_verdict]
+  const n = r.overdue_installments
+  return { label: `${n} cuota${n === 1 ? '' : 's'} vencida${n === 1 ? '' : 's'}`, tone: r.severe_overdue ? 'urgent' : 'warning', icon: TriangleAlert }
+}
+
+/** "No al día" son los que piden acción; "Por vencer" y "Al día" están al día. */
+export type InsuranceStanding = 'not_up_to_date' | 'expiring' | 'up_to_date'
+export const INSURANCE_STANDING_LABEL: Record<InsuranceStanding, string> = {
+  not_up_to_date: 'No al día', expiring: 'Por vencer', up_to_date: 'Al día',
+}
+export function insuranceStanding(v: InsuranceVerdict): InsuranceStanding {
+  return v === 'EXPIRING' ? 'expiring' : v === 'UP_TO_DATE' ? 'up_to_date' : 'not_up_to_date'
+}
+
+const uf = (n: number) => `${n.toLocaleString('es-CL', { maximumFractionDigits: 1 })} UF`
+
+/** La razón del veredicto, en una línea, con los datos de la fila (sin recalcular nada). */
+export function insuranceVerdictReason(r: CarrierInsuranceRow, hoy: string = hoyEnChile()): string {
+  const aseguradora = r.reason_insurer ?? 'La póliza'
+  switch (r.insurance_verdict) {
+    case 'EXPIRED': {
+      const base = r.reason_valid_to ? `${aseguradora} venció el ${fechaCorta(r.reason_valid_to, hoy)}` : 'Póliza vencida'
+      const n = r.overdue_installments
+      return n > 0 ? `${base} · ${n} cuota${n === 1 ? '' : 's'} vencida${n === 1 ? '' : 's'}` : base
+    }
+    case 'NO_POLICY':
+      return r.operational_status === 'ACTIVE' ? 'Activa sin pólizas registradas' : 'Dada de baja, sin pólizas'
+    case 'OVERDUE': {
+      const base = r.oldest_overdue_date ? `La más antigua venció el ${fechaCorta(r.oldest_overdue_date, hoy)}` : 'Cuotas vencidas'
+      return r.unpaid_uf ? `${base} · ${uf(r.unpaid_uf)} impagas` : base
+    }
+    case 'NO_DATES':
+      return `${aseguradora} sin fecha de término`
+    case 'EXPIRING':
+      return r.reason_valid_to ? `${aseguradora} vence el ${fechaCorta(r.reason_valid_to, hoy)}` : 'Por vencer'
+    case 'UP_TO_DATE':
+      return r.next_due_date ? `Próxima cuota el ${fechaCorta(r.next_due_date, hoy)}` : 'Sin cuotas por pagar'
+  }
 }
 
 /** Las cuotas de una póliza o una empresa en una sola señal: "11 vencidas",

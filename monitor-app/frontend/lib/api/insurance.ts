@@ -27,6 +27,10 @@ export type PolicyRow = {
   has_outside_validity: boolean
 }
 
+/** El veredicto de una empresa en Seguros (app.carrier_insurance_summary), por gravedad. */
+export type InsuranceVerdict = 'EXPIRED' | 'NO_POLICY' | 'OVERDUE' | 'NO_DATES' | 'EXPIRING' | 'UP_TO_DATE'
+
+/** Una empresa en Seguros: su veredicto y los datos que lo explican, de la vista. */
 export type CarrierInsuranceRow = {
   carrier_id: string
   carrier_name: string
@@ -34,10 +38,29 @@ export type CarrierInsuranceRow = {
   operational_status: string
   policies: number
   worst_state: CarrierInsuranceState
+  insurance_verdict: InsuranceVerdict
+  insurance_alert: InsuranceAlert | null
+  /** Alguna póliza con 2 o más cuotas vencidas (la regla D2). */
+  severe_overdue: boolean
   unpaid_installments: number
   overdue_installments: number
+  unpaid_uf: number | null
+  oldest_overdue_date: string | null
   next_due_date: string | null
-  insurance_alert: InsuranceAlert | null
+  /** La póliza que explica Vencida / Sin fechas / Por vencer. */
+  reason_insurer: string | null
+  reason_valid_to: string | null
+}
+
+/** Una empresa con sus pólizas no canceladas (las renovadas, solo con deuda) y sus cuotas. */
+export type CarrierInsuranceDetail = {
+  summary: CarrierInsuranceRow
+  policies: (PolicyRow & { installments: InstallmentRow[] })[]
+}
+
+export type CarrierInsuranceOverview = {
+  data: CarrierInsuranceRow[]
+  facets: Record<InsuranceVerdict, number> & { total: number }
 }
 
 export type InstallmentRow = {
@@ -105,6 +128,10 @@ export const insuranceApi = {
   listCarriers: (p: { state?: string; q?: string; page?: number; limit?: number } = {}) =>
     apiFetch<CarriersInsuranceResponse>(`/api/v1/policies?${qs({ group_by: 'carrier', state: p.state, q: p.q, page: p.page, limit: p.limit })}`),
   carrierPolicies: (carrierId: string) => apiFetch<PolicyRow[]>(`/api/v1/carriers/${carrierId}/policies`),
+  /** Seguros › Empresas: todas, con su veredicto. */
+  carrierOverview: () => apiFetch<CarrierInsuranceOverview>('/api/v1/insurance/carriers'),
+  /** El detalle de una empresa: su veredicto y sus pólizas con cuotas. */
+  carrier: (carrierId: string) => apiFetch<CarrierInsuranceDetail>(`/api/v1/insurance/carriers/${carrierId}`),
   listInstallments: (p: { state?: InstallmentFilter; q?: string; page?: number; limit?: number } = {}) =>
     apiFetch<InstallmentsResponse>(`/api/v1/installments?${qs({ state: p.state, q: p.q, page: p.page, limit: p.limit })}`),
   get: (id: string) => apiFetch<PolicyDetail>(`/api/v1/policies/${id}`),
