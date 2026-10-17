@@ -3,6 +3,8 @@
 import { Lock } from 'lucide-react'
 import type { PermisoInfo, RoleInfo } from '@/lib/api/access'
 import { useAcceso } from '@/lib/authz/PermisosProvider'
+import { FIELD_LABEL } from '@/components/ui/Field'
+import { SEGMENT_GROUP, segmentClass } from '@/components/ui/SegmentedControl'
 import {
   AREAS, ROLES_GENERALES, codigoDe, conNivel, esRolDeArea, motivoNoOtorgable, nivelEnArea, type Nivel,
 } from '@/lib/authz/roles'
@@ -77,7 +79,7 @@ export default function SelectorDeRoles({ roles, catalogo, value, onChange, orig
   return (
     <div className="space-y-5">
       <fieldset className="space-y-2.5">
-        <legend className="text-etiqueta font-bold uppercase tracking-wide text-informativo mb-2">Por área</legend>
+        <legend className={`${FIELD_LABEL} mb-2`}>Por área</legend>
         {AREAS.map(a => {
           const actual = nivelEnArea(value, a.clave)
           const opciones = NIVELES.filter(n => n.nivel === 'none' || porCodigo.has(codigoDe(a.clave, n.nivel)))
@@ -89,7 +91,7 @@ export default function SelectorDeRoles({ roles, catalogo, value, onChange, orig
             <div key={a.clave} className="grid grid-cols-1 sm:grid-cols-[110px_minmax(0,1fr)] gap-1.5 sm:gap-3 sm:items-center">
               <span id={`area-${a.clave}`} className="text-dato text-text-primary">{a.titulo}</span>
               <div className="min-w-0 space-y-1">
-                <div role="radiogroup" aria-labelledby={`area-${a.clave}`} className="inline-flex flex-wrap rounded-lg border border-border overflow-hidden">
+                <div role="radiogroup" aria-labelledby={`area-${a.clave}`} className={SEGMENT_GROUP}>
                   {opciones.map(n => {
                     const code = n.nivel === 'none' ? null : codigoDe(a.clave, n.nivel)
                     const bloqueado = code !== null && motivo(porCodigo.get(code)!) !== null
@@ -97,9 +99,11 @@ export default function SelectorDeRoles({ roles, catalogo, value, onChange, orig
                     return (
                       <label
                         key={n.nivel}
-                        className={`px-3 py-1.5 text-dato border-r border-border last:border-r-0 focus-within:ring-2 focus-within:ring-accent ${
-                          elegido ? 'bg-accent text-white font-medium' : bloqueado ? 'text-informativo cursor-not-allowed' : 'text-text-primary cursor-pointer hover:bg-bg-main'
-                        }`}
+                        // El aspecto del control segmentado del kit; la semántica sigue siendo
+                        // un radio (una opción por área, algunas bloqueadas con su motivo).
+                        className={`${segmentClass({ on: elegido, disabled: bloqueado && !elegido })} ${
+                          bloqueado && !elegido ? '' : 'cursor-pointer'
+                        } focus-within:ring-2 focus-within:ring-inset focus-within:ring-accent/40`}
                       >
                         <input
                           type="radio"
@@ -124,13 +128,13 @@ export default function SelectorDeRoles({ roles, catalogo, value, onChange, orig
       </fieldset>
 
       <fieldset>
-        <legend className="text-etiqueta font-bold uppercase tracking-wide text-informativo mb-1">Toda la app</legend>
+        <legend className={`${FIELD_LABEL} mb-1`}>Toda la app</legend>
         {[...generales, ...otrosDeSistema].map(r => <Casilla key={r.code} r={r} porQue={motivo(r)} marcado={value.includes(r.code)} onToggle={() => alternar(r.code)} />)}
       </fieldset>
 
       {personalizados.length > 0 && (
         <fieldset>
-          <legend className="text-etiqueta font-bold uppercase tracking-wide text-informativo mb-1">Personalizados</legend>
+          <legend className={`${FIELD_LABEL} mb-1`}>Personalizados</legend>
           {personalizados.map(r => <Casilla key={r.code} r={r} porQue={motivo(r)} marcado={value.includes(r.code)} onToggle={() => alternar(r.code)} />)}
         </fieldset>
       )}

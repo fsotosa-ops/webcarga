@@ -86,8 +86,13 @@ Reasignar, Descartados, Documentos exigidos) pasan a los tokens y a la escala; c
    principales escritos a mano (trinquete en 17); `TEXTO_CUERPO` (gray-600, lib/ui/texto.ts) sin token equivalente.
 8. ~~Administración en dev~~ MIRADA 17/10 (Personas, Crear usuario, Editar roles; 1440 y 390). Halló que el fondo de una
    ventana abierta dentro de un `space-y` heredaba margin-bottom y medía 16 px menos: `Dialog` va envuelta en un
-   contenedor sin caja (`251ec162`, test incluido). Queda menor: `SelectorDeRoles` con etiquetas en mayúsculas
-   ("POR ÁREA", "TODA LA APP").
+   contenedor sin caja (`251ec162`, test incluido). `SelectorDeRoles` alineado 17/10: títulos con `FIELD_LABEL` y el
+   nivel por área con el aspecto del kit (`segmentClass`/`SEGMENT_GROUP`, expuestos por SegmentedControl), sin perder
+   la semántica de radio.
+9. Seguros, siguiente spec (pregunta del usuario 17/10): WebCarga MONITOREA si cada transportista está al día con sus
+   pólizas (no paga). Propuesta: Cuotas agrupada por empresa por defecto (veredicto por cabecera, orden por riesgo,
+   póliza → cuotas al expandir, "Agrupar por" Póliza/Aseguradora/Ninguno con getGroupedRowModel del kit). Abiertas:
+   ¿unificar con Pólizas "por empresa"? ¿quién marca pagado y con qué respaldo? Orden respecto de descarga de viajes.
 
 **Decisiones de arquitectura:**
 - Un solo modelo de filtro por pantalla; recuadros, embudos y chips son puertas al mismo filtro; cifras facetadas.

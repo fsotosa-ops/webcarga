@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import SelectorDeRoles from './SelectorDeRoles'
+import { segmentClass } from '@/components/ui/SegmentedControl'
+import { FIELD_LABEL } from '@/components/ui/Field'
 import { PermisosProvider } from '@/lib/authz/PermisosProvider'
 import { ADMIN, CATALOGO, ROLES } from './rolesDePrueba'
 
@@ -40,5 +42,19 @@ describe('SelectorDeRoles', () => {
     mostrar([])
     const seguros = screen.getByRole('radiogroup', { name: 'Seguros' })
     expect(seguros.querySelector('[value="supervisor"]')).toBeNull()
+  })
+
+  it('el nivel elegido se ve como el control segmentado del kit, no con un estilo propio', () => {
+    mostrar([])
+    const elegido = screen.getByRole('radiogroup', { name: 'Operaciones' }).querySelector('input:checked')!.closest('label')!
+    expect(elegido.className).toContain(segmentClass({ on: true }))
+  })
+
+  it('los títulos de grupo son la etiqueta del kit, sin mayúsculas forzadas', () => {
+    mostrar([])
+    for (const titulo of ['Por área', 'Toda la app']) {
+      expect(screen.getByText(titulo)).not.toHaveClass('uppercase')
+      expect(screen.getByText(titulo).className).toContain(FIELD_LABEL)
+    }
   })
 })
