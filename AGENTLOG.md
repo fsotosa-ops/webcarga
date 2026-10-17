@@ -35,9 +35,9 @@
 
 **Siguiente paso exacto:**
 1. Confirmar Deploy Frontend y Deploy Monitor API en verde y recorrer el Cierre en dev con sesión.
-2. **Decisión pendiente del usuario (hallazgo 3 de la revisión):** el resumen dice "N sin asignar" (todo menos Asignado) y
-   el recuadro "No asignados" cuenta Sin motivo + Trabajando sin asignación (regla de Operaciones 16/09); Reporte ›
-   Empresas dice "No asignados" con el primer sentido. Hay que nombrarlos distinto o unificar.
+2. ~~Hallazgo 3~~ RESUELTO (16/10, decisión del usuario): modelo estándar estado + tipo de motivo (`e2b45aeb`, `42a732d0`,
+   en dev). Pendiente del usuario: configurar "Viaje entregado sin cierre del TMS" (`stale_trip_days`, hoy vacío: por eso
+   el viaje 2015669, entregado el 25/07, sigue en Por resolver) y anular el 2015269 (registrado por error).
 3. Menores diferidos (ledger, sección Final): C7 solo en Flota (llevar al kit); elegir Cliente cierra el filtro;
    `cancelQueries` en preferencias; `ShortcutTiles.loading`/`ready` sin uso; lista de alcances repetida; alcance de
    Conductor sin empresa ignora tractos sin tipo.
@@ -48,8 +48,12 @@
 - Un solo modelo de filtro por pantalla; recuadros, embudos y chips son puertas al mismo filtro; cifras facetadas.
 - Secciones del Reporte que son tablas dinámicas con subtotales (Resumen, Asignados, No trabajaron) se quedan como tales;
   las listas van a la tabla del kit (decisión del usuario 16/10).
-- "No asignados" = Sin motivo + Trabajando sin asignación (regla de Operaciones), contra la D5 de la spec (que partía de
-  un supuesto equivocado).
+- Estado + tipo de motivo (decisión del usuario 16/10, estándar de utilización): Estado = Asignado / No asignado / Por
+  regularizar; Tipo de motivo (solo no asignados, del grupo del catálogo) = Sin motivo / Trabajó sin asignación / No
+  trabajó. "No asignados" es todo lo no asignado, igual en recuadro, resumen y Reporte. Recuadros en dos grupos que se
+  reemplazan (kit `ShortcutTiles` con `groups`, cifra = lo que se vería al tocarlo).
+- La zona del destino vive en `services/destination_zone.py` (movida desde routers/trips.py): Monitor, Reporte, Flota,
+  Viajes y Pendientes la leen de ahí; las palabras de zona en `DESTINATION_ZONE_LABEL` (lib/states.ts).
 - Un tipo `ClosureScope` en `lib/types.ts`; la regla de alcance en `lib/cierre/scope.ts` (`inScope`, `scopeGap`).
 - Enrique Campos (16/10): entra con Microsoft; lo frena la verificación en dos pasos de Administración (factor sin
   verificar, 0 intentos). No es la contraseña.
