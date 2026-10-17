@@ -6,16 +6,16 @@ vi.mock('@/lib/api/config', () => ({
 }))
 
 import { configApi, taxonomiesApi } from '@/lib/api/config'
-import { boardStatusSource, vocabularySource } from './settings-sources'
+import { tripStatusSource, vocabularySource } from './settings-sources'
 
 const ESTADO = { id: 'VIAJE EN PREDIO', label: 'Viaje en Predio', group: 'en_local', sort_order: 5 }
 const MOTIVO = { id: 'm1', label: 'Panne', group: 'no_trabajando', sort_order: 1, active: true, code: null }
 
 beforeEach(() => vi.clearAllMocks())
 
-describe('boardStatusSource (estados del tablero)', () => {
+describe('tripStatusSource (estados del viaje)', () => {
   it('se edita el nombre visible y la columna; el orden se mueve; no se crea ni se desactiva', async () => {
-    const src = boardStatusSource
+    const src = tripStatusSource
     expect(src.fields(undefined).map(f => f.key)).toEqual(['label', 'group'])
     const columna = src.fields(undefined).find(f => f.key === 'group')!
     expect(columna.kind === 'select' && columna.options.map(o => o.id)).toContain('pendiente_cierre_tms')
@@ -40,9 +40,9 @@ describe('vocabularySource', () => {
     expect(taxonomiesApi.deactivate).toHaveBeenCalledWith('m1')
   })
 
-  it('Estados operacionales eligen la columna del tablero', () => {
+  it('Estados operacionales eligen la etapa del viaje', () => {
     const grupo = vocabularySource('OPERATIONAL_STATE').fields(undefined).find(f => f.key === 'group')!
-    expect(grupo.label).toBe('Columna del tablero')
+    expect(grupo.label).toBe('Etapa')
   })
 
   it('Motivos de anulación no tienen grupo', () => {

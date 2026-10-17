@@ -24,7 +24,7 @@ describe('El color sale del significado', () => {
     expect(hallazgos).toEqual([])
   })
 
-  it('las columnas del tablero (etiqueta, orden y tono) se declaran solo en lib/states.ts', () => {
+  it('las etapas del viaje (etiqueta, orden y tono) se declaran solo en lib/states.ts', () => {
     const hallazgos = ['app', 'components', 'lib'].flatMap(d => recorrer(join(RAIZ, d)))
       .filter(ruta => !ruta.endsWith(join('lib', 'states.ts')))
       .filter(ruta => /\ben_ruta\s*:|'en_ruta',\s*'en_local'/.test(readFileSync(ruta, 'utf8')))

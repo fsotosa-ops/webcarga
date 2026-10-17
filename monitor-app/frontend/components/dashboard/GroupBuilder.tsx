@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { boardColumnStyle } from '@/lib/states'
+import { tripStageStyle } from '@/lib/states'
 import { X, Check, Loader2 } from 'lucide-react'
 import type { FilterGroup, GroupColor } from '@/lib/api/filterGroups'
 import { filterGroupsApi } from '@/lib/api/filterGroups'
@@ -31,7 +31,7 @@ function buildSections(statuses?: StatusMeta[]) {
     grouped[g].push({ id: s.id, label: s.label || s.id })
   }
   return Object.entries(grouped).map(([group, items]) => ({
-    label: boardColumnStyle(group).label,
+    label: tripStageStyle(group).label,
     statuses: items,
   }))
 }

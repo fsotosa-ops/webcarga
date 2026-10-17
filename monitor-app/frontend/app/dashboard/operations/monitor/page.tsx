@@ -6,11 +6,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, ClipboardCheck, Truck, Ban } from 'lucide-react'
 import { filterGroupsApi, type FilterGroup } from '@/lib/api/filterGroups'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
-import { tripsApi, type TripListResponse } from '@/lib/api/trips'
+import { tripsApi } from '@/lib/api/trips'
 import type { Trip, TripsMeta } from '@/lib/types'
 import { TripTable } from '@/components/dashboard/TripTable'
-import { TripBoard } from '@/components/dashboard/TripBoard'
-import { ViewToggle, type ViewMode } from '@/components/dashboard/ViewToggle'
 import { GroupBuilder } from '@/components/dashboard/GroupBuilder'
 import { FilterPopover } from '@/components/dashboard/FilterPopover'
 import { PaginationControls } from '@/components/dashboard/PaginationControls'
@@ -41,19 +39,18 @@ import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { EntityQuickView } from '@/components/dashboard/EntityQuickView'
 import { useQuickView } from '@/lib/quickView'
 import { MONITOR, monitorFiltersFromUrl } from '@/lib/navegacion/viaje'
-import { BOARD_COLUMNS, SIGNAL_TONE_TEXT, boardColumnStyle } from '@/lib/states'
+import { TRIP_STAGES, SIGNAL_TONE_TEXT, tripStageStyle } from '@/lib/states'
 import { STATUS_TONE_CLASS, STATUS_TONE_DOT } from '@/components/ui/StatusChip'
 import { PageContainer } from '@/components/ui/PageContainer'
 import { Button } from '@/components/ui/Button'
 import { Tabs } from '@/components/ui/Tabs'
 import { SearchInput } from '@/components/ui/SearchInput'
 
-const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
 
-// Los grupos por defecto del Monitor son las columnas del tablero: etiqueta, orden y
+// Los grupos por defecto del Monitor son las etapas del viaje: etiqueta, orden y
 // tono salen del glosario (lib/states.ts), no de un mapa propio (Configuración, Parte 1).
-const chipDeColumna = (group: string) => {
-  const { label, tone } = boardColumnStyle(group)
+const chipDeEtapa = (group: string) => {
+  const { label, tone } = tripStageStyle(group)
   return {
     label,
     on:  `${STATUS_TONE_DOT[tone]} border-transparent text-white`,
@@ -95,7 +92,6 @@ function DiarioPageInner() {
   const [showBulkUpload,  setShowBulkUpload]  = useState(false)
   const [showFleetCenter, setShowFleetCenter] = useState(false)
   const [prefillFleet,    setPrefillFleet]    = useState<FleetAssignValue | null>(null)
-  const [viewMode,        setViewMode]        = useState<ViewMode>('tabla')
   // Bug 5.5: preferencia de visualización, no un filtro — no entra al
   // reducer de useDiarioFilters (no debe contarse en countActiveFilters/clear).
   const [historialPageSize, setHistorialPageSize] = useState(100)
@@ -125,9 +121,9 @@ function DiarioPageInner() {
       if (!grouped[g]) grouped[g] = []
       grouped[g].push(s.id)
     }
-    return BOARD_COLUMNS
+    return TRIP_STAGES
       .filter(c => grouped[c.id]?.length > 0)
-      .map(c => ({ id: c.id, statuses: grouped[c.id], ...chipDeColumna(c.id) }))
+      .map(c => ({ id: c.id, statuses: grouped[c.id], ...chipDeEtapa(c.id) }))
   }, [tripsMeta?.statuses])
 
   // Resolve active group statuses
@@ -318,23 +314,6 @@ function DiarioPageInner() {
     fetchTripsMeta().then(setTripsMeta).catch(() => { /* fallback gracioso — usa defaults en TripTable/TripSlideOver */ })
   }, [])
 
-  useEffect(() => {
-    const saved = localStorage.getItem(VIEW_MODE_STORAGE_KEY)
-    if (saved === 'tabla' || saved === 'tablero') setViewMode(saved)
-  }, [])
-
-  function handleViewModeChange(v: ViewMode) {
-    setViewMode(v)
-    localStorage.setItem(VIEW_MODE_STORAGE_KEY, v)
-  }
-
-  function handleSaved(updated: Trip) {
-    queryClient.setQueryData(['trip', updated.id], updated)
-    // Actualiza el viaje en todas las listas cacheadas — sin refetch
-    queryClient.setQueriesData<TripListResponse>({ queryKey: ['trips'] }, old =>
-      old ? { ...old, data: old.data.map(t => (t.id === updated.id ? updated : t)) } : old)
-  }
-
   function handleCreated(newTrip: Trip) {
     // El viaje recién creado debe quedar visible — "En Curso" ya no filtra
     // por fecha (2026-08-02), solo por is_active, así que alcanza con
@@ -428,7 +407,8 @@ function DiarioPageInner() {
               ningún día que mostrar/navegar acá. Esa necesidad (mirar un
               día específico) la cubre el tab Historial con su rango. */}
           <EncabezadoDePagina
-            titulo={f.tab === 'en_curso' ? 'En Curso' : 'Base Histórica'}
+            // El módulo se llama como en el menú; En Curso e Historial son sus dos vistas (pestañas).
+            titulo="Monitor"
             bajada={
               <span className="flex items-center gap-2">
                 <span>{loading ? '…' : `${total.toLocaleString('es-CL')} viaje${total !== 1 ? 's' : ''}`}</span>
@@ -439,17 +419,12 @@ function DiarioPageInner() {
             }
           />
 
-          {/* Tabs */}
-          <Tabs label="Vista del Monitor" value={f.tab}
-            onChange={tab => dispatch({ type: 'patch', patch: { tab } })}
-            tabs={[{ id: 'en_curso', label: 'En Curso' }, { id: 'historial', label: 'Historial' }]} />
-
-          {/* Barra de acciones — vista + gestión de flota */}
-          {/* En un teléfono las acciones pasan a la línea siguiente en vez de apretarse. */}
+          {/* Las dos vistas del Monitor a la izquierda y sus acciones a la derecha, en una
+              fila; en un teléfono las acciones pasan a la línea siguiente. */}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            {f.tab === 'en_curso' ? (
-              <ViewToggle value={viewMode} onChange={handleViewModeChange} />
-            ) : <div />}
+            <Tabs label="Vista del Monitor" value={f.tab}
+              onChange={tab => dispatch({ type: 'patch', patch: { tab } })}
+              tabs={[{ id: 'en_curso', label: 'En Curso' }, { id: 'historial', label: 'Historial' }]} />
             <div className="flex items-center gap-3">
               <Button onClick={() => router.push('/dashboard/operations/closures')}
                 title="Centro de Cierre — resumen, pendientes, cerrar Tractoreo/Equipos Completos y reporte del día">
@@ -597,26 +572,12 @@ function DiarioPageInner() {
             </button>
           )}
 
-          {/* Table / Board — en refetch la data anterior queda visible, atenuada (sin flash de spinner) */}
+          {/* La tabla: en refetch la data anterior queda visible, atenuada (sin flash de spinner) */}
           {loading ? (
             <Estado tipo="cargando" />
           ) : (
             <div className={`transition-opacity duration-150 ${fetching ? 'opacity-50' : ''}`} aria-busy={fetching}>
-              {f.tab === 'en_curso' && viewMode === 'tablero' ? (
-                <TripBoard
-                  trips={visibleTrips}
-                  groups={defaultGroups}
-                  meta={tripsMeta}
-                  onSaved={handleSaved}
-                  onSelect={trip => {
-                    queryClient.setQueryData(['trip', trip.id], trip)
-                    router.push(`/dashboard/operations/monitor/trips/${trip.id}`)
-                  }}
-                  onSelectFocusNotes={handleSelectTripFocusNotes}
-                  updatedIds={updatedIds}
-                />
-              ) : (
-                <>
+              <>
                 {/* Sólo si hay algo que esta persona pueda anular en la vista:
                     los viajes manuales que creó (o todos, con trips.void_any). */}
                 {anulacion.hayAnulables && (
@@ -659,8 +620,7 @@ function DiarioPageInner() {
                   onAsignarConductor={puedeEditar ? setAsignando : undefined}
                   onOpenQuickView={puedeVerDirectorio ? quickView.open : undefined}
                 />
-                </>
-              )}
+              </>
             </div>
           )}
 

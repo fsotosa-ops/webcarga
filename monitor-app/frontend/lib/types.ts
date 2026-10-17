@@ -52,7 +52,7 @@ export type Database = {
 export type StatusMeta = {
   id:         string
   label:      string
-  /** La columna del tablero (da el tono); nula = "Sin columna". */
+  /** La etapa del viaje (da el tono); nula = "Sin columna". */
   group:      string | null
 }
 
@@ -67,7 +67,7 @@ export type TmsSourceMeta = {
 export type OperationalStateMeta = {
   id:         string
   label:      string
-  /** Grupo del tablero (misma taxonomía que StatusMeta.group); nulo = "Sin columna". */
+  /** Etapa del viaje (misma taxonomía que StatusMeta.group); nulo = "Sin columna". */
   group?:     string | null
 }
 

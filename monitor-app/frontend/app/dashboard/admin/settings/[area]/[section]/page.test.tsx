@@ -14,7 +14,7 @@ let permisos: string[] = ['operations.configure']
 vi.mock('@/lib/authz/PermisosProvider', () => ({ useAcceso: () => ({ permissions: permisos }) }))
 vi.mock('../../paneles', () => ({
   SECCIONES_CON_LISTA: [],
-  EstadosDelTableroPanel: () => <div>panel estados</div>,
+  EstadosDelViajePanel: () => <div>panel estados</div>,
   EstadosOperacionalesPanel: () => null, EstadosDeEquipoPanel: () => null,
   MotivosDeConductorPanel: () => <div>panel motivos</div>,
   MotivosDeNoAsignacionPanel: () => null, MotivosDeAnulacionPanel: () => null,

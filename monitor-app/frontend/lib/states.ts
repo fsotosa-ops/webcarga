@@ -343,14 +343,14 @@ export function policyFileStyle(hasFile: boolean): StateStyle {
 }
 
 
-// ── Columnas del tablero (Configuración, Parte 1) ────────────────────────────
+// ── Etapas del viaje (Configuración, Parte 1) ────────────────────────────
 // El color de un estado del TMS o de un estado operacional sale de su columna,
 // no de una paleta por fila: un rojo siempre es un problema. Las 7 columnas son
-// un conjunto cerrado (backend: schemas/status_taxonomy.BOARD_COLUMNS).
+// un conjunto cerrado (backend: schemas/status_taxonomy.TRIP_STAGES).
 
-export type BoardColumn = 'en_ruta' | 'en_local' | 'retornando' | 'pendiente_cierre_tms' | 'cerrado' | 'problema' | 'otro'
+export type TripStage = 'en_ruta' | 'en_local' | 'retornando' | 'pendiente_cierre_tms' | 'cerrado' | 'problema' | 'otro'
 
-const BOARD_COLUMN_STYLE: Record<BoardColumn, StateStyle> = {
+const TRIP_STAGE_STYLE: Record<TripStage, StateStyle> = {
   en_ruta:              { label: 'En Ruta',                 tone: 'action',   icon: Truck },
   en_local:             { label: 'En Local',                tone: 'action',   icon: MapPin },
   retornando:           { label: 'Retornando',              tone: 'neutral',  icon: Undo2 },
@@ -362,16 +362,16 @@ const BOARD_COLUMN_STYLE: Record<BoardColumn, StateStyle> = {
   otro:                 { label: 'Otro',                    tone: 'neutral',  icon: CircleDashed },
 }
 
-/** Las columnas en el orden del tablero, con su etiqueta. */
-export const BOARD_COLUMNS: { id: BoardColumn; label: string }[] =
-  (Object.keys(BOARD_COLUMN_STYLE) as BoardColumn[]).map(id => ({ id, label: BOARD_COLUMN_STYLE[id].label }))
+/** Las columnas en su orden, con su etiqueta. */
+export const TRIP_STAGES: { id: TripStage; label: string }[] =
+  (Object.keys(TRIP_STAGE_STYLE) as TripStage[]).map(id => ({ id, label: TRIP_STAGE_STYLE[id].label }))
 
 const SIN_COLUMNA: StateStyle = { label: 'Sin columna', tone: 'neutral', icon: CircleDashed }
 
 /** Etiqueta, tono e ícono de una columna; un estado sin columna (o con una que no
  *  existe) se ve neutro en vez de romper. */
-export function boardColumnStyle(group: string | null | undefined): StateStyle {
-  return (group && BOARD_COLUMN_STYLE[group as BoardColumn]) || SIN_COLUMNA
+export function tripStageStyle(group: string | null | undefined): StateStyle {
+  return (group && TRIP_STAGE_STYLE[group as TripStage]) || SIN_COLUMNA
 }
 
 // ── Tipos de entidad (cómo se nombra a quién se le exige o se refiere algo) ────

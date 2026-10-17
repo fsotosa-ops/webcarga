@@ -53,7 +53,7 @@ describe('SettingsIndex (P1.1)', () => {
     const activa = screen.getByRole('link', { name: /Motivos de conductor/ })
     expect(activa).toHaveAttribute('aria-current', 'page')
     expect(activa).toHaveAttribute('href', '/dashboard/admin/settings/operations/driver-reasons')
-    expect(screen.getByRole('link', { name: /Estados del tablero/ })).not.toHaveAttribute('aria-current')
+    expect(screen.getByRole('link', { name: /Estados del viaje/ })).not.toHaveAttribute('aria-current')
   })
 
   it('muestra cuánto falta revisar por sección, sin cifra mientras carga ni cuando es cero', async () => {
@@ -63,7 +63,7 @@ describe('SettingsIndex (P1.1)', () => {
     unmount()
     montar()
     await waitFor(() => expect(screen.getByRole('link', { name: /Motivos de conductor/ })).toHaveTextContent('21'))
-    expect(screen.getByRole('link', { name: /Estados del tablero/ })).not.toHaveTextContent(/\d/)
+    expect(screen.getByRole('link', { name: /Estados del viaje/ })).not.toHaveTextContent(/\d/)
   })
 
   it('roles.manage sin users.manage no ve Personas y accesos: la API no le deja listar ni personas ni roles', () => {

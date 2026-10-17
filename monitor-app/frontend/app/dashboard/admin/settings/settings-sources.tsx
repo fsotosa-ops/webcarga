@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { configApi, taxonomiesApi, type Direccion, type TaxonomyDomain, type TaxonomyRow, type TripStatusRow } from '@/lib/api/config'
 import type { AlertThresholdMeta, MonitorAlertRules, TemperatureRangeMeta } from '@/lib/types'
 import { taxonomyKey } from '@/lib/queries/taxonomies'
-import { BOARD_COLUMNS, boardColumnStyle } from '@/lib/states'
+import { TRIP_STAGES, tripStageStyle } from '@/lib/states'
 import { StatusChip } from '@/components/ui/StatusChip'
 
 /** Un campo del panel de un elemento. */
@@ -47,15 +47,15 @@ export interface SettingsSource<Row extends { id: string }> {
 }
 
 const conTono = (label: string, group: string | null | undefined) =>
-  <StatusChip tone={boardColumnStyle(group).tone}>{label || '—'}</StatusChip>
+  <StatusChip tone={tripStageStyle(group).tone}>{label || '—'}</StatusChip>
 
 const porColumna = <Row extends { group?: string | null }>(rows: Row[]) =>
-  BOARD_COLUMNS.filter(c => rows.some(r => r.group === c.id))
+  TRIP_STAGES.filter(c => rows.some(r => r.group === c.id))
     .map(c => ({ id: c.id, label: c.label, match: (r: Row) => r.group === c.id }))
 
-/** Estados del tablero (`app.trip_statuses`): los define el TMS; aquí se ajusta su
+/** Estados del viaje (`app.trip_statuses`): los define el TMS; aquí se ajusta su
  *  nombre visible, su columna (que da el tono) y su orden. */
-export const boardStatusSource: SettingsSource<TripStatusRow> = {
+export const tripStatusSource: SettingsSource<TripStatusRow> = {
   area: 'operations', section: 'tms-statuses',
   queryKey: ['tms-statuses'],
   list: () => configApi.getStatuses(),
@@ -63,12 +63,12 @@ export const boardStatusSource: SettingsSource<TripStatusRow> = {
   columns: [
     { header: 'Cómo se ve', cell: s => conTono(s.label, s.group) },
     { header: 'Nombre en el TMS', cell: s => <span className="font-mono text-etiqueta text-informativo">{s.id}</span> },
-    { header: 'Columna', cell: s => boardColumnStyle(s.group).label },
+    { header: 'Columna', cell: s => tripStageStyle(s.group).label },
   ],
   fields: () => [
     { key: 'label', label: 'Nombre visible', kind: 'text' },
-    { key: 'group', label: 'Columna del tablero', kind: 'select', options: BOARD_COLUMNS,
-      help: 'Define en qué columna del tablero aparecen sus viajes y con qué tono se ve.' },
+    { key: 'group', label: 'Etapa', kind: 'select', options: TRIP_STAGES,
+      help: 'Define en qué etapa del viaje cae el estado y con qué tono se ve.' },
   ],
   values: s => ({ label: s.label, group: s.group }),
   save: (s, c) => configApi.patchStatus(s.id, c as Partial<Pick<TripStatusRow, 'label' | 'group'>>),
@@ -85,8 +85,8 @@ const VOCABULARIOS: Record<TaxonomyDomain, {
 }> = {
   OPERATIONAL_STATE: {
     area: 'operations', section: 'operational-statuses', noun: 'estado', columna: 'Estado',
-    grupo: { label: 'Columna del tablero', help: 'Define en qué columna del tablero aparecen sus viajes y con qué tono se ve.',
-             options: BOARD_COLUMNS, porDefecto: 'otro', conTono: true },
+    grupo: { label: 'Etapa', help: 'Define en qué etapa del viaje cae el estado y con qué tono se ve.',
+             options: TRIP_STAGES, porDefecto: 'otro', conTono: true },
   },
   EQUIPMENT_STATE: {
     area: 'operations', section: 'equipment-statuses', noun: 'estado', columna: 'Estado',

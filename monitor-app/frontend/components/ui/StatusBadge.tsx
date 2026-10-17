@@ -1,5 +1,5 @@
 import type { TripsMeta } from '@/lib/types'
-import { boardColumnStyle } from '@/lib/states'
+import { tripStageStyle } from '@/lib/states'
 import { STATUS_TONE_DOT, StatusChip } from './StatusChip'
 
 interface Props {
@@ -13,9 +13,9 @@ interface Props {
   variante?: 'relleno' | 'punto'
 }
 
-/** El estado de un viaje con el tono de su columna del tablero (Configuración,
+/** El estado de un viaje con el tono de su etapa del viaje (Configuración,
  *  Parte 1): un rojo siempre es Problema. El color no se elige por estado; lo da
- *  `boardColumnStyle` desde la columna (`group`) del catálogo. */
+ *  `tripStageStyle` desde la columna (`group`) del catálogo. */
 export function StatusBadge({ status, meta, fallbackLabel = '—', variante = 'relleno' }: Props) {
   // Resuelve contra ambos vocabularios: estados TMS (nomenclatura conservada
   // verbatim) y estados operacionales (manual_status — ids uuid, se muestra su
@@ -23,7 +23,7 @@ export function StatusBadge({ status, meta, fallbackLabel = '—', variante = 'r
   const tmsMeta = status ? meta?.statuses.find(s => s.id === status) : null
   const opMeta  = !tmsMeta && status ? meta?.operational_states.find(s => s.id === status) : null
   const label = tmsMeta ? status : opMeta ? opMeta.label : (status ?? fallbackLabel)
-  const { tone } = boardColumnStyle((tmsMeta ?? opMeta)?.group)
+  const { tone } = tripStageStyle((tmsMeta ?? opMeta)?.group)
 
   if (variante === 'punto') {
     return (

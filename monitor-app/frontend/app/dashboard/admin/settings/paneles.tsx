@@ -3,7 +3,7 @@
 import type { ComponentType } from 'react'
 import { SettingsList } from './SettingsList'
 import {
-  SECCION_DE_TAXONOMIA, boardStatusSource, monitorRulesSource, temperatureRangeSource, thresholdSource, vocabularySource,
+  SECCION_DE_TAXONOMIA, tripStatusSource, monitorRulesSource, temperatureRangeSource, thresholdSource, vocabularySource,
   type SettingsSource,
 } from './settings-sources'
 
@@ -17,11 +17,11 @@ function porFuente<Row extends { id: string }>(source: SettingsSource<Row>, nomb
 
 /** Las secciones que se dibujan con `SettingsList`: abren un elemento con `?item=`. */
 export const SECCIONES_CON_LISTA: string[] = [
-  boardStatusSource.section, monitorRulesSource.section, temperatureRangeSource.section, 'expiry-alerts',
+  tripStatusSource.section, monitorRulesSource.section, temperatureRangeSource.section, 'expiry-alerts',
   ...Object.values(SECCION_DE_TAXONOMIA).map(([, seccion]) => seccion),
 ]
 
-export const EstadosDelTableroPanel = porFuente(boardStatusSource, 'EstadosDelTableroPanel')
+export const EstadosDelViajePanel = porFuente(tripStatusSource, 'EstadosDelViajePanel')
 export const EstadosOperacionalesPanel = porFuente(vocabularySource('OPERATIONAL_STATE'), 'EstadosOperacionalesPanel')
 export const EstadosDeEquipoPanel = porFuente(vocabularySource('EQUIPMENT_STATE'), 'EstadosDeEquipoPanel')
 export const MotivosDeConductorPanel = porFuente(vocabularySource('DRIVER_REASON'), 'MotivosDeConductorPanel')

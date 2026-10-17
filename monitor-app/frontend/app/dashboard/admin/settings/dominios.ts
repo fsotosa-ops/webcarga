@@ -3,7 +3,7 @@ import {
   Shield, ShieldCheck, LayoutDashboard, Truck, Users, Receipt, type LucideIcon,
 } from 'lucide-react'
 import {
-  EstadosDelTableroPanel, EstadosOperacionalesPanel, EstadosDeEquipoPanel, MotivosDeConductorPanel,
+  EstadosDelViajePanel, EstadosOperacionalesPanel, EstadosDeEquipoPanel, MotivosDeConductorPanel,
   MotivosDeNoAsignacionPanel, MotivosDeAnulacionPanel, SubtiposPanel, TiposDeOperacionPanel,
   SECCIONES_CON_LISTA, AlertasDeDocumentosPanel, AlertasDePolizasPanel, RangosDeTemperaturaPanel,
   UmbralesDelMonitorPanel,
@@ -64,10 +64,10 @@ export const DOMINIOS: Dominio[] = [
     clave: 'operations',
     icono: LayoutDashboard,
     titulo: 'Operaciones',
-    proposito: 'Cómo se ve el tablero, cuándo avisa, y qué temperatura corresponde',
+    proposito: 'Cómo se ven los viajes, cuándo avisa, y qué temperatura corresponde',
     secciones: [
-      { clave: 'tms-statuses', titulo: 'Estados del tablero',
-        proposito: 'Cómo se llama cada estado del TMS y en qué columna del tablero aparece', Panel: EstadosDelTableroPanel },
+      { clave: 'tms-statuses', titulo: 'Estados del viaje',
+        proposito: 'Cómo se llama cada estado del TMS y en qué etapa del viaje cae', Panel: EstadosDelViajePanel },
       { clave: 'operational-statuses', titulo: 'Estados operacionales',
         proposito: 'El vocabulario que usa el equipo', Panel: EstadosOperacionalesPanel },
       { clave: 'equipment-statuses', titulo: 'Estados de equipo',
