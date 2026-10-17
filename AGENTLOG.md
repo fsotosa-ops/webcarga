@@ -96,7 +96,11 @@ Reasignar, Descartados, Documentos exigidos) pasan a los tokens y a la escala; c
 10. Navegación en el teléfono: spec `docs/superpowers/specs/2026-10-17-navegacion-movil-design.md` (aprobado 17/10:
    barra con hasta 4 destinos según el perfil + "Menú", cajón con el menú completo, cabecera oscura con el logo
    oficial; etiquetas siempre, no solo íconos) y plan `docs/superpowers/plans/2026-10-17-navegacion-movil.md`
-   (5 tareas). **Orden: navegación primero** (mueve el menú a `lib/navegacion/menu.ts`), después Seguros.
+   (5 tareas). **HECHO 17/10** (`4c570b0..b98dc96b`, en dev): menú en `lib/navegacion/menu.ts` (guardia: una sola
+   definición), contadores en `useNavCounts`, `MobileNav` (barra por perfil + cajón sobre `Dialog`), `AccountActions` y
+   `useSignOut` compartidos con la barra lateral, cabecera oscura con el logo oficial. Revisión opus: 3 Important + 1
+   re-graduado, arreglados con test. Diferidos: `aria-current` en el botón Menú; Atrás de Android con el cajón abierto.
+   **Siguiente: el plan de Seguros por empresa.**
 
 **Decisiones de arquitectura:**
 - Un solo modelo de filtro por pantalla; recuadros, embudos y chips son puertas al mismo filtro; cifras facetadas.
