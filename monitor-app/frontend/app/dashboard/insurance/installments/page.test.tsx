@@ -10,11 +10,14 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/dashboard/insurance/installments',
 }))
 vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
-vi.mock('@/lib/api/insurance', () => ({ insuranceApi: { listInstallments: vi.fn(), pay: vi.fn(), unpay: vi.fn() } }))
+vi.mock('@/lib/api/insurance', async orig => ({
+  ...(await orig<object>()), insuranceApi: { listInstallments: vi.fn(), pay: vi.fn(), unpay: vi.fn(), carrier: vi.fn() },
+}))
 
 import { insuranceApi } from '@/lib/api/insurance'
 import { QuickViewContext } from '@/components/dashboard/QuickViewProvider'
 import CuotasPage from './page'
+import InsuranceLayout from '../layout'
 
 const CUOTA = {
   id: 'i1', policy_id: 'p1', carrier_id: 'c1', carrier_name: 'Transportes Aguilera Spa', insurance_company: 'SURA',
@@ -25,7 +28,7 @@ const CUOTA = {
 function renderPage() {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <QuickViewContext.Provider value={vi.fn()}><CuotasPage /></QuickViewContext.Provider>
+      <QuickViewContext.Provider value={vi.fn()}><InsuranceLayout><CuotasPage /></InsuranceLayout></QuickViewContext.Provider>
     </QueryClientProvider>,
   )
 }

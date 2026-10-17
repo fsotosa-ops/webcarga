@@ -3,7 +3,8 @@ import type { PermissionCode } from '@/lib/authz/permisos.generated'
 import type { NavBadge } from '@/lib/navegacion/menu'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { certificationRequestsApi } from '@/lib/api/certificationRequests'
-import { insuranceApi } from '@/lib/api/insurance'
+import { insuranceApi, insuranceKeys } from '@/lib/api/insurance'
+import { INSURANCE_VERDICT_ORDER, insuranceStanding } from '@/lib/states'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 
 /** Los contadores del menú, una vez: la barra lateral, la barra del teléfono y su cajón los
@@ -27,17 +28,20 @@ export function useNavCounts(permissions: readonly PermissionCode[]): Partial<Re
     staleTime: 60_000,
     enabled: puedeClasificar,
   }).data?.total
-  // Cuotas de seguro vencidas: la API las cuenta con la fecha de Chile (limit=1:
-  // solo interesa la cifra).
-  const installments = useQuery({
-    queryKey: ['insurance', 'installments', 'overdue-count'],
-    queryFn: () => insuranceApi.listInstallments({ state: 'OVERDUE', limit: 1 }),
+  // Las empresas que no están al día (Seguros por empresa, 17/10): la misma consulta que
+  // la pantalla Empresas, así el número del menú y el del recuadro no se contradicen.
+  const facets = useQuery({
+    queryKey: insuranceKeys.overview(),
+    queryFn: () => insuranceApi.carrierOverview(),
     staleTime: 60_000,
-  }).data?.facets.OVERDUE
+  }).data?.facets
+  const insurance = facets && INSURANCE_VERDICT_ORDER
+    .filter(v => insuranceStanding(v) === 'not_up_to_date')
+    .reduce((n, v) => n + facets[v], 0)
 
   return {
     ...(inbox !== undefined && { inbox }),
     ...(requests !== undefined && { requests }),
-    ...(installments !== undefined && { installments }),
+    ...(insurance !== undefined && { insurance }),
   }
 }

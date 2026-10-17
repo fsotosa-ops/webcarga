@@ -324,12 +324,6 @@ export function installmentStateStyle(
 /** La señal aparte de una cuota que vence fuera de la vigencia de su póliza. */
 export const OUTSIDE_VALIDITY_STYLE: StateStyle = { label: 'Fuera de vigencia', tone: 'warning', icon: CalendarClock }
 
-/** El estado de una empresa en Seguros: el de su peor póliza vigente, o "Sin
- *  póliza" (18 de 36 activas el 15/10), que es lo más urgente. */
-export function carrierInsuranceStyle(state: Exclude<PolicyState, 'CANCELLED' | 'RENEWED'> | 'NO_POLICY'): StateStyle {
-  return state === 'NO_POLICY' ? { label: 'Sin póliza', tone: 'urgent', icon: ShieldOff } : POLICY[state]
-}
-
 // ── El veredicto de una empresa (Seguros por empresa, 17/10) ──────────────────
 // Lo calcula la base (app.carrier_insurance_summary); aquí se vuelve palabra, tono,
 // ícono y una razón de una línea con los datos que trae la fila.
@@ -338,12 +332,19 @@ export function carrierInsuranceStyle(state: Exclude<PolicyState, 'CANCELLED' | 
 export const INSURANCE_VERDICT_ORDER: readonly InsuranceVerdict[] =
   ['EXPIRED', 'NO_POLICY', 'OVERDUE', 'NO_DATES', 'EXPIRING', 'UP_TO_DATE']
 
+/** El nombre de cada veredicto, para filtrar y contar ("Cuotas vencidas" las junta a
+ *  todas; el chip dice cuántas). */
+export const INSURANCE_VERDICT_LABEL: Record<InsuranceVerdict, string> = {
+  EXPIRED: 'Póliza vencida', NO_POLICY: 'Sin póliza', OVERDUE: 'Cuotas vencidas',
+  NO_DATES: 'Póliza sin fechas', EXPIRING: 'Por vencer', UP_TO_DATE: 'Al día',
+}
+
 const VERDICT: Record<Exclude<InsuranceVerdict, 'OVERDUE'>, StateStyle> = {
-  EXPIRED:    { label: 'Póliza vencida',    tone: 'urgent',   icon: ShieldAlert },
-  NO_POLICY:  { label: 'Sin póliza',        tone: 'urgent',   icon: ShieldOff },
-  NO_DATES:   { label: 'Póliza sin fechas', tone: 'warning',  icon: CircleDashed },
-  EXPIRING:   { label: 'Por vencer',        tone: 'warning',  icon: Clock },
-  UP_TO_DATE: { label: 'Al día',            tone: 'resolved', icon: ShieldCheck },
+  EXPIRED:    { label: INSURANCE_VERDICT_LABEL.EXPIRED,    tone: 'urgent',   icon: ShieldAlert },
+  NO_POLICY:  { label: INSURANCE_VERDICT_LABEL.NO_POLICY,  tone: 'urgent',   icon: ShieldOff },
+  NO_DATES:   { label: INSURANCE_VERDICT_LABEL.NO_DATES,   tone: 'warning',  icon: CircleDashed },
+  EXPIRING:   { label: INSURANCE_VERDICT_LABEL.EXPIRING,   tone: 'warning',  icon: Clock },
+  UP_TO_DATE: { label: INSURANCE_VERDICT_LABEL.UP_TO_DATE, tone: 'resolved', icon: ShieldCheck },
 }
 
 /** El chip del veredicto. Cuotas vencidas dice cuántas, y es urgente si alguna póliza

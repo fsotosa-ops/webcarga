@@ -62,4 +62,34 @@ describe('useUrlView', () => {
     expect(replace).toHaveBeenCalledTimes(1)
     expect(router).not.toHaveBeenCalled()
   })
+
+  describe('la vista inicial (Seguros › Empresas abre en "No al día")', () => {
+    const INICIAL = { filters: { standing: ['not_up_to_date'] }, q: '', sort: null }
+
+    it('sin vista en la URL, abre con la inicial y la escribe en la URL', () => {
+      query = ''
+      const { result } = renderHook(() => useUrlView({ initial: INICIAL }))
+      expect(result.current[0].filters).toEqual({ standing: ['not_up_to_date'] })
+      expect(replace).toHaveBeenCalledWith('/dashboard/operations/closures?f.standing=not_up_to_date')
+    })
+
+    it('quitar el filtro deja la URL sin él y no se vuelve a poner', () => {
+      query = ''
+      const { result, rerender } = renderHook(() => useUrlView({ initial: INICIAL }))
+      query = 'f.standing=not_up_to_date'
+      rerender()
+      act(() => result.current[1]({ filters: {}, q: '', sort: null }))
+      query = ''
+      rerender()
+      expect(result.current[0].filters).toEqual({})
+      expect(replace).toHaveBeenLastCalledWith('/dashboard/operations/closures')
+    })
+
+    it('un enlace con su propia vista (?q=RUT) manda sobre la inicial', () => {
+      query = 'q=76777777'
+      const { result } = renderHook(() => useUrlView({ initial: INICIAL }))
+      expect(result.current[0]).toEqual({ filters: {}, q: '76777777', sort: null })
+      expect(replace).not.toHaveBeenCalled()
+    })
+  })
 })

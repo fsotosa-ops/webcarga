@@ -1,8 +1,10 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { readView, writeView, type TableView } from '@/lib/table/viewInUrl'
+
+const isEmpty = (v: TableView) => !Object.keys(v.filters).length && !v.q && !v.sort
 
 /** La vista de la tabla de la pantalla, leída y escrita en la URL (spec §4.2).
  *
@@ -15,15 +17,24 @@ import { readView, writeView, type TableView } from '@/lib/table/viewInUrl'
  *
  *  La vista es la que se escribió hasta que la URL la confirma: el segundo clic parte
  *  del primero y la búsqueda no retrocede (revisión final, 16/10). La URL manda cuando
- *  cambia por otra causa ("Volver", un enlace, otra pestaña del Cierre). */
-export function useUrlView(): [TableView, (view: TableView) => void] {
+ *  cambia por otra causa ("Volver", un enlace, otra pestaña del Cierre).
+ *
+ *  `initial`: la vista con que abre la pantalla cuando la URL no trae ninguna (Seguros ›
+ *  Empresas abre en "No al día"). Se escribe en la URL al entrar, así se comparte y se
+ *  ve como un filtro más; quitarlo después no la vuelve a poner. Un enlace con su
+ *  propia vista (`?q=RUT`) manda sobre ella. */
+export function useUrlView({ initial }: { initial?: TableView } = {}): [TableView, (view: TableView) => void] {
   const pathname = usePathname()
   const params = useSearchParams()
   const clave = params.toString()
 
   // `pendientes`: las consultas que esta vista escribió y la URL todavía no confirmó.
+  // Al entrar sin vista en la URL, la inicial; un efecto la escribe en la URL (una vez).
+  const [usaInicial] = useState(() => !!initial && isEmpty(readView(new URLSearchParams(clave))))
   const [vista, setVista] = useState(() => ({
-    clave, view: readView(new URLSearchParams(clave)), pendientes: [] as string[],
+    clave,
+    view: usaInicial && initial ? initial : readView(new URLSearchParams(clave)),
+    pendientes: [] as string[],
   }))
 
   if (clave !== vista.clave) {
@@ -45,6 +56,11 @@ export function useUrlView(): [TableView, (view: TableView) => void] {
     // `null`: Next sincroniza useSearchParams solo si el estado no es el suyo propio.
     window.history.replaceState(null, '', s ? `${pathname}?${s}` : pathname)
   }, [pathname])
+
+  useEffect(() => {
+    if (usaInicial && initial) setView(initial)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- una sola vez, al entrar
+  }, [])
 
   return [vista.view, setView]
 }

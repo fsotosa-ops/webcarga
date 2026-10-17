@@ -6,6 +6,7 @@ import { Check, Loader2 } from 'lucide-react'
 import { StatusChip } from '@/components/ui/StatusChip'
 import { insuranceVerdictStyle } from '@/lib/states'
 import type { CarrierInsuranceRow } from '@/lib/api/insurance'
+import { INSURANCE } from '@/lib/navegacion/insurance'
 import { FIELD_LABEL, inputClass } from '@/components/ui/Field'
 
 const INPUT = `w-full ${inputClass({ size: 'sm' })}`
@@ -79,7 +80,7 @@ export function InsuranceLine({ summary, taxId }: {
   return (
     <span className="flex flex-wrap items-center gap-2">
       <StatusChip tone={s.tone} icon={s.icon}>{s.label}</StatusChip>
-      <Link href={`/dashboard/insurance?q=${encodeURIComponent(taxId)}`} prefetch={false} className="font-medium text-accion hover:underline">
+      <Link href={`${INSURANCE}?q=${encodeURIComponent(taxId)}`} prefetch={false} className="font-medium text-accion hover:underline">
         Ver en Seguros
       </Link>
     </span>

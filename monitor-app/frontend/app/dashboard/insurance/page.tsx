@@ -1,152 +1,94 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, Search } from 'lucide-react'
-import { insuranceApi, type CarrierInsuranceState, type PolicyFilter } from '@/lib/api/insurance'
-import { POLICY_STATE_LABELS, carrierInsuranceStyle } from '@/lib/states'
-import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { Suspense, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { insuranceApi, insuranceKeys, type CarrierInsuranceRow } from '@/lib/api/insurance'
+import {
+  INSURANCE_STANDING_LABEL, INSURANCE_VERDICT_LABEL, INSURANCE_VERDICT_ORDER,
+  fechaCorta, insuranceStanding, insuranceVerdictReason, insuranceVerdictStyle,
+} from '@/lib/states'
+import type { TableView } from '@/lib/table/viewInUrl'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
-import { SegmentedControl, type SegmentedOption } from '@/components/ui/SegmentedControl'
-import { Estado } from '@/components/ui/Estado'
-import { CarriersInsuranceTable, PoliciesTable } from '@/components/insurance/PoliciesTable'
 import { PageContainer } from '@/components/ui/PageContainer'
-import { inputClass } from '@/components/ui/Field'
+import { Estado } from '@/components/ui/Estado'
+import { StatusChip } from '@/components/ui/StatusChip'
+import { EntityCell } from '@/components/dashboard/EntityCell'
+import type { DataColumn } from '@/components/ui/tabla/data/columns'
+import { useDataTable } from '@/components/ui/tabla/data/useDataTable'
+import { useUrlView } from '@/components/ui/tabla/data/useUrlView'
+import { useTablePreferences } from '@/components/ui/tabla/data/useTablePreferences'
+import { DataTable } from '@/components/ui/tabla/data/DataTable'
+import { TableToolbar } from '@/components/ui/tabla/data/TableToolbar'
+import { ShortcutTiles, type ShortcutTileGroup } from '@/components/ui/tabla/data/ShortcutTiles'
+import { useOpenCarrierInsurance } from '@/components/insurance/CarrierInsurancePanel'
 
-const LIMIT = 50
+const TABLE_KEY = 'insurance.carriers'
+const NOT_UP_TO_DATE = INSURANCE_STANDING_LABEL.not_up_to_date
+/** Gestión por excepción (spec, estándar de la industria): abre en lo que pide acción. */
+const INITIAL_VIEW: TableView = { filters: { standing: [NOT_UP_TO_DATE] }, q: '', sort: null }
 
-/** Los filtros por estado. Los de siempre se muestran aunque estén en cero; los
- *  raros (sin vigencia, renovadas, canceladas), solo si hay alguna. */
-const POLICY_FILTERS: { id: PolicyFilter; label: string; always: boolean }[] = [
-  { id: 'EXPIRED', label: POLICY_STATE_LABELS.EXPIRED, always: true },
-  { id: 'EXPIRING', label: POLICY_STATE_LABELS.EXPIRING, always: true },
-  { id: 'VALID', label: POLICY_STATE_LABELS.VALID, always: true },
-  { id: 'UNPAID', label: 'Cuotas vencidas', always: true },
-  { id: 'NO_FILE', label: 'Sin archivo', always: true },
-  { id: 'NO_DATES', label: POLICY_STATE_LABELS.NO_DATES, always: false },
-  { id: 'RENEWED', label: POLICY_STATE_LABELS.RENEWED, always: false },
-  { id: 'CANCELLED', label: POLICY_STATE_LABELS.CANCELLED, always: false },
-]
-const CARRIER_FILTERS: { id: CarrierInsuranceState; always: boolean }[] = [
-  { id: 'NO_POLICY', always: true }, { id: 'EXPIRED', always: true }, { id: 'EXPIRING', always: true },
-  { id: 'VALID', always: true }, { id: 'NO_DATES', always: false },
-]
-
-const cuenta = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`
-
-export default function PolizasPage() {
-  return <Suspense fallback={null}><PolizasPageInner /></Suspense>
+export default function EmpresasPage() {
+  return <Suspense fallback={null}><EmpresasPageInner /></Suspense>
 }
 
-/**
- * Seguros › Pólizas (Seguros E2, 15/10): el registro de pólizas, con el patrón de
- * Directorio y Certificación. Por póliza o agrupado por empresa (aparecen las
- * activas sin póliza). Los estados los calcula la base; los filtros viven en la URL.
- */
-function PolizasPageInner() {
-  const router = useRouter()
-  const pathname = usePathname()
-  const params = useSearchParams()
-  const group = params.get('group') === 'carrier' ? 'carrier' : 'policy'
-  const state = params.get('state') ?? ''
-  const page = Math.max(1, Number(params.get('page')) || 1)
-  const [q, setQ] = useState(params.get('q') ?? '')
-  const qDebounced = useDebouncedValue(q, 300)
-  const returnTo = params.toString() ? `${pathname}?${params.toString()}` : pathname
+/** Seguros › Empresas (Seguros por empresa, 17/10): ¿qué transportistas no están al día
+ *  con sus pólizas, y por qué? Una fila por empresa con el veredicto que calcula la base
+ *  y su razón; el nombre abre el detalle (pólizas y cuotas) en el panel de Seguros. */
+function EmpresasPageInner() {
+  const [view, setView] = useUrlView({ initial: INITIAL_VIEW })
+  const preferencias = useTablePreferences(TABLE_KEY)
+  const openInsurance = useOpenCarrierInsurance()
+  const overview = useQuery({ queryKey: insuranceKeys.overview(), queryFn: () => insuranceApi.carrierOverview() })
 
-  function setParams(next: Record<string, string | null>) {
-    const sp = new URLSearchParams(params.toString())
-    for (const [k, v] of Object.entries(next)) { if (v) sp.set(k, v); else sp.delete(k) }
-    if (!('page' in next)) sp.delete('page')
-    const s = sp.toString()
-    router.replace(s ? `${pathname}?${s}` : pathname, { scroll: false })
-  }
+  const columnas = useMemo<DataColumn<CarrierInsuranceRow>[]>(() => [
+    { id: 'carrier', header: 'Empresa', hideable: false, value: r => r.carrier_name,
+      render: r => (
+        <span className="flex flex-col">
+          <span className="font-medium text-text-primary">
+            <EntityCell kind="carrier" id={r.carrier_id} label={r.carrier_name} onOpen={openInsurance} />
+          </span>
+          <span className="font-identificador text-etiqueta text-informativo">{r.carrier_tax_id}</span>
+        </span>
+      ) },
+    { id: 'verdict', header: 'Veredicto', value: r => INSURANCE_VERDICT_LABEL[r.insurance_verdict],
+      options: INSURANCE_VERDICT_ORDER.map(v => INSURANCE_VERDICT_LABEL[v]),
+      render: r => { const s = insuranceVerdictStyle(r); return <StatusChip tone={s.tone} icon={s.icon}>{s.label}</StatusChip> } },
+    { id: 'reason', header: 'Por qué', filter: false, sortable: false, value: r => insuranceVerdictReason(r),
+      render: r => <span className="text-text-primary">{insuranceVerdictReason(r)}</span> },
+    { id: 'next', header: 'Próxima cuota', filter: false, value: r => r.next_due_date,
+      render: r => <span className="tabular-nums text-informativo">{r.next_due_date ? fechaCorta(r.next_due_date) : '—'}</span> },
+    // La columna de los recuadros: No al día · Por vencer · Al día.
+    { id: 'standing', header: 'Situación', defaultHidden: true,
+      value: r => INSURANCE_STANDING_LABEL[insuranceStanding(r.insurance_verdict)],
+      options: Object.values(INSURANCE_STANDING_LABEL) },
+  ], [openInsurance])
 
-  useEffect(() => {
-    if ((params.get('q') ?? '') !== qDebounced.trim()) setParams({ q: qDebounced.trim() || null })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qDebounced])
-
-  const query = { state, q: params.get('q') ?? '', page, limit: LIMIT }
-  const policies = useQuery({
-    queryKey: ['insurance', 'policies', query], queryFn: () => insuranceApi.listPolicies(query),
-    enabled: group === 'policy', placeholderData: keepPreviousData,
+  const model = useDataTable({
+    rows: overview.data?.data ?? [], columns: columnas, getRowId: r => r.carrier_id, view, onViewChange: setView,
+    columnPrefs: preferencias.columns,
+    search: (r, q) => [r.carrier_name, r.carrier_tax_id].some(x => x.toLowerCase().includes(q)),
   })
-  const carriers = useQuery({
-    queryKey: ['insurance', 'carriers', query], queryFn: () => insuranceApi.listCarriers(query),
-    enabled: group === 'carrier', placeholderData: keepPreviousData,
-  })
-  const active = group === 'policy' ? policies : carriers
-  const facets = active.data?.facets as Record<string, number> | undefined
-  // Sin cifra mientras la consulta está en vuelo: un "0" ahí afirma algo falso.
-  const badge = (id: string) => (facets ? String(facets[id] ?? 0) : undefined)
 
-  const filtros: SegmentedOption<string>[] = [
-    { id: 'all', label: 'Todas', badge: badge('total') },
-    ...(group === 'policy'
-      ? POLICY_FILTERS.filter(f => f.always || (facets?.[f.id] ?? 0) > 0).map(f => ({ id: f.id, label: f.label, badge: badge(f.id) }))
-      : CARRIER_FILTERS.filter(f => f.always || (facets?.[f.id] ?? 0) > 0)
-          .map(f => ({ id: f.id, label: carrierInsuranceStyle(f.id).label, badge: badge(f.id) }))),
-  ]
-  const totalPages = Math.max(1, Math.ceil((active.data?.count ?? 0) / LIMIT))
-  const vacio = group === 'policy' ? 'No hay pólizas que coincidan' : 'No hay empresas que coincidan'
+  const recuadros: ShortcutTileGroup[] = [{ tiles: [
+    { column: 'standing', value: NOT_UP_TO_DATE, label: NOT_UP_TO_DATE, tone: 'urgent' },
+    { column: 'standing', value: INSURANCE_STANDING_LABEL.expiring, label: INSURANCE_STANDING_LABEL.expiring, tone: 'warning' },
+    { column: 'standing', value: INSURANCE_STANDING_LABEL.up_to_date, label: INSURANCE_STANDING_LABEL.up_to_date, tone: 'resolved' },
+  ] }]
+  const soloNoAlDia = (view.filters.standing ?? []).join() === NOT_UP_TO_DATE
 
   return (
     <PageContainer>
-      <EncabezadoDePagina
-        titulo="Pólizas"
-        bajada={policies.data && group === 'policy'
-          ? cuenta(policies.data.facets.total, 'póliza', 'pólizas')
-          : carriers.data && group === 'carrier' ? cuenta(carriers.data.facets.total, 'empresa', 'empresas') : '…'}
-      />
-
-      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-white px-3.5 py-2.5">
-        <div className="relative shrink-0">
-          <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-informativo" aria-hidden="true" />
-          <input
-            value={q}
-            onChange={e => setQ(e.target.value)}
-            placeholder="Aseguradora, N° de póliza, empresa o RUT…"
-            aria-label="Buscar pólizas"
-            className={`${inputClass({ size: 'sm' })} w-72 max-w-full pl-8`}
-          />
-        </div>
-        <SegmentedControl
-          label="Agrupar por"
-          options={[{ id: 'policy', label: 'Póliza' }, { id: 'carrier', label: 'Empresa' }]}
-          value={group}
-          onChange={g => setParams({ group: g === 'carrier' ? 'carrier' : null, state: null })}
-        />
-        <SegmentedControl label="Estado" options={filtros} value={state || 'all'}
-                          onChange={id => setParams({ state: id === 'all' ? null : id })} />
-      </div>
-
-      {active.error ? (
-        <Estado tipo="error" titulo="No se pudieron cargar las pólizas" detalle="Reintenta en unos segundos." />
-      ) : active.isPending ? (
+      <EncabezadoDePagina titulo="Seguros" bajada="¿Qué transportistas no están al día con sus pólizas?" />
+      {overview.isError ? (
+        <Estado tipo="error" titulo="No se pudo cargar Seguros" detalle="Reintenta en unos segundos." />
+      ) : overview.isPending ? (
         <Estado tipo="cargando" />
-      ) : (active.data?.data.length ?? 0) === 0 ? (
-        <Estado tipo="vacio" titulo={vacio} />
       ) : (
-        <div className={`transition-opacity ${active.isFetching ? 'opacity-60' : ''}`}>
-          {group === 'policy'
-            ? <PoliciesTable rows={policies.data!.data} returnTo={returnTo} />
-            : <CarriersInsuranceTable rows={carriers.data!.data} returnTo={returnTo} />}
-        </div>
-      )}
-
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-3">
-          <button type="button" onClick={() => setParams({ page: String(page - 1) })} disabled={page <= 1}
-                  className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-informativo hover:border-accion disabled:cursor-not-allowed disabled:opacity-40">
-            <ChevronLeft size={13} /> Anterior
-          </button>
-          <span className="text-xs text-informativo">Página {page} de {totalPages}</span>
-          <button type="button" onClick={() => setParams({ page: String(page + 1) })} disabled={page >= totalPages}
-                  className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-informativo hover:border-accion disabled:cursor-not-allowed disabled:opacity-40">
-            Siguiente <ChevronRight size={13} />
-          </button>
+        <div className="space-y-4">
+          <ShortcutTiles model={model} groups={recuadros} />
+          <TableToolbar model={model} searchPlaceholder="Empresa o RUT…" preferences={preferencias} />
+          <DataTable model={model} label="Seguros por empresa" pageSizes={[50, 100]}
+            empty={soloNoAlDia && !view.q ? 'Todas las empresas están al día' : 'Nada en esta vista. Prueba con otro recuadro o limpia los filtros.'} />
         </div>
       )}
     </PageContainer>

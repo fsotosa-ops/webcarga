@@ -87,8 +87,7 @@ export type PolicyFilter = PolicyState | 'UNPAID' | 'NO_FILE'
 export type InstallmentFilter = 'OVERDUE' | 'DUE_30' | 'PAID' | 'ALL'
 
 type Paged<T, F extends string> = { data: T[]; count: number; page: number; limit: number; facets: Record<F | 'total', number> }
-export type PoliciesResponse = Paged<PolicyRow, PolicyFilter> & { group_by: 'policy' }
-export type CarriersInsuranceResponse = Paged<CarrierInsuranceRow, CarrierInsuranceState> & { group_by: 'carrier' }
+export type PoliciesResponse = Paged<PolicyRow, PolicyFilter>
 export type InstallmentsResponse = Paged<InstallmentRow, InstallmentFilter>
 
 export type PolicyDetail = {
@@ -132,9 +131,7 @@ export const insuranceKeys = {
 
 export const insuranceApi = {
   listPolicies: (p: { state?: string; q?: string; page?: number; limit?: number } = {}) =>
-    apiFetch<PoliciesResponse>(`/api/v1/policies?${qs({ group_by: 'policy', state: p.state, q: p.q, page: p.page, limit: p.limit })}`),
-  listCarriers: (p: { state?: string; q?: string; page?: number; limit?: number } = {}) =>
-    apiFetch<CarriersInsuranceResponse>(`/api/v1/policies?${qs({ group_by: 'carrier', state: p.state, q: p.q, page: p.page, limit: p.limit })}`),
+    apiFetch<PoliciesResponse>(`/api/v1/policies?${qs({ state: p.state, q: p.q, page: p.page, limit: p.limit })}`),
   /** Seguros › Empresas: todas, con su veredicto. */
   carrierOverview: () => apiFetch<CarrierInsuranceOverview>('/api/v1/insurance/carriers'),
   /** El detalle de una empresa: su veredicto y sus pólizas con cuotas. */

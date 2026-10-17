@@ -75,7 +75,7 @@ describe('Ficha de póliza', () => {
     vi.mocked(insuranceApi.get).mockRejectedValue(Object.assign(new Error('boom'), { status: 500 }))
     renderProfile()
     expect(await screen.findByText('No se pudo abrir la póliza')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Volver a Pólizas' })).toHaveAttribute('href', '/dashboard/insurance')
+    expect(screen.getByRole('link', { name: 'Volver a Pólizas' })).toHaveAttribute('href', '/dashboard/insurance/policies')
   })
 
   it('"Sí, enlazar" queda deshabilitado mientras enlaza (no se manda dos veces)', async () => {

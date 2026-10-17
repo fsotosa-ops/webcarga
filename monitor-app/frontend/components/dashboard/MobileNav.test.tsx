@@ -56,11 +56,11 @@ describe('MobileNav: la barra', () => {
   })
 
   it('un contador fuera de la barra es un punto en "Menú" y un número en el cajón (N5)', () => {
-    contadores.valor = { installments: 3 }
+    contadores.valor = { insurance: 3 }
     montar()
     fireEvent.click(within(barra()).getByRole('button', { name: 'Menú, hay pendientes' }))
     const cajon = screen.getByRole('dialog', { name: 'Menú' })
-    expect(within(cajon).getByRole('link', { name: /Cuotas/ })).toHaveTextContent('3')
+    expect(within(cajon).getAllByRole('link').find(a => a.getAttribute('href') === '/dashboard/insurance')).toHaveTextContent('3')
   })
 
   it('sin el dato todavía, ni punto ni número (N5)', () => {
@@ -109,7 +109,7 @@ describe('MobileNav: la entrada activa se calcula sobre todo el menú', () => {
     expect(within(barra()).getByRole('button', { name: /^Menú/ })).toHaveAttribute('data-state', 'active')
   })
 
-  it('en el cajón solo la entrada de la pantalla queda marcada (Cuotas, no también Pólizas)', () => {
+  it('en el cajón solo la entrada de la pantalla queda marcada (Cuotas, no también Empresas de Seguros)', () => {
     nav.ruta = '/dashboard/insurance/installments'
     montar()
     fireEvent.click(within(barra()).getByRole('button', { name: /^Menú/ }))

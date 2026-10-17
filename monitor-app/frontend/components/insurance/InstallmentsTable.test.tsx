@@ -4,11 +4,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
-vi.mock('@/lib/api/insurance', () => ({ insuranceApi: { pay: vi.fn(), unpay: vi.fn() } }))
+vi.mock('@/lib/api/insurance', async orig => ({ ...(await orig<object>()), insuranceApi: { pay: vi.fn(), unpay: vi.fn(), carrier: vi.fn() } }))
 vi.mock('@/lib/utils/datetime', async orig => ({ ...(await orig<object>()), hoyEnChile: () => '2026-10-15' }))
 
 import { insuranceApi } from '@/lib/api/insurance'
+import type { ReactNode } from 'react'
 import { InstallmentsTable, PayInstallmentsDialog } from './InstallmentsTable'
+import { CarrierInsurancePanelProvider } from './CarrierInsurancePanel'
+
+/** Donde vive la tabla en la app: el nombre de la empresa abre el panel de Seguros. */
+const Seguros = ({ client, children }: { client: QueryClient; children: ReactNode }) => (
+  <QueryClientProvider client={client}><CarrierInsurancePanelProvider>{children}</CarrierInsurancePanelProvider></QueryClientProvider>
+)
 
 const cuota = (id: string, n: number, over: Record<string, unknown> = {}) => ({
   id, policy_id: 'p1', carrier_id: 'c1', carrier_name: 'Aguilera', insurance_company: 'SURA', policy_number: '1',
@@ -18,9 +25,9 @@ const cuota = (id: string, n: number, over: Record<string, unknown> = {}) => ({
 
 function renderTable(rows = [cuota('i1', 1), cuota('i2', 2), cuota('i3', 3, { installment_state: 'PAID', paid: true, paid_on: '2026-09-02' })]) {
   return render(
-    <QueryClientProvider client={new QueryClient()}>
+    <Seguros client={new QueryClient()}>
       <InstallmentsTable rows={rows as never} />
-    </QueryClientProvider>,
+    </Seguros>,
   )
 }
 
@@ -35,12 +42,12 @@ describe('InstallmentsTable', () => {
   it('al cambiar de filtro, lo seleccionado que ya no está a la vista no cuenta ni se paga', async () => {
     vi.mocked(insuranceApi.pay).mockResolvedValue({ paid: ['i2'], errors: [] })
     const client = new QueryClient()
-    const { rerender } = render(<QueryClientProvider client={client}><InstallmentsTable rows={[cuota('i1', 1), cuota('i2', 2)] as never} /></QueryClientProvider>)
+    const { rerender } = render(<Seguros client={client}><InstallmentsTable rows={[cuota('i1', 1), cuota('i2', 2)] as never} /></Seguros>)
     fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar cuota 1' }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar cuota 2' }))
-    rerender(<QueryClientProvider client={client}><InstallmentsTable rows={[cuota('i2', 2), cuota('i4', 4)] as never} /></QueryClientProvider>)
+    rerender(<Seguros client={client}><InstallmentsTable rows={[cuota('i2', 2), cuota('i4', 4)] as never} /></Seguros>)
     expect(screen.getByText(/^1 seleccionad/)).toBeInTheDocument()
-    rerender(<QueryClientProvider client={client}><InstallmentsTable rows={[cuota('i4', 4)] as never} /></QueryClientProvider>)
+    rerender(<Seguros client={client}><InstallmentsTable rows={[cuota('i4', 4)] as never} /></Seguros>)
     expect(screen.getByText('Ninguno seleccionado')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Marcar pagadas…' })).toBeNull()
   })
@@ -78,7 +85,7 @@ describe('InstallmentsTable', () => {
     vi.mocked(insuranceApi.pay).mockResolvedValue({ paid: [], errors: [{ id: 'i1', error: 'Ya estaba pagada' }] })
     const client = new QueryClient()
     const tabla = (rows: unknown[]) => (
-      <QueryClientProvider client={client}><InstallmentsTable rows={rows as never} showPolicy empty={<p>No hay cuotas vencidas</p>} /></QueryClientProvider>
+      <Seguros client={client}><InstallmentsTable rows={rows as never} showPolicy empty={<p>No hay cuotas vencidas</p>} /></Seguros>
     )
     const { rerender } = render(tabla([cuota('i1', 1)]))
     fireEvent.click(screen.getByRole('checkbox', { name: /Seleccionar cuota 1/ }))
@@ -98,7 +105,7 @@ describe('InstallmentsTable', () => {
   })
 
   it('mientras la lista se actualiza, "Marcar pagadas…" espera', () => {
-    render(<QueryClientProvider client={new QueryClient()}><InstallmentsTable rows={[cuota('i1', 1)] as never} busy /></QueryClientProvider>)
+    render(<Seguros client={new QueryClient()}><InstallmentsTable rows={[cuota('i1', 1)] as never} busy /></Seguros>)
     fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar cuota 1' }))
     expect(screen.getByRole('button', { name: 'Marcar pagadas…' })).toBeDisabled()
   })

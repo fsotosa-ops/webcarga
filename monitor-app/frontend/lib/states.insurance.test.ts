@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { carrierInsuranceStyle, installmentStateStyle, policyStateStyle } from './states'
+import { installmentStateStyle, policyStateStyle } from './states'
 
 // Seguros E2: los estados de póliza y cuota los calcula la API (app.insurance_status);
 // aquí solo se vuelven palabra, tono e ícono. Fechas cortas; con año si no es el actual.
@@ -40,13 +40,6 @@ describe('installmentStateStyle', () => {
   })
 })
 
-describe('carrierInsuranceStyle', () => {
-  it('una empresa activa sin póliza es lo más urgente; el resto, el estado de su peor póliza', () => {
-    expect(carrierInsuranceStyle('NO_POLICY')).toMatchObject({ label: 'Sin póliza', tone: 'urgent' })
-    expect(carrierInsuranceStyle('EXPIRED')).toMatchObject({ label: 'Vencida', tone: 'urgent' })
-    expect(carrierInsuranceStyle('VALID').label).toBe('Al día')
-  })
-})
 
 // ── Seguros por empresa (17/10): el veredicto y su razón ──────────────────────
 import {

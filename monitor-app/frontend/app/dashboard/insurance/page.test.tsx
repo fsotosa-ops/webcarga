@@ -1,94 +1,90 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { CarrierInsuranceRow } from '@/lib/api/insurance'
+import { memoryUrl } from '@/lib/testing/inMemoryNavigation'
 
-let search = ''
-const replace = vi.fn((url: string) => { search = url.split('?')[1] ?? '' })
-vi.mock('next/navigation', () => ({
-  useSearchParams: () => new URLSearchParams(search),
-  useRouter: () => ({ replace, push: vi.fn() }),
-  usePathname: () => '/dashboard/insurance',
-}))
+vi.mock('next/navigation', async () => (await import('@/lib/testing/inMemoryNavigation')).nextNavigation)
 vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
-vi.mock('@/lib/api/insurance', () => ({ insuranceApi: { listPolicies: vi.fn(), listCarriers: vi.fn() } }))
+vi.mock('@/components/ui/tabla/data/useTablePreferences', () => ({
+  useTablePreferences: () => ({ columns: null, save: vi.fn(), reset: vi.fn() }),
+}))
+const carrierOverview = vi.fn()
+const carrier = vi.fn()
+vi.mock('@/lib/api/insurance', async orig => ({
+  ...(await orig<object>()), insuranceApi: { carrierOverview: () => carrierOverview(), carrier: (id: string) => carrier(id) },
+}))
 
-import { insuranceApi } from '@/lib/api/insurance'
-import { QuickViewContext } from '@/components/dashboard/QuickViewProvider'
-import PolizasPage from './page'
+import EmpresasPage from './page'
+import InsuranceLayout from './layout'
 
-const POLIZA = {
-  id: 'p1', carrier_id: 'c1', carrier_name: 'Transportes Aguilera Spa', carrier_tax_id: '77573544-9',
-  insurance_company: 'SURA', policy_number: '8581440-RC', valid_from: '2025-05-22', valid_to: '2026-05-22',
-  has_file: false, policy_state: 'EXPIRED', expires_in_days: -146, installments_total: 11, paid_installments: 0,
-  unpaid_installments: 11, overdue_installments: 11, next_due_date: '2024-06-25', has_outside_validity: true,
-}
-const FACETS = { total: 33, EXPIRED: 9, EXPIRING: 2, VALID: 21, NO_DATES: 1, CANCELLED: 0, RENEWED: 0, UNPAID: 17, NO_FILE: 32 }
+const fila = (id: string, name: string, p: Partial<CarrierInsuranceRow>): CarrierInsuranceRow => ({
+  carrier_id: id, carrier_name: name, carrier_tax_id: `76.${id}`, operational_status: 'ACTIVE', policies: 1,
+  worst_state: 'VALID', insurance_verdict: 'UP_TO_DATE', insurance_alert: null, severe_overdue: false,
+  unpaid_installments: 0, overdue_installments: 0, unpaid_uf: null, oldest_overdue_date: null, next_due_date: null,
+  reason_insurer: null, reason_valid_to: null, ...p,
+})
+const FILAS = [
+  fila('1', 'Fletes Maipo Ltda', { insurance_verdict: 'EXPIRED', reason_insurer: 'HDI', reason_valid_to: '2026-09-23' }),
+  fila('2', 'Transportes Sur SpA', { insurance_verdict: 'NO_POLICY', policies: 0 }),
+  fila('3', 'Transportes Andes Ltda', { insurance_verdict: 'OVERDUE', overdue_installments: 3, severe_overdue: true }),
+  fila('4', 'Logistica Pacifico SpA', { insurance_verdict: 'EXPIRING', reason_insurer: 'Mapfre', reason_valid_to: '2026-11-02' }),
+  fila('5', 'Transportes Cordillera SpA', { insurance_verdict: 'UP_TO_DATE' }),
+]
+const FACETS = { EXPIRED: 1, NO_POLICY: 1, OVERDUE: 1, NO_DATES: 0, EXPIRING: 1, UP_TO_DATE: 1, total: 5 }
 
-function renderPage() {
+function montar() {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <QuickViewContext.Provider value={vi.fn()}><PolizasPage /></QuickViewContext.Provider>
+      <InsuranceLayout><EmpresasPage /></InsuranceLayout>
     </QueryClientProvider>,
   )
 }
+const tabla = () => screen.getByRole('table', { name: 'Seguros por empresa' })
+const empresas = () => within(tabla()).getAllByRole('row').slice(1).map(r => within(r).getAllByRole('cell')[0].textContent)
 
 beforeEach(() => {
-  search = ''
-  vi.mocked(insuranceApi.listPolicies).mockResolvedValue({ group_by: 'policy', data: [POLIZA], count: 1, page: 1, limit: 50, facets: FACETS } as never)
-  vi.mocked(insuranceApi.listCarriers).mockResolvedValue({
-    group_by: 'carrier', count: 1, page: 1, limit: 50,
-    facets: { total: 36, NO_POLICY: 18, EXPIRED: 5, EXPIRING: 0, VALID: 13, NO_DATES: 0 },
-    data: [{ carrier_id: 'c9', carrier_name: 'Hasa Spa', carrier_tax_id: '77104928-1', operational_status: 'ACTIVE', policies: 0,
-             worst_state: 'NO_POLICY', unpaid_installments: 0, overdue_installments: 0, next_due_date: null, insurance_alert: null }],
-  } as never)
+  memoryUrl.reset('/dashboard/insurance')
+  carrierOverview.mockResolvedValue({ data: FILAS, facets: FACETS })
+  carrier.mockResolvedValue({ summary: FILAS[0], policies: [] })
 })
 
-describe('Seguros › Pólizas', () => {
-  it('la bajada cuenta en singular cuando hay una sola póliza o empresa', async () => {
-    vi.mocked(insuranceApi.listPolicies).mockResolvedValue({ group_by: 'policy', data: [POLIZA], count: 1, page: 1, limit: 50, facets: { ...FACETS, total: 1 } } as never)
-    renderPage()
-    expect(await screen.findByText('1 póliza')).toBeInTheDocument()
+describe('Seguros › Empresas', () => {
+  it('abre en "No al día": solo esas, por gravedad, con su veredicto y su razón (E4)', async () => {
+    montar()
+    await screen.findByRole('table', { name: 'Seguros por empresa' })
+    expect(empresas().map(t => t?.split('76.')[0])).toEqual(['Fletes Maipo Ltda', 'Transportes Sur SpA', 'Transportes Andes Ltda'])
+    const fletes = within(tabla()).getAllByRole('row')[1]
+    expect(within(fletes).getByText('Póliza vencida')).toBeInTheDocument()
+    expect(within(fletes).getByText('HDI venció el 23/09')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^No al día, 3/ })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('la fila abre la ficha de la póliza, con la lista para volver; la empresa abre su vista rápida', async () => {
-    renderPage()
-    const tabla = await screen.findByRole('table')
-    expect(within(tabla).getByRole('link', { name: /SURA/ })).toHaveAttribute('href', `/dashboard/insurance/policies/p1?next=${encodeURIComponent('/dashboard/insurance')}`)
-    expect(within(tabla).getByRole('link', { name: 'Ver empresa Transportes Aguilera Spa' })).toHaveAttribute('href', '/dashboard/carriers/c1')
-    expect(within(tabla).getByText('Venció el 22/05')).toBeInTheDocument()
-    expect(within(tabla).getByText('11 vencidas')).toBeInTheDocument()
+  it('los recuadros cuentan No al día, Por vencer y Al día; tocar "Al día" deja solo esas (E4)', async () => {
+    montar()
+    await screen.findByRole('table', { name: 'Seguros por empresa' })
+    expect(screen.getByRole('button', { name: /^Por vencer, 1/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^Al día, 1/ }))
+    expect(empresas().map(t => t?.split('76.')[0])).toEqual(['Transportes Cordillera SpA'])
   })
 
-  it('S13: agrupa por Póliza o Empresa con el control segmentado; por empresa aparecen las que no tienen póliza', async () => {
-    renderPage()
-    await screen.findByRole('table')
-    const agrupar = screen.getByRole('group', { name: 'Agrupar por' })
-    expect(within(agrupar).getByRole('button', { name: 'Póliza' })).toHaveAttribute('aria-pressed', 'true')
-    fireEvent.click(within(agrupar).getByRole('button', { name: 'Empresa' }))
-    expect(replace).toHaveBeenCalledWith('/dashboard/insurance?group=carrier', { scroll: false })
+  it('sin empresas "No al día", lo dice en vez de una tabla vacía', async () => {
+    carrierOverview.mockResolvedValue({ data: [FILAS[4]], facets: { ...FACETS, EXPIRED: 0, NO_POLICY: 0, OVERDUE: 0, total: 1 } })
+    montar()
+    expect(await screen.findByText('Todas las empresas están al día')).toBeInTheDocument()
   })
 
-  it('agrupada por empresa, la empresa sin póliza dice "Sin póliza" y los filtros cuentan con las cifras de la API', async () => {
-    search = 'group=carrier'
-    renderPage()
-    const tabla = await screen.findByRole('table')
-    expect(within(tabla).getByText('Sin póliza')).toBeInTheDocument()
-    expect(within(screen.getByRole('group', { name: 'Estado' })).getByRole('button', { name: /Sin póliza/ })).toHaveTextContent('18')
+  it('un enlace con ?q=RUT abre con esa búsqueda, sin el filtro inicial', async () => {
+    memoryUrl.reset('/dashboard/insurance?q=76.4')
+    montar()
+    await screen.findByRole('table', { name: 'Seguros por empresa' })
+    expect(empresas().map(t => t?.split('76.')[0])).toEqual(['Logistica Pacifico SpA'])
   })
 
-  it('la cabecera es la del kit y el buscador habla de RUT; sin "0" mientras carga', async () => {
-    vi.mocked(insuranceApi.listPolicies).mockReturnValue(new Promise(() => {}))
-    renderPage()
-    expect(screen.getByPlaceholderText('Aseguradora, N° de póliza, empresa o RUT…')).toBeInTheDocument()
-    expect(within(screen.getByRole('group', { name: 'Estado' })).getByRole('button', { name: /^Todas/ })).toHaveTextContent(/^Todas$/)
-    vi.mocked(insuranceApi.listPolicies).mockResolvedValue({ group_by: 'policy', data: [POLIZA], count: 1, page: 1, limit: 50, facets: FACETS } as never)
-  })
-
-  it('filtrar por estado lo pide a la API', async () => {
-    renderPage()
-    await screen.findByRole('table')
-    fireEvent.click(within(screen.getByRole('group', { name: 'Estado' })).getByRole('button', { name: /^Vencidas/ }))
-    expect(replace).toHaveBeenCalledWith('/dashboard/insurance?state=EXPIRED', { scroll: false })
-    await waitFor(() => expect(screen.getByRole('columnheader', { name: 'Póliza' }).className).not.toMatch(/uppercase/))
+  it('el nombre de la empresa abre su panel de Seguros', async () => {
+    montar()
+    fireEvent.click(await screen.findByRole('link', { name: 'Ver empresa Fletes Maipo Ltda' }))
+    expect(await screen.findByRole('dialog', { name: 'Fletes Maipo Ltda' })).toBeInTheDocument()
+    expect(carrier).toHaveBeenCalledWith('1')
   })
 })

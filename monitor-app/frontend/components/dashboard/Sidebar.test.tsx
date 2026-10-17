@@ -22,8 +22,9 @@ vi.mock('@/lib/api/documentIngest', () => ({
 vi.mock('@/lib/api/certificationRequests', () => ({
   certificationRequestsApi: { listOpen: vi.fn().mockResolvedValue({ total: 0, rows: [] }) },
 }))
-vi.mock('@/lib/api/insurance', () => ({
-  insuranceApi: { listInstallments: vi.fn().mockResolvedValue({ data: [], count: 0, page: 1, limit: 1, facets: { OVERDUE: 150, DUE_30: 0, PAID: 0, ALL: 0 } }) },
+vi.mock('@/lib/api/insurance', async orig => ({
+  ...(await orig<object>()),
+  insuranceApi: { carrierOverview: vi.fn().mockResolvedValue({ data: [], facets: { EXPIRED: 100, NO_POLICY: 30, OVERDUE: 15, NO_DATES: 5, EXPIRING: 7, UP_TO_DATE: 9, total: 166 } }) },
 }))
 
 import { documentIngestApi } from '@/lib/api/documentIngest'
@@ -341,10 +342,10 @@ describe('cuenta al pie de la barra', () => {
   })
 })
 
-// S8 (Seguros E2): Seguros es un grupo, como Directorio y Certificación, con
-// Pólizas y Cuotas; Cuotas lleva el contador de vencidas.
+// S8 (Seguros E2) y E7 (Seguros por empresa, 17/10): Seguros es un grupo con Empresas,
+// Pólizas y Cuotas; Empresas lleva el contador de las que no están al día.
 describe('Sidebar — Seguros con submódulos', () => {
-  it('S8: Seguros tiene Pólizas y Cuotas, y Cuotas cuenta las vencidas', async () => {
+  it('S8/E7: Seguros tiene Empresas, Pólizas y Cuotas, y Empresas cuenta las no al día', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     nav.ruta = '/dashboard/insurance/installments'
     setup()
@@ -353,8 +354,11 @@ describe('Sidebar — Seguros con submódulos', () => {
       const delGrupo = within(aside).getAllByRole('link')
         .filter(a => a.getAttribute('href')?.startsWith('/dashboard/insurance'))
         .map(a => a.getAttribute('href'))
-      expect(delGrupo).toEqual(['/dashboard/insurance', '/dashboard/insurance/installments'])
+      expect(delGrupo).toEqual(['/dashboard/insurance', '/dashboard/insurance/policies', '/dashboard/insurance/installments'])
     })
-    await waitFor(() => expect(within(aside).getByRole('link', { name: /Cuotas/ })).toHaveTextContent('150'))
+    // No al día = Vencida + Sin póliza + Cuotas vencidas + Sin fechas: 100 + 30 + 15 + 5.
+    const empresas = () => within(aside).getAllByRole('link').find(a => a.getAttribute('href') === '/dashboard/insurance')!
+    await waitFor(() => expect(empresas()).toHaveTextContent('150'))
+    expect(within(aside).getByRole('link', { name: /Cuotas/ })).not.toHaveTextContent(/\d/)
   })
 })

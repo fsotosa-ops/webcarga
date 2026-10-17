@@ -33,3 +33,31 @@ describe('Seguros no recalcula estados en el navegador', () => {
     expect(hallazgos).toEqual([])
   })
 })
+
+/** E9 (Seguros por empresa, 17/10): el veredicto de una empresa lo decide la base
+ *  (app.carrier_insurance_summary) y la pantalla lo lee por el glosario
+ *  (`insuranceVerdictStyle`, `insuranceStanding`, `insuranceVerdictReason`). Una
+ *  pantalla que compara `insurance_verdict` con un valor es una segunda regla que se
+ *  separa de la primera el día que cambie el orden de gravedad. */
+const COMPARA_VEREDICTO = [
+  /\binsurance_verdict\s*[!=]==?/,
+  /[!=]==?\s*[\w.?]*\binsurance_verdict\b/,
+  /switch\s*\([^)]*\binsurance_verdict\b/,
+]
+const comparaVeredicto = (l: string) => COMPARA_VEREDICTO.some(r => r.test(l))
+
+describe('El veredicto de Seguros se lee por el glosario', () => {
+  it('la guardia reconoce una comparación (si no, pasaría sin mirar nada)', () => {
+    expect(comparaVeredicto("if (r.insurance_verdict === 'EXPIRED') {")).toBe(true)
+    expect(comparaVeredicto("'OVERDUE' !== row.insurance_verdict")).toBe(true)
+    expect(comparaVeredicto('switch (fila.insurance_verdict) {')).toBe(true)
+    expect(comparaVeredicto('insuranceVerdictStyle(r.insurance_verdict)')).toBe(false)
+  })
+
+  it('E9: ningún archivo de app/ ni components/ compara insurance_verdict con un valor', () => {
+    const hallazgos = ['app', 'components'].flatMap(d => recorrer(join(RAIZ, d)))
+      .flatMap(ruta => readFileSync(ruta, 'utf8').split('\n')
+        .flatMap((l, i) => comparaVeredicto(l) ? [`${ruta.slice(RAIZ.length + 1)}:${i + 1}: ${l.trim()}`] : []))
+    expect(hallazgos).toEqual([])
+  })
+})

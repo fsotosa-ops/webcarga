@@ -11,7 +11,7 @@ import { AREAS, nivelEnArea, type Area } from '@/lib/authz/roles'
  *  del teléfono era una segunda lista derivada a mano (`MOBILE_NAV_ITEMS`) que aplanaba
  *  todo el menú: creció a 15 entradas en una fila que se desplazaba de lado. */
 
-export type NavBadge = 'inbox' | 'requests' | 'installments'
+export type NavBadge = 'inbox' | 'requests' | 'insurance'
 
 export type NavLeaf = {
   href: string
@@ -87,14 +87,15 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/dashboard/compliance/requirements', label: 'Documentos exigidos', short: 'Exigidos', icon: FileText },
     ],
   },
-  // Seguros (Seguros E2, 15/10): un submódulo por objeto de trabajo, como
-  // Directorio y Certificación. Cuotas cuenta las vencidas.
+  // Seguros (Seguros E2, 15/10; Seguros por empresa, 17/10): Empresas responde "¿quién no
+  // está al día?" y cuenta esas; Pólizas y Cuotas son el detalle por objeto.
   {
     label: 'Seguros',
     icon:  Shield,
     items: [
-      { href: '/dashboard/insurance',              label: 'Pólizas' },
-      { href: '/dashboard/insurance/installments', label: 'Cuotas', badge: 'installments', icon: CalendarClock },
+      { href: '/dashboard/insurance',              label: 'Empresas', badge: 'insurance', icon: Building2 },
+      { href: '/dashboard/insurance/policies',     label: 'Pólizas', icon: FileText },
+      { href: '/dashboard/insurance/installments', label: 'Cuotas', icon: CalendarClock },
     ],
   },
 ]
@@ -158,7 +159,7 @@ export function mobileProfile(roles: readonly string[]): MobileProfile {
 export const MOBILE_DESTINATIONS: Record<MobileProfile, readonly string[]> = {
   operations:    ['/dashboard/operations/monitor', '/dashboard/operations/closures', '/dashboard/carriers', '/dashboard/drivers'],
   certification: ['/dashboard/compliance/inbox', '/dashboard/compliance/pending', '/dashboard/compliance', '/dashboard/compliance/requirements'],
-  insurance:     ['/dashboard/insurance', '/dashboard/insurance/installments'],
+  insurance:     ['/dashboard/insurance', '/dashboard/insurance/policies', '/dashboard/insurance/installments'],
   commercial:    ['/dashboard/pricing', '/dashboard/clients'],
   general:       ['/dashboard/operations/monitor', '/dashboard/carriers', '/dashboard/compliance', '/dashboard/insurance'],
 }

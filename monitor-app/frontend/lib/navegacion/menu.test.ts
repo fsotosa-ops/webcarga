@@ -39,7 +39,7 @@ describe('la barra de cada perfil (N3)', () => {
       expect(new Set(etiquetas).size, roles.join()).toBe(etiquetas.length)
     }
     expect(mobileBar({ roles: ['owner'], permissions: TODO }).map(b => b.label))
-      .toEqual(['Monitor', 'Empresas', 'Certificación', 'Pólizas'])
+      .toEqual(['Monitor', 'Empresas', 'Certificación', 'Seguros'])
   })
   it('nunca más de 4 destinos', () => {
     for (const roles of [['operations_supervisor'], ['certification_supervisor'], ['insurance_supervisor'],

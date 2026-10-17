@@ -13,6 +13,7 @@ import { OUTSIDE_VALIDITY_STYLE, fechaCorta, installmentStateStyle } from '@/lib
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { hoyEnChile } from '@/lib/utils/datetime'
 import { policyHref } from '@/lib/navegacion/insurance'
+import { useOpenCarrierInsurance } from './CarrierInsurancePanel'
 import { insuranceApi, type InstallmentRow } from '@/lib/api/insurance'
 
 const uf = (n: number | null) => (n == null ? '—' : `${n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`)
@@ -30,6 +31,7 @@ export function InstallmentsTable({ rows, showPolicy = false, returnTo, empty, b
   /** La lista se está actualizando: no se paga sobre filas que van a cambiar. */
   busy?: boolean
 }) {
+  const openInsurance = useOpenCarrierInsurance()
   const queryClient = useQueryClient()
   const canEdit = usePermiso('policies.edit')
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -104,7 +106,7 @@ export function InstallmentsTable({ rows, showPolicy = false, returnTo, empty, b
                       )}
                     </td>
                   )}
-                  {showPolicy && <td className="px-3 py-2.5"><EntityCell kind="carrier" id={r.carrier_id} label={r.carrier_name} /></td>}
+                  {showPolicy && <td className="px-3 py-2.5"><EntityCell kind="carrier" id={r.carrier_id} label={r.carrier_name} onOpen={openInsurance} /></td>}
                   {showPolicy && (
                     <td className="px-3 py-2.5">
                       <Link href={policyHref(r.policy_id, returnTo)} prefetch={false} className="text-text-primary hover:text-accent">

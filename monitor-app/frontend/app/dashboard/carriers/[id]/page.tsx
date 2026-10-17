@@ -30,7 +30,7 @@ import { DeleteCarrierModal } from '@/components/dashboard/DeleteCarrierModal'
 import { PolicyCreateForm, type PolicyFormState } from '@/components/insurance/PolicyCreateForm'
 import { CarrierInsuranceDetail } from '@/components/insurance/CarrierInsuranceDetail'
 import { insuranceApi, insuranceKeys } from '@/lib/api/insurance'
-import { policyHref } from '@/lib/navegacion/insurance'
+import { INSURANCE, policyHref } from '@/lib/navegacion/insurance'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { GestionDeclarada } from '@/components/compliance/GestionDeclarada'
 import { complianceApi } from '@/lib/api/compliance'
@@ -505,7 +505,7 @@ function EmpresaDetailPageInner() {
       <div className="space-y-3 rounded-2xl border border-border bg-white p-4">
         <div className="flex items-center justify-end gap-4">
           <Link
-            href={`/dashboard/insurance?q=${encodeURIComponent(carrier.tax_id)}`}
+            href={`${INSURANCE}?q=${encodeURIComponent(carrier.tax_id)}`}
             className="text-dato font-semibold text-accion hover:underline"
           >
             Ver en Seguros →

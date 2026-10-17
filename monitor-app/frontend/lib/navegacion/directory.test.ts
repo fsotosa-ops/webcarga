@@ -34,6 +34,10 @@ describe('returnLink', () => {
     expect(returnLink('/dashboard/drivers?documents=pending')?.label).toBe('Volver a Conductores')
     expect(returnLink('/dashboard/assets')?.label).toBe('Volver a Equipos')
     expect(returnLink('/dashboard/carriers?q=andes')?.label).toBe('Volver al Directorio')
+    // Seguros por empresa (17/10): Empresas es la entrada; Pólizas y la ficha de una póliza, debajo.
+    expect(returnLink('/dashboard/insurance/policies/p1?next=x')?.label).toBe('Volver a la póliza')
+    expect(returnLink('/dashboard/insurance/policies?state=EXPIRED')?.label).toBe('Volver a Pólizas')
+    expect(returnLink('/dashboard/insurance?f.standing=No%20al%20d%C3%ADa')?.label).toBe('Volver a Seguros')
     expect(returnLink('/dashboard/carriers/t1?tab=conductores')?.label).toBe('Volver a la empresa')
     expect(returnLink('/dashboard/clients?vista=inactivos')?.label).toBe('Volver a Clientes')
     expect(returnLink('/dashboard/clients/s1?tab=empresas')?.label).toBe('Volver al cliente')
