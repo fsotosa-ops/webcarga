@@ -36,7 +36,7 @@
 **17/10 — Cierre y Monitor con el sistema visual (`62e4b404`, en dev):** `PageContainer` (20 pantallas, guarda) y
 `Button`/`buttonClass` (trinquete de botones a mano en 27) en el kit; Monitor con Tabs, SearchInput y Popover del kit y el
 color de las señales por significado (`SignalTone` + `SIGNAL_TONE_TEXT`); trinquetes: color crudo 574, bajo 11 px 80.
-Pendiente de decidir: el título del Monitor dice "En Curso" y el menú "Monitor".
+Resuelto 17/10 (`62db5890`): el título es "Monitor"; se removió el tablero (1 de 2.046 viajes movidos a mano en 60 días) y la agrupación de estados pasó a llamarse "etapa del viaje" (TRIP_STAGES / tripStageStyle; "Estados del viaje" y "Etapa" en Configuración).
 
 **Siguiente paso exacto:**
 1. Confirmar Deploy Frontend y Deploy Monitor API en verde y recorrer el Cierre en dev con sesión.
