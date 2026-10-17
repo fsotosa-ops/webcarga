@@ -1,5 +1,7 @@
 'use client'
 
+import { ToggleChip } from './ToggleChip'
+
 export interface Chip { id: string; etiqueta: string; n?: number }
 
 /** La barra de chips de filtro, como la del Monitor (Colun / Iansa / Sodimac).
@@ -19,21 +21,10 @@ export function ChipsDeFiltro({
       {opciones.map(({ id, etiqueta, n }) => {
         const encendido = id === activo
         return (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={encendido}
-            onClick={() => onElegir(encendido ? null : id)}
-            className={`rounded-full border px-2.5 py-1 text-etiqueta transition-colors
-                        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${
-              encendido
-                ? 'border-accion text-accion bg-accion/5 font-semibold'
-                : 'border-border text-gray-500 hover:text-text-primary'
-            }`}
-          >
+          <ToggleChip key={id} pressed={encendido} onClick={() => onElegir(encendido ? null : id)}>
             {etiqueta}
             {n !== undefined && <span className="ml-1.5 tabular-nums">{n}</span>}
-          </button>
+          </ToggleChip>
         )
       })}
     </div>

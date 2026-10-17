@@ -49,8 +49,10 @@ export function Popover({ anchor, open, onClose, label, align = 'start', width =
   if (!open) return null
   return createPortal(
     <div ref={panel} role="dialog" aria-label={label} onKeyDown={onKeyDown}
-      style={{ width, ...(pos ?? {}) }}
-      className="fixed z-50 rounded-xl border border-border bg-white p-2 shadow-lg">
+      // Lo que no cabe bajo el ancla se desplaza dentro del panel: es `fixed`, así que
+      // lo que pase el borde de la pantalla (o quede bajo la barra del teléfono) no se alcanza.
+      style={{ width, ...(pos ? { ...pos, maxHeight: `calc(100dvh - ${Math.round(pos.top)}px - 8px - var(--mobile-nav-height))` } : {}) }}
+      className="fixed z-50 overflow-y-auto rounded-xl border border-border bg-white p-2 shadow-lg">
       {children}
     </div>,
     document.body,

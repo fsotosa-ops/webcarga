@@ -143,7 +143,13 @@ describe('el sistema visual se usa, no solo existe', () => {
     //   lo que bajaron el Cierre con un solo patrón y Pendientes/Reporte con el kit.
     // 574 -> 504 el 2026-10-17: Certificación con tokens (Por asignar, Actualizar por planilla,
     //   Reasignar, Descartados y los paneles de Documentos exigidos).
-    const DEUDA = 504
+    // 504 -> 247 el 2026-10-17: los paneles del Monitor y la Reportería del Cierre con el kit
+    //   (Filtros sobre Popover y ToggleChip; Grupo, Carga masiva y Nuevo viaje sobre
+    //   PanelLateral centrado, con RouteEditor, FleetAssignSection y DriverSearchPicker).
+    //   De los 257, 72 no se eliminaron: son la paleta que elige quien arma un grupo, que
+    //   no es del sistema y ahora vive una vez en lib/ui/groupColors.ts (antes eran 88, en
+    //   dos archivos y distintos).
+    const DEUDA = 247
 
     const total = usosDeColorCrudo()
     expect(
@@ -163,7 +169,8 @@ describe('el sistema visual se usa, no solo existe', () => {
       if (ruta.endsWith('Button.tsx')) continue
       total += (readFileSync(ruta, 'utf8').replace(/\n\s*/g, ' ').match(BOTON_A_MANO) ?? []).length
     }
-    const TOPE = 27
+    // 27 -> 23 el 2026-10-17: Grupo, Carga masiva y Nuevo viaje usan Button.
+    const TOPE = 23
     expect(total, `Botones principales escritos a mano: ${total} (tope ${TOPE}). Usa Button del kit.`).toBeLessThanOrEqual(TOPE)
   })
 

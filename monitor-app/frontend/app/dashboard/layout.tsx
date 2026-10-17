@@ -40,8 +40,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <Sidebar acceso={acceso} />
         <div className="flex flex-col flex-1 overflow-hidden min-w-0">
           <Topbar displayName={getDisplayName(acceso)} roleName={acceso.role_names[0] ?? null} />
-          {/* pb-16 md:pb-0: space for mobile bottom nav */}
-          <main className="flex-1 overflow-y-auto bg-bg-main pb-16 md:pb-0">
+          {/* Lo que tapa la barra del teléfono (`--mobile-nav-height`, 0 desde md). */}
+          <main className="flex-1 overflow-y-auto bg-bg-main pb-(--mobile-nav-height)">
             <PermisosProvider acceso={acceso}><QuickViewProvider>{children}</QuickViewProvider></PermisosProvider>
           </main>
         </div>

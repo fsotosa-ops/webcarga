@@ -38,7 +38,7 @@ export function DriverSearchPicker({
   return (
     <div className="relative">
       <div className="relative">
-        <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <Search size={13} aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-informativo" />
         <input
           type="text"
           value={query}
@@ -46,27 +46,27 @@ export function DriverSearchPicker({
           onChange={e => onQueryChange(e.target.value)}
           placeholder={placeholder}
           aria-label="Buscar conductor"
-          className="w-full text-sm border border-border rounded-lg pl-8 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-gray-300"
+          className="w-full text-dato border border-border rounded-md pl-8 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-informativo/60"
         />
       </div>
 
       {label && (
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mt-2 mb-1">{label}</p>
+        <p className="mb-1 mt-2 text-etiqueta font-semibold text-informativo">{label}</p>
       )}
 
-      <div className="max-h-48 overflow-y-auto border border-border rounded-lg divide-y divide-border/60 mt-1.5">
+      <div className="max-h-48 overflow-y-auto border border-border rounded-md divide-y divide-border/60 mt-1.5">
         {searching && searchQuery.isFetching && (
-          <p className="px-3 py-2 text-center text-[11px] text-gray-400 flex items-center justify-center gap-1.5">
+          <p className="flex items-center justify-center gap-1.5 px-3 py-2 text-center text-etiqueta text-informativo">
             <Loader2 size={11} className="animate-spin" /> Buscando…
           </p>
         )}
         {searching && !searchQuery.isFetching && results.length === 0 && (
-          <p className="px-3 py-2 text-center text-[11px] text-gray-400">
+          <p className="px-3 py-2 text-center text-etiqueta text-informativo">
             Sin resultados en el directorio de Empresas
           </p>
         )}
         {!searching && results.length === 0 && (
-          <p className="px-3 py-2 text-center text-[11px] text-gray-300 italic">
+          <p className="px-3 py-2 text-center text-etiqueta text-informativo">
             Escribe para buscar…
           </p>
         )}
@@ -75,11 +75,11 @@ export function DriverSearchPicker({
             key={d.driver_id}
             type="button"
             onClick={() => onPick(d)}
-            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-bg-main transition-colors"
           >
-            <User size={12} className="text-gray-400 shrink-0" />
+            <User size={12} aria-hidden="true" className="shrink-0 text-informativo" />
             <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-semibold text-text-primary truncate">{d.driver_name}</p>
+              <p className="truncate text-dato font-semibold text-text-primary">{d.driver_name}</p>
               <p className="text-etiqueta text-informativo">
                 {d.carrier_name ?? 'Sin empresa'}{d.tractor_plate ? ` · ${d.tractor_plate}` : ''}
                 {isCarrierDeactivated(d.carrier_operational_status) && <> · {CARRIER_DEACTIVATED_LABEL}</>}
@@ -88,7 +88,7 @@ export function DriverSearchPicker({
             {/* HU-06 (Fase 3): % de similitud — solo presente en sugerencias
                 de fuzzy match, nunca en búsqueda manual por texto. */}
             {d.similarity != null && (
-              <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full shrink-0">
+              <span className="shrink-0 rounded-full bg-warning/10 px-1.5 py-0.5 text-etiqueta font-bold text-warning">
                 {Math.round(d.similarity * 100)}%
               </span>
             )}

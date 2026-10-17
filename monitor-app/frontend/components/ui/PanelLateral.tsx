@@ -1,7 +1,7 @@
 'use client'
 
 import { useLayer } from '@/lib/ui/layers'
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 
 /** El clic cayó en una barra de desplazamiento, no en el contenido: la de la
@@ -25,9 +25,11 @@ function isScrollbarClick(e: MouseEvent, target: Element): boolean {
  *  los mismos que ya usa TransporterSlideOver. Un `z-[9999]` suelto convierte
  *  el apilado en algo que se descubre a los golpes. */
 export function PanelLateral({
-  titulo, onCerrar, pie, children, overlay = 'dim', label, ancho = 'normal',
+  titulo, description, onCerrar, pie, children, overlay = 'dim', label, ancho = 'normal', placement = 'side',
 }: {
   titulo:   ReactNode
+  /** Una línea bajo el título que dice qué se hace aquí; describe el diálogo. */
+  description?: ReactNode
   /** Nombre accesible del panel cuando `titulo` no es un texto. */
   label?:   string
   onCerrar: () => void
@@ -39,10 +41,16 @@ export function PanelLateral({
   overlay?: 'dim' | 'none'
   /** `amplio`: lo que se revisa es una tabla (la revisión de una carga en lote). */
   ancho?: 'normal' | 'amplio'
+  /** `side`: el detalle de algo, pegado a la derecha. `center`: un diálogo que se
+   *  termina y se cierra (carga masiva, nuevo viaje, un grupo). El comportamiento —
+   *  fondo, Escape, foco, Tab y capas— es el mismo; cambia dónde se ubica. */
+  placement?: 'side' | 'center'
 }) {
   const panel = useRef<HTMLDivElement>(null)
   const isTop = useLayer()
   const anterior = useRef<HTMLElement | null>(null)
+  const descriptionId = useId()
+  const centered = placement === 'center'
 
   // DOS efectos, no uno: tomar el foco ocurre UNA VEZ, al abrir; escuchar
   // Escape necesita el `onCerrar` de ahora. Con los dos juntos, y como los
@@ -123,19 +131,27 @@ export function PanelLateral({
         role="dialog"
         aria-modal={overlay === 'dim' ? 'true' : undefined}
         aria-label={typeof titulo === 'string' ? titulo : label}
+        aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
         onKeyDown={atraparTab}
-        className={`fixed right-0 top-0 z-50 h-full w-full bg-white shadow-xl flex flex-col focus-visible:outline-none ${
-          overlay === 'none' ? 'md:w-[420px] md:border-l md:border-border' : ancho === 'amplio' ? 'max-w-4xl' : 'max-w-md'
+        className={`fixed z-50 flex flex-col bg-white shadow-xl focus-visible:outline-none ${
+          centered
+            // `inset-0 m-auto h-fit` centra sin `transform`, que la animación de entrada ya usa.
+            ? `inset-0 m-auto h-fit max-h-[90vh] w-[calc(100%-2rem)] rounded-xl animate-modal-in ${ancho === 'amplio' ? 'max-w-4xl' : 'max-w-lg'}`
+            : `right-0 top-0 h-full w-full ${
+                overlay === 'none' ? 'md:w-[420px] md:border-l md:border-border' : ancho === 'amplio' ? 'max-w-4xl' : 'max-w-md'}`
         }`}
       >
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-          <div className="font-mulish font-bold text-sm text-text-primary min-w-0 truncate">{titulo}</div>
+        <div className="flex items-start gap-2 px-4 py-3 border-b border-border">
+          <div className="min-w-0">
+            <div className="font-mulish font-bold text-sm text-text-primary truncate">{titulo}</div>
+            {description && <p id={descriptionId} className="mt-0.5 text-dato text-informativo">{description}</p>}
+          </div>
           <button
             type="button"
             onClick={onCerrar}
             aria-label="Cerrar"
-            className="ml-auto shrink-0 text-gray-400 hover:text-gray-600
+            className="ml-auto shrink-0 text-informativo hover:text-text-primary
                        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded"
           >
             <X size={16} />
@@ -144,7 +160,7 @@ export function PanelLateral({
 
         <div className="flex-1 overflow-y-auto px-4 py-4">{children}</div>
 
-        {pie && <div className="px-4 py-3 border-t border-border bg-gray-50/60">{pie}</div>}
+        {pie && <div className="px-4 py-3 border-t border-border bg-bg-main">{pie}</div>}
       </div>
     </>
   )

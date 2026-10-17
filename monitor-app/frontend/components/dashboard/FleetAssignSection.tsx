@@ -6,6 +6,7 @@ import { type CarrierOperationalStatus, type DriverPickCandidate } from '@/lib/t
 import { StatusChip } from '@/components/ui/StatusChip'
 import { lifecycleStyle } from '@/lib/states'
 import { DriverSearchPicker } from './DriverSearchPicker'
+import { Button } from '@/components/ui/Button'
 
 export type FleetAssignValue = {
   driver_id:        string | null
@@ -43,8 +44,8 @@ interface Props {
   notFoundHint?:   React.ReactNode
 }
 
-const INPUT = "w-full text-sm border border-border rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-gray-300"
-const INPUT_SM = "w-full text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-gray-300"
+const INPUT = "w-full text-dato border border-border rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-informativo/60"
+const INPUT_SM = "w-full text-etiqueta border border-border rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-informativo/60"
 
 export function FleetAssignSection({ value, onChange, suggested = [], suggestedLabel, size = 'md', notFoundHint }: Props) {
   const [query, setQuery] = useState('')
@@ -94,21 +95,21 @@ export function FleetAssignSection({ value, onChange, suggested = [], suggestedL
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between bg-accent/5 border border-accent/20 rounded-xl px-4 py-3">
+      <div className="flex items-center justify-between rounded-md border border-accent/20 bg-accent/5 px-4 py-3">
         <div className="min-w-0 flex items-center gap-2">
           <User size={14} className="text-accent shrink-0" />
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-800 truncate">{value.driver_name}</p>
-            <p className="text-[10px] text-gray-400 font-mono">{value.driver_rut ?? ''}</p>
+            <p className="truncate text-dato font-semibold text-text-primary">{value.driver_name}</p>
+            <p className="font-identificador text-etiqueta text-informativo">{value.driver_rut ?? ''}</p>
           </div>
         </div>
-        <button type="button" onClick={clear} className="text-xs text-gray-400 hover:text-red-400 transition-colors shrink-0 ml-3">
+        <Button variant="link" onClick={clear} className="ml-3 shrink-0">
           Cambiar
-        </button>
+        </Button>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Empresa de transporte</label>
+          <label className="block text-etiqueta font-semibold text-informativo mb-1.5">Empresa de transporte</label>
           <input type="text" value={value.carrier_name ?? ''} onChange={e => patch('carrier_name', e.target.value)} placeholder="Se autocompleta al elegir conductor" aria-label="Empresa de transporte" className={inputCls} />
           {value.carrier_operational_status && value.carrier_operational_status !== 'ACTIVE' && (() => {
             const s = lifecycleStyle('carrier', value.carrier_operational_status)
@@ -116,19 +117,19 @@ export function FleetAssignSection({ value, onChange, suggested = [], suggestedL
           })()}
         </div>
         <div>
-          <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Teléfono</label>
+          <label className="block text-etiqueta font-semibold text-informativo mb-1.5">Teléfono</label>
           <input type="text" value={value.driver_phone ?? ''} onChange={e => patch('driver_phone', e.target.value)} placeholder="+56912345678" aria-label="Teléfono" className={inputCls} />
         </div>
         <div>
-          <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Patente tracto</label>
+          <label className="block text-etiqueta font-semibold text-informativo mb-1.5">Patente tracto</label>
           <input type="text" value={value.tractor_plate ?? ''} onChange={e => patch('tractor_plate', e.target.value.toUpperCase())} placeholder="BGVS12" aria-label="Patente tracto" className={inputCls + ' uppercase'} />
         </div>
         <div>
-          <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Patente rampla</label>
+          <label className="block text-etiqueta font-semibold text-informativo mb-1.5">Patente rampla</label>
           <input type="text" value={value.trailer_plate ?? ''} onChange={e => patch('trailer_plate', e.target.value.toUpperCase())} placeholder="RMPLA01" aria-label="Patente rampla" className={inputCls + ' uppercase'} />
         </div>
       </div>
-      <p className="text-[10px] text-gray-400">
+      <p className="text-etiqueta text-informativo">
         Autocompletado editable desde la asignación activa del conductor — corrige aquí si ese día manejó otro equipo.
       </p>
     </div>

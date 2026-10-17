@@ -217,4 +217,27 @@ describe('FilterPopover', () => {
     fireEvent.click(screen.getByText('Filtros'))
     expect(screen.queryByText('Guardar como grupo')).not.toBeInTheDocument()
   })
+
+  it('un apartado sin opciones no se dibuja (sin orígenes ni fuentes en la base)', () => {
+    renderWithQueryClient(<Harness />)
+    fireEvent.click(screen.getByText('Filtros'))
+    expect(screen.queryByText('Origen')).toBeNull()
+    expect(screen.queryByText('Fuente')).toBeNull()
+    expect(screen.getByText('Tipo de operación')).toBeInTheDocument()
+  })
+
+  it('las acciones de grupo cierran el panel: el diálogo que abren no queda debajo de él', () => {
+    const onCreateGroup = vi.fn()
+    const onEditGroup = vi.fn()
+    renderWithQueryClient(<Harness onCreateGroup={onCreateGroup} onEditGroup={onEditGroup} />)
+    fireEvent.click(screen.getByText('Filtros'))
+    fireEvent.click(screen.getByRole('button', { name: 'Grupo' }))
+    expect(onCreateGroup).toHaveBeenCalled()
+    expect(screen.queryByRole('dialog', { name: 'Filtros adicionales' })).toBeNull()
+
+    fireEvent.click(screen.getByText('Filtros'))
+    fireEvent.click(screen.getByRole('button', { name: 'Editar grupo Mis urgentes' }))
+    expect(onEditGroup).toHaveBeenCalled()
+    expect(screen.queryByRole('dialog', { name: 'Filtros adicionales' })).toBeNull()
+  })
 })

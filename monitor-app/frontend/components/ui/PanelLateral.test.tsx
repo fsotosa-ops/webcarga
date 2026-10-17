@@ -218,5 +218,37 @@ describe('PanelLateral', () => {
     render(<PanelLateral titulo={<span>Conductor · vista rápida</span>} label="Conductor Vidal" onCerrar={vi.fn()} pie={null} overlay="none"><p>x</p></PanelLateral>)
     expect(screen.getByRole('dialog', { name: 'Conductor Vidal' })).toBeInTheDocument()
   })
+  describe('renderCentered (los modales: carga masiva, nuevo viaje, grupos)', () => {
+    function renderCentered(onCerrar = vi.fn()) {
+      render(
+        <PanelLateral placement="center" titulo="Carga masiva de viajes" description="Sube un archivo CSV"
+                      onCerrar={onCerrar} pie={<button>Importar</button>}>
+          <input aria-label="campo" />
+        </PanelLateral>,
+      )
+      return onCerrar
+    }
+
+    it('es modal, va al centro de la pantalla y no pegado a la derecha', () => {
+      renderCentered()
+      const dialogo = screen.getByRole('dialog', { name: 'Carga masiva de viajes' })
+      expect(dialogo).toHaveAttribute('aria-modal', 'true')
+      expect(dialogo.className).toMatch(/\bm-auto\b/)
+      expect(dialogo.className).not.toMatch(/\bright-0\b/)
+      expect(screen.getByTestId('panel-overlay')).toBeInTheDocument()
+    })
+
+    it('la descripción acompaña al título y describe el diálogo', () => {
+      renderCentered()
+      expect(screen.getByRole('dialog')).toHaveAccessibleDescription('Sube un archivo CSV')
+    })
+
+    it('Escape y el fondo lo cierran, igual que al panel lateral', () => {
+      const onCerrar = renderCentered()
+      fireEvent.keyDown(document, { key: 'Escape' })
+      fireEvent.click(screen.getByTestId('panel-overlay'))
+      expect(onCerrar).toHaveBeenCalledTimes(2)
+    })
+  })
 })
 

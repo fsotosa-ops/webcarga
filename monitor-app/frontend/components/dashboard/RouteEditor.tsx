@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import type { Location, TripStopCreatePayload } from '@/lib/types'
 import { Plus, Trash2 } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
 import { LocationPicker } from './LocationPicker'
 
 interface Props {
@@ -20,7 +21,7 @@ const ZONE_LABEL: Record<string, string> = {
 
 // Sin w-full: convive en la fila de destino con el input de nombre (LocationPicker
 // trae w-full y dos utilidades de ancho en conflicto dejan el ancho al azar del stylesheet)
-const INPUT_DATE = "text-sm border border-border rounded-lg px-2 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all w-[150px] sm:w-[185px]"
+const INPUT_DATE = "text-dato border border-border rounded-md px-2 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all w-[150px] sm:w-[185px]"
 
 export function RouteEditor({ stops, onChange, size = 'md' }: Props) {
   const origin       = stops.find(s => s.stop_type === 'ORIGIN') ?? null
@@ -90,7 +91,7 @@ export function RouteEditor({ stops, onChange, size = 'md' }: Props) {
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Origen</label>
+        <label className="block text-etiqueta font-semibold text-informativo mb-1.5">Origen</label>
         <LocationPicker
           value={origin?.local ?? ''}
           onChange={setOrigin}
@@ -100,7 +101,7 @@ export function RouteEditor({ stops, onChange, size = 'md' }: Props) {
         />
       </div>
       <div className="space-y-2">
-        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Destinos</label>
+        <label className="block text-etiqueta font-semibold text-informativo">Destinos</label>
         {destinations.map((s, i) => (
           <div key={i} className="space-y-1.5 border border-border/60 rounded-lg p-2">
             <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2">
@@ -123,30 +124,26 @@ export function RouteEditor({ stops, onChange, size = 'md' }: Props) {
                 type="button"
                 onClick={() => removeDestination(i)}
                 aria-label={`Quitar destino ${i + 1}`}
-                className="p-2 rounded-lg border border-transparent text-gray-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-colors"
+                className="p-2 rounded-md border border-transparent text-informativo hover:text-status-incidente hover:border-status-incidente/20 hover:bg-status-incidente/5 transition-colors"
               >
                 <Trash2 size={14} />
               </button>
             </div>
             {zones[i] ? (
-              <p className="text-[10px] text-accent bg-accent/5 border border-accent/15 rounded-lg px-2 py-1 inline-block">
+              <p className="inline-block rounded-md border border-accent/15 bg-accent/5 px-2 py-1 text-etiqueta text-accion">
                 Zona: {ZONE_LABEL[zones[i]!] ?? zones[i]}
               </p>
             ) : (
-              <p className="text-[10px] text-gray-400">
+              <p className="text-etiqueta text-informativo">
                 Elige una sugerencia de la lista para clasificar la zona automáticamente
               </p>
             )}
           </div>
         ))}
-        <button
-          type="button"
-          onClick={addDestination}
-          className="flex items-center gap-1.5 text-xs text-accent hover:text-accent/80 transition-colors"
-        >
-          <Plus size={12} />
+        <Button variant="link" onClick={addDestination}>
+          <Plus size={12} aria-hidden="true" />
           Agregar destino
-        </button>
+        </Button>
       </div>
     </div>
   )

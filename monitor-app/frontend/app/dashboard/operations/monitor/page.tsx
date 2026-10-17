@@ -53,7 +53,7 @@ const chipDeEtapa = (group: string) => {
   const { label, tone } = tripStageStyle(group)
   return {
     label,
-    on:  `${STATUS_TONE_DOT[tone]} border-transparent text-white`,
+    on:  `${STATUS_TONE_DOT[tone]} border-transparent font-semibold text-white`,
     off: `${STATUS_TONE_CLASS[tone]} border-border hover:border-informativo`,
   }
 }

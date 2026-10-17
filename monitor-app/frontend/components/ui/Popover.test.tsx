@@ -42,4 +42,12 @@ describe('Popover', () => {
     fireEvent.mouseDown(screen.getByText('Afuera'))
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('nunca pasa el borde de abajo de la pantalla: lo que no cabe se desplaza dentro del panel', () => {
+    render(<Prueba />)
+    const panel = screen.getByRole('dialog', { name: 'Opciones' })
+    // Lo que queda bajo el ancla, menos la barra de navegación del teléfono.
+    expect(panel.style.maxHeight).toMatch(/^calc\(100dvh - \d+px - 8px - var\(--mobile-nav-height\)\)$/)
+    expect(panel).toHaveClass('overflow-y-auto')
+  })
 })

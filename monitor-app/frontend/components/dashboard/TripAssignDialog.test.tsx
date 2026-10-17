@@ -101,6 +101,20 @@ describe('TripAssignDialog', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
+  it('es el diálogo del kit: título y descripción, y el foco empieza en la fecha', () => {
+    renderCreate()
+    const dialogo = screen.getByRole('dialog', { name: 'Nuevo viaje' })
+    expect(dialogo).toHaveAccessibleDescription('Registro manual: quedará con fuente MAN')
+    expect(document.activeElement).toHaveAttribute('type', 'date')
+  })
+
+  it('"Crear viaje" está en el pie pero envía el formulario del viaje', () => {
+    renderCreate()
+    const crear = screen.getByRole('button', { name: 'Crear viaje' })
+    expect(crear).toHaveAttribute('type', 'submit')
+    expect(crear.getAttribute('form')).toBe(screen.getByRole('dialog').querySelector('form')!.id)
+  })
+
   it('defaults planning_date to today', () => {
     renderCreate()
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date())

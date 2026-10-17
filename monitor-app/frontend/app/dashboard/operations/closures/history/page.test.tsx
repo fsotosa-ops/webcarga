@@ -41,6 +41,22 @@ describe('ReporteriaPage', () => {
     expect(screen.getByText('No asignado')).toBeInTheDocument()
   })
 
+  it('el período es un selector del kit: dice cuál está marcado y cambiarlo cambia el rango', async () => {
+    renderPage()
+    await screen.findByText('Transportes Sur')
+    const periodo = screen.getByRole('group', { name: 'Período' })
+    expect(within(periodo).getByRole('button', { name: 'Este mes' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(within(periodo).getByRole('button', { name: 'Rango personalizado' }))
+    expect(within(periodo).getByRole('button', { name: 'Rango personalizado' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('Desde')).toBeInTheDocument()
+  })
+
+  it('el botón de una chip de campo dice qué quita', async () => {
+    renderPage()
+    await screen.findByText('Transportes Sur')
+    expect(screen.getByRole('button', { name: 'Quitar Empresa' })).toBeInTheDocument()
+  })
+
   it('quita un campo de Filas con el botón de la chip', async () => {
     renderPage()
     await screen.findByText('Transportes Sur')

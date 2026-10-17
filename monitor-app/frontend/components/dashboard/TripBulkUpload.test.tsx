@@ -131,4 +131,12 @@ describe('TripBulkUpload', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(onClose).toHaveBeenCalled()
   })
+
+  it('es el diálogo del kit: el paso en curso es su descripción', async () => {
+    render(<TripBulkUpload open onClose={vi.fn()} onImported={vi.fn()} meta={meta} />)
+    expect(screen.getByRole('dialog', { name: 'Carga masiva de viajes' }))
+      .toHaveAccessibleDescription('Sube un archivo CSV con los viajes a importar')
+    uploadCSV('fecha_planificacion,cliente\n2026-07-06,Walmart\n')
+    await waitFor(() => expect(screen.getByRole('dialog')).toHaveAccessibleDescription('1 fila detectada'))
+  })
 })

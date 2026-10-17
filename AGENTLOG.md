@@ -38,6 +38,24 @@
 color de las señales por significado (`SignalTone` + `SIGNAL_TONE_TEXT`); trinquetes: color crudo 574, bajo 11 px 80.
 Resuelto 17/10 (`62db5890`): el título es "Monitor"; se removió el tablero (1 de 2.046 viajes movidos a mano en 60 días) y la agrupación de estados pasó a llamarse "etapa del viaje" (TRIP_STAGES / tripStageStyle; "Estados del viaje" y "Etapa" en Configuración).
 
+**17/10 — Certificación con tokens (`1aa8690e`, en dev):** los paneles y modales (Por asignar, Actualizar por planilla,
+Reasignar, Descartados, Documentos exigidos) pasan a los tokens y a la escala; color crudo 574 → 504, bajo 11 px 80 → 70.
+
+**17/10 — Paneles del Monitor y Reportería del Cierre con el kit (en dev):**
+- `PanelLateral` con `placement="center"` y `description`: el modal es una variante del panel (mismo fondo, Escape, foco,
+  Tab y capas). Grupo, Carga masiva y Nuevo viaje dejan de reimplementarlo (Nuevo viaje copiaba el atrapado de Tab).
+- `ToggleChip` (kit): el chip de filtro que se enciende; `ChipsDeFiltro` se arma sobre él. Filtros del Monitor sobre el
+  `Popover` del kit; un apartado sin opciones no se dibuja; las acciones de grupo cierran el panel.
+- `lib/ui/groupColors.ts`: la paleta que elige quien arma un grupo, una vez (antes 2 copias distintas, 9 y 8 colores; el
+  selector ofrece los 9 que acepta la API). No son colores del sistema; quedan fuera del trinquete a sabiendas.
+- `Popover` del kit con alto máximo hasta la barra del teléfono y desplazamiento propio (en el teléfono el panel de
+  Filtros quedaba cortado). La altura de esa barra es `--mobile-nav-height` en `globals.css` (4rem; 0 desde md), y el
+  layout la usa en vez de `pb-16`.
+- Nuevo viaje: `SegmentedControl` para el origen; `RouteEditor`, `FleetAssignSection`, `DriverSearchPicker` sin
+  mayúsculas ni 10 px. Reportería: período con `SegmentedControl`, CSV con `Button`, tabla con `CABECERA`.
+- Trinquetes: color crudo 504 → 247 (72 de la baja son la paleta de grupos movida a lib), bajo 11 px 70 → 27, botones
+  a mano 27 → 23.
+
 **Siguiente paso exacto:**
 1. Confirmar Deploy Frontend y Deploy Monitor API en verde y recorrer el Cierre en dev con sesión.
 2. ~~Hallazgo 3~~ RESUELTO (16/10, decisión del usuario): modelo estándar estado + tipo de motivo (`e2b45aeb`, `42a732d0`,
@@ -48,6 +66,12 @@ Resuelto 17/10 (`62db5890`): el título es "Monitor"; se removió el tablero (1 
    Conductor sin empresa ignora tractos sin tipo.
 4. Prioridad #2 del usuario: descarga de viajes para cuadrar con las fuentes (Propietario/admins, diario y fin de mes).
 5. `SearchInput` compartido en las 12 listas.
+6. Kit sin campo de texto: 25 archivos escriben su propio estilo de input (`focus:ring-accent/20`…). Pieza `TextField` /
+   `inputClass` y migración, como se hizo con `Button`.
+7. Quedan 10 modales escritos a mano (`aria-modal` propio): BajaReasonModal, DeleteCarrierModal, ReactivateCarrierModal,
+   CorrectIdentityModal, CarrierClientsModal, FleetCenterDialog, ConfirmarBaja, ActualizarPorPlanillaModal,
+   EditarRolesPanel, DetailShell. Pasarlos a `PanelLateral placement="center"`.
+8. Color crudo restante (247) fuera de Monitor/Cierre/Certificación: admin, auth, ui, admin/settings, DocumentPreviewModal.
 
 **Decisiones de arquitectura:**
 - Un solo modelo de filtro por pantalla; recuadros, embudos y chips son puertas al mismo filtro; cifras facetadas.

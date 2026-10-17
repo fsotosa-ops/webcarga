@@ -13,6 +13,9 @@
      mismo lado del círculo que el azul del producto: las superficies
      blancas flotan sobre él en vez de pelearle. */
   --sidebar-bg: #141d2b;
+  /* La barra de navegación del teléfono (Sidebar, `md:hidden`): lo que tapa abajo. El
+     contenido la reserva y un panel flotante no baja hasta ella. Desde `md` no existe. */
+  --mobile-nav-height: 4rem;
   --accent: #1cb9ec;
   --status-ruta: #62a420;
   --status-carga: #053bfa;
@@ -54,6 +57,10 @@
      (PendingDocsBadge, InsuranceAlertBadge…). Ese ámbar se migra cuando se toca
      esa pantalla; el código nuevo usa este. */
   --warning: #b45309;
+}
+
+@media (min-width: 48rem) {
+  :root { --mobile-nav-height: 0px; }
 }
 
 @theme inline {

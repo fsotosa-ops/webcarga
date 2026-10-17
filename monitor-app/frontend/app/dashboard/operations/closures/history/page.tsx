@@ -10,6 +10,14 @@ import {
   type FieldId, type Granularity, type PivotFieldSpec, type PivotFilter,
 } from '@/lib/utils/pivot'
 import { PageContainer } from '@/components/ui/PageContainer'
+import { Button } from '@/components/ui/Button'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
+
+/** El nombre de cada apartado del constructor (Filas, Columnas, Filtros). */
+const SECTION_LABEL = 'mb-1.5 text-etiqueta font-semibold text-informativo'
+/** Lo que agrega un campo: un selector punteado, porque suma en vez de mostrar. */
+const ADD_FIELD = 'rounded-full border border-dashed border-border bg-white px-2.5 py-1 text-etiqueta text-informativo'
 
 const ALL_FIELDS: FieldId[] = ['carrier', 'client', 'status', 'reason', 'date']
 const ALL_GRANULARITIES: Granularity[] = ['day', 'week', 'month', 'quarter', 'semester']
@@ -79,10 +87,10 @@ function FieldBucket({ label, specs, onChange }: { label: string; specs: PivotFi
   const available = ALL_FIELDS.filter(f => !specs.some(s => s.field === f))
   return (
     <div>
-      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">{label}</p>
+      <p className={SECTION_LABEL}>{label}</p>
       <div className="flex items-center gap-1.5 flex-wrap">
         {specs.map((spec, i) => (
-          <span key={spec.field} className="flex items-center gap-1 bg-accent/10 text-accent text-[11px] font-semibold rounded-full pl-2.5 pr-1 py-1">
+          <span key={spec.field} className="flex items-center gap-1 rounded-full bg-accent/10 py-1 pl-2.5 pr-1 text-etiqueta font-semibold text-accion">
             {FIELD_LABELS[spec.field]}
             {spec.field === 'date' && (
               <select
@@ -92,13 +100,13 @@ function FieldBucket({ label, specs, onChange }: { label: string; specs: PivotFi
                   next[i] = { ...spec, granularity: e.target.value as Granularity }
                   onChange(next)
                 }}
-                className="ml-1 text-[10px] bg-white border border-accent/30 rounded-full px-1.5 py-0.5"
+                aria-label="Agrupar la fecha por" className="ml-1 rounded-full border border-accent/30 bg-white px-1.5 py-0.5 text-etiqueta"
               >
                 {ALL_GRANULARITIES.map(g => <option key={g} value={g}>{GRANULARITY_LABELS[g]}</option>)}
               </select>
             )}
-            <button type="button" onClick={() => onChange(specs.filter(s => s.field !== spec.field))} className="hover:text-accent/60">
-              <X size={11} />
+            <button type="button" onClick={() => onChange(specs.filter(s => s.field !== spec.field))} aria-label={`Quitar ${FIELD_LABELS[spec.field]}`} className="hover:text-text-primary">
+              <X size={11} aria-hidden="true" />
             </button>
           </span>
         ))}
@@ -106,7 +114,7 @@ function FieldBucket({ label, specs, onChange }: { label: string; specs: PivotFi
           <select
             value=""
             onChange={e => { if (e.target.value) onChange([...specs, { field: e.target.value as FieldId }]) }}
-            className="text-[11px] border border-dashed border-gray-300 rounded-full px-2.5 py-1 text-gray-400 bg-white"
+            className={ADD_FIELD}
           >
             <option value="">+ Agregar campo</option>
             {available.map(f => <option key={f} value={f}>{FIELD_LABELS[f]}</option>)}
@@ -174,40 +182,23 @@ export default function ReporteriaPage() {
           titulo="Reportería"
           icono={<BarChart3 size={18} className="text-accent" />}
         />
-        <button
-          type="button"
-          onClick={handleExportCsv}
-          disabled={!data}
-          className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-accent border border-border rounded-lg px-2.5 py-1.5 disabled:opacity-40"
-        >
-          <Download size={13} /> CSV
-        </button>
+        <Button onClick={handleExportCsv} disabled={!data}>
+          <Download size={13} aria-hidden="true" /> CSV
+        </Button>
       </div>
 
       {/* Filtro de período */}
       <div className="bg-white rounded-xl border border-border p-4 space-y-2">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {(Object.keys(PERIOD_LABELS) as PeriodPreset[]).map(p => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setPreset(p)}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition-colors ${
-                preset === p ? 'bg-accent text-white border-accent' : 'text-gray-500 border-border hover:border-gray-300'
-              }`}
-            >
-              {PERIOD_LABELS[p]}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl label="Período" value={preset} onChange={setPreset}
+          options={(Object.keys(PERIOD_LABELS) as PeriodPreset[]).map(p => ({ id: p, label: PERIOD_LABELS[p] }))} />
         {preset === 'custom' ? (
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            <input type="date" value={customDesde} onChange={e => setCustomDesde(e.target.value)} className="border border-border rounded-lg px-2.5 py-1.5" />
+          <div className="flex items-center gap-2 text-dato text-informativo">
+            <input type="date" aria-label="Desde" value={customDesde} onChange={e => setCustomDesde(e.target.value)} className="rounded-md border border-border px-2.5 py-1.5 text-text-primary" />
             <span>a</span>
-            <input type="date" value={customHasta} onChange={e => setCustomHasta(e.target.value)} className="border border-border rounded-lg px-2.5 py-1.5" />
+            <input type="date" aria-label="Hasta" value={customHasta} onChange={e => setCustomHasta(e.target.value)} className="rounded-md border border-border px-2.5 py-1.5 text-text-primary" />
           </div>
         ) : (
-          <p className="text-[11px] text-gray-400">{desde} a {hasta}</p>
+          <p className="text-etiqueta text-informativo">{desde} a {hasta}</p>
         )}
       </div>
 
@@ -219,22 +210,22 @@ export default function ReporteriaPage() {
         </div>
 
         <div>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Filtros</p>
+          <p className={SECTION_LABEL}>Filtros</p>
           <div className="space-y-2">
             {filterFields.map(field => {
               const allValues = distinctFieldValues(rows, { field })
               const selected = filterValues[field] ?? new Set(allValues)
               return (
                 <div key={field} className="flex items-start gap-2 flex-wrap">
-                  <span className="text-[11px] font-semibold text-gray-500 shrink-0 pt-1">{FIELD_LABELS[field]}:</span>
+                  <span className="shrink-0 pt-1 text-etiqueta font-semibold text-informativo">{FIELD_LABELS[field]}:</span>
                   {allValues.map(v => (
-                    <label key={v} className="flex items-center gap-1 text-[11px] text-gray-600 bg-gray-50 border border-border rounded-full px-2 py-0.5">
+                    <label key={v} className="flex items-center gap-1 rounded-full border border-border bg-bg-main px-2 py-0.5 text-etiqueta text-text-primary">
                       <input type="checkbox" checked={selected.has(v)} onChange={() => toggleFilterValue(field, v, allValues)} className="accent-accent" />
                       {v}
                     </label>
                   ))}
-                  <button type="button" onClick={() => setFilterFields(filterFields.filter(f => f !== field))} className="text-gray-300 hover:text-red-400">
-                    <X size={12} />
+                  <button type="button" onClick={() => setFilterFields(filterFields.filter(f => f !== field))} aria-label={`Quitar el filtro ${FIELD_LABELS[field]}`} className="text-informativo hover:text-status-incidente">
+                    <X size={12} aria-hidden="true" />
                   </button>
                 </div>
               )
@@ -243,7 +234,7 @@ export default function ReporteriaPage() {
               <select
                 value=""
                 onChange={e => { if (e.target.value) setFilterFields([...filterFields, e.target.value as FieldId]) }}
-                className="text-[11px] border border-dashed border-gray-300 rounded-full px-2.5 py-1 text-gray-400 bg-white"
+                className={ADD_FIELD}
               >
                 <option value="">+ Agregar filtro</option>
                 {availableFilterFields.map(f => <option key={f} value={f}>{FIELD_LABELS[f]}</option>)}
@@ -255,39 +246,39 @@ export default function ReporteriaPage() {
 
       {/* Tabla pivot */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-16 text-gray-400">
+        <div className="flex items-center justify-center py-16 text-informativo">
           <Loader2 size={20} className="animate-spin" />
         </div>
       ) : error ? (
-        <p className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">No se pudo cargar el reporte</p>
+        <p role="alert" className="rounded-md border border-status-incidente/20 bg-status-incidente/5 px-3 py-2 text-dato text-status-incidente">No se pudo cargar el reporte</p>
       ) : (
         <div className="bg-white rounded-xl border border-border overflow-x-auto">
-          <table className="w-full text-xs">
+          <table className="w-full text-dato">
             <thead>
-              <tr className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
-                <th className="text-left px-3 py-2 sticky left-0 bg-gray-50">{rowSpecs.map(s => FIELD_LABELS[s.field]).join(' / ') || '—'}</th>
-                {pivot.colKeys.map(ck => <th key={ck} className="text-right px-3 py-2 whitespace-nowrap">{ck}</th>)}
-                <th className="text-right px-3 py-2">Total</th>
+              <tr className="border-b border-border bg-bg-main">
+                <th className={`${CABECERA} sticky left-0 bg-bg-main`}>{rowSpecs.map(s => FIELD_LABELS[s.field]).join(' / ') || '—'}</th>
+                {pivot.colKeys.map(ck => <th key={ck} className={`${CABECERA} whitespace-nowrap text-right`}>{ck}</th>)}
+                <th className={`${CABECERA} text-right`}>Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
               {pivot.rowKeys.map(rk => (
                 <tr key={rk}>
                   <td className="px-3 py-2 font-medium text-text-primary sticky left-0 bg-white">{rk}</td>
-                  {pivot.colKeys.map(ck => <td key={ck} className="px-3 py-2 text-right">{pivot.cells[rk]?.[ck] ?? 0}</td>)}
-                  <td className="px-3 py-2 text-right font-semibold">{pivot.rowTotals[rk]}</td>
+                  {pivot.colKeys.map(ck => <td key={ck} className="px-3 py-2 text-right tabular-nums">{pivot.cells[rk]?.[ck] ?? 0}</td>)}
+                  <td className="px-3 py-2 text-right font-semibold tabular-nums">{pivot.rowTotals[rk]}</td>
                 </tr>
               ))}
               {pivot.rowKeys.length === 0 && (
-                <tr><td colSpan={pivot.colKeys.length + 2} className="px-4 py-8 text-center text-gray-300 italic">Sin datos para este período/filtro</td></tr>
+                <tr><td colSpan={pivot.colKeys.length + 2} className="px-4 py-8 text-center text-informativo">Sin datos para este período o filtro</td></tr>
               )}
             </tbody>
             {pivot.rowKeys.length > 0 && (
               <tfoot>
-                <tr className="bg-gray-50 font-bold">
-                  <td className="px-3 py-2 sticky left-0 bg-gray-50">Total</td>
-                  {pivot.colKeys.map(ck => <td key={ck} className="px-3 py-2 text-right">{pivot.colTotals[ck]}</td>)}
-                  <td className="px-3 py-2 text-right">{pivot.grandTotal}</td>
+                <tr className="border-t border-border bg-bg-main font-bold">
+                  <td className="sticky left-0 bg-bg-main px-3 py-2">Total</td>
+                  {pivot.colKeys.map(ck => <td key={ck} className="px-3 py-2 text-right tabular-nums">{pivot.colTotals[ck]}</td>)}
+                  <td className="px-3 py-2 text-right tabular-nums">{pivot.grandTotal}</td>
                 </tr>
               </tfoot>
             )}

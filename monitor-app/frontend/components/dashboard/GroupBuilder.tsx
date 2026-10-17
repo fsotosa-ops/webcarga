@@ -1,11 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { tripStageStyle } from '@/lib/states'
-import { X, Check, Loader2 } from 'lucide-react'
+import { Check, Loader2 } from 'lucide-react'
 import type { FilterGroup, GroupColor } from '@/lib/api/filterGroups'
 import { filterGroupsApi } from '@/lib/api/filterGroups'
 import type { StatusMeta } from '@/lib/types'
+import { GROUP_COLORS, GROUP_COLOR_IDS, GROUP_COLOR_LABEL } from '@/lib/ui/groupColors'
+import { PanelLateral } from '@/components/ui/PanelLateral'
+import { Button } from '@/components/ui/Button'
 
 // Fallback when meta hasn't loaded
 const STATUS_SECTIONS_FALLBACK = [
@@ -36,16 +39,7 @@ function buildSections(statuses?: StatusMeta[]) {
   }))
 }
 
-const COLORS: { id: GroupColor; bg: string; ring: string }[] = [
-  { id: 'blue',   bg: 'bg-blue-500',   ring: 'ring-blue-500'   },
-  { id: 'green',  bg: 'bg-green-500',  ring: 'ring-green-500'  },
-  { id: 'orange', bg: 'bg-orange-500', ring: 'ring-orange-500' },
-  { id: 'purple', bg: 'bg-purple-500', ring: 'ring-purple-500' },
-  { id: 'red',    bg: 'bg-red-500',    ring: 'ring-red-500'    },
-  { id: 'teal',   bg: 'bg-teal-500',   ring: 'ring-teal-500'   },
-  { id: 'amber',  bg: 'bg-amber-500',  ring: 'ring-amber-500'  },
-  { id: 'pink',   bg: 'bg-pink-500',   ring: 'ring-pink-500'   },
-]
+const FIELD_LABEL = 'mb-1.5 block text-etiqueta font-semibold text-informativo'
 
 interface Props {
   editing?:          FilterGroup
@@ -59,12 +53,6 @@ interface Props {
 export function GroupBuilder({ editing, onSaved, onDeleted, onClose, statuses, initialStatuses }: Props) {
   const STATUS_SECTIONS = buildSections(statuses)
 
-  // Semántica de diálogo: Escape cierra
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
   const [name,      setName]      = useState(editing?.name ?? '')
   const [selected,  setSelected]  = useState<Set<string>>(new Set(editing?.statuses ?? initialStatuses ?? []))
   const [color,     setColor]     = useState<GroupColor>(editing?.color ?? 'blue')
@@ -123,150 +111,119 @@ export function GroupBuilder({ editing, onSaved, onDeleted, onClose, statuses, i
     }
   }
 
+  const title = editing ? `Editar grupo ${editing.name}` : 'Nuevo grupo de estados'
+  const checkboxClass = (encendida: boolean, parcial = false) =>
+    `flex shrink-0 items-center justify-center rounded border-2 transition-colors ${
+      encendida ? 'border-accent bg-accent' : parcial ? 'border-accent bg-accent/30' : 'border-border group-hover:border-informativo'}`
+
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-backdrop-in">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={editing ? `Editar grupo ${editing.name}` : 'Nuevo grupo de estados'}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-modal-in"
-      >
-
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h2 className="font-semibold text-sm text-text-primary">
-            {editing ? 'Editar grupo' : 'Nuevo grupo de estados'}
-          </h2>
-          <button onClick={onClose} aria-label="Cerrar" className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-400">
-            <X size={15} />
-          </button>
-        </div>
-
-        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
-
-          {/* Name */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5">Nombre del grupo</label>
-            <input
-              autoFocus
-              value={name}
-              onChange={e => setName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSave()}
-              placeholder="Ej: Activos hoy, Por vencer…"
-              maxLength={50}
-              className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30"
-            />
-          </div>
-
-          {/* Color picker */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-2">Color</label>
-            <div className="flex gap-2 flex-wrap">
-              {COLORS.map(c => (
-                <button
-                  key={c.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={color === c.id}
-                  aria-label={c.id}
-                  onClick={() => setColor(c.id)}
-                  className={`w-6 h-6 rounded-full ${c.bg} transition-all ${
-                    color === c.id ? `ring-2 ring-offset-2 ${c.ring} scale-110` : 'hover:scale-105'
-                  }`}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* Status checkboxes */}
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 mb-2">
-              Estados{selected.size > 0 && <span className="ml-1.5 text-accent">({selected.size} seleccionados)</span>}
-            </label>
-            <div className="space-y-3">
-              {STATUS_SECTIONS.map(section => {
-                const ids = section.statuses.map(s => s.id)
-                const allOn = ids.every(s => selected.has(s))
-                const someOn = ids.some(s => selected.has(s))
-                return (
-                  <div key={section.label}>
-                    <button
-                      type="button"
-                      onClick={() => toggleSection(ids)}
-                      aria-pressed={allOn}
-                      className="flex items-center gap-2 w-full text-left mb-1.5 group"
-                    >
-                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
-                        allOn ? 'border-accent bg-accent' : someOn ? 'border-accent bg-accent/30' : 'border-gray-300 group-hover:border-gray-400'
-                      }`}>
-                        {(allOn || someOn) && <Check size={10} className={allOn ? 'text-white' : 'text-accent'} />}
-                      </div>
-                      <span className="text-xs font-semibold text-gray-600">{section.label}</span>
-                    </button>
-                    <div className="pl-6 space-y-1">
-                      {section.statuses.map(status => (
-                        // checkbox real (focuseable/operable por teclado), visual custom
-                        <label key={status.id} className="flex items-center gap-2 cursor-pointer group">
-                          <input
-                            type="checkbox"
-                            checked={selected.has(status.id)}
-                            onChange={() => toggle(status.id)}
-                            className="sr-only peer"
-                          />
-                          <span className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center shrink-0 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40 ${
-                            selected.has(status.id) ? 'border-accent bg-accent' : 'border-gray-300 group-hover:border-gray-400'
-                          }`}>
-                            {selected.has(status.id) && <Check size={8} className="text-white" />}
-                          </span>
-                          <span className="text-[11px] text-gray-500 group-hover:text-gray-700 transition-colors">
-                            {status.label}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {error && (
-            <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-5 py-4 border-t border-border flex items-center gap-2">
+    <PanelLateral
+      placement="center"
+      titulo={title}
+      onCerrar={onClose}
+      pie={
+        <div className="flex items-center gap-2">
           {editing && onDeleted && (
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={deleting}
-              className="px-3 py-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40"
-            >
+            <Button variant="danger" onClick={handleDelete} disabled={deleting}>
               {deleting ? <Loader2 size={12} className="animate-spin" /> : 'Eliminar'}
-            </button>
+            </Button>
           )}
-          <div className="flex gap-2 ml-auto">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3 py-2 text-xs font-medium text-gray-500 border border-border rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving || !name.trim() || selected.size === 0}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-accent text-white rounded-lg hover:bg-accent/90 disabled:opacity-40 transition-colors"
-            >
+          <div className="ml-auto flex gap-2">
+            <Button onClick={onClose}>Cancelar</Button>
+            <Button variant="primary" onClick={handleSave} disabled={saving || !name.trim() || selected.size === 0}>
               {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
               {editing ? 'Guardar cambios' : 'Crear grupo'}
-            </button>
+            </Button>
           </div>
         </div>
+      }
+    >
+      <div className="space-y-4">
+        <div>
+          <label htmlFor="group-name" className={FIELD_LABEL}>Nombre del grupo</label>
+          <input
+            id="group-name"
+            autoFocus
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSave()}
+            placeholder="Ej: Activos hoy, Por vencer…"
+            maxLength={50}
+            className="w-full rounded-md border border-border px-3 py-2 text-dato focus:border-accent/30 focus:outline-none focus:ring-2 focus:ring-accent/20"
+          />
+        </div>
+
+        <div>
+          <p className={FIELD_LABEL}>Color</p>
+          <div role="radiogroup" aria-label="Color" className="flex flex-wrap gap-2">
+            {GROUP_COLOR_IDS.map(id => (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={color === id}
+                aria-label={GROUP_COLOR_LABEL[id]}
+                title={GROUP_COLOR_LABEL[id]}
+                onClick={() => setColor(id)}
+                className={`h-6 w-6 rounded-full ${GROUP_COLORS[id].swatch} transition-all ${
+                  color === id ? `ring-2 ring-offset-2 ${GROUP_COLORS[id].ring} scale-110` : 'hover:scale-105'
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className={FIELD_LABEL}>
+            Estados{selected.size > 0 && <span className="ml-1.5 text-accion">({selected.size} seleccionados)</span>}
+          </p>
+          <div className="space-y-3">
+            {STATUS_SECTIONS.map(section => {
+              const ids = section.statuses.map(s => s.id)
+              const allOn = ids.every(s => selected.has(s))
+              const someOn = ids.some(s => selected.has(s))
+              return (
+                <div key={section.label}>
+                  <button
+                    type="button"
+                    onClick={() => toggleSection(ids)}
+                    aria-pressed={allOn}
+                    className="group mb-1.5 flex w-full items-center gap-2 text-left"
+                  >
+                    <span className={`h-4 w-4 ${checkboxClass(allOn, someOn)}`}>
+                      {(allOn || someOn) && <Check size={10} className={allOn ? 'text-white' : 'text-accent'} />}
+                    </span>
+                    <span className="text-dato font-semibold text-text-primary">{section.label}</span>
+                  </button>
+                  <div className="space-y-1 pl-6">
+                    {section.statuses.map(status => (
+                      // checkbox real (focuseable/operable por teclado), visual custom
+                      <label key={status.id} className="group flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(status.id)}
+                          onChange={() => toggle(status.id)}
+                          className="peer sr-only"
+                        />
+                        <span className={`h-3.5 w-3.5 peer-focus-visible:ring-2 peer-focus-visible:ring-accent/40 ${checkboxClass(selected.has(status.id))}`}>
+                          {selected.has(status.id) && <Check size={8} className="text-white" />}
+                        </span>
+                        <span className="text-dato text-informativo transition-colors group-hover:text-text-primary">
+                          {status.label}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {error && (
+          <p role="alert" className="rounded-md border border-status-incidente/20 bg-status-incidente/5 px-3 py-2 text-dato text-status-incidente">{error}</p>
+        )}
       </div>
-    </div>
+    </PanelLateral>
   )
 }
