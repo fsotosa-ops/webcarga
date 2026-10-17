@@ -339,7 +339,10 @@ def pytest_collection_modifyitems(config, items):
 def pytest_report_header(config):
     """El estado de la capa de integración, en la cabecera de la corrida."""
     if HAY_CREDENCIALES:
-        return f"integracion: ACTIVA (Postgres {HOST_POOLER}, cada test en transaccion revertida)"
+        # El host al que de verdad va: la copia local o la base real. Decía siempre el
+        # del pooler, aunque la suite fuera a la copia local (16/10).
+        host = credenciales_integracion()["host"]
+        return f"integracion: ACTIVA (Postgres {host}, cada test en transaccion revertida)"
     return f"integracion: SALTEADA ({MOTIVO_SIN_CREDENCIALES})"
 
 

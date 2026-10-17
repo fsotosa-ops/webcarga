@@ -16,11 +16,17 @@ export const EMPTY_VIEW: TableView = { filters: {}, q: '', sort: null }
 const PREFIJO = 'f.'
 type Leible = Pick<URLSearchParams, 'get' | 'forEach'>
 
+/** Un valor escrito a mano en la URL ("50%") no viene codificado: se lee tal cual en
+ *  vez de tumbar la pantalla con un URIError. */
+function decodificar(v: string): string {
+  try { return decodeURIComponent(v) } catch { return v }
+}
+
 export function readView(params: Leible): TableView {
   const filters: Record<string, string[]> = {}
   params.forEach((valor, clave) => {
     if (!clave.startsWith(PREFIJO) || !valor) return
-    filters[clave.slice(PREFIJO.length)] = valor.split(',').map(decodeURIComponent)
+    filters[clave.slice(PREFIJO.length)] = valor.split(',').map(decodificar)
   })
   const [column, dir] = (params.get('sort') ?? '').split(':')
   return {

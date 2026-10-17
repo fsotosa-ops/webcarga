@@ -252,8 +252,7 @@ describe('PasoViajesSection', () => {
     renderViajes()
     await screen.findByText('2033002')
     fireEvent.change(screen.getByRole('searchbox', { name: /buscar/i }), { target: { value: 'pyst91' } })
-    // La búsqueda espera 250 ms (debounce): con la suite completa en paralelo, 1 s no alcanza.
-    expect(await screen.findByRole('button', { name: 'En seguimiento, 2' }, { timeout: 3000 })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'En seguimiento, 2' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Por resolver, 0' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Resueltos, 0' })).toBeInTheDocument()
     expect(screen.getByText(/2 en En seguimiento/)).toBeInTheDocument()
@@ -332,6 +331,17 @@ describe('PasoViajesSection', () => {
     expect(await screen.findByText('2035000')).toBeInTheDocument()
     expect(screen.queryByText('2032999')).toBeNull()
     expect(screen.getByText('2035001')).toBeInTheDocument()
+  })
+
+  it('un viaje con tracto sin tipo de operación no dice "Sin tracto": dice lo que le falta', async () => {
+    renderViajes({ grupos: { ...GRUPOS, hoy: [
+      viaje('t1', '2032999', { tractor_plate: 'ABCD12', tractor_asset_id: 'a1', scope: null }),
+      viaje('t21', '2035001', { scope: null }),
+    ] } })
+    const conTracto = (await screen.findByText('2032999')).closest('tr')!
+    expect(within(conTracto).queryByText('Sin tracto')).toBeNull()
+    expect(within(conTracto).getByText('Sin tipo de operación')).toBeInTheDocument()
+    expect(within(screen.getByText('2035001').closest('tr')!).getByText('Sin tracto')).toBeInTheDocument()
   })
 
   it('"Resolver" no se filtra ni se oculta: es donde se trabaja la fila', async () => {

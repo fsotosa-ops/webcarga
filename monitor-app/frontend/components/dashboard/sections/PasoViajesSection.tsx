@@ -10,7 +10,8 @@ import { EntityCell } from '@/components/dashboard/EntityCell'
 import type { QuickViewTarget } from '@/lib/quickView'
 import { TEXTO_APOYO } from '@/lib/ui/texto'
 import type { ClosureScope } from '@/lib/types'
-import { inScope } from '@/lib/cierre/scope'
+import { inScope, scopeGap } from '@/lib/cierre/scope'
+import { SCOPE_GAP_LABEL } from '@/lib/states'
 import {
   GRUPOS_DE_VIAJES, PESTANAS_DE_VIAJES, diasAtras, closureTrips, pestanaInicial, situationOf, viajesPorPatente,
   type FilaDeViaje,
@@ -175,7 +176,7 @@ export function PasoViajesSection({
         return (
           <span className="font-identificador font-semibold text-text-primary">
             <EntityCell kind="asset" id={v.tractor_asset_id} label={v.tractor_plate} mono onOpen={abrir(v.trip_id)} />
-            {!v.scope && <span className="ml-1.5"><StatusChip tone="warning">Sin tracto</StatusChip></span>}
+            {scopeGap(v) && <span className="ml-1.5"><StatusChip tone="warning">{SCOPE_GAP_LABEL[scopeGap(v)!]}</StatusChip></span>}
             {otros && (
               <span title={`${v.tractor_plate}: ${otros.join(', ')}`} className={`block text-etiqueta font-normal ${TEXTO_APOYO}`}>
                 {otros.length} viajes

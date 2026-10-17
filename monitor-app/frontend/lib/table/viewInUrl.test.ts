@@ -25,4 +25,8 @@ describe('la vista de una tabla en la URL', () => {
   it('un orden mal escrito se ignora', () => {
     expect(readView(new URLSearchParams('sort=primary:arriba')).sort).toBeNull()
   })
+
+  it('un valor mal codificado (un enlace editado a mano: "50%") no tumba la pantalla: se lee tal cual', () => {
+    expect(readView(new URLSearchParams('f.carrier=50%25')).filters).toEqual({ carrier: ['50%'] })
+  })
 })

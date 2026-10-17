@@ -24,17 +24,22 @@ export function useClosureNotices(fecha: string, alcance: ClosureScope) {
     queryFn: () => carriersApi.fleetDriverGap(),
   })
   const preCierre = cierre.data?.pre_cierre ?? null
+  // Recién con las dos respuestas: una lista sin la dotación cambiaría de número al
+  // llegar. Si la dotación falla, la lista sale sin ella y se dice (`gapError`).
+  const dotacionLista = dotacion.isSuccess || dotacion.isError
   const notices = useMemo<Notice[] | null>(
-    () => (preCierre
+    () => (preCierre && dotacionLista
       ? buildNotices(preCierre.escalations, dotacion.data?.rows).filter(n => inScope(n.scope, alcance))
       : null),
-    [preCierre, dotacion.data, alcance],
+    [preCierre, dotacionLista, dotacion.data, alcance],
   )
   return {
     /** `null` mientras carga o con el día firmado (un día firmado no corre el pre-cierre). */
     notices,
     autoResolved: preCierre?.auto_resolved ?? [],
     closed: !!cierre.data && !preCierre,
+    /** No se pudo traer el desbalance de dotación: la lista va sin él. */
+    gapError: dotacion.isError,
     isPending: cierre.isPending,
   }
 }

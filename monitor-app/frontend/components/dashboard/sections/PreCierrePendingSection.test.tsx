@@ -250,6 +250,27 @@ describe('PreCierrePendingSection', () => {
     expect(screen.queryByText('Hasa Spa')).toBeNull()
   })
 
+  it('no dibuja avisos mientras falta el desbalance de dotación, y si falla lo dice (revisión final)', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const { carriersApi } = await import('@/lib/api/carriers')
+    let fallar: (e: Error) => void = () => {}
+    vi.mocked(carriersApi.fleetDriverGap).mockReturnValue(new Promise((_, rechazar) => { fallar = rechazar }) as never)
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [{ tractor_plate: 'ZZZZ11', reason: 'La patente no existe en public.assets' }],
+        EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [], EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [],
+      },
+    }))
+    renderSection()
+    await waitFor(() => expect(dailyClosuresApi.get).toHaveBeenCalled())
+    // Una lista a medias cambiaría de número al llegar la dotación.
+    await new Promise(r => setTimeout(r, 50))
+    expect(screen.queryByText('ZZZZ11')).toBeNull()
+    fallar(new Error('500'))
+    expect(await screen.findByText('ZZZZ11')).toBeInTheDocument()
+    expect(screen.getByText(/No se pudo cargar el desbalance de dotación/)).toBeInTheDocument()
+  })
+
   it('Conductor sin empresa muestra sus Nº de viaje, cada uno con su enlace (C14)', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({

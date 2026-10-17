@@ -34,7 +34,7 @@ interface Props {
 export function PreCierrePendingSection({ fecha, alcance, tripHref }: Props) {
   const [view, setView] = useUrlView()
   const preferencias = useTablePreferences(TABLE_KEY)
-  const { notices, autoResolved, closed } = useClosureNotices(fecha, alcance)
+  const { notices, autoResolved, closed, gapError } = useClosureNotices(fecha, alcance)
 
   const columnas = useMemo<DataColumn<Notice>[]>(() => [
     { id: 'type', header: 'Tipo de aviso', value: n => NOTICE_TYPE_LABEL[n.type] },
@@ -79,6 +79,11 @@ export function PreCierrePendingSection({ fecha, alcance, tripHref }: Props) {
             {autoResolved.map((r, i) => <li key={i} className="px-4 py-2.5 text-etiqueta text-informativo">{r.message}</li>)}
           </ul>
         </div>
+      )}
+
+      {gapError && (
+        <Estado tipo="error" titulo="No se pudo cargar el desbalance de dotación"
+          detalle="Los demás avisos están completos. Vuelve a abrir la pestaña para reintentar." />
       )}
 
       <TableToolbar model={model} searchPlaceholder="Buscar patente, conductor, empresa o Nº de viaje…" preferences={preferencias} />

@@ -10,6 +10,7 @@ EXCEPCIONES = {
     "/api/v1/me",                     # mis propios permisos
     "/api/v1/filter-groups",          # filtros personales: se validan por dueño
     "/api/v1/filter-groups/{group_id}",
+    "/api/v1/me/table-preferences/{table_key}",  # columnas de cada persona: solo las propias (user_id de la sesión)
     *(DE_SERVICIO := {
         "/api/v1/internal/closures/recompute",  # Cloud Scheduler: token OIDC, no persona (servicio_interno.py)
     }),

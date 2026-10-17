@@ -6,6 +6,7 @@ import {
 import type { StatusTone } from '@/components/ui/StatusChip'
 import type { CategoriaDeLinea, ClosureScope, DirectoryEntity, FunnelBucket, NoticeType } from './types'
 import { hoyEnChile } from './utils/datetime'
+import type { ScopeGap } from './cierre/scope'
 
 /**
  * El glosario de estados en código (spec D1 §3 y §6.4): el ÚNICO lugar del
@@ -394,6 +395,12 @@ export const CATEGORY_LABEL: Record<CategoriaDeLinea, string> = {
 /** Qué se cierra: los mismos valores de la API (`services/closure_scope.py`). */
 export const SCOPE_LABEL: Record<ClosureScope, string> = { tractoreo: 'Tractoreo', equipo_completo: 'Equipo Completo' }
 
+/** Por qué un viaje del Cierre se ve en los dos alcances (`scopeGap`). */
+export const SCOPE_GAP_LABEL: Record<ScopeGap, string> = {
+  NO_TRACTOR: 'Sin tracto',
+  NO_OPERATION_TYPE: 'Sin tipo de operación',
+}
+
 /** El tipo de un aviso de Pendientes: la columna "Tipo de aviso" y su filtro. Las
  *  claves son las del pre-cierre (`services/pre_cierre.py`) más el desbalance de
  *  dotación, que es un aviso más (spec §4.6). */
@@ -401,7 +408,7 @@ export const NOTICE_TYPE_LABEL: Record<NoticeType, string> = {
   CONDUCTOR_SIN_EMPRESA: 'Conductor sin empresa',
   PATENTE_NO_REGISTRADA: 'Patente sin empresa',
   EMPRESA_ONBOARDING: 'Empresa en onboarding',
-  SIN_TIPO_OPERACION: 'Sin tipo de operación',
+  SIN_TIPO_OPERACION: SCOPE_GAP_LABEL.NO_OPERATION_TYPE,
   EMPRESA_NO_RECONOCIDA: 'Empresa no reconocida',
   CONDUCTOR_NO_REGISTRADO: 'Conductor no registrado',
   FLEET_DRIVER_GAP: 'Desbalance de dotación',

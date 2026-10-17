@@ -66,18 +66,25 @@ export function useDataTable<T>({
     return [...guardado, ...ids.filter(id => !guardado.includes(id))]
   }, [enTabla, columnPrefs])
 
+  // El estado que se le pasa a TanStack, estable mientras la vista no cambie: un
+  // arreglo nuevo en cada dibujo le hacía recalcular el filtrado y las facetas de
+  // todas las columnas en cada render (segundos con 50 filas, revisión final 16/10).
+  // Solo los filtros de columnas de esta tabla: el del servidor ya llegó aplicado, y
+  // uno de otra tabla (un enlace viejo, otra sección) no tiene con qué filtrar.
+  const columnFilters = useMemo(() => Object.entries(view.filters)
+    .filter(([id]) => porId.has(id) && !porId.get(id)!.server)
+    .map(([id, value]) => ({ id, value })), [view.filters, porId])
+  const sorting = useMemo(
+    () => (view.sort ? [{ id: view.sort.column, desc: view.sort.dir === 'desc' }] : []), [view.sort])
+
   const table = useReactTable<T>({
     data: rows,
     columns: defs,
     getRowId,
     state: {
-      // Solo los de columnas de esta tabla: el del servidor ya llegó aplicado, y uno de
-      // otra tabla (un enlace viejo, otra sección) no tiene con qué filtrar.
-      columnFilters: Object.entries(view.filters)
-        .filter(([id]) => porId.has(id) && !porId.get(id)!.server)
-        .map(([id, value]) => ({ id, value })),
+      columnFilters,
       globalFilter: view.q,
-      sorting: view.sort ? [{ id: view.sort.column, desc: view.sort.dir === 'desc' }] : [],
+      sorting,
       columnVisibility: visibility,
       columnOrder: order,
       pagination,

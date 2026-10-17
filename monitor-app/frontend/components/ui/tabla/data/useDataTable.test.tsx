@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useState } from 'react'
 import { EMPTY_VIEW, type TableView } from '@/lib/table/viewInUrl'
@@ -121,5 +121,18 @@ describe('useDataTable', () => {
     expect(result.current.facetCount('client', 's1')).toBe(31)
     expect(result.current.visibleColumns.map(c => c.id)).not.toContain('client')
     expect(result.current.orderedColumns.map(e => e.column.id)).not.toContain('client')
+  })
+
+  it('volver a dibujar sin cambiar la vista no vuelve a filtrar (una fila de 50 tardaba segundos)', () => {
+    const leer = vi.fn((r: Fila) => r.empresa)
+    const columnas: DataColumn<Fila>[] = [COLUMNAS[0], { id: 'empresa', header: 'Empresa', value: leer }]
+    const vista: TableView = { ...EMPTY_VIEW, filters: { empresa: ['Hasa Spa'] }, sort: { column: 'empresa', dir: 'asc' } }
+    const { result, rerender } = renderHook(() =>
+      useDataTable({ rows: FILAS, columns: columnas, getRowId: r => r.id, view: vista, onViewChange: () => {} }))
+    expect(result.current.rows.map(r => r.id)).toEqual(['1', '2'])
+    leer.mockClear()
+    rerender()
+    void result.current.rows
+    expect(leer).not.toHaveBeenCalled()
   })
 })
