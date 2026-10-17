@@ -5,150 +5,33 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import {
-  Truck, Users, LogOut, BookUser,
-  ChevronLeft, ChevronDown, Shield, Receipt, BadgeCheck, ClipboardCheck,
-} from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { Users, LogOut, ChevronLeft, ChevronDown } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { documentIngestApi } from '@/lib/api/documentIngest'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { getDisplayName, puedeVerConfiguracion, type Acceso } from '@/lib/authz/acceso'
+import { NAV, activeHref, isGroup, visibleNav, type NavGroup, type NavLeaf } from '@/lib/navegacion/menu'
 import { certificationRequestsApi } from '@/lib/api/certificationRequests'
 import { insuranceApi } from '@/lib/api/insurance'
 import LogoWebCarga from '@/components/brand/LogoWebCarga'
 import SidebarAccount, { SETTINGS_HREF } from './SidebarAccount'
 
-// "Operaciones" son los dos trabajos del día: seguir los viajes (Monitor) y
-// cerrar el día (Cierre del día). El Cierre salió del menú en julio, cuando era
-// la vieja Cuadratura, y quedó como un botón del Monitor hasta que existiera el
-// Centro de Cierre; desde que existe es un destino propio (17/10). Su histórico
-// (/operations/closures/history) es una vista del Cierre, no otra entrada.
-type NavLeaf  = {
-  href: string
-  label: string
-  badge?: 'inbox' | 'requests' | 'installments'
-  /** Su ícono en la barra del teléfono, que no agrupa; sin él, el del grupo. */
-  icon?: LucideIcon
-}
-type NavGroupDef = { label: string; icon: LucideIcon; items: NavLeaf[] }
-
-// Un modulo por objeto de trabajo, con sus vistas adentro (HU-04). La
-// certificacion de una empresa se resuelve sin saltar entre modulos: la cola
-// transversal, la sabana de pendientes y la ficha viven bajo el mismo techo.
-const NAV_GROUPS: NavGroupDef[] = [
-  {
-    label: 'Operaciones',
-    icon:  Truck,
-    items: [
-      { href: '/dashboard/operations/monitor', label: 'Monitor' },
-      { href: '/dashboard/operations/closures', label: 'Cierre del día', icon: ClipboardCheck },
-    ],
-  },
-  // Certificación se abre en TRES porque son tres trabajos, no tres vistas: la
-  // Bandeja responde "¿de quién es este archivo?" sobre archivos sin destino,
-  // Empresas responde "¿qué le falta a esta empresa?" sobre requisitos sin
-  // documento, y el Directorio responde "¿quién está operando, y quiénes son su
-  // gente?". Las CUATRO agrupaciones (Empresa/Conductor/Vehículo/Requisito)
-  // NO se parten: siguen adentro de Empresas, porque ésas sí son cuatro
-  // maneras de mirar la misma lista.
-  //
-  // El Directorio SALIÓ de acá el 2026-09-07 y quedó como módulo propio, más
-  // arriba. Pablo, 04/09: *"lo que yo haría para no confundir es directorio
-  // sacarlo de certificación. Y dejarlo arriba"* / *"lo que es empresas,
-  // manténlo solo para subir documentos"*.
-  //
-  // No es una preferencia de menú: son dos trabajos. El Directorio responde
-  // "quién está operando, y quiénes son su gente" —y es donde se da de baja, se
-  // transfiere y se activa—; Certificación responde "qué documento le falta a
-  // esta empresa". Y el resto de la app ya lo trataba así: de los diez enlaces
-  // con que el Monitor y el Cierre mandan a arreglar algo, NUEVE apuntan a
-  // /dashboard/carriers y uno solo a /dashboard/compliance.
-  // Directorio (Entrega C, 14/10): el registro, con una lista por objeto. Cada uno
-  // tiene su lista y su ficha; Certificación enlaza a ellas en vez de tener las suyas.
-  {
-    label: 'Directorio',
-    icon:  BookUser,
-    items: [
-      { href: '/dashboard/carriers', label: 'Empresas' },
-      { href: '/dashboard/drivers',  label: 'Conductores' },
-      { href: '/dashboard/assets',   label: 'Equipos' },
-      { href: '/dashboard/clients',  label: 'Clientes' },
-    ],
-  },
-  {
-    label: 'Certificación',
-    icon:  BadgeCheck,
-    items: [
-      { href: '/dashboard/compliance',       label: 'Empresas' },
-      { href: '/dashboard/compliance/inbox', label: 'Por asignar', badge: 'inbox' },
-      { href: '/dashboard/compliance/pending', label: 'Pendientes', badge: 'requests' },
-      { href: '/dashboard/compliance/requirements', label: 'Documentos exigidos' },
-    ],
-  },
-  // Seguros (Seguros E2, 15/10): un submódulo por objeto de trabajo, como
-  // Directorio y Certificación. Cuotas cuenta las vencidas.
-  {
-    label: 'Seguros',
-    icon:  Shield,
-    items: [
-      { href: '/dashboard/insurance',              label: 'Pólizas' },
-      { href: '/dashboard/insurance/installments', label: 'Cuotas', badge: 'installments' },
-    ],
-  },
-]
-
-// Un modulo por objeto de trabajo. Tarifario todavia no tiene mas de una vista
-// (Seguros paso a grupo en la Entrega 2 de Seguros, 15/10).
-// Sin `badge`: al pasar Certificacion a NAV_GROUPS, el unico item con contador
-// se fue con ella. Un campo del tipo y una rama de render inalcanzables se leen
-// como una capacidad que existe, y no existe.
-const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
-  { href: '/dashboard/pricing',   label: 'Tarifario',  icon: Receipt },
-]
-
-// El orden del menu, con grupos y hojas mezclados. Antes se renderizaban en
-// dos bloques —primero todos los grupos, despues todas las hojas—, asi que una
-// hoja no podia ir ENTRE dos grupos: el Directorio habria caido debajo de
-// Certificacion, que es de donde acaba de salir.
-const NAV_ORDEN: (NavGroupDef | (typeof NAV_ITEMS)[number])[] = [
-  NAV_GROUPS[0],                                              // Operaciones
-  NAV_GROUPS[1],                                              // Directorio
-  NAV_GROUPS[2],                                              // Certificación
-  NAV_GROUPS[3],                                              // Seguros
-  NAV_ITEMS[0],                                               // Tarifario
-]
-
-const esGrupo = (e: (typeof NAV_ORDEN)[number]): e is NavGroupDef => 'items' in e
-
-/** Sin clasificar solo para quien puede clasificar (Cert 2a, 14/10): Operaciones
- *  lo veía con un contador rojo y sin poder actuar (H10). El menú lo decide el
- *  permiso, igual que la API. */
-function soloLoQuePuede(items: NavLeaf[], puedeClasificar: boolean): NavLeaf[] {
-  return items.filter(i => i.badge !== 'inbox' || puedeClasificar)
-}
-
-// Solo para el bottom nav mobile — sin concepto de dropdown ahi, se listan
-// los items de los grupos ya aplanados junto a los demas. Aplanados pierden su
-// grupo: una etiqueta que se repite entre grupos ("Empresas" en Directorio y en
-// Certificación) toma el nombre de su grupo para no quedar ambigua.
+// Solo para la barra del teléfono, hasta que la reemplace `MobileNav` (navegación en
+// el teléfono, Task 3): aplana el menú y, a una etiqueta repetida entre grupos
+// ("Empresas"), le pone el nombre de su grupo.
 const REPEATED_LABELS = new Set(
-  NAV_GROUPS.flatMap(g => g.items.map(i => i.label)).filter((l, i, all) => all.indexOf(l) !== i),
+  NAV.flatMap(e => (isGroup(e) ? e.items.map(i => i.label) : [])).filter((l, i, all) => all.indexOf(l) !== i),
 )
-const MOBILE_NAV_ITEMS = [
-  ...NAV_GROUPS.flatMap(g => g.items.map(i => ({ ...i, label: REPEATED_LABELS.has(i.label) ? g.label : i.label, icon: i.icon ?? g.icon }))),
-  ...NAV_ITEMS,
-]
 
 /** Grupo expandible del sidebar. Existe una sola vez: antes el bloque estaba
  *  escrito a mano para Operaciones, y sumar un segundo grupo obligaba a
  *  duplicar ~55 lineas — que fue exactamente la razon equivocada por la que la
  *  Bandeja termino colgando del primer nivel en vez de vivir dentro de
  *  Certificacion, como manda la HU-04. */
-function NavGroup({
+function SidebarGroup({
   group, pathname, collapsed, inboxCount, requestsCount = 0, installmentsCount = 0,
 }: {
-  group:      NavGroupDef
+  group:      NavGroup
   pathname:   string
   collapsed:  boolean
   inboxCount: number
@@ -160,13 +43,8 @@ function NavGroup({
   const countOf = (badge?: NavLeaf['badge']) =>
     badge === 'inbox' ? inboxCount : badge === 'requests' ? requestsCount
       : badge === 'installments' ? installmentsCount : 0
-  // Match mas especifico primero: /dashboard/compliance/inbox gana sobre
-  // /dashboard/compliance, que es su prefijo.
-  const activeHref = group.items
-    .map(i => i.href)
-    .filter(href => pathname.startsWith(href))
-    .sort((a, b) => b.length - a.length)[0]
-  const groupActive = !!activeHref
+  const current = activeHref(pathname, group.items.map(i => i.href))
+  const groupActive = !!current
 
   const [open, setOpen] = useState(groupActive)
   // Si navegan directo a una sub-ruta (deep-link, back/forward), el submenu se
@@ -223,7 +101,7 @@ function NavGroup({
       {open && (
         <div className="mt-0.5 ml-3 pl-3.5 border-l border-white/8 flex flex-col gap-0.5">
           {group.items.map(({ href, label, badge }) => {
-            const active = href === activeHref
+            const active = href === current
             return (
               <Link
                 key={href}
@@ -261,20 +139,17 @@ export default function Sidebar({ acceso }: SidebarProps) {
   // Match más específico primero — evita 2 items activos a la vez. Hoy
   // Seguros y Tarifario no comparten prefijo, pero la regla se deja escrita
   // acá y no en cada item.
-  const activeHref = [...NAV_ITEMS]
-    .map(i => i.href)
-    .filter(href => pathname.startsWith(href))
-    .sort((a, b) => b.length - a.length)[0]
+  const nav = visibleNav(acceso.permissions)
+  const topActive = activeHref(pathname, nav.flatMap(e => (isGroup(e) ? [] : [e.href])))
 
   // El bottom nav mobile no tiene el concepto de grupo (§ MOBILE_NAV_ITEMS):
   // el match más específico se calcula sobre TODOS los hrefs juntos, para que
   // /dashboard/compliance/inbox no resalte también "Empresas".
   const puedeClasificar = acceso.permissions.includes('documents.review')
-  const mobileItems = MOBILE_NAV_ITEMS.filter(i => !('badge' in i) || i.badge !== 'inbox' || puedeClasificar)
-  const mobileActiveHref = mobileItems
-    .map(i => i.href)
-    .filter(href => pathname.startsWith(href))
-    .sort((a, b) => b.length - a.length)[0]
+  const mobileItems = nav.flatMap(e => (isGroup(e)
+    ? e.items.map(i => ({ ...i, label: REPEATED_LABELS.has(i.label) ? e.label : i.label, icon: i.icon ?? e.icon }))
+    : [e]))
+  const mobileActiveHref = activeHref(pathname, mobileItems.map(i => i.href))
 
   // Cuánto trabajo hay esperando en la bandeja. Se pide con limit=1: de la
   // respuesta solo interesa `total`.
@@ -360,12 +235,12 @@ export default function Sidebar({ acceso }: SidebarProps) {
 
         {/* ── Main nav ── */}
         <nav aria-label="Navegación principal" className="flex-1 flex flex-col px-2.5 py-3 gap-0.5 overflow-hidden">
-          {NAV_ORDEN.map(entrada => {
-            if (esGrupo(entrada)) {
+          {nav.map(entrada => {
+            if (isGroup(entrada)) {
               return (
-                <NavGroup
+                <SidebarGroup
                   key={entrada.label}
-                  group={{ ...entrada, items: soloLoQuePuede(entrada.items, puedeClasificar) }}
+                  group={entrada}
                   pathname={pathname}
                   collapsed={collapsed}
                   inboxCount={inboxCount}
@@ -375,7 +250,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
               )
             }
             const { href, label, icon: Icon } = entrada
-            const active = href === activeHref
+            const active = href === topActive
             return (
               <Link
                 key={href}
