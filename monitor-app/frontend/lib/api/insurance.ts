@@ -52,9 +52,10 @@ export type CarrierInsuranceRow = {
   reason_valid_to: string | null
 }
 
-/** Una empresa con sus pólizas no canceladas (las renovadas, solo con deuda) y sus cuotas. */
+/** Una empresa con sus pólizas no canceladas (las renovadas, solo con deuda) y sus cuotas.
+ *  `summary` vacío: la empresa existe pero no tiene veredicto (inactiva y sin pólizas). */
 export type CarrierInsuranceDetail = {
-  summary: CarrierInsuranceRow
+  summary: CarrierInsuranceRow | null
   policies: (PolicyRow & { installments: InstallmentRow[] })[]
 }
 
@@ -122,12 +123,18 @@ const qs = (p: Record<string, string | number | undefined>) =>
   new URLSearchParams(Object.entries(p).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)])).toString()
 const post = <T,>(path: string, body: unknown) => apiFetch<T>(path, { method: 'POST', body: JSON.stringify(body) })
 
+/** Las claves de las consultas de Seguros: todas empiezan con 'insurance', así guardar
+ *  una póliza o una cuota refresca todo con `invalidateQueries({ queryKey: ['insurance'] })`. */
+export const insuranceKeys = {
+  overview: () => ['insurance', 'carriers'] as const,
+  carrier: (carrierId: string) => ['insurance', 'carrier', carrierId] as const,
+}
+
 export const insuranceApi = {
   listPolicies: (p: { state?: string; q?: string; page?: number; limit?: number } = {}) =>
     apiFetch<PoliciesResponse>(`/api/v1/policies?${qs({ group_by: 'policy', state: p.state, q: p.q, page: p.page, limit: p.limit })}`),
   listCarriers: (p: { state?: string; q?: string; page?: number; limit?: number } = {}) =>
     apiFetch<CarriersInsuranceResponse>(`/api/v1/policies?${qs({ group_by: 'carrier', state: p.state, q: p.q, page: p.page, limit: p.limit })}`),
-  carrierPolicies: (carrierId: string) => apiFetch<PolicyRow[]>(`/api/v1/carriers/${carrierId}/policies`),
   /** Seguros › Empresas: todas, con su veredicto. */
   carrierOverview: () => apiFetch<CarrierInsuranceOverview>('/api/v1/insurance/carriers'),
   /** El detalle de una empresa: su veredicto y sus pólizas con cuotas. */

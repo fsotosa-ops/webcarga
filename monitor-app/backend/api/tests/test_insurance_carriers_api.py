@@ -95,3 +95,11 @@ def test_lo_reemplazado_ya_no_existe():
         assert _client().get("/api/v1/policies?group_by=carrier").status_code == 200
     por_poliza.assert_awaited_once()
     assert _client().get("/api/v1/carriers/c1/policies").status_code in (404, 405)
+
+
+async def test_E3_una_inactiva_sin_polizas_existe_pero_no_tiene_veredicto(conexion_revertida):
+    """La ficha de empresa la abre igual: sin veredicto y sin pólizas, no un 404."""
+    from app.services import insurance
+
+    c = await _empresa(conexion_revertida, status="INACTIVE")
+    assert await insurance.carrier_insurance(conexion_revertida, c) == {"summary": None, "policies": []}

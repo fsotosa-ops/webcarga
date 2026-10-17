@@ -120,10 +120,13 @@ async def carrier_overview(db) -> dict:
 async def carrier_insurance(db, carrier_id: str) -> dict | None:
     """El detalle de una empresa: su fila y sus pólizas no canceladas, cada una con sus
     cuotas, en una consulta. Una renovada aparece solo si todavía tiene cuotas impagas
-    (son deudas); si no, es historia."""
+    (son deudas); si no, es historia. `None` si la empresa no existe; una que existe sin
+    veredicto (inactiva sin pólizas, fuera de la vista) da `summary` vacío."""
+    if not await db.fetchval("SELECT 1 FROM public.carriers WHERE id = $1", carrier_id):
+        return None
     summary = await db.fetchrow(f"{_CARRIERS_SQL} WHERE s.carrier_id = $1", carrier_id)
     if summary is None:
-        return None
+        return {"summary": None, "policies": []}
     rows = await db.fetch(
         f"""WITH {_POLICIES_CTE}
         SELECT pol.*, coalesce((

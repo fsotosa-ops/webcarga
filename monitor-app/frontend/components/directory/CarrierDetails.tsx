@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Check, Loader2 } from 'lucide-react'
 import { StatusChip } from '@/components/ui/StatusChip'
-import { carrierInsuranceStyle } from '@/lib/states'
+import { insuranceVerdictStyle } from '@/lib/states'
 import type { CarrierInsuranceRow } from '@/lib/api/insurance'
 import { FIELD_LABEL, inputClass } from '@/components/ui/Field'
 
@@ -73,13 +73,12 @@ export function InsuranceLine({ summary, taxId }: {
   taxId: string
 }) {
   if (summary === undefined) return <span className="text-informativo">Cargando…</span>
-  if (summary === null || summary.worst_state === 'NO_POLICY') return <span className="text-informativo">Sin pólizas registradas</span>
-  const s = carrierInsuranceStyle(summary.worst_state)
-  const overdue = summary.overdue_installments
+  if (summary === null) return <span className="text-informativo">Sin pólizas registradas</span>
+  // El veredicto de Seguros (calculado en la base): ya junta vigencia y cuotas vencidas.
+  const s = insuranceVerdictStyle(summary)
   return (
     <span className="flex flex-wrap items-center gap-2">
       <StatusChip tone={s.tone} icon={s.icon}>{s.label}</StatusChip>
-      {overdue > 0 && <StatusChip tone="urgent">{overdue === 1 ? '1 cuota vencida' : `${overdue} cuotas vencidas`}</StatusChip>}
       <Link href={`/dashboard/insurance?q=${encodeURIComponent(taxId)}`} prefetch={false} className="font-medium text-accion hover:underline">
         Ver en Seguros
       </Link>

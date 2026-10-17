@@ -28,8 +28,8 @@ import { ReactivateCarrierModal } from '@/components/dashboard/ReactivateCarrier
 import { CarrierClientsModal } from '@/components/dashboard/CarrierClientsModal'
 import { DeleteCarrierModal } from '@/components/dashboard/DeleteCarrierModal'
 import { PolicyCreateForm, type PolicyFormState } from '@/components/insurance/PolicyCreateForm'
-import { PoliciesTable } from '@/components/insurance/PoliciesTable'
-import { insuranceApi } from '@/lib/api/insurance'
+import { CarrierInsuranceDetail } from '@/components/insurance/CarrierInsuranceDetail'
+import { insuranceApi, insuranceKeys } from '@/lib/api/insurance'
 import { policyHref } from '@/lib/navegacion/insurance'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { GestionDeclarada } from '@/components/compliance/GestionDeclarada'
@@ -130,18 +130,9 @@ function EmpresaDetailPageInner() {
   const derivedOperation = summaryQuery.data?.carrier_operation_types.join(' + ') || null
   const assetsQuery  = useQuery({ queryKey: directoryKeys.carrierAssets(id), queryFn: () => carriersApi.listAssets(id) })
   // Las pólizas de la empresa con su estado calculado (Seguros E2): la misma tabla que Seguros › Pólizas.
-  const policiesQuery = useQuery({ queryKey: ['insurance', 'carrier-policies', id], queryFn: () => insuranceApi.carrierPolicies(id) })
-  // El estado de la empresa en Seguros lo calcula la base (app.carrier_insurance_summary):
-  // se pide la misma fila que muestra Seguros › Pólizas por empresa.
-  const taxId = carrierQuery.data?.tax_id
-  const insuranceSummaryQuery = useQuery({
-    queryKey: ['insurance', 'carriers', { q: taxId }],
-    queryFn: () => insuranceApi.listCarriers({ q: taxId, limit: 50 }),
-    enabled: !!taxId,
-  })
-  const insuranceSummary = insuranceSummaryQuery.data
-    ? insuranceSummaryQuery.data.data.find(r => r.carrier_id === id) ?? null
-    : undefined
+  // El seguro de la empresa (Seguros por empresa, 17/10): su veredicto y sus pólizas con
+  // cuotas, en una consulta; lo mismo que muestra el panel de Seguros › Empresas.
+  const insuranceQuery = useQuery({ queryKey: insuranceKeys.carrier(id), queryFn: () => insuranceApi.carrier(id) })
   const shippersQuery = useQuery({ queryKey: ['carrier-shippers', id], queryFn: () => carriersApi.listShippers(id) })
   const activeShippers = (shippersQuery.data ?? []).filter(s => s.status === 'ACTIVE')
   // D2 (P4): lo que toca la baja, recién al abrir la confirmación y siempre fresco.
@@ -155,7 +146,6 @@ function EmpresaDetailPageInner() {
   const carrier = carrierQuery.data
   const drivers = driversQuery.data ?? []
   const assets  = assetsQuery.data ?? []
-  const policies = policiesQuery.data ?? []
 
   const [notice, setNotice] = useState<string | null>(null)
   // "Activar" no tiene diálogo propio: si falla, se dice (revisión final de la Entrega 1).
@@ -337,7 +327,7 @@ function EmpresaDetailPageInner() {
         { label: 'Clientes', value: shippersQuery.data
           ? (activeShippers.length ? activeShippers.map(sh => sh.name).join(', ') : <span className="text-informativo">Sin clientes</span>)
           : <span className="text-informativo">Cargando…</span> },
-        { label: 'Seguros', value: <InsuranceLine summary={insuranceSummary} taxId={carrier.tax_id} /> },
+        { label: 'Seguros', value: <InsuranceLine summary={insuranceQuery.data ? insuranceQuery.data.summary : undefined} taxId={carrier.tax_id} /> },
       ]}
       renderForm={close => (
         <CarrierEditForm
@@ -419,7 +409,7 @@ function EmpresaDetailPageInner() {
           // Sin conteo mientras la lista está en vuelo: un "0" ahí afirma algo falso.
           { id: 'conductores', label: 'Conductores', count: driversQuery.data ? drivers.length : null },
           { id: 'equipos',     label: 'Equipos',     count: assetsQuery.data ? assets.length : null },
-          { id: 'seguros',     label: 'Seguros',     count: policiesQuery.data ? policies.length : null },
+          { id: 'seguros',     label: 'Seguros',     count: insuranceQuery.data ? insuranceQuery.data.policies.length : null },
         ]}
       />
 
@@ -540,14 +530,13 @@ function EmpresaDetailPageInner() {
           </div>
         )}
 
-        {policiesQuery.isError ? (
+        {insuranceQuery.isError ? (
           <Estado tipo="error" titulo="No se pudieron cargar las pólizas" detalle="Reintenta en unos segundos." />
-        ) : policiesQuery.isPending ? (
+        ) : !insuranceQuery.data ? (
           <Estado tipo="cargando" />
-        ) : policies.length === 0 ? (
-          <Estado tipo="vacio" titulo="Sin pólizas registradas" />
         ) : (
-          <PoliciesTable rows={policies} hideCarrier returnTo={`/dashboard/carriers/${id}?tab=seguros`} />
+          <CarrierInsuranceDetail detail={insuranceQuery.data} canEdit={canEditPolicies}
+            onAddPolicy={() => setAddPolicyOpen(true)} returnTo={`/dashboard/carriers/${id}?tab=seguros`} />
         )}
       </div>
       )}
