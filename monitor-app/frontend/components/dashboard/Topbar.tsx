@@ -1,5 +1,8 @@
+'use client'
+
 import LogoWebCarga from '@/components/brand/LogoWebCarga'
 import { getInitials } from '@/lib/utils/avatar'
+import { useMobileMenu } from './MobileNav'
 
 interface TopbarProps {
   /** Nombre ya resuelto por el layout. */
@@ -9,7 +12,7 @@ interface TopbarProps {
 }
 
 /** Barra superior, solo en el teléfono: ahí no hay barra lateral, así que la
- *  marca y quién está conectado van arriba. En escritorio la cuenta vive al pie
+ *  marca y quién está conectado van arriba; tocar el avatar abre el cajón "Menú". En escritorio la cuenta vive al pie
  *  de la barra lateral (`SidebarAccount`) y esta franja no se dibuja, para
  *  devolverle el alto al contenido (pedido del usuario, 11/10).
  *
@@ -20,28 +23,17 @@ interface TopbarProps {
  *  son cientos de llamadas por minuto y Supabase responde 429 ("Many
  *  requests") — medido: 104 llamadas a /user en un solo minuto. */
 export default function Topbar({ displayName, roleName }: TopbarProps) {
+  const menu = useMobileMenu()
+  const identity = roleName ? `${displayName}, ${roleName}` : displayName
   return (
-    <header className="md:hidden h-14 bg-white border-b border-border/70 flex items-center px-4 shrink-0 gap-3">
-      <div className="flex items-center gap-2 shrink-0">
-        {/* Fondo blanco: el isotipo azul; el logo completo es blanco. */}
-        <LogoWebCarga forma="isotipo" alto={28} />
-        <span className="font-mulish font-bold text-sm text-text-primary">WebCarga</span>
-      </div>
-
-      <div className="flex items-center gap-2 ml-auto min-w-0">
-        <div
-          role="img"
-          aria-label={roleName ? `${displayName}, ${roleName}` : displayName}
-          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-semibold"
-          style={{ background: 'linear-gradient(135deg, #1cb9ec 0%, #0e8db5 100%)' }}
-        >
-          {getInitials(displayName)}
-        </div>
-        <div className="hidden sm:block min-w-0" aria-hidden="true">
-          <p className="text-sm font-medium text-text-primary leading-tight truncate">{displayName}</p>
-          {roleName && <p className="text-xs text-informativo truncate">{roleName}</p>}
-        </div>
-      </div>
+    // El fondo de la barra lateral: así el logo oficial (blanco) se usa tal cual, y la
+    // cabecera y la barra de abajo del teléfono son una sola pieza visual.
+    <header className="md:hidden h-14 shrink-0 flex items-center justify-between px-4 bg-sidebar border-b border-white/8">
+      <LogoWebCarga forma="completo" alto={20} prioridad />
+      <button type="button" onClick={menu.open} aria-label={`Abrir menú de ${identity}`}
+        className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-accent/15 text-accent text-xs font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+        {getInitials(displayName)}
+      </button>
     </header>
   )
 }
