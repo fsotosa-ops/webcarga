@@ -146,7 +146,8 @@ La vista entrega, junto al veredicto, los datos que lo explican; la pantalla sol
 - **Cargando:** sin cifras en recuadros ni filas hasta tener el dato.
 - **Vacío:** con "No al día" marcado y ninguna empresa: "Todas las empresas están al día" (no una tabla vacía).
 - **Sin permiso:** sin `policies.edit` se ve todo y no se ven "Registrar póliza" ni acciones de escritura.
-- **Teléfono:** la lista muestra Empresa y Veredicto (Por qué debajo del nombre); el panel ocupa la pantalla.
+- **Teléfono:** como las demás tablas del kit (el Cierre), la tabla se desplaza dentro de su tarjeta, con Empresa y
+  Veredicto primero; el panel ocupa la pantalla.
 
 ## Criterios de aceptación (un test por criterio)
 
