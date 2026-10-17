@@ -33,6 +33,11 @@
 - Verificado: vitest 1924/1924, tsc, build, backend del área 167/167 en la copia local, humo C11 + matriz 25/25,
   capturas 1440/390. Revisión final opus: 4 Important arreglados (+ 1 re-graduado y 1 hallado en el pase).
 
+**17/10 — Cierre y Monitor con el sistema visual (`62e4b404`, en dev):** `PageContainer` (20 pantallas, guarda) y
+`Button`/`buttonClass` (trinquete de botones a mano en 27) en el kit; Monitor con Tabs, SearchInput y Popover del kit y el
+color de las señales por significado (`SignalTone` + `SIGNAL_TONE_TEXT`); trinquetes: color crudo 574, bajo 11 px 80.
+Pendiente de decidir: el título del Monitor dice "En Curso" y el menú "Monitor".
+
 **Siguiente paso exacto:**
 1. Confirmar Deploy Frontend y Deploy Monitor API en verde y recorrer el Cierre en dev con sesión.
 2. ~~Hallazgo 3~~ RESUELTO (16/10, decisión del usuario): modelo estándar estado + tipo de motivo (`e2b45aeb`, `42a732d0`,
