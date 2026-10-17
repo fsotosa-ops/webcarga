@@ -89,10 +89,9 @@ Reasignar, Descartados, Documentos exigidos) pasan a los tokens y a la escala; c
    contenedor sin caja (`251ec162`, test incluido). `SelectorDeRoles` alineado 17/10: títulos con `FIELD_LABEL` y el
    nivel por área con el aspecto del kit (`segmentClass`/`SEGMENT_GROUP`, expuestos por SegmentedControl), sin perder
    la semántica de radio.
-9. Seguros, siguiente spec (pregunta del usuario 17/10): WebCarga MONITOREA si cada transportista está al día con sus
-   pólizas (no paga). Propuesta: Cuotas agrupada por empresa por defecto (veredicto por cabecera, orden por riesgo,
-   póliza → cuotas al expandir, "Agrupar por" Póliza/Aseguradora/Ninguno con getGroupedRowModel del kit). Abiertas:
-   ¿unificar con Pólizas "por empresa"? ¿quién marca pagado y con qué respaldo? Orden respecto de descarga de viajes.
+9. Seguros por empresa: spec `docs/superpowers/specs/2026-10-17-seguros-por-empresa-design.md` (opción C elegida por el
+   usuario 17/10: lista plana por empresa que abre en "No al día" + panel con pólizas y cuotas; Pólizas pierde el modo
+   por empresa; marca pagado alguien de WebCarga, como hoy). Falta: que el usuario apruebe el spec y escribir el plan.
 
 **Decisiones de arquitectura:**
 - Un solo modelo de filtro por pantalla; recuadros, embudos y chips son puertas al mismo filtro; cifras facetadas.
