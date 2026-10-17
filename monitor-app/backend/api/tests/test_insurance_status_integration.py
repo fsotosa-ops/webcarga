@@ -103,14 +103,14 @@ async def test_las_lecturas_de_seguros_corren_contra_la_base(conexion_revertida)
     assert [r["id"] for r in pol["data"]] == [policy]
     assert pol["data"][0]["overdue_installments"] == 2 and pol["facets"]["UNPAID"] >= 1
 
-    emp = await insurance.list_carriers(conn, q="76000000", state="EXPIRED")
-    assert [r["carrier_id"] for r in emp["data"]] == [carrier]
-    assert emp["data"][0]["insurance_alert"] == "EXPIRED"
+    emp = await insurance.carrier_insurance(conn, carrier)
+    assert [p["id"] for p in emp["policies"]] == [policy] and len(emp["policies"][0]["installments"]) == 2
+    assert emp["summary"]["insurance_alert"] == "EXPIRED"
 
     cuo = await insurance.list_installments(conn, q="Seguros Test", state="OVERDUE")
     assert len(cuo["data"]) == 2 and cuo["facets"]["OVERDUE"] == 2
 
-    propias = await insurance.carrier_policies(conn, carrier)
+    propias = (await insurance.carrier_insurance(conn, carrier))["policies"]
     assert propias[0]["policy_state"] == "EXPIRED" and propias[0]["installments_total"] == 2
 
     cuotas = await insurance.policy_installments(conn, policy)
@@ -181,7 +181,7 @@ async def test_cancelar_una_poliza_guarda_fecha_y_motivo(conexion_revertida):
 
 async def test_S6_dos_cuotas_vencidas_es_la_alerta_de_la_empresa_en_todas_partes(conexion_revertida):
     """La regla D2 vive en app.carrier_insurance_summary: la misma fila la leen
-    /policies?group_by=carrier, /carriers/{id}/policies y /trips."""
+    /insurance/carriers, /insurance/carriers/{id} y /trips."""
     from app.services import insurance
 
     conn = conexion_revertida
@@ -195,8 +195,8 @@ async def test_S6_dos_cuotas_vencidas_es_la_alerta_de_la_empresa_en_todas_partes
 
     alerta = await conn.fetchval("SELECT insurance_alert FROM app.carrier_insurance_summary WHERE carrier_id = $1", carrier)
     assert alerta == "OVERDUE_INSTALLMENTS"
-    emp = await insurance.list_carriers(conn, q="76000000")
-    assert emp["data"][0]["insurance_alert"] == "OVERDUE_INSTALLMENTS" and emp["data"][0]["worst_state"] == "VALID"
+    fila = next(r for r in (await insurance.carrier_overview(conn))["data"] if r["carrier_id"] == carrier)
+    assert fila["insurance_alert"] == "OVERDUE_INSTALLMENTS" and fila["worst_state"] == "VALID"
 
 
 

@@ -820,11 +820,6 @@ async def create_carrier_contact(
 
 # ── Pólizas de seguro (H2.3 — ver routers/policies.py para el resto del CRUD) ──
 
-@router.get("/{carrier_id}/policies")
-async def list_carrier_policies(carrier_id: str, pool=Depends(get_pool), _=Depends(require(Permission.INSURANCE_READ))):
-    return await insurance.carrier_policies(pool, carrier_id)
-
-
 @router.post("/{carrier_id}/policies", status_code=201)
 async def create_carrier_policy(
     carrier_id: str, body: InsurancePolicyCreateBody, pool=Depends(get_pool), user=Depends(require(Permission.POLICIES_EDIT)),

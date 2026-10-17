@@ -722,29 +722,6 @@ def test_create_carrier_contact_rejects_mismatched_entity():
     assert res.status_code == 422
 
 
-def test_list_carrier_policies_reads_from_insurance_status_view():
-    """Seguros E1: las pólizas de la empresa salen de app.insurance_status, con su
-    estado calculado y los nombres que lee el frontend de hoy."""
-    pool = AsyncMock()
-    pool.fetch.return_value = [{
-        "id": "p1", "carrier_id": "c1", "carrier_name": "Acme", "carrier_tax_id": "1-9",
-        "insurance_company": "HDI", "policy_number": "87974", "valid_from": None, "valid_to": None,
-        "has_file": False, "policy_state": "EXPIRING", "expires_in_days": 10, "installments_total": 2,
-        "paid_installments": 1, "unpaid_installments": 1, "overdue_installments": 0, "next_due_date": None,
-        "has_outside_validity": False,
-    }]
-    pool.fetchrow.return_value = {"total": 1}
-    client = make_client(pool)
-
-    res = client.get("/api/v1/carriers/c1/policies")
-
-    assert res.status_code == 200
-    fila = res.json()[0]
-    assert fila["insurance_company"] == "HDI"
-    assert fila["policy_state"] == "EXPIRING" and fila["installments_total"] == 2 and fila["has_file"] is False
-    assert "FROM app.insurance_status" in pool.fetch.call_args.args[0]
-
-
 def test_create_carrier_policy_rejects_mismatched_carrier_id():
     pool = AsyncMock()
     client = make_client(pool)

@@ -30,6 +30,7 @@ from .routers.table_preferences import router as table_preferences_router
 from .routers.locations import router as locations_router
 from .routers.installments import router as installments_router
 from .routers.policies import router as policies_router
+from .routers.insurance import router as insurance_router
 from .routers.requirements import requirements_router as compliance_requirements_router
 from .routers.access import router as access_router
 from .routers.shippers import router as shippers_router
@@ -134,6 +135,7 @@ app.include_router(drivers_router,             prefix="/api/v1")
 app.include_router(assets_router,              prefix="/api/v1")
 app.include_router(contacts_router,            prefix="/api/v1")
 app.include_router(policies_router,            prefix="/api/v1")
+app.include_router(insurance_router,           prefix="/api/v1")
 app.include_router(installments_router,        prefix="/api/v1")
 app.include_router(compliance_router,          prefix="/api/v1")
 app.include_router(certification_requests_router, prefix="/api/v1")

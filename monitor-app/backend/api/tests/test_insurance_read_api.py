@@ -19,16 +19,15 @@ def _rutas_de_seguros():
     for r in app.routes:
         if not isinstance(r, APIRoute):
             continue
-        if r.path.startswith(("/api/v1/policies", "/api/v1/installments")) or r.path in (
-            "/api/v1/carriers/{carrier_id}/policies",
-        ):
+        if r.path.startswith(("/api/v1/policies", "/api/v1/installments", "/api/v1/insurance")):
             yield r
 
 
 # S7: ninguna lectura de Seguros alcanza con directory.read.
 def test_S7_toda_lectura_de_seguros_pide_insurance_read():
     lecturas = {f"{r.path}": _permisos(r.dependant) for r in _rutas_de_seguros() if "GET" in r.methods}
-    assert {"/api/v1/policies", "/api/v1/installments", "/api/v1/carriers/{carrier_id}/policies"} <= set(lecturas)
+    assert {"/api/v1/policies", "/api/v1/installments", "/api/v1/insurance/carriers",
+            "/api/v1/insurance/carriers/{carrier_id}"} <= set(lecturas)
     mal = {p: perms for p, perms in lecturas.items() if perms != (Permission.INSURANCE_READ,)}
     assert mal == {}
 
@@ -37,8 +36,8 @@ def _client(pool):
     a = FastAPI()
     from app.routers.policies import router as policies
     from app.routers.installments import router as installments
-    from app.routers.carriers import router as carriers
-    for r in (policies, installments, carriers):
+    from app.routers.insurance import router as insurance_router
+    for r in (policies, installments, insurance_router):
         a.include_router(r, prefix="/api/v1")
     a.dependency_overrides[get_pool] = lambda: pool
     a.dependency_overrides[get_current_user] = lambda: USER
@@ -58,8 +57,7 @@ def test_las_lecturas_salen_de_las_vistas_y_no_de_las_columnas_viejas():
     pool.fetchrow.return_value = {k: 0 for k in claves}
     pool.fetchval.return_value = 0
     c = _client(pool)
-    for url in ("/api/v1/policies?group_by=policy", "/api/v1/policies?group_by=carrier",
-                "/api/v1/installments?state=OVERDUE", "/api/v1/carriers/c1/policies"):
+    for url in ("/api/v1/policies", "/api/v1/installments?state=OVERDUE", "/api/v1/insurance/carriers"):
         assert c.get(url).status_code == 200, url
     sql = _sql(pool)
     assert "app.insurance_status" in sql and "app.carrier_insurance_summary" in sql

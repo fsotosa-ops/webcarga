@@ -81,7 +81,6 @@ async def _assemble_policy_detail(policy_id: str, pool, supabase=None) -> dict:
 
 @router.get("")
 async def list_policies(
-    group_by: str = Query("policy", pattern="^(policy|carrier)$"),
     state: str = Query(""),
     q: str = Query(""),
     page: int = Query(1, ge=1),
@@ -89,11 +88,8 @@ async def list_policies(
     pool=Depends(get_pool),
     _=Depends(require(Permission.INSURANCE_READ)),
 ):
-    """La lista de Seguros › Pólizas: por póliza o por empresa (incluye las activas sin póliza)."""
-    if group_by == "carrier":
-        if state and state not in insurance.CARRIER_STATES:
-            raise HTTPException(422, "state inválido")
-        return await insurance.list_carriers(pool, state=state, q=q, page=page, limit=limit)
+    """La lista de Seguros › Pólizas, una fila por póliza. La vista por empresa es
+    Seguros › Empresas (`/insurance/carriers`)."""
     if state and state not in insurance.POLICY_FILTERS:
         raise HTTPException(422, "state inválido")
     return await insurance.list_policies(pool, state=state, q=q, page=page, limit=limit)

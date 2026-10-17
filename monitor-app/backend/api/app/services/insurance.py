@@ -6,6 +6,8 @@ Los estados de póliza, cuota y empresa los calcula la base en dos vistas
 regla de "vencida" ni la de "peor estado de la empresa"."""
 from __future__ import annotations
 
+import json
+
 import asyncpg
 
 from ..utils.identity import rut_matches_sql
@@ -18,7 +20,8 @@ AUDIT_ENTITY = "INSURANCE_POLICY"
 POLICY_STATES = ("EXPIRED", "EXPIRING", "VALID", "NO_DATES", "CANCELLED", "RENEWED")
 # Filtros de la lista de Pólizas que no son un estado de la póliza.
 POLICY_FILTERS = POLICY_STATES + ("UNPAID", "NO_FILE")
-CARRIER_STATES = ("EXPIRED", "EXPIRING", "VALID", "NO_DATES", "NO_POLICY")
+# El veredicto de una empresa (app.carrier_insurance_summary), en el orden de su gravedad.
+VERDICTS = ("EXPIRED", "NO_POLICY", "OVERDUE", "NO_DATES", "EXPIRING", "UP_TO_DATE")
 INSTALLMENT_FILTERS = ("OVERDUE", "DUE_30", "PAID", "ALL")
 
 
@@ -87,56 +90,59 @@ async def list_policies(pool, *, state: str = "", q: str = "", carrier_id: str |
         *params,
     )
     facets = dict(facets)
-    return {"group_by": "policy", "data": [dict(r) for r in rows],
+    return {"data": [dict(r) for r in rows],
             "count": facets.get(state, facets["total"]) if state else facets["total"],
             "page": page, "limit": limit, "facets": facets}
 
 
-# ── Empresas: el peor estado de sus pólizas (incluye las activas sin póliza) ──
+# ── Empresas: ¿está al día? (Seguros por empresa, 17/10) ─────────────────────
+# El veredicto, su razón y la alerta del Monitor los calcula la vista; aquí solo se
+# suman el nombre y el RUT de la empresa.
 
-_CARRIERS_CTE = """
-emp AS (
-    SELECT c.id AS carrier_id, c.business_name AS carrier_name, c.tax_id AS carrier_tax_id, c.operational_status,
-           coalesce(s.policies, 0) AS policies,
-           coalesce(s.worst_state, 'NO_POLICY') AS worst_state,
-           coalesce(s.unpaid_installments, 0) AS unpaid_installments,
-           coalesce(s.overdue_installments, 0) AS overdue_installments,
-           s.next_due_date, s.insurance_alert
-    FROM public.carriers c
-    LEFT JOIN app.carrier_insurance_summary s ON s.carrier_id = c.id
-    WHERE c.operational_status = 'ACTIVE' OR s.carrier_id IS NOT NULL
-)"""
+_CARRIERS_SQL = """
+    SELECT s.*, c.business_name AS carrier_name, c.tax_id AS carrier_tax_id, c.operational_status
+    FROM app.carrier_insurance_summary s
+    JOIN public.carriers c ON c.id = s.carrier_id"""
 
-_CARRIER_ORDER = """
-    CASE worst_state WHEN 'EXPIRED' THEN 1 WHEN 'NO_POLICY' THEN 2 WHEN 'NO_DATES' THEN 3
-                     WHEN 'EXPIRING' THEN 4 ELSE 5 END,
-    overdue_installments DESC, carrier_name"""
+_VERDICT_ORDER = "CASE s.insurance_verdict " + " ".join(
+    f"WHEN '{v}' THEN {i}" for i, v in enumerate(VERDICTS, 1)) + " END"
 
 
-async def list_carriers(pool, *, state: str = "", q: str = "", page: int = 1, limit: int = 50) -> dict:
-    params: list = []
-    where = [_search(q, params, "carrier_name", "carrier_tax_id")] if q else []
-    base_where = ("WHERE " + " AND ".join(where)) if where else ""
-    rows_where = base_where
-    if state in CARRIER_STATES:
-        params.append(state)
-        rows_where = ("WHERE " + " AND ".join([*where, f"worst_state = ${len(params)}"]))
-    n = len(params)
-    rows = await pool.fetch(
-        f"WITH {_CARRIERS_CTE} SELECT * FROM emp {rows_where} ORDER BY {_CARRIER_ORDER} "
-        f"LIMIT ${n + 1} OFFSET ${n + 2}",
-        *params, limit, (page - 1) * limit,
+async def carrier_overview(db) -> dict:
+    """Seguros › Empresas: una fila por empresa, por gravedad, con sus cifras por veredicto.
+    Sin paginación: son las empresas activas (36-60), y la pantalla filtra en el cliente."""
+    rows = [dict(r) for r in await db.fetch(
+        f"{_CARRIERS_SQL} ORDER BY {_VERDICT_ORDER}, s.overdue_installments DESC, c.business_name")]
+    facets = {v: sum(r["insurance_verdict"] == v for r in rows) for v in VERDICTS}
+    return {"data": rows, "facets": {**facets, "total": len(rows)}}
+
+
+async def carrier_insurance(db, carrier_id: str) -> dict | None:
+    """El detalle de una empresa: su fila y sus pólizas no canceladas, cada una con sus
+    cuotas, en una consulta. Una renovada aparece solo si todavía tiene cuotas impagas
+    (son deudas); si no, es historia."""
+    summary = await db.fetchrow(f"{_CARRIERS_SQL} WHERE s.carrier_id = $1", carrier_id)
+    if summary is None:
+        return None
+    rows = await db.fetch(
+        f"""WITH {_POLICIES_CTE}
+        SELECT pol.*, coalesce((
+            SELECT json_agg(json_build_object(
+                'id', s.installment_id, 'installment_number', s.installment_number,
+                'installments_total', s.installments_total, 'amount_uf', s.amount_uf, 'due_date', s.due_date,
+                'due_in_days', s.due_in_days, 'installment_state', s.installment_state, 'paid', s.paid,
+                'paid_on', s.paid_on, 'paid_by', s.paid_by, 'outside_validity', s.outside_validity)
+                ORDER BY s.installment_number)
+            FROM app.insurance_status s WHERE s.policy_id = pol.id AND s.installment_id IS NOT NULL
+        ), '[]') AS installments
+        FROM pol
+        WHERE pol.carrier_id = $1 AND pol.policy_state <> 'CANCELLED'
+          AND (pol.policy_state <> 'RENEWED' OR pol.unpaid_installments > 0)
+        ORDER BY {_POLICY_ORDER}""",
+        carrier_id,
     )
-    search_params = params[: len(where)]
-    facets = dict(await pool.fetchrow(
-        f"WITH {_CARRIERS_CTE} SELECT count(*) AS total, "
-        + ", ".join(f"count(*) FILTER (WHERE worst_state = '{s}') AS \"{s}\"" for s in CARRIER_STATES)
-        + f" FROM emp {base_where}",
-        *search_params,
-    ))
-    return {"group_by": "carrier", "data": [dict(r) for r in rows],
-            "count": facets.get(state, facets["total"]) if state else facets["total"],
-            "page": page, "limit": limit, "facets": facets}
+    return {"summary": dict(summary),
+            "policies": [{**dict(r), "installments": json.loads(r["installments"])} for r in rows]}
 
 
 # ── Cuotas: la cola de pagos ───────────────────────────────────────────────────
@@ -197,11 +203,6 @@ async def policy_state(conn, policy_id: str) -> dict | None:
         "SELECT DISTINCT policy_state, expires_in_days FROM app.insurance_status WHERE policy_id = $1", policy_id,
     )
     return dict(row) if row else None
-
-
-async def carrier_policies(pool, carrier_id: str) -> list[dict]:
-    """Las pólizas de una empresa (pestaña Seguros de la ficha): la misma lista de Pólizas."""
-    return (await list_policies(pool, carrier_id=carrier_id, limit=200))["data"]
 
 
 # ── Escrituras: el pago es un hecho (si, cuándo, quién) ───────────────────────
