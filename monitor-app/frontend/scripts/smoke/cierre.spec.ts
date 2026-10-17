@@ -29,6 +29,16 @@ async function login(page: Page) {
 }
 
 const tabla = (page: Page) => page.getByRole('table', { name: 'Flota del día' })
+
+/** "Columnas" › "Restablecer", esperando a que la API lo guarde: cada corrida parte
+ *  y termina con las columnas por defecto, sin depender de la anterior. */
+async function restablecerColumnas(page: Page) {
+  await page.getByRole('button', { name: 'Columnas' }).click()
+  const guardado = page.waitForResponse(r => r.url().includes('/me/table-preferences/closure.fleet') && r.request().method() === 'DELETE')
+  await page.getByRole('button', { name: 'Restablecer' }).click()
+  await guardado
+  await page.keyboard.press('Escape')
+}
 const encabezados = (page: Page) => tabla(page).locator('thead th').allInnerTexts()
 
 test('C11: recuadro, filtro tipeado y columnas sobreviven a recargar', async ({ page }) => {
@@ -39,6 +49,7 @@ test('C11: recuadro, filtro tipeado y columnas sobreviven a recargar', async ({ 
   await login(page)
   await page.goto(CIERRE)
   await expect(tabla(page)).toBeVisible({ timeout: 30000 })
+  await restablecerColumnas(page)
 
   // Recuadro → chip con las palabras de la columna, y el recuadro marcado. El primer
   // recuadro (fuera de "Todos") que tenga filas ese día.
@@ -49,8 +60,9 @@ test('C11: recuadro, filtro tipeado y columnas sobreviven a recargar', async ({ 
   const recuadro = page.getByRole('button', { name: elegido, exact: true })
   await recuadro.click()
   await expect(recuadro).toHaveAttribute('aria-pressed', 'true')
-  const chipEstado = page.getByRole('button', { name: 'Quitar filtro Estado' })
-  await expect(chipEstado).toBeVisible()
+  // El recuadro puede ser de Estado o de Tipo de motivo (estado + motivo).
+  const chipDelRecuadro = page.getByRole('button', { name: /^Quitar filtro (Estado|Tipo de motivo)$/ })
+  await expect(chipDelRecuadro).toBeVisible()
 
   // Filtro de Empresa tipeando: la primera empresa que ofrece, buscada por sus letras.
   await page.getByRole('button', { name: 'Filtrar por Empresa' }).click()
@@ -77,14 +89,13 @@ test('C11: recuadro, filtro tipeado y columnas sobreviven a recargar', async ({ 
   await page.reload()
   await expect(tabla(page)).toBeVisible({ timeout: 30000 })
   expect(page.url()).toBe(url)
-  await expect(page.getByRole('button', { name: 'Quitar filtro Estado' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Quitar filtro (Estado|Tipo de motivo)$/ })).toBeVisible()
   await expect(page.getByText(`Empresa: ${primera}`)).toBeVisible()
   await expect(page.getByRole('button', { name: new RegExp(`^${elegido.split(', ')[0]}, `) })).toHaveAttribute('aria-pressed', 'true')
   await expect.poll(() => encabezados(page)).toEqual(antes)
 
   // Dejar las columnas como estaban para la próxima corrida.
-  await page.getByRole('button', { name: 'Columnas' }).click()
-  await page.getByRole('button', { name: 'Restablecer' }).click()
+  await restablecerColumnas(page)
   expect(errores).toEqual([])
 })
 

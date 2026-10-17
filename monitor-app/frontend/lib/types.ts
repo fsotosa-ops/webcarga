@@ -1207,6 +1207,10 @@ export type DriverDayStatusRow = {
    *  está la patente nomás, no está el número de viaje, nada"*. */
   today_trip_code:             string | null
   today_trip_origin:           string | null
+  /** La zona del destino del viaje de hoy (RM, Z0, Región, Sin clasificar), la misma
+   *  del Reporte (`services/destination_zone.py`). Opcional: backend y frontend se
+   *  despliegan por separado. */
+  destination_zone?:           string | null
   /** Bloque 0 del Directorio (0.4): false si el conductor ya no está en el roster
    *  vivo pero su línea del día sigue contando para la firma. Opcional: un
    *  backend anterior no lo manda, y entonces se lee como true. */
@@ -1406,7 +1410,7 @@ export type DailyClosureReportRow = Omit<
   // Tarea 7 (plan 2.4): _REPORT_SQL (backend) no trae estos campos —
   // solo _DETAIL_SQL (GET /daily-closures) los expone.
   | 'last_known_tractor_plate' | 'last_known_operation_type' | 'today_trip_id'
-  | 'today_trip_code' | 'today_trip_origin' | 'comentario' | 'valid_until'
+  | 'today_trip_code' | 'today_trip_origin' | 'destination_zone' | 'comentario' | 'valid_until'
   // home_cd_name SÍ viaja en _REPORT_SQL (el pivot puede cortar por CD); el id, no.
   | 'home_cd_id'
 > & {
@@ -1456,6 +1460,8 @@ export type EquipmentDayStatusRow = {
    *  van en campos distintos. */
   today_trip_code:         string | null
   today_trip_origin:       string | null
+  /** La zona del destino del viaje de hoy, la misma del Reporte. Opcional (despliegues separados). */
+  destination_zone?:       string | null
   /** Generador de carga: quién pone la carga (Walmart, Iansa, Colun), no la
    *  empresa de transporte que la mueve. Resuelto por `public.shippers` para
    *  que llegue con el nombre prolijo y no el crudo del TMS. El eje de
@@ -1540,6 +1546,8 @@ export type DailyClosureReport = {
  *  del Monitor — que es exactamente cuando empieza a importar. */
 export type ViajeDelCierre = {
   trip_id:                 string
+  /** La zona de su último destino (RM, Z0, Región, Sin clasificar), la misma del Reporte. */
+  destination_zone?:       string | null
   planning_date:           string
   client_name:             string | null
   /** Contexto del Monitor (HU-D2): mismas fuentes que la lista del Monitor. */
@@ -1598,7 +1606,12 @@ export type CarrierUtilizationRow = {
 }
 
 /** Un viaje nombrado por su Nº del TMS (D8): lo que muestra una fila con viajes. */
-export type TripRef = { id: string; code: string | null }
+export type TripRef = {
+  id: string
+  code: string | null
+  /** La zona de su destino; la mandan los avisos de Pendientes (Conductor sin empresa). */
+  zone?: string | null
+}
 
 /** Una hoja del árbol de Asignados: cliente × origen real del viaje × empresa. */
 export type AssignedRow = {

@@ -137,6 +137,19 @@ export function useDataTable<T>({
 
   const setView = (cambios: Partial<TableView>) => onViewChange({ ...view, ...cambios })
 
+  /** Cuántas filas pasan la búsqueda y `filters` (en vez de los de la vista): la cifra
+   *  de un atajo es lo que se vería al tocarlo. Los filtros del servidor ya llegaron
+   *  aplicados. */
+  function countWith(filters: Record<string, string[]>): number {
+    const q = view.q.trim().toLowerCase()
+    return table.getCoreRowModel().rows.filter(r =>
+      (!q || !search || search(r.original, q))
+      && Object.entries(filters).every(([id, elegidos]) => {
+        const c = porId.get(id)
+        return !c || c.server || cellMatches(c, r.original, elegidos)
+      })).length
+  }
+
   function setFilter(columnId: string, values: string[]) {
     const filters = { ...view.filters }
     if (values.length) filters[columnId] = values; else delete filters[columnId]
@@ -156,10 +169,12 @@ export function useDataTable<T>({
     /** Los filtros que aplica el servidor: van por "+ Filtro" y como chip, no como columna. */
     serverFilters: columns.filter(c => c.server),
     facetCount,
-    /** Cuántas filas pasan todos los filtros menos el de esta columna (el "Todos" de un recuadro). */
-    facetTotal: (columnId: string) => facetRows(columnId).length,
     valuesOf,
     setFilter,
+    /** Reemplaza todos los filtros de una vez (un atajo pone uno y quita otros). */
+    setFilters: (filters: Record<string, string[]>) =>
+      setView({ filters: Object.fromEntries(Object.entries(filters).filter(([, v]) => v.length)) }),
+    countWith,
     setQ: (q: string) => setView({ q }),
     setSort: (column: string, dir: SortDir | null) => setView({ sort: dir ? { column, dir } : null }),
     clearAll: () => setView({ filters: {}, q: '' }),

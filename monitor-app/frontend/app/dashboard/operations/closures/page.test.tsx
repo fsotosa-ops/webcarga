@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import ClosuresCenterPage from './page'
 import type { DailyClosureStatus, EquipmentClosureStatus } from '@/lib/types'
+import { LINE, driverRow } from '@/lib/cierre/dayFleet.fixtures'
 
 const EMPTY_PRE_CIERRE = {
   auto_resolved: [],
@@ -125,6 +126,19 @@ beforeEach(async () => {
 })
 
 describe('ClosuresCenterPage', () => {
+  it('el resumen del alcance usa las palabras de los recuadros: asignados + no asignados + por regularizar = todos', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({ ...EMPTY_STATUS, drivers: [
+      driverRow({ ...LINE.assigned, driver_id: 'd1' }),
+      driverRow({ ...LINE.withoutReason, driver_id: 'd2' }),
+      driverRow({ ...LINE.notWorking, driver_id: 'd3' }),
+      driverRow({ ...LINE.toRegularize, driver_id: 'd4' }),
+    ] })
+    renderPage()
+    expect(await screen.findByText(/1 asignados · 2 no asignados · 1 por regularizar · 25 % de utilización/)).toBeInTheDocument()
+    expect(screen.getByText(/1 sin motivo bloquea la firma/)).toBeInTheDocument()
+  })
+
   it('un día firmado con ajustes los cuenta junto a "Cerrado" y en la pestaña Viajes, sin bloque fijo arriba', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     const ajuste = { trip_id: 'a', tipo: 'agregado' as const, source_system_trip_id: 'Q-9', client_name: 'walmart',

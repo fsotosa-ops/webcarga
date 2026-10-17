@@ -287,6 +287,25 @@ describe('PreCierrePendingSection', () => {
     expect(screen.getByRole('button', { name: 'Filtrar por Nº viaje' })).toBeInTheDocument()
   })
 
+  it('un aviso con viajes dice la zona de sus destinos, y la zona filtra', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [{ tractor_plate: 'ZZZZ11', reason: 'Sin empresa' }],
+        EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [], EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [],
+        CONDUCTOR_SIN_EMPRESA: [{ ...PROPUESTA, viajes: 2,
+          trips: [{ id: 't1', code: '2033000', zone: 'RM' }, { id: 't2', code: '2033001', zone: 'Z0' }] }],
+      },
+    }))
+    renderSection()
+    const fila = (await screen.findByText('Gerson Ferrada Zapata')).closest('tr')!
+    expect(within(fila).getByText('RM, Z0')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Zona' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Z0, 1' }))
+    expect(screen.queryByText('ZZZZ11')).toBeNull()
+    expect(screen.getByText('Gerson Ferrada Zapata')).toBeInTheDocument()
+  })
+
   it('el alcance filtra los avisos; los de empresa se ven en los dos (D6)', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({

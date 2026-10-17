@@ -23,6 +23,26 @@ export const FLEET_ROW_GROUP_LABEL: Record<FleetRowGroup, string> = {
   tractor: 'Patente', other_driver: 'Otro conductor del día', out_of_roster: 'Ya no está en el roster',
 }
 
+/** El estado de una fila, en el modelo estándar de utilización: asignado o no, y
+ *  "por regularizar" aparte (es un dato que corregir, no un porqué). */
+export type FleetStatus = 'ASSIGNED' | 'UNASSIGNED' | 'TO_REGULARIZE'
+/** El porqué de un no asignado, agrupado como en el catálogo de motivos: trabajó sin
+ *  asignación o no trabajó; "pendiente" mientras nadie lo declaró (bloquea la firma). */
+export type ReasonType = 'PENDING' | 'WORKED' | 'NOT_WORKED'
+
+/** La categoría que calcula el backend (`services/cierre_lineas.py`), leída como estado. */
+export function fleetStatusOf(c: CategoriaDeLinea): FleetStatus {
+  if (c === 'ASIGNADO') return 'ASSIGNED'
+  return c === 'POR_REGULARIZAR' ? 'TO_REGULARIZE' : 'UNASSIGNED'
+}
+
+/** …y como tipo de motivo, solo para los no asignados. */
+export function reasonTypeOf(c: CategoriaDeLinea): ReasonType | null {
+  if (c === 'SIN_RESOLVER') return 'PENDING'
+  if (c === 'TRABAJANDO_SIN_ASIGNACION') return 'WORKED'
+  return c === 'NO_TRABAJANDO' ? 'NOT_WORKED' : null
+}
+
 export type FleetRow = {
   key: string
   destino: Destino
@@ -44,6 +64,8 @@ export type FleetRow = {
   unassignedReasonId: string | null
   validUntil: string | null
   tripCode: string | null
+  /** La zona del destino del viaje de hoy (la misma del Reporte); sin viaje, ninguna. */
+  zone: string | null
   /** De dónde salió la carga HOY (el hecho del TMS). */
   origin: string | null
   /** Origen habitual DECLARADO: de quién es la asistencia. */
@@ -78,6 +100,7 @@ function filaDeConductor(d: FilaConductor, extra: Partial<FleetRow> = {}): Fleet
     unassignedReasonId: d.unassigned_reason_id,
     validUntil: d.valid_until,
     tripCode: d.today_trip_code,
+    zone: d.destination_zone ?? null,
     origin: d.today_trip_origin,
     cd: d.home_cd_name,
     // El cliente es un dato del viaje: sin viaje, no hay (decisión del usuario 11/10).
@@ -113,6 +136,7 @@ function filaDeTracto(e: EquipmentDayStatusRow): FleetRow {
     unassignedReasonId: e.unassigned_reason_id,
     validUntil: e.valid_until,
     tripCode: e.today_trip_code,
+    zone: e.destination_zone ?? null,
     origin: e.today_trip_origin,
     cd: e.home_cd_name,
     cliente: e.today_trip_client,
@@ -184,25 +208,31 @@ export function buildFleetRows(
 
 export type ScopeSummary = {
   assigned: number
+  /** Los no asignados, con o sin motivo: lo mismo que el recuadro "No asignados". */
   unassigned: number
+  toRegularize: number
   utilizationPct: number
   /** Lo que bloquea la firma; `null` donde no se exige motivo (Equipo Completo). */
   blocking: number | null
 }
 
-/** El resumen de un alcance, con las fórmulas de siempre (spec §4.6: no cambian). */
+/** El resumen de un alcance: asignados + no asignados + por regularizar = todos, y la
+ *  utilización de siempre (asignados / todos). Las mismas palabras que los recuadros. */
 export function scopeSummary(
   drivers: DailyClosureStatus, equipment: EquipmentClosureStatus, alcance: ClosureScope,
 ): ScopeSummary {
   if (alcance === 'equipo_completo') {
     const s = equipment.equipos_completos.summary
-    return { assigned: s.assigned, unassigned: s.unassigned, utilizationPct: s.utilization_pct, blocking: null }
+    // Equipo Completo no tiene "por regularizar": eso es del conductor (Tractoreo).
+    return { assigned: s.assigned, unassigned: s.unassigned, toRegularize: 0, utilizationPct: s.utilization_pct, blocking: null }
   }
   const filas = filasDeTractoreo(drivers, equipment)
-  const assigned = filas.filter(r => r.categoria === 'ASIGNADO').length
+  const de = (s: FleetStatus) => filas.filter(r => fleetStatusOf(r.categoria) === s).length
+  const assigned = de('ASSIGNED')
   return {
     assigned,
-    unassigned: filas.length - assigned,
+    unassigned: de('UNASSIGNED'),
+    toRegularize: de('TO_REGULARIZE'),
     utilizationPct: filas.length ? Math.round(assigned / filas.length * 1000) / 10 : 0,
     // Una fila fusionada cuenta una vez; un tracto con motivo propio pendiente también bloquea.
     blocking: filas.filter(r => r.categoria === 'SIN_RESOLVER' || (r.tractoPropio && !r.tractoPropio.reasonId)).length,

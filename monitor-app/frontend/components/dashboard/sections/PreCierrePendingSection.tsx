@@ -13,11 +13,14 @@ import { DataTable } from '@/components/ui/tabla/data/DataTable'
 import { TableToolbar } from '@/components/ui/tabla/data/TableToolbar'
 import { useClosureNotices } from '@/hooks/useClosureNotices'
 import type { Notice } from '@/lib/cierre/closureNotices'
-import { NOTICE_TYPE_LABEL } from '@/lib/states'
+import { DESTINATION_ZONE_LABEL, NOTICE_TYPE_LABEL } from '@/lib/states'
 import type { ClosureScope } from '@/lib/types'
 import { NoticeAction } from './pending/NoticeAction'
 
 const TABLE_KEY = 'closure.pending'
+
+/** Las zonas de los viajes de un aviso, sin repetir. */
+const zonasDe = (n: Notice) => [...new Set(n.trips.map(t => t.zone).filter((z): z is string => !!z))]
 
 interface Props {
   fecha: string
@@ -43,6 +46,9 @@ export function PreCierrePendingSection({ fecha, alcance, tripHref }: Props) {
     { id: 'carrier', header: 'Empresa', value: n => n.carrier },
     { id: 'trip', header: 'Nº viaje', value: n => tripCodes(n.trips).join(', ') || null, values: n => tripCodes(n.trips),
       render: n => <TripCodeLinks trips={n.trips} href={tripHref} /> },
+    // La zona del destino de sus viajes (los avisos con viajes: Conductor sin empresa).
+    { id: 'zone', header: 'Zona', options: Object.values(DESTINATION_ZONE_LABEL),
+      value: n => zonasDe(n).join(', ') || null, values: zonasDe },
     { id: 'detail', header: 'Detalle', filter: false, sortable: false, value: n => n.detail,
       render: n => <span className="text-text-primary">{n.detail}</span> },
     { id: 'action', header: 'Acción', filter: false, sortable: false, hideable: false, value: () => null,

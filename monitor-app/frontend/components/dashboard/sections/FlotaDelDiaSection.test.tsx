@@ -106,17 +106,43 @@ describe('FlotaDelDiaSection', () => {
     expect(screen.getByText('Carla Díaz')).toBeInTheDocument()
   })
 
-  it('el tile "No asignados" recorta a los que nadie miró todavía', async () => {
-    // El recorte que antes venia puesto de fabrica ahora se pide, y su tile
-    // queda marcado — que es lo que faltaba.
+  it('"No asignados" es todo lo que no está asignado; "Sin motivo" recorta a los que nadie miró (estándar: estado + motivo)', async () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
     fireEvent.click(screen.getByRole('button', { name: /^No asignados/ }))
-
     expect(screen.getByText('Ana Soto')).toBeInTheDocument()
+    expect(screen.getByText('Carla Díaz')).toBeInTheDocument()
     expect(screen.queryByText('Juan Pérez')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Sin motivo/ }))
+    expect(screen.getByText('Ana Soto')).toBeInTheDocument()
     expect(screen.queryByText('Carla Díaz')).not.toBeInTheDocument()
+    // Los atajos se reemplazan: el chip es el del tipo de motivo, no los dos.
+    expect(screen.queryByRole('button', { name: 'Quitar filtro Estado' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Quitar filtro Tipo de motivo' })).toBeInTheDocument()
+  })
+
+  it('Estado, Tipo de motivo y Zona son columnas propias que filtran', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...DRIVERS_STATUS,
+      drivers: [
+        driverRow({ ...LINE.assigned, driver_id: 'd1', full_name: 'Ana Soto', destination_zone: 'RM' }),
+        driverRow({ ...LINE.notWorking, driver_id: 'd4', full_name: 'Carla Díaz' }),
+      ],
+    })
+    await soloConductores()
+    renderSection()
+    const ana = (await screen.findByText('Ana Soto')).closest('tr')!
+    expect(within(ana).getByText('Asignado')).toBeInTheDocument()
+    expect(within(ana).getByText('RM')).toBeInTheDocument()
+    const carla = screen.getByText('Carla Díaz').closest('tr')!
+    expect(within(carla).getByText('No asignado')).toBeInTheDocument()
+    expect(within(carla).getByText('No trabajó')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Zona' }))
+    expect(screen.getByRole('checkbox', { name: 'RM, 1' })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Región, 0' })).toBeInTheDocument()
   })
 
   it('un conductor sin tracto habitual lo dice, con el chip de su tipo de operación', async () => {
@@ -565,25 +591,23 @@ describe('FlotaDelDiaSection', () => {
   })
   // ── Pedidos del 2026-09-07 ────────────────────────────────────────────────
 
-  it('marcar un motivo descuenta de "No asignados" y suma en "No trabajando"', async () => {
+  it('con motivo, un no asignado sale de "Sin motivo" y entra en su tipo; "No asignados" los cuenta a los dos', async () => {
     await soloConductores()
     // Antes los dos estados caían en el mismo número, así que resolver una
     // fila no movía el contador de lo pendiente.
     renderSection()
     await screen.findByText('Ana Soto')
-
-    const noAsignados = screen.getByRole('button', { name: /^No asignados/ }).closest('button')!
-    const noTrabajando = screen.getByRole('button', { name: /^No trabajando/ }).closest('button')!
-    // Ana Soto y Carla Díaz están No asignadas; sólo Carla tiene motivo.
-    expect(within(noAsignados).getByText('1')).toBeInTheDocument()
-    expect(within(noTrabajando).getByText('1')).toBeInTheDocument()
+    // Ana Soto y Carla Díaz están No asignadas; sólo Carla tiene motivo (no trabajó).
+    expect(screen.getByRole('button', { name: 'No asignados, 2' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sin motivo, 1' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'No trabajó, 1' })).toBeInTheDocument()
   })
 
-  it('el tile "No trabajando" muestra sólo a los que ya tienen motivo', async () => {
+  it('el recuadro "No trabajó" muestra sólo a los que ya tienen ese motivo', async () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(screen.getByRole('button', { name: /^No trabajando/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^No trabajó/ }))
 
     expect(await screen.findByText('Carla Díaz')).toBeInTheDocument()
     expect(screen.queryByText('Ana Soto')).not.toBeInTheDocument()
@@ -657,7 +681,7 @@ describe('FlotaDelDiaSection', () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     renderSection()
     await screen.findByText('Ana Soto')
-    fireEvent.click(screen.getByRole('button', { name: /^No trabajando/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^No trabajó/ }))
     await screen.findByText('Carla Díaz')
 
     const campo = screen.getByLabelText('Comentario de Carla Díaz')
@@ -680,7 +704,7 @@ describe('FlotaDelDiaSection', () => {
   it('el comentario es una columna propia, no un renglón bajo el motivo', async () => {
     renderSection()
     await screen.findByText('Ana Soto')
-    fireEvent.click(screen.getByRole('button', { name: /^No trabajando/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^No trabajó/ }))
 
     const fila = (await screen.findByText('Carla Díaz')).closest('tr')!
     const celdas = fila.querySelectorAll('td')
@@ -758,18 +782,18 @@ describe('FlotaDelDiaSection', () => {
     await soloConductores()
     const { setAlcance } = renderSection()
     await screen.findByText('Ana Soto')
-    fireEvent.click(screen.getByRole('button', { name: /^No trabajando/ }))
-    expect(screen.getByRole('button', { name: /^No trabajando/ })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByRole('button', { name: /^No trabajó/ }))
+    expect(screen.getByRole('button', { name: /^No trabajó/ })).toHaveAttribute('aria-pressed', 'true')
 
     setAlcance('equipo_completo')
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /^No trabajando/ })).toHaveAttribute('aria-pressed', 'true'))
+    await waitFor(() => expect(screen.getByRole('button', { name: /^No trabajó/ })).toHaveAttribute('aria-pressed', 'true'))
     expect(screen.queryByText(/^Se quitó/)).toBeNull()
   })
 
   // ── Solicitud de Cambios Diario 2.0 (16/09) ─────────────────────────────
 
-  it('un motivo de "trabajó sin asignación" queda en No asignados y no pasa a No trabajando', async () => {
+  it('un motivo de "trabajó sin asignación" queda en su tipo y no pasa a "No trabajó" (Operaciones, 16/09)', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue({
       ...DRIVERS_STATUS,
@@ -781,11 +805,11 @@ describe('FlotaDelDiaSection', () => {
     renderSection()
     await screen.findByText('Ana Soto')
 
-    fireEvent.click(screen.getByRole('button', { name: /^No asignados/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Trabajó sin asignación/ }))
     expect(screen.getByText('Ana Soto')).toBeInTheDocument()
     expect(screen.queryByText('Carla Díaz')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /^No trabajando/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^No trabajó/ }))
     expect(await screen.findByText('Carla Díaz')).toBeInTheDocument()
     expect(screen.queryByText('Ana Soto')).not.toBeInTheDocument()
   })

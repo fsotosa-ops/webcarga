@@ -141,12 +141,10 @@ describe('carrierBlockingReason (la razón del "No habilitada" de una empresa)',
 
 
 describe('Cierre: categorías y alcances (Cierre con un solo patrón, C2)', () => {
-  it('cada categoría de línea tiene UNA palabra, la misma en la columna, el recuadro y el chip', async () => {
-    const { CATEGORY_LABEL, SCOPE_LABEL } = await import('./states')
-    expect(CATEGORY_LABEL).toEqual({
-      ASIGNADO: 'Asignado', SIN_RESOLVER: 'Sin motivo', TRABAJANDO_SIN_ASIGNACION: 'Trabajando sin asignación',
-      NO_TRABAJANDO: 'No trabajando', POR_REGULARIZAR: 'Por regularizar',
-    })
+  it('estado y tipo de motivo tienen UNA palabra cada uno, la misma en la columna, el recuadro y el chip', async () => {
+    const { FLEET_STATUS_LABEL, REASON_TYPE_LABEL, SCOPE_LABEL } = await import('./states')
+    expect(FLEET_STATUS_LABEL).toEqual({ ASSIGNED: 'Asignado', UNASSIGNED: 'No asignado', TO_REGULARIZE: 'Por regularizar' })
+    expect(REASON_TYPE_LABEL).toEqual({ PENDING: 'Sin motivo', WORKED: 'Trabajó sin asignación', NOT_WORKED: 'No trabajó' })
     expect(SCOPE_LABEL).toEqual({ tractoreo: 'Tractoreo', equipo_completo: 'Equipo Completo' })
   })
 })

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildFleetRows, scopeSummary } from './dayFleet'
+import { buildFleetRows, fleetStatusOf, reasonTypeOf, scopeSummary } from './dayFleet'
 import { DRIVERS_STATUS, EQUIPMENT_STATUS, LINE, driverRow, equipmentRow } from './dayFleet.fixtures'
 import type { DailyClosureStatus, EquipmentClosureStatus } from '@/lib/types'
 
@@ -37,20 +37,40 @@ describe('las filas de la Flota del día', () => {
   })
 })
 
-describe('el resumen de cada alcance (las fórmulas de siempre)', () => {
-  it('Tractoreo: asignados, sin asignar, utilización y lo que bloquea', () => {
-    const r = scopeSummary(DRIVERS_STATUS, EQUIPMENT_STATUS, 'tractoreo')
-    const filas = buildFleetRows(DRIVERS_STATUS, EQUIPMENT_STATUS, 'tractoreo')
-    const asignados = filas.filter(f => f.categoria === 'ASIGNADO').length
-    expect(r).toEqual({
-      assigned: asignados, unassigned: filas.length - asignados,
-      utilizationPct: Math.round(asignados / filas.length * 1000) / 10,
-      blocking: filas.filter(f => f.categoria === 'SIN_RESOLVER').length,
-    })
+describe('estado y tipo de motivo (el estándar: un estado, y el porqué solo de los no asignados)', () => {
+  it('la categoría del backend se lee como estado + tipo de motivo', () => {
+    expect([fleetStatusOf('ASIGNADO'), reasonTypeOf('ASIGNADO')]).toEqual(['ASSIGNED', null])
+    expect([fleetStatusOf('SIN_RESOLVER'), reasonTypeOf('SIN_RESOLVER')]).toEqual(['UNASSIGNED', 'PENDING'])
+    expect([fleetStatusOf('TRABAJANDO_SIN_ASIGNACION'), reasonTypeOf('TRABAJANDO_SIN_ASIGNACION')]).toEqual(['UNASSIGNED', 'WORKED'])
+    expect([fleetStatusOf('NO_TRABAJANDO'), reasonTypeOf('NO_TRABAJANDO')]).toEqual(['UNASSIGNED', 'NOT_WORKED'])
+    expect([fleetStatusOf('POR_REGULARIZAR'), reasonTypeOf('POR_REGULARIZAR')]).toEqual(['TO_REGULARIZE', null])
   })
 
-  it('Equipo Completo: el del backend, sin "bloquean" (no exige motivo)', () => {
+  it('cada fila trae la zona del destino de su viaje de hoy; sin viaje, ninguna', () => {
+    const { drivers, equipment } = conTracto(
+      { asset_id: 'tr9', tractor_plate: 'BDLC92', status: 'ASSIGNED', trip_id: 't', destination_zone: 'RM' }, [])
+    expect(buildFleetRows(drivers, equipment, 'tractoreo').map(f => f.zone)).toEqual(['RM'])
+    const conductor = buildFleetRows({ ...DRIVERS_STATUS, drivers: [driverRow({ ...LINE.withoutReason, driver_id: 'd1' })] },
+      { ...EQUIPMENT_STATUS, tractoreo: { ...EQUIPMENT_STATUS.tractoreo, equipment: [] } }, 'tractoreo')
+    expect(conductor.map(f => f.zone)).toEqual([null])
+  })
+})
+
+describe('el resumen de cada alcance', () => {
+  it('Tractoreo: asignados + no asignados + por regularizar = todos; la utilización y lo que bloquea', () => {
+    const r = scopeSummary(DRIVERS_STATUS, EQUIPMENT_STATUS, 'tractoreo')
+    const filas = buildFleetRows(DRIVERS_STATUS, EQUIPMENT_STATUS, 'tractoreo')
+    const de = (s: string) => filas.filter(f => fleetStatusOf(f.categoria) === s).length
+    expect(r).toEqual({
+      assigned: de('ASSIGNED'), unassigned: de('UNASSIGNED'), toRegularize: de('TO_REGULARIZE'),
+      utilizationPct: Math.round(de('ASSIGNED') / filas.length * 1000) / 10,
+      blocking: filas.filter(f => f.categoria === 'SIN_RESOLVER').length,
+    })
+    expect(r.assigned + r.unassigned + r.toRegularize).toBe(filas.length)
+  })
+
+  it('Equipo Completo: el del backend, sin "bloquean" (no exige motivo) ni por regularizar', () => {
     expect(scopeSummary(DRIVERS_STATUS, EQUIPMENT_STATUS, 'equipo_completo'))
-      .toEqual({ assigned: 1, unassigned: 1, utilizationPct: 50, blocking: null })
+      .toEqual({ assigned: 1, unassigned: 1, toRegularize: 0, utilizationPct: 50, blocking: null })
   })
 })

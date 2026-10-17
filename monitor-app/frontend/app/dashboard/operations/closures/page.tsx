@@ -353,7 +353,10 @@ function ClosuresCenterPageInner() {
           options={ALCANCES.map(a => ({ id: a, label: SCOPE_LABEL[a] }))} />
         {resumen && (
           <span className="text-dato text-text-primary">
-            {resumen.assigned} asignados · {resumen.unassigned} sin asignar · {String(resumen.utilizationPct).replace('.', ',')} % de utilización
+            {/* Las palabras de los recuadros: asignados + no asignados + por regularizar = todos. */}
+            {resumen.assigned} asignados · {resumen.unassigned} no asignados
+            {resumen.toRegularize ? ` · ${resumen.toRegularize} por regularizar` : ''}
+            {' · '}{String(resumen.utilizationPct).replace('.', ',')} % de utilización
             {resumen.blocking ? (
               <span className="text-status-incidente"> · {resumen.blocking} sin motivo {resumen.blocking === 1 ? 'bloquea' : 'bloquean'} la firma</span>
             ) : null}

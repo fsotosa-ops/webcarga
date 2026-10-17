@@ -11,7 +11,7 @@ import type { QuickViewTarget } from '@/lib/quickView'
 import { TEXTO_APOYO } from '@/lib/ui/texto'
 import type { ClosureScope } from '@/lib/types'
 import { inScope, scopeGap } from '@/lib/cierre/scope'
-import { SCOPE_GAP_LABEL } from '@/lib/states'
+import { DESTINATION_ZONE_LABEL, SCOPE_GAP_LABEL } from '@/lib/states'
 import {
   GRUPOS_DE_VIAJES, PESTANAS_DE_VIAJES, diasAtras, closureTrips, pestanaInicial, situationOf, viajesPorPatente,
   type FilaDeViaje,
@@ -196,6 +196,8 @@ export function PasoViajesSection({
           {v.destinations.length > 0 && <span className={`block text-etiqueta ${TEXTO_APOYO}`}>{v.destinations.join(' · ')}</span>}
         </span>
       ) },
+    // La zona de su último destino, la misma del Reporte.
+    { id: 'zone', header: 'Zona', value: v => v.destination_zone ?? null, options: Object.values(DESTINATION_ZONE_LABEL) },
     { id: 'idle', header: 'Tiempo sin novedad', filter: false, align: 'right', value: v => String(v.dias_sin_novedad),
       render: v => <span>{`${v.dias_sin_novedad.toFixed(1).replace('.', ',')} días`}</span> },
     { id: 'resolve', header: 'Resolver', filter: false, sortable: false, hideable: false, value: () => null,
@@ -269,8 +271,10 @@ export function PasoViajesSection({
       <Cifra valor={bloquean} etiqueta="bloquean la firma del día"
         tono={bloquean && bloquean > 0 ? 'atencion' : 'resuelto'} />
 
-      <ShortcutTiles model={model} columnId={SITUACION}
-        tiles={[{ value: null, label: 'Todos' }, ...PESTANAS_DE_VIAJES.map(p => ({ value: p.etiqueta, label: p.etiqueta }))]} />
+      <ShortcutTiles model={model} groups={[{ tiles: [
+        { value: null, label: 'Todos' },
+        ...PESTANAS_DE_VIAJES.map(p => ({ column: SITUACION, value: p.etiqueta, label: p.etiqueta })),
+      ] }]} />
 
       {n > 0 && (
         // Pegada al techo del área de scroll: `position: sticky` no sale de la caja de su padre.

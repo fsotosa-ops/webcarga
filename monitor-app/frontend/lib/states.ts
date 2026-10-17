@@ -4,9 +4,10 @@ import {
   OctagonAlert, ShieldAlert, ShieldCheck, ShieldOff, TriangleAlert, Truck, Undo2, User,
 } from 'lucide-react'
 import type { StatusTone } from '@/components/ui/StatusChip'
-import type { CategoriaDeLinea, ClosureScope, DirectoryEntity, FunnelBucket, NoticeType } from './types'
+import type { ClosureScope, DirectoryEntity, FunnelBucket, NoticeType } from './types'
 import { hoyEnChile } from './utils/datetime'
 import type { ScopeGap } from './cierre/scope'
+import type { FleetStatus, ReasonType } from './cierre/dayFleet'
 
 /**
  * El glosario de estados en código (spec D1 §3 y §6.4): el ÚNICO lugar del
@@ -381,19 +382,35 @@ export const ENTITY_TYPE: Record<EntityType, { label: string; icon: LucideIcon }
 }
 
 // ── Cierre del día (Cierre con un solo patrón, spec §4.4) ─────────────────────
-/** La categoría de una línea del cierre, en una palabra: la misma en la columna
- *  Estado, en el recuadro y en el chip del filtro. La calcula el backend
- *  (`services/cierre_lineas.py`); aquí solo se nombra. */
-export const CATEGORY_LABEL: Record<CategoriaDeLinea, string> = {
-  ASIGNADO: 'Asignado',
-  SIN_RESOLVER: 'Sin motivo',
-  TRABAJANDO_SIN_ASIGNACION: 'Trabajando sin asignación',
-  NO_TRABAJANDO: 'No trabajando',
-  POR_REGULARIZAR: 'Por regularizar',
+/** El estado de una fila de la Flota del día, en una palabra: la misma en la columna
+ *  Estado, en el recuadro y en el chip. El estándar de utilización: asignado o no
+ *  (asignados + no asignados = todos); "por regularizar" es un dato a corregir. */
+export const FLEET_STATUS_LABEL: Record<FleetStatus, string> = {
+  ASSIGNED: 'Asignado',
+  UNASSIGNED: 'No asignado',
+  TO_REGULARIZE: 'Por regularizar',
+}
+
+/** El porqué de un no asignado, agrupado como en el catálogo de motivos (Configuración):
+ *  la columna "Tipo de motivo". "Sin motivo" es lo que falta declarar y bloquea la firma. */
+export const REASON_TYPE_LABEL: Record<ReasonType, string> = {
+  PENDING: 'Sin motivo',
+  WORKED: 'Trabajó sin asignación',
+  NOT_WORKED: 'No trabajó',
 }
 
 /** Qué se cierra: los mismos valores de la API (`services/closure_scope.py`). */
 export const SCOPE_LABEL: Record<ClosureScope, string> = { tractoreo: 'Tractoreo', equipo_completo: 'Equipo Completo' }
+
+/** La zona del destino de un viaje, por su clave del Reporte (`zone` en el backend:
+ *  `services/destination_zone.py`, que manda estas mismas palabras). En este orden se
+ *  muestran: columnas del Reporte y valores del filtro Zona del Cierre. */
+export const DESTINATION_ZONE_LABEL = {
+  rm: 'RM',
+  z0: 'Z0',
+  region: 'Región',
+  unclassified: 'Sin clasificar',
+} as const
 
 /** Por qué un viaje del Cierre se ve en los dos alcances (`scopeGap`). */
 export const SCOPE_GAP_LABEL: Record<ScopeGap, string> = {

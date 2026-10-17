@@ -1,14 +1,15 @@
 import type { AssignedRow, TripRef } from '@/lib/types'
+import { DESTINATION_ZONE_LABEL } from '@/lib/states'
 import { sumar } from './sumar'
 
 export type Cifras = Pick<AssignedRow, 'rm' | 'z0' | 'region' | 'unclassified' | 'total'>
 
 /** Las columnas de zona, en el orden del CSV de Pablo. */
 export const COLUMNAS_DE_ZONA = [
-  { clave: 'rm', etiqueta: 'RM' },
-  { clave: 'z0', etiqueta: 'Z0' },
-  { clave: 'region', etiqueta: 'Región' },
-  { clave: 'unclassified', etiqueta: 'Sin clasificar' },
+  { clave: 'rm', etiqueta: DESTINATION_ZONE_LABEL.rm },
+  { clave: 'z0', etiqueta: DESTINATION_ZONE_LABEL.z0 },
+  { clave: 'region', etiqueta: DESTINATION_ZONE_LABEL.region },
+  { clave: 'unclassified', etiqueta: DESTINATION_ZONE_LABEL.unclassified },
   { clave: 'total', etiqueta: 'Total' },
 ] as const satisfies readonly { clave: keyof Cifras; etiqueta: string }[]
 

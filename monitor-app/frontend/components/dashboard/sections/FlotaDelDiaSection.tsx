@@ -6,9 +6,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dailyClosuresApi, type CambiosDeLinea } from '@/lib/api/dailyClosures'
 import { equipmentClosuresApi } from '@/lib/api/equipmentClosures'
 import { locationsApi } from '@/lib/api/locations'
-import { CATEGORY_LABEL, SCOPE_LABEL } from '@/lib/states'
+import { DESTINATION_ZONE_LABEL, FLEET_STATUS_LABEL, REASON_TYPE_LABEL, SCOPE_LABEL } from '@/lib/states'
 import {
-  FLEET_ROW_GROUP_LABEL, buildFleetRows, type Destino, type FleetRow,
+  FLEET_ROW_GROUP_LABEL, buildFleetRows, fleetStatusOf, reasonTypeOf, type Destino, type FleetRow,
 } from '@/lib/cierre/dayFleet'
 import type { ClosureScope, UnassignedReasonMeta } from '@/lib/types'
 import type { QuickViewTarget } from '@/lib/quickView'
@@ -22,7 +22,7 @@ import { useUrlView } from '@/components/ui/tabla/data/useUrlView'
 import { useTablePreferences } from '@/components/ui/tabla/data/useTablePreferences'
 import { DataTable } from '@/components/ui/tabla/data/DataTable'
 import { TableToolbar } from '@/components/ui/tabla/data/TableToolbar'
-import { ShortcutTiles, type ShortcutTile } from '@/components/ui/tabla/data/ShortcutTiles'
+import { ShortcutTiles, type ShortcutTileGroup } from '@/components/ui/tabla/data/ShortcutTiles'
 import { RowAction } from './fleet/RowAction'
 import { RowComment } from './fleet/RowComment'
 
@@ -138,9 +138,19 @@ export function FlotaDelDiaSection({
       render: r => <span className="text-informativo">{r.cd ?? 'Sin origen'}</span> },
     { id: 'origin', header: 'Local de origen', value: r => r.origin },
     { id: 'cliente', header: 'Generador de carga', value: r => r.cliente },
-    { id: 'status', header: 'Estado', value: r => CATEGORY_LABEL[r.categoria], options: Object.values(CATEGORY_LABEL),
-      render: r => <StatusChip tone={r.categoria === 'ASIGNADO' ? 'resolved' : r.categoria === 'POR_REGULARIZAR' ? 'urgent' : 'warning'}>
-        {CATEGORY_LABEL[r.categoria]}</StatusChip> },
+    // La zona del destino del viaje de hoy, la misma del Reporte.
+    { id: 'zone', header: 'Zona', value: r => r.zone, options: Object.values(DESTINATION_ZONE_LABEL) },
+    // El estándar de utilización: un estado (asignado o no) y, solo para los no asignados,
+    // el tipo de su motivo (como lo agrupa el catálogo de motivos en Configuración).
+    { id: 'status', header: 'Estado', value: r => FLEET_STATUS_LABEL[fleetStatusOf(r.categoria)],
+      options: Object.values(FLEET_STATUS_LABEL),
+      render: r => {
+        const estado = fleetStatusOf(r.categoria)
+        return <StatusChip tone={estado === 'ASSIGNED' ? 'resolved' : estado === 'TO_REGULARIZE' ? 'urgent' : 'warning'}>
+          {FLEET_STATUS_LABEL[estado]}</StatusChip>
+      } },
+    { id: 'reasonType', header: 'Tipo de motivo', options: Object.values(REASON_TYPE_LABEL),
+      value: r => { const t = reasonTypeOf(r.categoria); return t ? REASON_TYPE_LABEL[t] : null } },
     { id: 'group', header: 'Grupo', value: r => FLEET_ROW_GROUP_LABEL[r.group], defaultHidden: true },
     { id: 'reason', header: 'Motivo', sortable: false,
       value: r => unassignedReasons.find(m => m.id === r.unassignedReasonId)?.label ?? null,
@@ -190,14 +200,23 @@ export function FlotaDelDiaSection({
   if (flota.isError) return <Estado tipo="error" titulo="No se pudo cargar la flota del día" />
   if (flota.isPending) return <Estado tipo="cargando" />
 
-  const tiles: ShortcutTile[] = [
-    { value: null, label: 'Todos' },
-    { value: CATEGORY_LABEL.ASIGNADO, label: 'Asignados', tone: 'resolved' },
-    // "No asignados" = los que nadie miró + los que trabajaron sin asignación (Operaciones, 16/09).
-    { value: [CATEGORY_LABEL.SIN_RESOLVER, CATEGORY_LABEL.TRABAJANDO_SIN_ASIGNACION], label: 'No asignados' },
-    { value: CATEGORY_LABEL.NO_TRABAJANDO, label: CATEGORY_LABEL.NO_TRABAJANDO },
-    // Por regularizar solo existe en Tractoreo: un tracto no puede estar "en la empresa equivocada".
-    ...(alcance === 'tractoreo' ? [{ value: CATEGORY_LABEL.POR_REGULARIZAR, label: CATEGORY_LABEL.POR_REGULARIZAR, tone: 'urgent' as const }] : []),
+  // Atajos de las columnas Estado y Tipo de motivo (estado + motivo, el estándar):
+  // asignados + no asignados (+ por regularizar) = todos, y el porqué de los no asignados.
+  const recuadros: ShortcutTileGroup[] = [
+    { tiles: [
+      { value: null, label: 'Todos' },
+      { column: 'status', value: FLEET_STATUS_LABEL.ASSIGNED, label: 'Asignados', tone: 'resolved' },
+      { column: 'status', value: FLEET_STATUS_LABEL.UNASSIGNED, label: 'No asignados' },
+      // Por regularizar solo existe en Tractoreo: un tracto no puede estar "en la empresa equivocada".
+      ...(alcance === 'tractoreo'
+        ? [{ column: 'status', value: FLEET_STATUS_LABEL.TO_REGULARIZE, label: FLEET_STATUS_LABEL.TO_REGULARIZE, tone: 'urgent' as const }]
+        : []),
+    ] },
+    { label: 'No asignados, por tipo de motivo', tiles: [
+      { column: 'reasonType', value: REASON_TYPE_LABEL.PENDING, label: REASON_TYPE_LABEL.PENDING, tone: 'warning' },
+      { column: 'reasonType', value: REASON_TYPE_LABEL.WORKED, label: REASON_TYPE_LABEL.WORKED },
+      { column: 'reasonType', value: REASON_TYPE_LABEL.NOT_WORKED, label: REASON_TYPE_LABEL.NOT_WORKED },
+    ] },
   ]
   const seleccionables = (r: FleetRow) => r.status === 'UNASSIGNED' && !cerrado
   const elegidas = filas.filter(r => selected.has(r.key) && seleccionables(r))
@@ -205,7 +224,7 @@ export function FlotaDelDiaSection({
 
   return (
     <div className="space-y-4">
-      <ShortcutTiles model={model} columnId="status" tiles={tiles} />
+      <ShortcutTiles model={model} groups={recuadros} />
 
       {sinOrigen > 0 && (
         <p className="text-etiqueta text-informativo">

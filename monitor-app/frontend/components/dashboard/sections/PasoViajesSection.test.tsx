@@ -344,6 +344,15 @@ describe('PasoViajesSection', () => {
     expect(within(screen.getByText('2035001').closest('tr')!).getByText('Sin tracto')).toBeInTheDocument()
   })
 
+  it('cada viaje dice la zona de su destino, y la zona filtra', async () => {
+    renderViajes({ grupos: { ...GRUPOS, hoy: [viaje('t1', '2032999', { destination_zone: 'RM' })],
+      rezago: [viaje('t2', '2033000', { planning_date: '2026-10-07', destination_zone: 'Región' })] } })
+    expect(within((await screen.findByText('2032999')).closest('tr')!).getByText('RM')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Zona' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Región, 1' }))
+    expect(numerosDeViaje()).toEqual(['2033000'])
+  })
+
   it('"Resolver" no se filtra ni se oculta: es donde se trabaja la fila', async () => {
     renderViajes()
     await screen.findByText('2033002')
