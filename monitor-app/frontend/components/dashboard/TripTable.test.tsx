@@ -374,7 +374,7 @@ describe('TripTable — temperatura coloreada por la parada, no por el viaje', (
     render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     const badges = screen.getAllByText('11°C')
     expect(badges.length).toBeGreaterThan(0)
-    badges.forEach(b => expect(b.className).toContain('text-red-700'))
+    badges.forEach(b => expect(b.className).toContain('text-status-incidente'))
   })
 
   it('no marca en rojo cuando la parada está OK, aunque trip.temp_status diga out_of_range', () => {
@@ -383,7 +383,7 @@ describe('TripTable — temperatura coloreada por la parada, no por el viaje', (
     render(<TripTable trips={[trip]} selectedId={null} onSelect={vi.fn()} onSelectFocusNotes={vi.fn()} meta={null} sortKey={null} sortDir="asc" onSort={vi.fn()} />)
     const badges = screen.getAllByText('-20°C')
     expect(badges.length).toBeGreaterThan(0)
-    badges.forEach(b => expect(b.className).not.toContain('text-red-700'))
+    badges.forEach(b => expect(b.className).not.toContain('text-status-incidente'))
   })
 
   // La columna ordenada muestra la flecha de su dirección y las demás la

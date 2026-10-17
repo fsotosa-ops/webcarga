@@ -29,6 +29,7 @@ import { CeldaAlias } from './CeldaAlias'
 import { celdaSeExigeA, nivelDe } from './frase-de-la-regla'
 import { OPCIONES_DE_EXIGIBILIDAD } from './SelectorExigibilidad'
 import { useRequirementVocabulary } from './useRequirementVocabulary'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 const PLURAL: Record<RequirementDetail['target_entity'], string> = {
   CARRIER: 'empresas', DRIVER: 'conductores', ASSET: 'equipos',
@@ -57,13 +58,13 @@ export function RequirementProfile({ id }: { id: string }) {
   if (doc.isError || catalogo.isError) {
     const notFound = doc.error instanceof ApiError && doc.error.status === 404
     return (
-      <div className="p-4 md:p-6">
+      <PageContainer>
         {notFound
           ? <Estado tipo="vacio" titulo="Este documento no existe">
               <Link href={REQUIREMENTS} className="text-dato font-medium text-accion hover:underline">Volver a Documentos exigidos</Link>
             </Estado>
           : <Estado tipo="error" titulo="No se pudo cargar el documento" />}
-      </div>
+      </PageContainer>
     )
   }
   if (doc.isPending || catalogo.isPending) return <Estado tipo="cargando" />
@@ -85,7 +86,7 @@ export function RequirementProfile({ id }: { id: string }) {
   ] : []
 
   return (
-    <div className="space-y-4 p-4 md:p-6">
+    <PageContainer>
       <ProfileBreadcrumb module="Certificación" list={{ href: REQUIREMENTS, label: 'Documentos exigidos' }} title={r.name} back={back} />
       <ProfileHeader
         title={r.name}
@@ -162,7 +163,7 @@ export function RequirementProfile({ id }: { id: string }) {
           onCerrar={() => setSection(null)}
         />
       )}
-    </div>
+    </PageContainer>
   )
 }
 

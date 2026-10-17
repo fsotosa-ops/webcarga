@@ -26,6 +26,7 @@ import { CarriersTable } from '@/components/directory/CarriersTable'
 import { TmsClientLinks } from '@/components/directory/TmsClientLinks'
 import { ClientNamePanel } from '@/components/directory/ClientNamePanel'
 import { LocationsBrowser, NO_LOCATION_FILTERS, type LocationFilters } from '@/components/dashboard/LocationsBrowser'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 type Section = 'lugares' | 'empresas'
 
@@ -72,13 +73,13 @@ export function ClientProfile({ id }: { id: string }) {
   if (client.isError) {
     const notFound = client.error instanceof ApiError && client.error.status === 404
     return (
-      <div className="p-4 md:p-6">
+      <PageContainer>
         {notFound
           ? <Estado tipo="vacio" titulo="Este cliente no existe">
               <Link href={CLIENTS} className="text-dato font-medium text-accion hover:underline">Volver a Clientes</Link>
             </Estado>
           : <Estado tipo="error" titulo="No se pudo cargar el cliente" />}
-      </div>
+      </PageContainer>
     )
   }
   if (client.isPending) return <Estado tipo="cargando" />
@@ -93,7 +94,7 @@ export function ClientProfile({ id }: { id: string }) {
   ] : []
 
   return (
-    <div className="space-y-4 p-4 md:p-6">
+    <PageContainer>
       <ProfileBreadcrumb module="Directorio" list={{ href: CLIENTS, label: 'Clientes' }} title={c.name} back={back} />
       <ProfileHeader
         title={c.name}
@@ -138,7 +139,7 @@ export function ClientProfile({ id }: { id: string }) {
       {panel === 'deactivate' && (
         <DeactivatePanel name={c.name} onDeactivate={() => patch({ status: 'INACTIVE' })} onClose={() => setPanel(null)} />
       )}
-    </div>
+    </PageContainer>
   )
 }
 

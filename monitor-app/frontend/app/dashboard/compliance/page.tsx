@@ -22,6 +22,7 @@ import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certi
 import { invalidateDirectory } from '@/lib/queries/directorio'
 import { carrierHref } from '@/lib/navegacion/directory'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 type Vista = 'empresas' | 'requisitos'
 
@@ -142,7 +143,7 @@ function CertificationPageInner() {
   if (estaSaliendo) return null
 
   return (
-    <div className="p-4 md:p-6 space-y-3">
+    <PageContainer>
       {/* La acción principal a la derecha del título, como "Subir documentos" en
           Por asignar (kit de la Entrega 2 de fichas). Actúan sobre empresas, no
           sobre la agrupación: se ven en las dos. */}
@@ -260,6 +261,6 @@ function CertificationPageInner() {
         )}
       </div>
 
-    </div>
+    </PageContainer>
   )
 }

@@ -39,6 +39,8 @@ import type { ClosureScope, PeriodoDeCierre, TripsMeta } from '@/lib/types'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { EntityQuickView } from '@/components/dashboard/EntityQuickView'
 import { useQuickView, type QuickViewTarget } from '@/lib/quickView'
+import { PageContainer } from '@/components/ui/PageContainer'
+import { Button } from '@/components/ui/Button'
 
 
 function todayISO() {
@@ -332,7 +334,7 @@ function ClosuresCenterPageInner() {
   }
 
   return (
-    <div className="p-6 space-y-4">
+    <PageContainer>
       <EncabezadoDePagina titulo="Cierre del día" bajada="Revisa la flota, resuelve los viajes y firma el día.">
         <label className="flex items-center gap-2 text-etiqueta text-informativo">
           Fecha
@@ -454,13 +456,13 @@ function ClosuresCenterPageInner() {
           )}
         </div>
 
-        <div className="border-t border-border bg-gray-50/60 p-5 sm:p-6 space-y-3 rounded-b-2xl">
+        <div className="border-t border-border bg-bg-main/60 p-5 sm:p-6 space-y-3 rounded-b-2xl">
           {diaCerrado ? (
             <DiaCerrado periodo={cierreQuery.data?.periodo ?? null} ajustes={ajustes.length} onVerAjustes={() => { setTab('trips'); setIrAAjustes(n => n + 1) }} />
           ) : (
             <div>
-              <h2 className="text-sm font-bold text-text-primary">Confirmar cierre</h2>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <h2 className="text-lectura font-semibold text-text-primary">Confirmar cierre</h2>
+              <p className="mt-0.5 text-dato text-informativo">
                 {puedeFirmar
                   ? 'Firma conductores y tractos juntos. Los dos exigen motivo en sus pendientes; Equipo Completo nunca bloquea.'
                   : 'El cierre lo firma Operaciones. Puedes revisarlo, pero no firmarlo.'}
@@ -469,7 +471,7 @@ function ClosuresCenterPageInner() {
           )}
 
           {closeError && (
-            <div className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+            <div className="rounded-lg border border-status-incidente/20 bg-status-incidente/5 px-3 py-2 text-dato text-status-incidente">
               <p>{closeError}</p>
               <PendientesDelCierre
                 titulo="Conductores sin resolver"
@@ -485,9 +487,7 @@ function ClosuresCenterPageInner() {
             </div>
           )}
           {overridePending && puedeForzar && !overrideOpen && (
-            <button type="button" onClick={() => setOverrideOpen(true)} className="block text-[11px] font-semibold text-amber-700 underline">
-              Forzar cierre con override
-            </button>
+            <Button variant="link" size="sm" onClick={() => setOverrideOpen(true)}>Forzar cierre con override</Button>
           )}
           {overrideOpen && (
             <div className="space-y-2">
@@ -495,17 +495,13 @@ function ClosuresCenterPageInner() {
                 value={overrideNote}
                 onChange={e => setOverrideNote(e.target.value)}
                 placeholder="Comentario de justificación (obligatorio)"
-                className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-white"
+                className="w-full rounded-lg border border-border bg-white px-3 py-2 text-dato"
                 rows={2}
               />
-              <button
-                type="button"
-                disabled={closing || !overrideNote.trim()}
-                onClick={() => handleConfirmClose(true)}
-                className="text-xs font-semibold bg-amber-600 text-white rounded-lg px-3 py-1.5 disabled:opacity-50"
-              >
+              {/* Salta la regla de los pendientes: es la acción de riesgo. */}
+              <Button variant="danger" disabled={closing || !overrideNote.trim()} onClick={() => handleConfirmClose(true)}>
                 {closing ? 'Cerrando…' : 'Confirmar override y cerrar'}
-              </button>
+              </Button>
             </div>
           )}
           {/* Firmar el dia es un acto con nombre y hora: no puede ocurrir sobre
@@ -513,28 +509,19 @@ function ClosuresCenterPageInner() {
               el cierre esta en curso), asi que quedaba habilitado mientras el
               area de datos mostraba el spinner. */}
           {!diaCerrado && puedeFirmar && (
-            <button
-              type="button"
-              disabled={closing || cargandoDatos}
-              onClick={() => handleConfirmClose(false)}
-              className="text-sm font-semibold bg-accent text-white rounded-lg px-4 py-2.5 disabled:opacity-40 flex items-center gap-2 hover:bg-accent/90 transition-colors"
-            >
+            <Button variant="primary" disabled={closing || cargandoDatos} onClick={() => handleConfirmClose(false)}>
               {closing || cargandoDatos
-                ? <Loader2 size={14} className="motion-safe:animate-spin" />
-                : <ClipboardCheck size={14} />}
+                ? <Loader2 size={14} className="motion-safe:animate-spin" aria-hidden="true" />
+                : <ClipboardCheck size={14} aria-hidden="true" />}
               Confirmar cierre
-            </button>
+            </Button>
           )}
           {/* Reabrir es un acto explícito: admin, con una nota que diga por
               qué. Antes un día "se reabría" solo, con entrar a la pantalla. */}
           {diaCerrado && puedeReabrir && !reabrirOpen && (
-            <button
-              type="button"
-              onClick={() => setReabrirOpen(true)}
-              className="flex items-center gap-1.5 text-xs font-semibold text-informativo border border-border rounded-lg px-3 py-1.5 bg-white hover:border-accent/40"
-            >
-              <LockOpen size={12} /> Reabrir día
-            </button>
+            <Button onClick={() => setReabrirOpen(true)}>
+              <LockOpen size={12} aria-hidden="true" /> Reabrir día
+            </Button>
           )}
           {diaCerrado && reabrirOpen && (
             <div className="space-y-2">
@@ -543,25 +530,15 @@ function ClosuresCenterPageInner() {
                 onChange={e => setNotaReabrir(e.target.value)}
                 aria-label="Motivo para reabrir el día"
                 placeholder="Por qué se reabre (obligatorio)"
-                className="w-full text-xs border border-border rounded-lg px-3 py-2 bg-white"
+                className="w-full rounded-lg border border-border bg-white px-3 py-2 text-dato"
                 rows={2}
               />
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={reabriendo || !notaReabrir.trim()}
-                  onClick={handleReabrir}
-                  className="text-xs font-semibold bg-text-primary text-white rounded-lg px-3 py-1.5 disabled:opacity-50"
-                >
+                {/* Deshace una firma: es la acción de riesgo. */}
+                <Button variant="danger" disabled={reabriendo || !notaReabrir.trim()} onClick={handleReabrir}>
                   {reabriendo ? 'Reabriendo…' : 'Confirmar y reabrir'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setReabrirOpen(false); setNotaReabrir('') }}
-                  className="text-xs text-informativo hover:text-text-primary"
-                >
-                  Cancelar
-                </button>
+                </Button>
+                <Button variant="link" onClick={() => { setReabrirOpen(false); setNotaReabrir('') }}>Cancelar</Button>
               </div>
             </div>
           )}
@@ -581,7 +558,7 @@ function ClosuresCenterPageInner() {
           canRequestDocuments={puedePedirDocumentos}
         />
       )}
-    </div>
+    </PageContainer>
   )
 }
 
@@ -601,8 +578,8 @@ function DiaCerrado({ periodo, ajustes, onVerAjustes }: {
   const t = periodo?.frozen_totals
   return (
     <div role="status" className="flex items-start gap-2.5 rounded-xl border border-resuelto/20 bg-resuelto/5 px-4 py-3">
-      <CheckCircle2 size={16} className="text-resuelto shrink-0 mt-0.5" />
-      <div className="text-xs text-text-primary space-y-0.5">
+      <CheckCircle2 size={16} className="text-resuelto shrink-0 mt-0.5" aria-hidden="true" />
+      <div className="space-y-0.5 text-dato text-text-primary">
         <p className="font-bold">
           Día cerrado
           {periodo?.closed_by_name && <> por {periodo.closed_by_name}</>}

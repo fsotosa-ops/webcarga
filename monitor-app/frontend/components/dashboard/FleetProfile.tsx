@@ -34,6 +34,7 @@ import { BajaReasonModal } from './BajaReasonModal'
 import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
 import { EntityDocuments, useEntityPendingRows } from '@/components/compliance/EntityDocuments'
 import type { AssignmentPeriod, EntityActivity } from '@/lib/types'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 export type FleetKind = 'driver' | 'asset'
 
@@ -193,7 +194,7 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
   const documentsId = `documentos-${kind}-${id}`
   const fullHref = (kind === 'driver' ? driverHref : assetHref)(id, variant === 'dialog' ? currentUrl() : undefined)
   const content = (
-    <div className="space-y-4 p-4 md:p-6">
+    <PageContainer>
       {variant === 'dialog' ? (
         <Link href={fullHref} prefetch={false} className="inline-flex items-center gap-1 text-dato font-medium text-accion hover:underline">
           Abrir ficha completa <ArrowRight size={13} aria-hidden="true" />
@@ -268,7 +269,7 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
           setModal(null)
         }}
       />
-    </div>
+    </PageContainer>
   )
 
   return variant === 'dialog'

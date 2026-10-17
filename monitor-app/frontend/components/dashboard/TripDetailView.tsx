@@ -19,6 +19,7 @@ import { GestionPanel } from './GestionPanel'
 import { AnularViaje } from './AnularViaje'
 import { StopTimeInput } from './StopTimeInput'
 import { StatusChip } from '@/components/ui/StatusChip'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 interface Props {
   trip:        Trip
@@ -246,7 +247,7 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
         <fieldset disabled={!!trip.voided_at} className="contents">
         <GestionPanel trip={trip} meta={meta} onSaved={onSaved} />
 
-        <div className="order-2 md:order-1 flex-1 min-w-0 md:overflow-y-auto p-4 md:p-6 space-y-5">
+        <div className="order-2 md:order-1 flex-1 min-w-0 md:overflow-y-auto"><PageContainer>
           {stops.length > 0 && (
             <AccordionSection title={`Ruta (${stops.length} parada${stops.length === 1 ? '' : 's'})`} defaultOpen>
               <StopTimeline stops={stops} />
@@ -366,7 +367,7 @@ export function TripDetailView({ trip, onDismiss, onSaved, meta, focusNotes = fa
               <TripNotesFeed trip={trip} />
             </AccordionSection>
           </section>
-        </div>
+        </PageContainer></div>
         </fieldset>
       </div>
     </div>

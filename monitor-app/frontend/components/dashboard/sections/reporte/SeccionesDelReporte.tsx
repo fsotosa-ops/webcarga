@@ -21,7 +21,7 @@ function Titulo({ children }: { children: React.ReactNode }) {
 /** Nunca una tabla vacía con encabezados: un mensaje que dice qué pasó. */
 export function Vacio({ children }: { children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-xl border border-border px-3 py-6 text-center text-xs text-gray-400 italic">
+    <div className="bg-white rounded-xl border border-border px-3 py-6 text-center text-dato text-informativo">
       {children}
     </div>
   )
@@ -59,11 +59,11 @@ export function ViajesDeVariosDias({ reporte }: { reporte: OperationTypeReport }
       <Titulo>Viajes de varios días ({total})</Titulo>
       <div className="flex gap-2 flex-wrap">
         {Object.entries(by_days_back).map(([dias, n]) => (
-          <span key={dias} className="text-[11px] bg-gray-50 border border-border rounded-full px-2.5 py-1">
+          <span key={dias} className="text-etiqueta bg-bg-main border border-border rounded-full px-2.5 py-1">
             {plural(n, 'equipo', 'equipos')} — {plural(dias, 'día', 'días')}
           </span>
         ))}
-        {total === 0 && <span className="text-[11px] text-gray-400 italic">Ninguno</span>}
+        {total === 0 && <span className="text-etiqueta text-informativo">Ninguno</span>}
       </div>
     </div>
   )
@@ -81,7 +81,7 @@ export function SeccionResumen({ reporte, tipo }: Props) {
           <Titulo>Asignados por cliente</Titulo>
           {s.by_client.length === 0 ? <Vacio>No hubo equipos de {tipo.etiqueta} asignados</Vacio> : (
             <div className="bg-white rounded-xl border border-border overflow-x-auto">
-              <table className="w-full text-xs">
+              <table className="w-full text-dato">
                 <thead><tr className={FILA_DE_CABECERA}><th className={TH}>Cliente</th><th className={`${TH} text-right`}>Asignados</th></tr></thead>
                 <tbody className="divide-y divide-border/60">
                   {s.by_client.map(c => (
@@ -95,7 +95,7 @@ export function SeccionResumen({ reporte, tipo }: Props) {
         <div>
           <Titulo>Enrolados y asignados por origen habitual</Titulo>
           <div className="bg-white rounded-xl border border-border overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full text-dato">
               <thead>
                 <tr className={FILA_DE_CABECERA}>
                   <th className={TH}>Origen habitual</th><th className={`${TH} text-right`}>Enrolados</th><th className={`${TH} text-right`}>Asignados</th>
@@ -121,7 +121,7 @@ export function SeccionResumen({ reporte, tipo }: Props) {
 export function TablaDeMotivos({ reasons, rows }: { reasons: string[]; rows: ReasonRow[] }) {
   return (
     <div className="bg-white rounded-xl border border-border overflow-x-auto">
-      <table className="w-full text-xs">
+      <table className="w-full text-dato">
         <thead>
           <tr className={FILA_DE_CABECERA}>
             <th className={TH}>Origen</th>
@@ -141,7 +141,7 @@ export function TablaDeMotivos({ reasons, rows }: { reasons: string[]; rows: Rea
           ))}
         </tbody>
         <tfoot>
-          <tr className="border-t-2 border-border font-bold bg-gray-50">
+          <tr className="border-t-2 border-border font-bold bg-bg-main">
             <td className="px-3 py-2">Total</td>
             <td className="px-3 py-2" />
             {reasons.map(m => <td key={m} className="px-3 py-2 text-right">{sumar(rows, r => r.counts[m])}</td>)}
@@ -160,7 +160,7 @@ export function SeccionAsignados({ reporte, tipo, tripHref }: Props & { tripHref
   return (
     <div className="space-y-4">
       {/* Decisión B (minuta 09/10): "lo importante es de dónde salió realmente". */}
-      <p className="text-dato text-gray-500">Por el origen real del viaje.</p>
+      <p className="text-dato text-informativo">Por el origen real del viaje.</p>
       {rows.length === 0
         ? <Vacio>No hubo equipos de {tipo.etiqueta} asignados</Vacio>
         : <TablaDeAsignados rows={rows} plegado={plegado} tripHref={tripHref} />}
@@ -174,7 +174,7 @@ export function SeccionAsignados({ reporte, tipo, tripHref }: Props & { tripHref
         <div>
           <Titulo>Cargaron en otro origen ({other_origin.length})</Titulo>
           <div className="bg-white rounded-xl border border-border overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="w-full text-dato">
               <thead>
                 <tr className={FILA_DE_CABECERA}>
                   <th className={TH}>Patente</th><th className={TH}>Empresa</th>
@@ -220,7 +220,7 @@ function TablaDeNoTrabajaron({ reporte, porConductor }: { reporte: OperationType
 
   return (
     <div className="bg-white rounded-xl border border-border overflow-x-auto">
-      <table className="w-full text-xs">
+      <table className="w-full text-dato">
         <thead>
           <tr className={FILA_DE_CABECERA}>
             <th className={TH}>Origen › Empresa</th>
@@ -248,14 +248,14 @@ function TablaDeNoTrabajaron({ reporte, porConductor }: { reporte: OperationType
                 <td className="px-3 py-2 text-right font-bold">{r.total}</td>
               </tr>,
               ...(abierta ? hijos.map((d, i) => (
-                <tr key={`${clave}-${i}`} className="text-gray-500">
+                <tr key={`${clave}-${i}`} className="text-informativo">
                   <td className={`py-2 pl-7 pr-3 ${porConductor ? '' : 'font-mono'}`}>{etiqueta(d)}</td>
                   {reasons.map(m => <td key={m} className="px-3 py-2 text-right">{d.reason === m ? 1 : ''}</td>)}
                   <td className="px-3 py-2 text-right">1</td>
                 </tr>
               )) : []),
               ...(abierta && totalFaltante > 0 ? [
-                <tr key={`${clave}-faltante`} className="text-gray-500 italic">
+                <tr key={`${clave}-faltante`} className="text-informativo italic">
                   <td className="py-2 pl-7 pr-3">Faltante de dotación</td>
                   {reasons.map(m => <td key={m} className="px-3 py-2 text-right">{faltante[m] > 0 ? faltante[m] : ''}</td>)}
                   <td className="px-3 py-2 text-right">{totalFaltante}</td>
@@ -265,7 +265,7 @@ function TablaDeNoTrabajaron({ reporte, porConductor }: { reporte: OperationType
           })}
         </tbody>
         <tfoot>
-          <tr className="border-t-2 border-border font-bold bg-gray-50">
+          <tr className="border-t-2 border-border font-bold bg-bg-main">
             <td className="px-3 py-2">Total</td>
             {reasons.map(m => <td key={m} className="px-3 py-2 text-right">{sumar(rows, r => r.counts[m])}</td>)}
             <td className="px-3 py-2 text-right">{sumar(rows, r => r.total)}</td>
@@ -283,7 +283,7 @@ export function SeccionNoTrabajaron({ reporte, tipo }: Props) {
   }
   return (
     <div className="space-y-2">
-      <p className="text-dato text-gray-500">
+      <p className="text-dato text-informativo">
         Por motivo. Abre una empresa para ver {porConductor ? 'sus conductores' : 'sus equipos'}.
       </p>
       <TablaDeNoTrabajaron reporte={reporte} porConductor={porConductor} />

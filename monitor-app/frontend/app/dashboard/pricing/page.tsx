@@ -12,6 +12,7 @@ import { LocationsPendingTab } from '@/components/dashboard/LocationsPendingTab'
 import { LoadState } from '../admin/settings/shared'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 type Tab = 'pending' | 'all'
 
@@ -46,7 +47,7 @@ function Tarifario() {
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-3">
+    <PageContainer>
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <EncabezadoDePagina
@@ -96,6 +97,6 @@ function Tarifario() {
       {tab === 'all' && (
         <LocationsBrowser filters={filters} onFiltersChange={setFilters} shippers={shippers} canEdit={canEdit} />
       )}
-    </div>
+    </PageContainer>
   )
 }

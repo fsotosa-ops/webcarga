@@ -83,7 +83,7 @@ export function TmsChip({ tms, meta, sourceTripId }: { tms: string; meta?: Trips
  *  para que hito 13 se vea igual en la tabla y en el detalle del viaje. */
 function StopPills({ stops, meta }: { stops: TripStop[]; meta?: TripsMeta | null }) {
   const destinations = stops?.filter(s => s.stop_type !== 'ORIGIN') ?? []
-  if (!destinations.length) return <span className="text-gray-400 text-dato">—</span>
+  if (!destinations.length) return <span className="text-informativo text-dato">—</span>
 
   const states = getStopStates(destinations)
 
@@ -97,10 +97,10 @@ function StopPills({ stops, meta }: { stops: TripStop[]; meta?: TripsMeta | null
             <span
               className={`w-3 h-3 rounded-full shrink-0 flex items-center justify-center ${
                 state === 'done'
-                  ? 'bg-green-500 text-white'
+                  ? 'bg-resuelto text-white'
                   : state === 'active'
                   ? 'bg-white border-2 border-accent ring-2 ring-accent/10'
-                  : 'bg-white border-2 border-gray-200'
+                  : 'bg-white border-2 border-border'
               }`}
             >
               {state === 'done' && <Check size={7} strokeWidth={3} />}
@@ -109,7 +109,7 @@ function StopPills({ stops, meta }: { stops: TripStop[]; meta?: TripsMeta | null
             <span
               title={name}
               className={`text-etiqueta truncate max-w-[170px] ${
-                state === 'active' ? 'font-bold text-text-primary' : state === 'done' ? 'text-gray-500' : 'text-gray-400'
+                state === 'active' ? 'font-bold text-text-primary' : state === 'done' ? 'text-informativo' : 'text-informativo'
               }`}
             >
               {name}
@@ -205,7 +205,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
 
   if (trips.length === 0) {
     return (
-      <div className="bg-white rounded-xl border border-border p-12 text-center text-dato text-gray-400">
+      <div className="bg-white rounded-xl border border-border p-12 text-center text-dato text-informativo">
         Sin viajes para los filtros seleccionados
       </div>
     )
@@ -240,14 +240,14 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                 }
               }}
               className={`px-4 py-3 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40 ${
-                updatedIds?.has(trip.id) ? 'bg-amber-50' :
-                isActive ? 'bg-accent/5 border-l-2 border-l-accent' : 'hover:bg-gray-50/60'
+                updatedIds?.has(trip.id) ? 'bg-warning/10' :
+                isActive ? 'bg-accent/5 border-l-2 border-l-accent' : 'hover:bg-bg-main'
               }`}
             >
               {/* fila 1: patente + temp + estado */}
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <span className={`font-identificador text-dato font-bold shrink-0 ${primaryPlate ? 'text-text-primary' : 'text-gray-400 italic font-normal text-dato'}`}>
+                  <span className={`font-identificador text-dato font-bold shrink-0 ${primaryPlate ? 'text-text-primary' : 'text-informativo italic font-normal text-dato'}`}>
                     {primaryPlate ?? 'sin patente'}
                   </span>
                   <PendingDocsBadge count={trip.tractor_pending_docs} critical={trip.tractor_has_critical_alert} label="Tracto" compact />
@@ -263,7 +263,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     const temp = tempStop?.temperature ?? null
                     const tempStatus = tempStop?.temp_status ?? null
                     return temp != null
-                      ? <span className={`rounded-full px-1.5 py-0.5 text-etiqueta font-semibold ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
+                      ? <span className={`rounded-full px-1.5 py-0.5 text-etiqueta font-semibold ${tempStatus === 'out_of_range' ? 'bg-status-incidente/10 text-status-incidente' : 'bg-bg-main text-text-primary'}`}>{temp}°C</span>
                       : null
                   })()}
                   <StatusBadge status={currentStatus} meta={meta} />
@@ -281,16 +281,16 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
 
               {/* fila 2: conductor */}
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-dato text-gray-500 truncate">
-                  {trip.driver_name ?? <span className="text-gray-400 italic text-etiqueta">sin conductor</span>}
+                <span className="text-dato text-informativo truncate">
+                  {trip.driver_name ?? <span className="text-informativo italic text-etiqueta">sin conductor</span>}
                 </span>
                 <PendingDocsBadge count={trip.driver_pending_docs} critical={trip.driver_has_critical_alert} label="Conductor" compact />
               </div>
 
               {/* fila 3: EETT + origen */}
-              <div className="flex items-center gap-1.5 mt-1 text-etiqueta text-gray-400 min-w-0">
+              <div className="flex items-center gap-1.5 mt-1 text-etiqueta text-informativo min-w-0">
                 {trip.carrier_id
-                  ? <span className="font-medium text-gray-500 truncate max-w-[160px]">{trip.carrier_name}</span>
+                  ? <span className="font-medium text-informativo truncate max-w-[160px]">{trip.carrier_name}</span>
                   : <span className="italic">sin EETT</span>}
                 <InsuranceAlertBadge alert={trip.insurance_alert} compact />
                 <PendingDocsBadge count={trip.carrier_pending_docs} critical={trip.carrier_has_critical_alert} label="Empresa" compact />
@@ -303,7 +303,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                 const eta = activeStop ? describeStopTiming(activeStop) : null
                 if (!eta) return null
                 return (
-                  <div className="flex items-center gap-1.5 mt-1 text-etiqueta text-gray-400 min-w-0">
+                  <div className="flex items-center gap-1.5 mt-1 text-etiqueta text-informativo min-w-0">
                     <span className="truncate">{eta}</span>
                   </div>
                 )
@@ -324,11 +324,11 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
         <div ref={scrollRef} className="overflow-x-auto">
           <table className="w-full text-dato" style={{ minWidth: 1080 }}>
             <thead>
-              <tr className="border-b-2 border-border text-etiqueta font-semibold text-gray-500 uppercase tracking-[0.09em]">
+              <tr className="border-b-2 border-border text-etiqueta font-semibold text-informativo">
                 {/* ESTADO — columna fija (Hito 11, minuta 29/07 §4.3: "el
                     estado es lo primero que filtran"). Reemplaza a Patente
                     como única columna sticky al hacer scroll horizontal. */}
-                <th onClick={() => onSort('current_status')} className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5 text-left w-[140px] cursor-pointer select-none hover:bg-gray-100 transition-colors">
+                <th onClick={() => onSort('current_status')} className="sticky left-0 z-10 bg-inherit border-r border-border/60 px-3 py-2.5 text-left w-[140px] cursor-pointer select-none hover:bg-bg-main transition-colors">
                   {/* La casilla vive dentro de la columna fija: una columna
                       propia a su izquierda obligaría a mover el sticky. */}
                   {sel && (
@@ -344,15 +344,15 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                   Estado<OrdenIcono activo={sortKey === 'current_status'} direccion={sortDir} />
                   <span className="sr-only">, Abrir detalle</span>
                 </th>
-                <th onClick={() => onSort('planning_date')} className="px-2.5 py-2.5 text-left w-[84px] cursor-pointer select-none hover:bg-gray-50 transition-colors">Fecha<OrdenIcono activo={sortKey === 'planning_date'} direccion={sortDir} /></th>
-                <th onClick={() => onSort('client_name')} className="px-2.5 py-2.5 text-left w-[104px] cursor-pointer select-none hover:bg-gray-50 transition-colors">TMS<OrdenIcono activo={sortKey === 'client_name'} direccion={sortDir} /></th>
-                <th onClick={() => onSort('source_system_trip_id')} className="px-2.5 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">ID Viaje<OrdenIcono activo={sortKey === 'source_system_trip_id'} direccion={sortDir} /></th>
-                <th onClick={() => onSort('tractor_plate')} className="px-2.5 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-gray-100 transition-colors">Patente<OrdenIcono activo={sortKey === 'tractor_plate'} direccion={sortDir} /></th>
-                <th onClick={() => onSort('driver_name')} className="px-2.5 py-2.5 text-left w-[168px] cursor-pointer select-none hover:bg-gray-50 transition-colors">Conductor<OrdenIcono activo={sortKey === 'driver_name'} direccion={sortDir} /></th>
+                <th onClick={() => onSort('planning_date')} className="px-2.5 py-2.5 text-left w-[84px] cursor-pointer select-none hover:bg-bg-main transition-colors">Fecha<OrdenIcono activo={sortKey === 'planning_date'} direccion={sortDir} /></th>
+                <th onClick={() => onSort('client_name')} className="px-2.5 py-2.5 text-left w-[104px] cursor-pointer select-none hover:bg-bg-main transition-colors">TMS<OrdenIcono activo={sortKey === 'client_name'} direccion={sortDir} /></th>
+                <th onClick={() => onSort('source_system_trip_id')} className="px-2.5 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-bg-main transition-colors">ID Viaje<OrdenIcono activo={sortKey === 'source_system_trip_id'} direccion={sortDir} /></th>
+                <th onClick={() => onSort('tractor_plate')} className="px-2.5 py-2.5 text-left w-[110px] cursor-pointer select-none hover:bg-bg-main transition-colors">Patente<OrdenIcono activo={sortKey === 'tractor_plate'} direccion={sortDir} /></th>
+                <th onClick={() => onSort('driver_name')} className="px-2.5 py-2.5 text-left w-[168px] cursor-pointer select-none hover:bg-bg-main transition-colors">Conductor<OrdenIcono activo={sortKey === 'driver_name'} direccion={sortDir} /></th>
                 <th onClick={() => onSort('origin')} className="px-2.5 py-2.5 text-left w-[124px] cursor-pointer select-none hover:bg-bg-main transition-colors">Origen · Carga<OrdenIcono activo={sortKey === 'origin'} direccion={sortDir} /></th>
                 <th className="px-2.5 py-2.5 text-left">Destinos</th>
                 <th className="px-2.5 py-2.5 text-center w-[64px]">Temp</th>
-                <th onClick={() => onSort('carrier_name')} className="px-2.5 py-2.5 text-left w-[162px] cursor-pointer select-none hover:bg-gray-50 transition-colors">EETT<OrdenIcono activo={sortKey === 'carrier_name'} direccion={sortDir} /></th>
+                <th onClick={() => onSort('carrier_name')} className="px-2.5 py-2.5 text-left w-[162px] cursor-pointer select-none hover:bg-bg-main transition-colors">EETT<OrdenIcono activo={sortKey === 'carrier_name'} direccion={sortDir} /></th>
               </tr>
             </thead>
             <tbody>
@@ -382,10 +382,10 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                     }}
                     className={`border-b border-border/60 last:border-0 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40 ${
                       updatedIds?.has(trip.id)
-                        ? 'bg-amber-50'
+                        ? 'bg-warning/10'
                         : isActive
-                        ? 'bg-sky-50 border-l-2 border-l-accent'
-                        : 'bg-white hover:bg-gray-50/70'
+                        ? 'bg-accent/5 border-l-2 border-l-accent'
+                        : 'bg-white hover:bg-bg-main'
                     }`}
                   >
                     {/* ESTADO — sticky: siempre visible al scrollear
@@ -420,13 +420,13 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                           {(() => {
                             const activeStop = getActiveStop(trip.stops ?? [])
                             const eta = activeStop ? describeStopTiming(activeStop) : null
-                            return eta ? <span className="text-etiqueta text-gray-400 block mt-0.5 truncate max-w-[100px]">{eta}</span> : null
+                            return eta ? <span className="text-etiqueta text-informativo block mt-0.5 truncate max-w-[100px]">{eta}</span> : null
                           })()}
                         </div>
                         {/* Los indicadores (Activo/Trabajando/Asignado) se ven
                             y filtran arriba de la tabla, se editan en el
                             detalle (Fase 3 del hardening del Diario, 2026-07-18). */}
-                        <span className={`text-dato shrink-0 ${isActive ? 'text-accent' : 'text-gray-400'}`}>›</span>
+                        <span className={`text-dato shrink-0 ${isActive ? 'text-accion' : 'text-informativo'}`}>›</span>
                       </div>
                     </td>
 
@@ -472,14 +472,14 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                         niveles y leerlos en columna cuesta menos. */}
                     <td className="px-2.5 py-2.5">
                       <TmsChip tms={trip.source_system ?? ''} meta={meta} />
-                      <span className="text-etiqueta text-gray-500 truncate block mt-1 max-w-[92px] capitalize">
+                      <span className="text-etiqueta text-informativo truncate block mt-1 max-w-[92px] capitalize">
                         {trip.client_name ?? '—'}
                       </span>
                     </td>
 
                     {/* ID VIAJE */}
                     <td className="px-2.5 py-2.5">
-                      <span className="font-identificador text-etiqueta text-gray-500">
+                      <span className="font-identificador text-etiqueta text-informativo">
                         {trip.source_system_trip_id ?? '—'}
                       </span>
                     </td>
@@ -499,14 +499,14 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                             /* La patente es lo que la gente dice en voz alta —
                                "el LRTD13" — y en una tabla de 32 filas se busca
                                de un barrido. Se dibuja como lo que es. */
-                            <span className="font-identificador text-dato font-semibold tracking-[0.09em] text-text-primary border border-border rounded px-1.5 py-0.5 bg-gray-50/80 inline-block">
+                            <span className="font-identificador text-dato font-semibold tracking-[0.09em] text-text-primary border border-border rounded px-1.5 py-0.5 bg-bg-main inline-block">
                               {primaryPlate}
                             </span>
                           ) : (
-                            <span className="text-dato text-gray-400 italic">sin patente</span>
+                            <span className="text-dato text-informativo italic">sin patente</span>
                           )}
                           {secondaryPlate && (
-                            <span className="font-identificador text-etiqueta text-gray-400 mt-0.5 block">
+                            <span className="font-identificador text-etiqueta text-informativo mt-0.5 block">
                               {secondaryPlate}
                             </span>
                           )}
@@ -560,11 +560,11 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
 
                     {/* ORIGEN · CARGA */}
                     <td className="px-2.5 py-2.5">
-                      <p className="text-etiqueta text-gray-500 truncate max-w-[110px]">
+                      <p className="text-etiqueta text-informativo truncate max-w-[110px]">
                         {trip.origin ?? '—'}
                       </p>
                       {trip.cargo_type && (
-                        <span className="text-etiqueta text-gray-400 bg-gray-50 border border-gray-100 px-1 py-0.5 rounded mt-0.5 inline-block truncate max-w-[110px]">
+                        <span className="text-etiqueta text-informativo bg-bg-main border border-border px-1 py-0.5 rounded mt-0.5 inline-block truncate max-w-[110px]">
                           {trip.cargo_type}
                         </span>
                       )}
@@ -585,8 +585,8 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                         const temp = tempStop?.temperature ?? null
                         const tempStatus = tempStop?.temp_status ?? null
                         return temp != null
-                          ? <span className={`rounded-full px-2 py-0.5 text-dato font-medium ${tempStatus === 'out_of_range' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{temp}°C</span>
-                          : <span className="text-gray-400 text-dato">—</span>
+                          ? <span className={`rounded-full px-2 py-0.5 text-dato font-medium ${tempStatus === 'out_of_range' ? 'bg-status-incidente/10 text-status-incidente' : 'bg-bg-main text-text-primary'}`}>{temp}°C</span>
+                          : <span className="text-informativo text-dato">—</span>
                       })()}
                     </td>
 
@@ -604,7 +604,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                           </div>
                         </>
                       ) : (
-                        <span className="text-etiqueta text-gray-400 italic">sin vincular</span>
+                        <span className="text-etiqueta text-informativo italic">sin vincular</span>
                       )}
                     </td>
                   </tr>

@@ -2,6 +2,7 @@
 
 import { TriageWorkbench } from '@/components/compliance/TriageWorkbench'
 import { DiscardedItems } from '@/components/compliance/DiscardedItems'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 /** Por asignar (Entrega D, 15/10): la bandeja de lo que no se pudo asignar al subir.
  *  Se sube con "Subir documentos", la misma revisión de lote de Pendientes y de la
@@ -11,9 +12,9 @@ import { DiscardedItems } from '@/components/compliance/DiscardedItems'
  *  Certificación redirige para acá: un enlace guardado no queda roto. */
 export default function ComplianceInboxPage() {
   return (
-    <div className="p-4 md:p-6 space-y-3">
+    <PageContainer>
       <TriageWorkbench />
       <DiscardedItems />
-    </div>
+    </PageContainer>
   )
 }

@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, X, ClipboardCheck, Truck, Ban } from 'lucide-react'
+import { X, ClipboardCheck, Truck, Ban } from 'lucide-react'
 import { filterGroupsApi, type FilterGroup } from '@/lib/api/filterGroups'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { tripsApi, type TripListResponse } from '@/lib/api/trips'
@@ -41,8 +41,12 @@ import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { EntityQuickView } from '@/components/dashboard/EntityQuickView'
 import { useQuickView } from '@/lib/quickView'
 import { MONITOR, monitorFiltersFromUrl } from '@/lib/navegacion/viaje'
-import { BOARD_COLUMNS, boardColumnStyle } from '@/lib/states'
+import { BOARD_COLUMNS, SIGNAL_TONE_TEXT, boardColumnStyle } from '@/lib/states'
 import { STATUS_TONE_CLASS, STATUS_TONE_DOT } from '@/components/ui/StatusChip'
+import { PageContainer } from '@/components/ui/PageContainer'
+import { Button } from '@/components/ui/Button'
+import { Tabs } from '@/components/ui/Tabs'
+import { SearchInput } from '@/components/ui/SearchInput'
 
 const VIEW_MODE_STORAGE_KEY = 'diario:vista-en-curso'
 
@@ -70,7 +74,7 @@ function LastUpdated({ updatedAt, fetching }: { updatedAt: number; fetching: boo
   }, [])
   if (!updatedAt) return null
   return (
-    <span className="text-[10px] text-gray-300 whitespace-nowrap">
+    <span className="text-etiqueta text-informativo whitespace-nowrap">
       {fetching
         ? 'Actualizando…'
         : `Actualizado ${formatRelativeTime(new Date(updatedAt).toISOString())}`}
@@ -417,7 +421,7 @@ function DiarioPageInner() {
 
       {/* ── Main ───────────────────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <div className="p-4 md:p-6 space-y-4 flex-1 overflow-y-auto">
+        <PageContainer scrollable>
 
           {/* Header — "En Curso" ya no navega por fecha (2026-08-02): filtra
               por is_active, sin importar planning_date, así que no hay
@@ -436,47 +440,29 @@ function DiarioPageInner() {
           />
 
           {/* Tabs */}
-          <div className="flex border-b border-border">
-            {([
-              { key: 'en_curso',  label: 'En Curso'  },
-              { key: 'historial', label: 'Historial' },
-            ] as const).map(t => (
-              <button
-                key={t.key}
-                onClick={() => dispatch({ type: 'patch', patch: { tab: t.key } })}
-                className={`pb-2.5 px-1 mr-6 text-sm font-medium border-b-2 transition-colors ${
-                  f.tab === t.key ? 'border-accent text-accent' : 'border-transparent text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
+          <Tabs label="Vista del Monitor" value={f.tab}
+            onChange={tab => dispatch({ type: 'patch', patch: { tab } })}
+            tabs={[{ id: 'en_curso', label: 'En Curso' }, { id: 'historial', label: 'Historial' }]} />
 
           {/* Barra de acciones — vista + gestión de flota */}
-          <div className="flex items-center justify-between gap-3">
+          {/* En un teléfono las acciones pasan a la línea siguiente en vez de apretarse. */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
             {f.tab === 'en_curso' ? (
               <ViewToggle value={viewMode} onChange={handleViewModeChange} />
             ) : <div />}
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => router.push('/dashboard/operations/closures')}
-                className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-accent border border-border rounded-lg px-3 py-1.5 transition-colors"
-                title="Centro de Cierre — resumen, pendientes, cerrar Tractoreo/Equipos Completos y reporte del día"
-              >
-                <ClipboardCheck size={13} />
+              <Button onClick={() => router.push('/dashboard/operations/closures')}
+                title="Centro de Cierre — resumen, pendientes, cerrar Tractoreo/Equipos Completos y reporte del día">
+                <ClipboardCheck size={13} aria-hidden="true" />
                 Cerrar el día
-              </button>
-              <button
-                onClick={() => setShowFleetCenter(true)}
-                className="flex items-center gap-2 bg-accent text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-accent/90 transition-colors"
-              >
-                <Truck size={13} />
+              </Button>
+              <Button variant="primary" onClick={() => setShowFleetCenter(true)}>
+                <Truck size={13} aria-hidden="true" />
                 Flota
                 {fleetAvailableCount > 0 && (
-                  <span className="bg-white/25 rounded-full px-1.5 text-[10px] font-bold">{fleetAvailableCount}</span>
+                  <span className="rounded-full bg-white/25 px-1.5 text-etiqueta font-bold">{fleetAvailableCount}</span>
                 )}
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -497,19 +483,21 @@ function DiarioPageInner() {
                     onClick={() => dispatch({ type: 'toggleSignal', id: def.id })}
                     disabled={count === 0 && !active}
                     aria-pressed={active}
-                    className={`flex items-center gap-2 bg-white border rounded-xl px-3.5 py-2 transition-all disabled:opacity-40 disabled:cursor-default ${
-                      active ? def.activeCls : band === 'critical' ? 'border-gray-300' : 'border-border hover:border-gray-300'
+                    // Marcada como los recuadros del Cierre; la cifra crece con la gravedad y su
+                    // color sale del significado de la señal (SIGNAL_TONE_TEXT).
+                    className={`flex items-center gap-2 rounded-xl border bg-white px-3.5 py-2 transition-colors disabled:cursor-default disabled:opacity-40 ${
+                      active ? 'border-accent bg-accent/5 ring-1 ring-accent/20' : 'border-border hover:bg-bg-main'
                     }`}
                   >
-                    <span className={`leading-none font-bold ${
-                      band === 'neutral'  ? 'text-sm text-gray-300' :
-                      band === 'elevated' ? `text-base ${def.colorCls}` :
-                                             `text-lg ${def.colorCls}`
+                    <span className={`leading-none font-bold tabular-nums ${
+                      band === 'neutral'  ? 'text-dato text-informativo' :
+                      band === 'elevated' ? `text-lectura ${SIGNAL_TONE_TEXT[def.tone]}` :
+                                             `text-titulo ${SIGNAL_TONE_TEXT[def.tone]}`
                     }`}>
                       {count}
                     </span>
-                    <span className="text-[11px] font-medium text-gray-500">{def.label}</span>
-                    {active && <X size={11} className="text-gray-400" />}
+                    <span className="text-etiqueta font-medium text-informativo">{def.label}</span>
+                    {active && <X size={11} className="text-informativo" aria-hidden="true" />}
                   </button>
                 )
               })}
@@ -527,7 +515,7 @@ function DiarioPageInner() {
                 const def = signalDefs.find(d => d.id === id)
                 if (!def) return null
                 return (
-                  <span key={id} className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent bg-accent/10 rounded-full pl-2.5 pr-1.5 py-1">
+                  <span key={id} className="inline-flex items-center gap-1 rounded-full bg-accent/10 py-1 pl-2.5 pr-1.5 text-etiqueta font-semibold text-accion">
                     {def.label}
                     <button type="button" onClick={() => dispatch({ type: 'toggleSignal', id })} aria-label={`Quitar filtro ${def.label}`}>
                       <X size={11} />
@@ -540,15 +528,8 @@ function DiarioPageInner() {
 
           {/* ── Barra de filtros compacta: búsqueda + Cliente + popover ── */}
           <div className="bg-white border border-border rounded-xl px-3.5 py-2.5 flex items-center gap-2 flex-wrap">
-            <div className="relative shrink-0">
-              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              <input
-                value={f.q}
-                onChange={e => dispatch({ type: 'patch', patch: { q: e.target.value } })}
-                placeholder="Tracto, conductor, EETT, cliente, ID, entrega…"
-                className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-60 bg-white placeholder:text-gray-400 transition-all"
-              />
-            </div>
+            <SearchInput value={f.q} onChange={q => dispatch({ type: 'patch', patch: { q } })} label="Buscar viajes"
+              placeholder="Tracto, conductor, EETT, cliente, ID, entrega…" className="w-60 max-w-full shrink-0" />
 
             {/* Cliente — los clientes con viajes en la vista (en curso o el
                 rango del historial), con su cuenta (GET /trips, 2026-10-11).
@@ -563,8 +544,8 @@ function DiarioPageInner() {
                   key={c.id}
                   onClick={() => dispatch({ type: 'toggleClient', id: c.id })}
                   aria-pressed={active}
-                  className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
-                    active ? 'bg-accent border-accent text-white' : 'text-gray-500 border-gray-200 bg-white hover:border-gray-300'
+                  className={`rounded-full border px-2.5 py-1 text-etiqueta font-semibold transition-colors ${
+                    active ? 'border-accent bg-accent text-white' : 'border-border bg-white text-informativo hover:bg-bg-main'
                   }`}
                 >
                   {c.name} <span className="tabular-nums opacity-70">{c.count}</span>
@@ -582,19 +563,18 @@ function DiarioPageInner() {
                 onSaveAsGroup={() => { setEditingGroup(undefined); setPrefillFromFilter(true); setShowBuilder(true) }}
               />
               {activeCount > 0 && (
-                <button onClick={() => dispatch({ type: 'clear' })}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-800 border border-gray-200 hover:border-gray-300 rounded-lg bg-white transition-colors">
-                  <X size={11} />
+                <Button size="sm" onClick={() => dispatch({ type: 'clear' })}>
+                  <X size={11} aria-hidden="true" />
                   Limpiar
-                  <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-gray-100 rounded-full text-gray-600">{activeCount}</span>
-                </button>
+                  <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-bg-main px-1 text-etiqueta font-bold">{activeCount}</span>
+                </Button>
               )}
             </div>
           </div>
 
           {/* Error */}
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-xl px-4 py-3">{error}</div>
+            <div role="alert" className="rounded-xl border border-status-incidente/20 bg-status-incidente/5 px-4 py-3 text-dato text-status-incidente">{error}</div>
           )}
 
           {/* El aviso vive UNA vez, arriba, y es un filtro — no un chip
@@ -656,7 +636,7 @@ function DiarioPageInner() {
                       }}
                     />
                     {anulacion.error && (
-                      <p role="alert" className="px-3 py-2 text-[11px] text-status-incidente bg-status-incidente/5 border-t border-status-incidente/20">
+                      <p role="alert" className="px-3 py-2 text-etiqueta text-status-incidente bg-status-incidente/5 border-t border-status-incidente/20">
                         {anulacion.error}
                       </p>
                     )}
@@ -707,7 +687,7 @@ function DiarioPageInner() {
             />
           )}
 
-        </div>
+        </PageContainer>
       </div>
 
       <TripAssignDialog

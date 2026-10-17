@@ -35,8 +35,8 @@ export function AvisoDeActualizacion({ pendienteDesde, calculadoA, ahora = new D
 
   if (estado === 'sin_cierre') {
     return (
-      <div role="status" className="flex items-center gap-2 rounded-xl border border-border bg-gray-50 px-4 py-3">
-        <Info size={14} aria-hidden className="text-gray-500 shrink-0" />
+      <div role="status" className="flex items-center gap-2 rounded-xl border border-border bg-bg-main px-4 py-3">
+        <Info size={14} aria-hidden className="text-informativo shrink-0" />
         <p className="text-dato text-text-primary">Este día no tiene cierre calculado.</p>
       </div>
     )

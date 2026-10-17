@@ -18,6 +18,7 @@ import { Estado } from '@/components/ui/Estado'
 import { StatusChip } from '@/components/ui/StatusChip'
 import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
 import type { DocumentsFilter, FleetListResponse, FleetListRow } from '@/lib/types'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 export type FleetKind = 'driver' | 'asset'
 
@@ -98,7 +99,7 @@ export function FleetList({ kind }: { kind: FleetKind }) {
   ]
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
+    <PageContainer>
       <EncabezadoDePagina
         titulo={v.title}
         bajada={facets ? `${facets.all.toLocaleString('es-CL')} ${facets.all === 1 ? v.noun[0] : v.noun[1]}` : '…'}
@@ -171,7 +172,7 @@ export function FleetList({ kind }: { kind: FleetKind }) {
           </button>
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }
 

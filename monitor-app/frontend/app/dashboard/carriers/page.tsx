@@ -19,6 +19,7 @@ import { Estado } from '@/components/ui/Estado'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { directoryKeys, invalidateDirectory } from '@/lib/queries/directorio'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 
 type TransporterTab = 'active' | 'legacy' | 'onboarding'
@@ -173,7 +174,7 @@ function EmpresasTransportePageInner() {
   const emptyLabel = q ? 'Sin resultados' : `Sin empresas en ${TABS.find(t => t.id === tab)!.label.toLowerCase()}`
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
+    <PageContainer>
       {/* La acción principal a la derecha del título (kit de fichas). */}
       <EncabezadoDePagina
         titulo="Empresas de Transporte"
@@ -265,6 +266,6 @@ function EmpresasTransportePageInner() {
           </button>
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }

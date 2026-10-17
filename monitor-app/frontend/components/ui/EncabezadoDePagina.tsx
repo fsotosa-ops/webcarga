@@ -36,7 +36,7 @@ export function EncabezadoDePagina({
           {titulo}
         </h1>
         {bajada && (
-          <div className="text-dato text-gray-500 mt-1 max-w-[70ch]">{bajada}</div>
+          <div className="text-dato text-informativo mt-1 max-w-[70ch]">{bajada}</div>
         )}
       </div>
       {children && <div className="ml-auto flex items-center gap-2">{children}</div>}

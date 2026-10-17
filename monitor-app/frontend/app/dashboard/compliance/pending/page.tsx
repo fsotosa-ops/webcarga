@@ -15,6 +15,7 @@ import { OperationsRequests } from '@/components/compliance/pending/OperationsRe
 import { PendingLoadError, PendingSkeleton } from '@/components/compliance/pending/PendingStates'
 import { defaultPendingFilter } from '@/lib/pending'
 import type { PendingFilter, PendingGroupBy, PendingSummaryRow } from '@/lib/types'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 const FILTROS: readonly PendingFilter[] = ['overdue', 'expiring', 'missing', 'all']
 
@@ -90,7 +91,7 @@ function Pending() {
   return (
     // pb-24 solo en el teléfono: el layout reserva pb-16 para la barra inferior,
     // pero con etiquetas en dos líneas la barra mide más y tapaba "Guardar" del lote.
-    <div className="space-y-3 p-4 pb-24 md:p-6">
+    <PageContainer bottomBar>
       <EncabezadoDePagina titulo="Pendientes" bajada="Solo empresas, conductores y equipos activos.">
         <SegmentedControl<PendingGroupBy>
           label="Ver por"
@@ -127,7 +128,7 @@ function Pending() {
           </div>
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }
 

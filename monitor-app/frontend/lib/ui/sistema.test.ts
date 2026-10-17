@@ -63,6 +63,19 @@ export function h1FueraDelEncabezado(): string[] {
 }
 
 describe('el sistema visual se usa, no solo existe', () => {
+  it('el contenedor de cada pantalla es PageContainer, no un margen escrito a mano', () => {
+    // 16/10: cada pantalla escribía el suyo (p-4 md:p-6 con space-y-3, -4 o -5; el
+    // Cierre, p-6 también en el teléfono), y por eso los márgenes no calzaban.
+    const aMano: string[] = []
+    for (const ruta of archivos()) {
+      if (ruta.endsWith('PageContainer.tsx')) continue
+      readFileSync(ruta, 'utf8').split('\n').forEach((linea, i) => {
+        if (/className="(?=[^"]*\bp-4\b)(?=[^"]*\bmd:p-6\b)[^"]*"/.test(linea)) aMano.push(`${ruta.slice(RAIZ.length + 1)}:${i + 1}`)
+      })
+    }
+    expect(aMano).toEqual([])
+  })
+
   it('encuentra archivos que revisar', () => {
     expect(archivos().length).toBeGreaterThan(50)
   })
@@ -125,7 +138,10 @@ describe('el sistema visual se usa, no solo existe', () => {
     // 819 -> 797 el 2026-10-16: lugares, Clientes del TMS y Orígenes con tokens (Parte 3).
     // 797 -> 787 el 2026-10-16: Documentos exigidos con el kit; se retiraron la tabla editable y el borrador (Parte 2).
     // 787 -> 769 el 2026-10-16: CondicionPanel y NuevoDocumentoPanel con tokens (menores de la Parte 2).
-    const DEUDA = 769
+    // 769 -> 574 el 2026-10-17: el Cierre y el Monitor con el sistema (PageContainer y Button
+    //   del kit, tabla de viajes, alertas por significado, Alertas sobre el Popover del kit) y
+    //   lo que bajaron el Cierre con un solo patrón y Pendientes/Reporte con el kit.
+    const DEUDA = 574
 
     const total = usosDeColorCrudo()
     expect(
@@ -134,6 +150,19 @@ describe('el sistema visual se usa, no solo existe', () => {
         `Si subio, hay una decision de color nueva tomada fuera del sistema.\n` +
         `Los tokens estan en app/globals.css: accent, espera, accion, resuelto, status-*.`,
     ).toBeLessThanOrEqual(DEUDA)
+  })
+
+  it('no crecen los botones principales escritos a mano: el color y el tamaño salen de Button', () => {
+    // 2026-10-17: había ocho maneras de escribir el botón principal. Button y buttonClass
+    // (components/ui/Button.tsx) son la una; este tope solo baja al migrar pantallas.
+    const BOTON_A_MANO = /<button\b[^>]*className=["{`][^"`}]*\bbg-accent\b[^"`}]*\btext-white\b/g
+    let total = 0
+    for (const ruta of archivos()) {
+      if (ruta.endsWith('Button.tsx')) continue
+      total += (readFileSync(ruta, 'utf8').replace(/\n\s*/g, ' ').match(BOTON_A_MANO) ?? []).length
+    }
+    const TOPE = 27
+    expect(total, `Botones principales escritos a mano: ${total} (tope ${TOPE}). Usa Button del kit.`).toBeLessThanOrEqual(TOPE)
   })
 
   it('no crecen los encabezados de pagina escritos a mano', () => {

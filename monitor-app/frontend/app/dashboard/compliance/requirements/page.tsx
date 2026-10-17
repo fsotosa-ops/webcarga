@@ -25,6 +25,7 @@ import {
 import { useRequirementVocabulary } from '@/components/compliance/requirements/useRequirementVocabulary'
 import { MarcaDeRevision, useRevisiones } from '@/app/dashboard/admin/settings/revision'
 import { formatCount } from '@/lib/clients'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 /** Certificación › Documentos exigidos (Configuración, Parte 2): el catálogo de
  *  trabajo de Certificación. La lista filtra y cuenta; cada documento se lee y
@@ -82,7 +83,7 @@ function RequirementsList() {
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-3">
+    <PageContainer>
       <EncabezadoDePagina
         titulo="Documentos exigidos"
         bajada={lista.data ? `${formatCount(lista.data.length)} documentos: a quién se le exige cada uno, cuándo vence y quiénes cumplen.`
@@ -200,7 +201,7 @@ function RequirementsList() {
         </div>
         </>
       )}
-    </div>
+    </PageContainer>
   )
 }
 

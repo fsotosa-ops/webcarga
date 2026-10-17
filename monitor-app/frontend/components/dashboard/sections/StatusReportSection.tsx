@@ -12,6 +12,7 @@ import { REPORT_CLIENT_FILTER, REPORT_SECTIONS, type ReportSection } from '@/lib
 import { tripCodes } from '@/lib/tripRefs'
 import { fleetGapShortfall } from '@/lib/cierre/closureNotices'
 import { Tabs } from '@/components/ui/Tabs'
+import { buttonClass } from '@/components/ui/Button'
 import { TripCodeLinks } from '@/components/dashboard/TripCodeLinks'
 import type { DataColumn } from '@/components/ui/tabla/data/columns'
 import { useDataTable, type DataTableModel } from '@/components/ui/tabla/data/useDataTable'
@@ -25,7 +26,8 @@ import { ReportDownloads } from './reporte/ReportDownloads'
 import { ResumenImprimible } from './reporte/ResumenImprimible'
 import { SeccionAsignados, SeccionNoTrabajaron, SeccionResumen, Vacio } from './reporte/SeccionesDelReporte'
 
-const ACCION = 'flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-accent disabled:opacity-40'
+/** Las acciones del Reporte: botones chicos del kit (y el enlace al histórico, que se ve igual). */
+const ACCION = buttonClass({ size: 'sm' })
 /** El Cliente del Reporte: un filtro que aplica el servidor (el informe se agrega allá). */
 const CLIENTE = REPORT_CLIENT_FILTER
 
@@ -175,7 +177,7 @@ export function StatusReportSection({ fecha, alcance, section, onSectionChange, 
   } else if (isError) {
     cuerpo = (
       <Barra {...comun}>
-        <div role="alert" className="flex items-center justify-center gap-3 py-16 text-xs text-gray-500">
+        <div role="alert" className="flex items-center justify-center gap-3 py-16 text-dato text-informativo">
           No se pudo cargar el reporte.
           <button type="button" onClick={() => { void refetch() }} className={ACCION}>
             <RotateCw size={12} aria-hidden="true" /> Reintentar
@@ -185,7 +187,7 @@ export function StatusReportSection({ fecha, alcance, section, onSectionChange, 
     )
   } else if (!reporte) {
     // Un backend anterior al rediseño todavía no manda `by_operation_type`.
-    cuerpo = <Barra {...comun}><p role="status" className="py-16 text-center text-xs text-gray-400">Actualizando el reporte…</p></Barra>
+    cuerpo = <Barra {...comun}><p role="status" className="py-16 text-center text-dato text-informativo">Actualizando el reporte…</p></Barra>
   } else if (section === 'second_legs') {
     cuerpo = <TablaDeSegundasVueltas {...comun} reporte={reporte} tipo={tipo.etiqueta} tripHref={tripHref} />
   } else if (section === 'carriers') {
@@ -225,7 +227,7 @@ type Comun = {
 
 function Cargando() {
   return (
-    <div className="flex items-center justify-center py-16 text-gray-400">
+    <div className="flex items-center justify-center py-16 text-informativo">
       <Loader2 size={20} className="animate-spin" aria-label="Cargando" />
     </div>
   )

@@ -28,18 +28,18 @@ export function AjustesPosterioresAlCierre({ ajustes, volverA }: Props) {
 
   return (
     <section aria-label="Después de la firma" className="mb-5">
-      <h3 className="text-xs font-bold uppercase tracking-wide text-text-secondary">Después de la firma</h3>
-      <p className="text-xs text-text-secondary">Lo que cambió en el día desde que se firmó. La firma no cambia.</p>
+      <h3 className="text-dato font-semibold text-text-primary">Después de la firma</h3>
+      <p className="text-dato text-informativo">Lo que cambió en el día desde que se firmó. La firma no cambia.</p>
       <ul className="mt-2 divide-y divide-border">
         {ajustes.map(a => (
           <li key={a.trip_id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-dato text-text-primary">
             <span className="font-identificador tabular-nums">{a.source_system_trip_id ?? '—'}</span>
-            {a.client_name && <span className="text-text-secondary">{a.client_name}</span>}
-            <span className="text-etiqueta font-semibold uppercase tracking-wide text-text-secondary">
+            {a.client_name && <span className="text-informativo">{a.client_name}</span>}
+            <span className="text-etiqueta font-semibold text-informativo">
               {a.tipo === 'agregado' ? 'Agregado' : a.voided_at ? 'Anulado' : 'Ya no está en el día'}
             </span>
             {a.voided_at && (
-              <span className="text-text-secondary">
+              <span className="text-informativo">
                 {a.voided_by_name ?? 'Alguien'} · {fmtDT(a.voided_at)}
                 {a.void_reason_label && <> · Motivo: {a.void_reason_label}</>}
                 {a.void_note && <> · {a.void_note}</>}

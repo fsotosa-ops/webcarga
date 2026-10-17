@@ -9,6 +9,7 @@ import {
   FIELD_LABELS, GRANULARITY_LABELS, buildPivot, distinctFieldValues, applyFilters,
   type FieldId, type Granularity, type PivotFieldSpec, type PivotFilter,
 } from '@/lib/utils/pivot'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 const ALL_FIELDS: FieldId[] = ['carrier', 'client', 'status', 'reason', 'date']
 const ALL_GRANULARITIES: Granularity[] = ['day', 'week', 'month', 'quarter', 'semester']
@@ -167,7 +168,7 @@ export default function ReporteriaPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-5 max-w-6xl mx-auto">
+    <PageContainer width="reading">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <EncabezadoDePagina
           titulo="Reportería"
@@ -293,6 +294,6 @@ export default function ReporteriaPage() {
           </table>
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }

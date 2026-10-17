@@ -101,3 +101,17 @@ describe('alertSignals', () => {
     expect(severityBand(10)).toBe('critical')
   })
 })
+
+describe('el color de una señal del Monitor sale de su significado', () => {
+  it('las que piden atención usan el tono de alerta; las que solo cuentan, el del texto', () => {
+    const tonos = Object.fromEntries(alertSignalDefs(DEFAULT_ALERT_RULES).map(d => [d.id, d.tone]))
+    expect(tonos).toEqual({
+      dwell_severity: 'alert', stale: 'alert', tms_dropped: 'alert', temp_out: 'alert', fleet_unmatched: 'alert',
+      temp_reported: 'info', active: 'info', working: 'info', assigned: 'info', second_leg_plus: 'info',
+    })
+  })
+
+  it('ninguna trae un color propio: si todo tiene color, el color deja de avisar', () => {
+    for (const d of alertSignalDefs(DEFAULT_ALERT_RULES)) expect(Object.keys(d).sort()).toEqual(['id', 'label', 'tone'])
+  })
+})

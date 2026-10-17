@@ -17,11 +17,15 @@ export function isKpiSignal(id: AlertSignalId): id is KpiId {
   return (KPI_SIGNAL_IDS as string[]).includes(id)
 }
 
+export type SignalTone = 'alert' | 'info'
+
 export interface AlertSignalDef {
   id:         AlertSignalId
   label:      string
-  colorCls:   string  // texto del conteo cuando > 0, ej. 'text-red-600'
-  activeCls:  string  // borde/ring/bg cuando la tile está activa como filtro
+  /** Por su significado: `alert` pide atención (tono de alerta); `info` solo cuenta.
+   *  Antes cada señal traía su color propio (naranja, ámbar, rosa, azul, cian…), que no
+   *  significaba nada: si todo tiene color, el color deja de avisar (sistema visual). */
+  tone:       SignalTone
 }
 
 export function alertSignalDefs(rules: MonitorAlertRules): AlertSignalDef[] {
@@ -29,12 +33,12 @@ export function alertSignalDefs(rules: MonitorAlertRules): AlertSignalDef[] {
     // Hito 14 (minuta 29/07 §4.4) — semáforo de 4 niveles reemplaza al
     // binario "Detenido en local > 2h"; la tile cuenta solo lo anómalo
     // (amarillo/naranja/rojo), ver dwellSeverity/matchesKpi en kpis.ts.
-    { id: 'dwell_severity', label: 'Detenido en local',           colorCls: 'text-orange-600', activeCls: 'border-orange-400 ring-2 ring-orange-100 bg-orange-50' },
+    { id: 'dwell_severity', label: 'Detenido en local',           tone: 'alert' },
     // "Sin actualización del TMS" (antes "Sin reporte del TMS") — mismo
     // concepto que "stale data"/"last ping" en tracking de flota,
     // renombrado 2026-08-01 a pedido del usuario para usar un término más
     // claro/estándar de la industria.
-    { id: 'stale',          label: `Sin actualización del TMS > ${rules.stale_report_hours}h`, colorCls: 'text-amber-600', activeCls: 'border-amber-400 ring-2 ring-amber-100 bg-amber-50' },
+    { id: 'stale',          label: `Sin actualización del TMS > ${rules.stale_report_hours}h`, tone: 'alert' },
     // "Ya no está en el TMS" (Ronda 126) — el portal del mandante dejó de
     // listar este viaje. Nace del caso Sodimac, que elimina viajes sin cambiar
     // el estado: quedan en "asignado" para siempre y molestan el cierre.
@@ -50,23 +54,23 @@ export function alertSignalDefs(rules: MonitorAlertRules): AlertSignalDef[] {
     // Dice lo que se observa ("ya no está"), no por qué: si fue el mandante
     // quien lo eliminó o una corrida que falló es justo lo que falta definir
     // (GitHub issue #3).
-    { id: 'tms_dropped',    label: 'Ya no está en el TMS', colorCls: 'text-rose-600', activeCls: 'border-rose-400 ring-2 ring-rose-100 bg-rose-50' },
-    { id: 'temp_out',       label: 'Temp fuera de rango',         colorCls: 'text-blue-600',   activeCls: 'border-blue-400 ring-2 ring-blue-100 bg-blue-50' },
+    { id: 'tms_dropped',    label: 'Ya no está en el TMS', tone: 'alert' },
+    { id: 'temp_out',       label: 'Temp fuera de rango',         tone: 'alert' },
     // Los que SI reportan temperatura — el subconjunto con cadena de frio.
     // "Fuera de rango" solo muestra los que ya fallaron; para vigilar el frio
     // hace falta ver todos los que lo llevan.
-    { id: 'temp_reported',  label: 'Con temperatura',             colorCls: 'text-cyan-700',   activeCls: 'border-cyan-400 ring-2 ring-cyan-100 bg-cyan-50' },
+    { id: 'temp_reported',  label: 'Con temperatura',             tone: 'info' },
     // "Sin identificar" (Ronda 43, Hallazgo F) — tracto/conductor sin
     // ningún cruce contra empresa, pedido por Pablo específicamente visible
     // "en la cuadratura de la caja", no solo dentro del detalle de un
     // viaje. Label neutro, no la frase coloquial ("Equipo OVNI") que usó
     // Pablo en la reunión al explicar la idea — no es nomenclatura
     // estándar de industria/logtech.
-    { id: 'fleet_unmatched',  label: 'Sin identificar', colorCls: 'text-amber-600',  activeCls: 'border-amber-400 ring-2 ring-amber-100 bg-amber-50' },
-    { id: 'active',           label: 'Activo',       colorCls: 'text-blue-600',   activeCls: 'border-blue-400 ring-2 ring-blue-100 bg-blue-50' },
-    { id: 'working',          label: 'Trabajando',   colorCls: 'text-green-600',  activeCls: 'border-green-400 ring-2 ring-green-100 bg-green-50' },
-    { id: 'assigned',         label: 'Asignado',     colorCls: 'text-violet-600', activeCls: 'border-violet-400 ring-2 ring-violet-100 bg-violet-50' },
-    { id: 'second_leg_plus',  label: '2ª+ vuelta',   colorCls: 'text-amber-600',  activeCls: 'border-amber-400 ring-2 ring-amber-100 bg-amber-50' },
+    { id: 'fleet_unmatched',  label: 'Sin identificar', tone: 'alert' },
+    { id: 'active',           label: 'Activo',       tone: 'info' },
+    { id: 'working',          label: 'Trabajando',   tone: 'info' },
+    { id: 'assigned',         label: 'Asignado',     tone: 'info' },
+    { id: 'second_leg_plus',  label: '2ª+ vuelta',   tone: 'info' },
   ]
 }
 

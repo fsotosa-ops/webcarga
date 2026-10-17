@@ -10,7 +10,7 @@ import {
 } from '@/lib/reporte/arbolDeAsignados'
 
 const SANGRIA = ['pl-3', 'pl-7', 'pl-11', 'pl-14'] as const
-const PESO = ['bg-gray-50 font-bold', 'font-semibold', '', 'text-gray-500'] as const
+const PESO = ['bg-bg-main font-bold', 'font-semibold', '', 'text-informativo'] as const
 
 function alternar(conjunto: ReadonlySet<string>, clave: string): Set<string> {
   const nuevo = new Set(conjunto)
@@ -52,7 +52,7 @@ export function TablaDeAsignados({ rows, plegado, tripHref }: {
 
   return (
     <div className="bg-white rounded-xl border border-border overflow-x-auto">
-      <table className="w-full text-xs">
+      <table className="w-full text-dato">
         <thead>
           <tr className="border-b border-border bg-bg-main">
             <th className={CABECERA}>Cliente › Origen › Empresa › Conductor</th>
@@ -85,7 +85,7 @@ export function TablaDeAsignados({ rows, plegado, tripHref }: {
           })}
         </tbody>
         <tfoot>
-          <tr className="border-t-2 border-border font-bold bg-gray-50">
+          <tr className="border-t-2 border-border font-bold bg-bg-main">
             <td className="px-3 py-2">Total</td>
             <td className="px-3 py-2" />
             {COLUMNAS_DE_ZONA.map(z => <td key={z.clave} className="px-3 py-2 text-right">{arbol.total[z.clave]}</td>)}

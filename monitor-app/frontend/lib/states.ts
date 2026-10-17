@@ -8,6 +8,7 @@ import type { ClosureScope, DirectoryEntity, FunnelBucket, NoticeType } from './
 import { hoyEnChile } from './utils/datetime'
 import type { ScopeGap } from './cierre/scope'
 import type { FleetStatus, ReasonType } from './cierre/dayFleet'
+import type { SignalTone } from './utils/alertSignals'
 
 /**
  * El glosario de estados en código (spec D1 §3 y §6.4): el ÚNICO lugar del
@@ -411,6 +412,13 @@ export const DESTINATION_ZONE_LABEL = {
   region: 'Región',
   unclassified: 'Sin clasificar',
 } as const
+
+/** El color de la cifra de una señal del Monitor, por su significado (`SignalTone`):
+ *  lo que pide atención en el tono de alerta, lo que solo cuenta en el del texto. */
+export const SIGNAL_TONE_TEXT: Record<SignalTone, string> = {
+  alert: 'text-warning',
+  info: 'text-text-primary',
+}
 
 /** Por qué un viaje del Cierre se ve en los dos alcances (`scopeGap`). */
 export const SCOPE_GAP_LABEL: Record<ScopeGap, string> = {

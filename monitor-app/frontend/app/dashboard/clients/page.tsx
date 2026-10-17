@@ -20,6 +20,7 @@ import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
 import { TmsClientLinks } from '@/components/directory/TmsClientLinks'
 import { useClients } from '@/hooks/useClients'
 import { ClientNamePanel } from '@/components/directory/ClientNamePanel'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 type Vista = 'activos' | 'inactivos' | 'sin-vincular'
 const VISTAS: { id: Vista; label: string }[] = [
@@ -78,7 +79,7 @@ function ClientsList() {
   const filas = vista === 'sin-vincular' ? [] : porEstado(STATUS_DE_VISTA[vista])
 
   return (
-    <div className="p-4 md:p-6 space-y-3">
+    <PageContainer>
       <EncabezadoDePagina
         titulo="Clientes"
         bajada="Cada cliente con cómo lo llaman los TMS, sus lugares de carga y las empresas que lo atienden."
@@ -124,7 +125,7 @@ function ClientsList() {
       ) : (
         <ClientsTable items={filas} returnTo={returnTo} />
       )}
-    </div>
+    </PageContainer>
   )
 }
 

@@ -39,6 +39,7 @@ import { useAssetTypes } from '@/hooks/useAssetTypes'
 import { returnLink } from '@/lib/navegacion/directory'
 import { CLOSURE_NOTICE, directoryKeys, invalidateDirectory, type DirectoryChange } from '@/lib/queries/directorio'
 import { invalidateClients } from '@/lib/queries/clientes'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 type Tab = 'documentos' | 'conductores' | 'equipos' | 'seguros'
 const TABS: Tab[] = ['documentos', 'conductores', 'equipos', 'seguros']
@@ -366,7 +367,7 @@ function EmpresaDetailPageInner() {
   </>)
 
   return (
-    <div className="p-4 md:p-6 space-y-5 relative">
+    <PageContainer>
       {backLink && (
         <Link href={backLink.href}
               className="inline-flex items-center gap-1.5 text-dato font-semibold text-accion hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded">
@@ -595,7 +596,7 @@ function EmpresaDetailPageInner() {
         />
       )}
       <DirectoryNotice message={notice} onClose={() => setNotice(null)} />
-    </div>
+    </PageContainer>
   )
 }
 

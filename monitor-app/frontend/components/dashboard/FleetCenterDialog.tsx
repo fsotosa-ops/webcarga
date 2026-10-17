@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, Truck, X, Search, ChevronDown, ArrowRight, ClipboardCheck } from 'lucide-react'
+import { Loader2, Truck, X, ChevronDown, ArrowRight, ClipboardCheck } from 'lucide-react'
 import { tripsApi } from '@/lib/api/trips'
+import { SearchInput } from '@/components/ui/SearchInput'
 import { AlertStatTiles } from './AlertStatTiles'
 import type { AvailableAsset, BusyAsset } from '@/lib/types'
 import type { FleetAssignValue } from './FleetAssignSection'
@@ -98,10 +99,10 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
           className="relative bg-white rounded-2xl shadow-2xl w-[92vw] max-w-3xl max-h-[85vh] overflow-hidden flex flex-col focus:outline-none animate-modal-in"
         >
           <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-            <h2 className="text-sm font-bold text-text-primary flex items-center gap-2">
+            <h2 className="text-lectura font-semibold text-text-primary flex items-center gap-2">
               <Truck size={16} className="text-accent" /> Centro de Flota — {fecha}
             </h2>
-            <button type="button" onClick={onClose} aria-label="Cerrar" className="text-gray-400 hover:text-text-primary transition-colors">
+            <button type="button" onClick={onClose} aria-label="Cerrar" className="text-informativo hover:text-text-primary transition-colors">
               <X size={18} />
             </button>
           </div>
@@ -111,7 +112,7 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
               <button
                 type="button"
                 onClick={onOpenCloseDay}
-                className="flex items-center gap-1.5 text-etiqueta font-semibold text-gray-500 hover:text-accent transition-colors"
+                className="flex items-center gap-1.5 text-etiqueta font-semibold text-informativo hover:text-accion transition-colors"
               >
                 <ClipboardCheck size={12} /> Ver cuadratura de conductores
               </button>
@@ -137,10 +138,10 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
                 </div>
                 {showNewMenu && (
                   <div className="absolute right-0 mt-1 w-48 bg-white border border-border rounded-lg shadow-lg z-10 text-dato overflow-hidden">
-                    <button type="button" onClick={() => { setShowNewMenu(false); onNewTrip() }} className="w-full text-left px-3 py-2 hover:bg-gray-50">
+                    <button type="button" onClick={() => { setShowNewMenu(false); onNewTrip() }} className="w-full text-left px-3 py-2 hover:bg-bg-main">
                       Viaje individual
                     </button>
-                    <button type="button" onClick={() => { setShowNewMenu(false); onImportCsv() }} className="w-full text-left px-3 py-2 hover:bg-gray-50 border-t border-border/60">
+                    <button type="button" onClick={() => { setShowNewMenu(false); onImportCsv() }} className="w-full text-left px-3 py-2 hover:bg-bg-main border-t border-border/60">
                       Importar CSV (varios)
                     </button>
                   </div>
@@ -149,7 +150,7 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
             </div>
 
             {isLoading || !data ? (
-              <div className="flex items-center justify-center py-16 text-gray-400">
+              <div className="flex items-center justify-center py-16 text-informativo">
                 <Loader2 size={20} className="animate-spin" />
               </div>
             ) : (
@@ -164,23 +165,14 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
                   onSelect={id => setCategory(prev => (prev === id ? '' : id) as Category)}
                 />
 
-                <div className="relative">
-                  <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                  <input
-                    value={q}
-                    onChange={e => setQ(e.target.value)}
-                    placeholder="Buscar patente, conductor o empresa…"
-                    aria-label="Buscar equipo"
-                    className="w-full pl-8 pr-3 py-2 text-dato border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 bg-white"
-                  />
-                </div>
+                <SearchInput value={q} onChange={setQ} label="Buscar equipo" placeholder="Buscar patente, conductor o empresa…" />
 
                 <div className="bg-white rounded-xl border border-border overflow-hidden">
                   <table className="w-full text-dato">
                     {category === 'busy' ? (
                       <>
                         <thead>
-                          <tr className="bg-gray-50 text-etiqueta font-bold text-gray-400 uppercase tracking-wide">
+                          <tr className="bg-bg-main text-etiqueta font-semibold text-informativo">
                             <th className="text-left px-3 py-2">Patente</th>
                             <th className="text-left px-3 py-2">Empresa</th>
                             <th className="text-left px-3 py-2">Cliente</th>
@@ -190,18 +182,18 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
                         </thead>
                         <tbody className="divide-y divide-border/60">
                           {filteredBusy.length === 0 ? (
-                            <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400 italic">Sin equipos en esta categoría</td></tr>
+                            <tr><td colSpan={5} className="px-3 py-4 text-center text-informativo italic">Sin equipos en esta categoría</td></tr>
                           ) : filteredBusy.map((a: BusyAsset) => (
                             <tr key={a.asset_id}>
                               <td className="px-3 py-2 font-semibold text-text-primary">{a.tractor_plate}</td>
                               <td className="px-3 py-2">{a.carrier_name ?? '—'}</td>
                               <td className="px-3 py-2">{a.client_name ?? '—'}</td>
-                              <td className="px-3 py-2 text-gray-400">{a.current_status ?? '—'}</td>
+                              <td className="px-3 py-2 text-informativo">{a.current_status ?? '—'}</td>
                               <td className="px-3 py-2 text-right">
                                 <button
                                   type="button"
                                   onClick={() => onSelectTrip(a.trip_id)}
-                                  className="flex items-center gap-1 ml-auto text-etiqueta font-semibold text-accent hover:text-accent/80"
+                                  className="flex items-center gap-1 ml-auto text-etiqueta font-semibold text-accent hover:text-accion/80"
                                 >
                                   Ver viaje <ArrowRight size={11} />
                                 </button>
@@ -213,7 +205,7 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
                     ) : (
                       <>
                         <thead>
-                          <tr className="bg-gray-50 text-etiqueta font-bold text-gray-400 uppercase tracking-wide">
+                          <tr className="bg-bg-main text-etiqueta font-semibold text-informativo">
                             <th className="text-left px-3 py-2">Patente</th>
                             <th className="text-left px-3 py-2">Empresa</th>
                             <th className="text-left px-3 py-2">Conductor habitual</th>
@@ -223,15 +215,15 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
                         </thead>
                         <tbody className="divide-y divide-border/60">
                           {filtered.length === 0 ? (
-                            <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400 italic">Sin equipos en esta categoría</td></tr>
+                            <tr><td colSpan={5} className="px-3 py-4 text-center text-informativo italic">Sin equipos en esta categoría</td></tr>
                           ) : filtered.map(a => (
                             <tr key={a.asset_id}>
                               <td className="px-3 py-2 font-semibold text-text-primary">{a.tractor_plate}</td>
                               <td className="px-3 py-2">{a.carrier_name ?? '—'}</td>
                               <td className="px-3 py-2">
-                                {a.driver_name ?? <span className="text-amber-600">Sin conductor asignado hoy</span>}
+                                {a.driver_name ?? <span className="text-warning">Sin conductor asignado hoy</span>}
                               </td>
-                              <td className="px-3 py-2 text-gray-400">
+                              <td className="px-3 py-2 text-informativo">
                                 {a.trips_total === 0
                                   ? 'Sin viajes hoy'
                                   : a.last_report_at
@@ -242,7 +234,7 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
                                 <button
                                   type="button"
                                   onClick={() => onAssign(toFleetValue(a))}
-                                  className="flex items-center gap-1 ml-auto text-etiqueta font-semibold text-accent hover:text-accent/80"
+                                  className="flex items-center gap-1 ml-auto text-etiqueta font-semibold text-accent hover:text-accion/80"
                                 >
                                   Asignar viaje <ArrowRight size={11} />
                                 </button>

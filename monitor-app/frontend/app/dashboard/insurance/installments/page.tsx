@@ -10,6 +10,7 @@ import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Estado } from '@/components/ui/Estado'
 import { InstallmentsTable } from '@/components/insurance/InstallmentsTable'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 const FILTERS: { id: InstallmentFilter; label: string; empty: string }[] = [
   { id: 'OVERDUE', label: 'Vencidas', empty: 'No hay cuotas vencidas' },
@@ -52,7 +53,7 @@ function CuotasPageInner() {
   const empty = FILTERS.find(f => f.id === state)!.empty
 
   return (
-    <div className="space-y-4 p-4 md:p-6">
+    <PageContainer>
       <EncabezadoDePagina titulo="Cuotas" bajada="Lo que hay que pagar, de todas las pólizas." />
       <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-white px-3.5 py-2.5">
         <div className="relative shrink-0">
@@ -80,6 +81,6 @@ function CuotasPageInner() {
           )}
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }

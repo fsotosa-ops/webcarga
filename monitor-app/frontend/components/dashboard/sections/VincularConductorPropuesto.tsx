@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Loader2, Link2 } from 'lucide-react'
 import { carriersApi } from '@/lib/api/carriers'
 import { ApiError } from '@/lib/api/client'
+import { Button, buttonClass } from '@/components/ui/Button'
 
 interface Props {
   driverId:    string
@@ -53,18 +54,13 @@ export function VincularConductorPropuesto({ driverId, carrierId, carrierName, o
   // Detalle de la fila de Pendientes; aquí queda la decisión.
   return (
     <div className="space-y-1.5">
-      {error && <p className="text-[11px] text-status-incidente">{error}</p>}
+      {error && <p className="text-etiqueta text-status-incidente">{error}</p>}
 
       <div className="flex items-center gap-3 flex-wrap">
-        <button
-          type="button"
-          disabled={guardando}
-          onClick={vincular}
-          className="text-[11px] font-semibold bg-accent text-white rounded-lg px-2 py-1 disabled:opacity-50 flex items-center gap-1"
-        >
-          {guardando ? <Loader2 size={11} className="animate-spin" /> : <Link2 size={11} />}
+        <Button variant="primary" size="sm" disabled={guardando} onClick={vincular}>
+          {guardando ? <Loader2 size={11} className="animate-spin" aria-hidden="true" /> : <Link2 size={11} aria-hidden="true" />}
           {guardando ? 'Vinculando…' : `Asignar a ${carrierName}`}
-        </button>
+        </Button>
         {/* La salida cuando la propuesta esta equivocada. No se ofrece un
             segundo desplegable aca: elegir OTRA empresa es el mismo gesto que
             ya vive en Certificacion, y duplicarlo daria dos lugares para la
@@ -72,7 +68,7 @@ export function VincularConductorPropuesto({ driverId, carrierId, carrierName, o
         <a
           href="/dashboard/compliance?vista=conductores"
           target="_blank"
-          className="text-[11px] font-semibold text-accent hover:underline"
+          className={buttonClass({ variant: 'link', size: 'sm' })}
         >
           Es otra empresa
         </a>

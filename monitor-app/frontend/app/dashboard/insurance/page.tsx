@@ -11,6 +11,7 @@ import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { SegmentedControl, type SegmentedOption } from '@/components/ui/SegmentedControl'
 import { Estado } from '@/components/ui/Estado'
 import { CarriersInsuranceTable, PoliciesTable } from '@/components/insurance/PoliciesTable'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 const LIMIT = 50
 
@@ -91,7 +92,7 @@ function PolizasPageInner() {
   const vacio = group === 'policy' ? 'No hay pólizas que coincidan' : 'No hay empresas que coincidan'
 
   return (
-    <div className="space-y-4 p-4 md:p-6">
+    <PageContainer>
       <EncabezadoDePagina
         titulo="Pólizas"
         bajada={policies.data && group === 'policy'
@@ -147,6 +148,6 @@ function PolizasPageInner() {
           </button>
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }

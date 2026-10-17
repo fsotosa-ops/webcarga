@@ -23,6 +23,7 @@ import { AsidePanel, ProfileLayout } from '@/components/directory/ProfileLayout'
 import { EntityCell } from '@/components/dashboard/EntityCell'
 import { InstallmentsTable, PayInstallmentsDialog } from './InstallmentsTable'
 import { PolicyFileRow } from './PolicyFileRow'
+import { PageContainer } from '@/components/ui/PageContainer'
 
 type Dialog = 'pay' | 'renew' | 'extend' | 'cancel' | 'delete' | 'installments' | null
 
@@ -116,7 +117,7 @@ export function PolicyProfile({ id }: { id: string }) {
   const availableAssets = (carrierAssets.data ?? []).filter(a => !p.assets.some(x => x.asset_id === a.id))
 
   return (
-    <div className="space-y-5 p-4 md:p-6">
+    <PageContainer>
       {back && (
         <Link href={back.href} className="inline-flex items-center gap-1.5 text-dato font-semibold text-accion hover:underline">
           <ArrowLeft size={14} aria-hidden="true" />{back.label}
@@ -224,7 +225,7 @@ export function PolicyProfile({ id }: { id: string }) {
         onDone={async () => { setDialog(null); await refresh() }} />}
       {dialog === 'delete' && <DeleteDialog policy={p} onClose={() => setDialog(null)}
         onDone={async () => { await refresh(); router.push(POLICIES) }} />}
-    </div>
+    </PageContainer>
   )
 }
 
