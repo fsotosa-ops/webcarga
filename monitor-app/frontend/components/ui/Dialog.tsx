@@ -118,7 +118,10 @@ export function Dialog({
   }
 
   return (
-    <>
+    // `contents`: un contenedor sin caja. Sin él, fondo y ventana eran hijos del padre y
+    // heredaban su espaciado (`space-y-*` da margin-bottom), y un `fixed inset-0` con
+    // margen mide menos que la pantalla (Crear usuario en dev, 17/10).
+    <div className="contents">
       {modal && (
         <div data-testid="panel-overlay" className="fixed inset-0 z-40 bg-black/50 animate-backdrop-in"
              onClick={dismissible ? onClose : undefined} aria-hidden="true" />
@@ -135,6 +138,6 @@ export function Dialog({
       >
         {children}
       </div>
-    </>
+    </div>
   )
 }

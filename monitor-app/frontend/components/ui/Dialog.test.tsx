@@ -44,4 +44,15 @@ describe('Dialog', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(abrir).toHaveFocus()
   })
+
+  it('el espaciado del padre (space-y) no la alcanza: fondo y ventana van en un contenedor sin caja', () => {
+    // Abierta dentro de un `space-y-4`, el fondo recibía margin-bottom: 16px y un `fixed
+    // inset-0` con margen mide 16 px menos (Crear usuario en dev, 17/10).
+    const { container } = render(<div className="space-y-4"><Dialog label="Crear usuario" onClose={vi.fn()} className=""><p>x</p></Dialog><p>después</p></div>)
+    const padre = container.firstElementChild!
+    expect(padre.contains(screen.getByTestId('panel-overlay'))).toBe(true)
+    expect(screen.getByTestId('panel-overlay').parentElement).not.toBe(padre)
+    expect(screen.getByRole('dialog').parentElement).not.toBe(padre)
+    expect(screen.getByRole('dialog').parentElement).toHaveClass('contents')
+  })
 })
