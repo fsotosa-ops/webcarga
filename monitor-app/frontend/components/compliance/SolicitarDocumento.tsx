@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Plus } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { invalidarCertificacion } from '@/lib/queries/certificacion'
+import { inputClass } from '@/components/ui/Field'
 
 /** "Solicitar documento" (HU-C1, entrega 2b): pedirle a un sujeto un documento
  *  "solo cuando se solicita" —trabajo en altura, soldador, guardias…—, que al
@@ -71,8 +72,7 @@ export function SolicitarDocumento({ entityType, entityId }: {
             aria-label="Documento a solicitar"
             value={elegido}
             onChange={e => setElegido(e.target.value)}
-            className="min-w-0 flex-1 rounded-lg border border-border bg-white px-2 py-1 text-dato
-                       focus:outline-none focus:ring-2 focus:ring-accent/30"
+            className={`${inputClass({ size: 'xs' })} min-w-0 flex-1`}
           >
             <option value="">Elige el documento…</option>
             {opciones.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}

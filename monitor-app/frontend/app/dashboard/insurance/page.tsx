@@ -12,6 +12,7 @@ import { SegmentedControl, type SegmentedOption } from '@/components/ui/Segmente
 import { Estado } from '@/components/ui/Estado'
 import { CarriersInsuranceTable, PoliciesTable } from '@/components/insurance/PoliciesTable'
 import { PageContainer } from '@/components/ui/PageContainer'
+import { inputClass } from '@/components/ui/Field'
 
 const LIMIT = 50
 
@@ -108,7 +109,7 @@ function PolizasPageInner() {
             onChange={e => setQ(e.target.value)}
             placeholder="Aseguradora, N° de póliza, empresa o RUT…"
             aria-label="Buscar pólizas"
-            className="w-72 max-w-full rounded-lg border border-border bg-white py-1.5 pl-8 pr-3 text-xs placeholder:text-informativo focus:outline-none focus:ring-2 focus:ring-accent/20"
+            className={`${inputClass({ size: 'sm' })} w-72 max-w-full pl-8`}
           />
         </div>
         <SegmentedControl

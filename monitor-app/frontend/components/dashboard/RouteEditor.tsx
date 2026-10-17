@@ -5,6 +5,7 @@ import type { Location, TripStopCreatePayload } from '@/lib/types'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { LocationPicker } from './LocationPicker'
+import { inputClass } from '@/components/ui/Field'
 
 interface Props {
   /** Incluye a lo sumo 1 stop con stop_type='ORIGIN' + N con stop_type=
@@ -21,7 +22,7 @@ const ZONE_LABEL: Record<string, string> = {
 
 // Sin w-full: convive en la fila de destino con el input de nombre (LocationPicker
 // trae w-full y dos utilidades de ancho en conflicto dejan el ancho al azar del stylesheet)
-const INPUT_DATE = "text-dato border border-border rounded-md px-2 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all w-[150px] sm:w-[185px]"
+const INPUT_DATE = `${inputClass({ size: 'sm' })} w-[150px] sm:w-[185px]`
 
 export function RouteEditor({ stops, onChange, size = 'md' }: Props) {
   const origin       = stops.find(s => s.stop_type === 'ORIGIN') ?? null

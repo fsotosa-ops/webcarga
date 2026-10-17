@@ -13,6 +13,7 @@ import { SelectorExigibilidad } from './SelectorExigibilidad'
 import type { Revision } from '@/lib/api/config'
 import { BotonConfirmar, MarcaDeRevision } from '@/app/dashboard/admin/settings/revision'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
+import { inputClass } from '@/components/ui/Field'
 
 const UNIVERSO: Record<string, string> = {
   ASSET:   'A todos los equipos',
@@ -344,8 +345,7 @@ export function CondicionPanel({
             value={nombre}
             onChange={e => setNombre(e.target.value)}
             aria-label="Nombre del documento"
-            className="mt-2 w-full rounded-lg border border-border px-2 py-1.5 text-dato
-                       focus:outline-none focus:ring-2 focus:ring-accent/30"
+            className={`${inputClass({ size: 'sm' })} mt-2 w-full`}
           />
           {!nombre.trim() && (
             <p className="mt-1 text-etiqueta text-status-incidente">

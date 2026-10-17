@@ -192,7 +192,7 @@ function NavGroup({
         )}
         <Icon size={16} className={groupActive ? 'text-accent' : 'group-hover:text-white/70'} />
         {pending > 0 && (
-          <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-red-500" />
+          <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-status-incidente" />
         )}
       </Link>
     )
@@ -214,7 +214,7 @@ function NavGroup({
         <Icon size={16} className={`shrink-0 ${groupActive ? 'text-accent' : 'group-hover:text-white/70'}`} />
         <span className={`font-medium truncate flex-1 text-left ${groupActive ? 'text-white' : ''}`}>{group.label}</span>
         {pending > 0 && !open && (
-          <span className="shrink-0 bg-red-500/90 text-white text-[9px] font-bold rounded-full px-1.5 py-0.5 tabular-nums">
+          <span className="shrink-0 bg-status-incidente/90 text-white text-etiqueta font-bold rounded-full px-1.5 py-0.5 tabular-nums">
             {pending}
           </span>
         )}
@@ -235,7 +235,7 @@ function NavGroup({
               >
                 <span className="truncate">{label}</span>
                 {countOf(badge) > 0 && (
-                  <span className="ml-auto shrink-0 bg-red-500/90 text-white text-[9px] font-bold rounded-full px-1.5 py-0.5 tabular-nums">
+                  <span className="ml-auto shrink-0 bg-status-incidente/90 text-white text-etiqueta font-bold rounded-full px-1.5 py-0.5 tabular-nums">
                     {countOf(badge)}
                   </span>
                 )}
@@ -344,7 +344,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
                 {/* block: una imagen en línea deja el espacio de los descendentes
                     abajo y empujaba el logo contra el borde superior. */}
                 <LogoWebCarga forma="completo" alto={20} prioridad className="block" />
-                <p className="text-white/35 text-[10px] leading-none tracking-wide mt-1.5">Plataforma logística</p>
+                <p className="text-white/35 text-etiqueta leading-none tracking-wide mt-1.5">Plataforma logística</p>
               </div>
               <button
                 onClick={toggle}
@@ -412,7 +412,9 @@ export default function Sidebar({ acceso }: SidebarProps) {
       </aside>
 
       {/* ── Mobile bottom nav ─────────────────────────────────── */}
-      <nav aria-label="Navegación móvil" className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-sidebar border-t border-white/8 flex items-stretch overflow-x-auto safe-area-inset-bottom">
+      {/* z-30: bajo el fondo de una ventana (40) y la ventana (50, `Dialog`); con una
+          ventana abierta no se navega desde aquí. */}
+      <nav aria-label="Navegación móvil" className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-sidebar border-t border-white/8 flex items-stretch overflow-x-auto safe-area-inset-bottom">
         {mobileItems.map(({ href, label, icon: Icon }) => {
           const active = href === mobileActiveHref
             && (href !== '/dashboard/operations/monitor' || pathname === href)
@@ -426,7 +428,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
               }`}
             >
               <Icon size={20} className={active ? 'text-accent' : ''} />
-              <span className="whitespace-nowrap text-[9px] font-semibold tracking-wide uppercase">{label}</span>
+              <span className="whitespace-nowrap text-etiqueta font-semibold tracking-wide uppercase">{label}</span>
               {active && <span className="w-1 h-1 rounded-full bg-accent" />}
             </Link>
           )
@@ -441,7 +443,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
             }`}
           >
             <Users size={20} className={isAdmin ? 'text-accent' : ''} />
-            <span className="whitespace-nowrap text-[9px] font-semibold tracking-wide uppercase">Admin</span>
+            <span className="whitespace-nowrap text-etiqueta font-semibold tracking-wide uppercase">Admin</span>
             {isAdmin && <span className="w-1 h-1 rounded-full bg-accent" />}
           </Link>
         )}
@@ -451,7 +453,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
           className="flex-1 shrink-0 min-w-16 flex flex-col items-center justify-center gap-1 px-1 py-2.5 text-white/35 hover:text-white/65 transition-colors"
         >
           <LogOut size={20} />
-          <span className="whitespace-nowrap text-[9px] font-semibold tracking-wide uppercase">Salir</span>
+          <span className="whitespace-nowrap text-etiqueta font-semibold tracking-wide uppercase">Salir</span>
         </button>
       </nav>
     </>

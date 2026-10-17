@@ -39,7 +39,7 @@ export function EncabezadoOrdenable({
       <button
         type="button"
         onClick={() => onOrdenar(columna)}
-        className="inline-flex items-center hover:text-gray-600 transition-colors
+        className="inline-flex items-center hover:text-text-primary transition-colors
                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded"
       >
         {children}

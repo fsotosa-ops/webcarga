@@ -13,9 +13,10 @@ import { PageContainer } from '@/components/ui/PageContainer'
 import { Button } from '@/components/ui/Button'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
+import { FIELD_LABEL } from '@/components/ui/Field'
 
 /** El nombre de cada apartado del constructor (Filas, Columnas, Filtros). */
-const SECTION_LABEL = 'mb-1.5 text-etiqueta font-semibold text-informativo'
+const SECTION_LABEL = `${FIELD_LABEL} mb-1.5`
 /** Lo que agrega un campo: un selector punteado, porque suma en vez de mostrar. */
 const ADD_FIELD = 'rounded-full border border-dashed border-border bg-white px-2.5 py-1 text-etiqueta text-informativo'
 

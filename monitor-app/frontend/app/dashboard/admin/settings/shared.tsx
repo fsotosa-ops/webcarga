@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Check, Loader2, RefreshCw } from 'lucide-react'
+import { inputClass } from '@/components/ui/Field'
 
-export const INPUT = 'text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all'
+export const INPUT = inputClass({ size: 'sm' })
 
 // ── Estado de carga con error visible + reintentar ───────────────────────────
 
@@ -11,15 +12,15 @@ export function LoadState({ loading, error, onRetry }: { loading: boolean; error
   if (loading) {
     return (
       <div className="space-y-2 py-2" aria-label="Cargando">
-        {[0, 1, 2].map(i => <div key={i} className="h-9 bg-gray-100 rounded-lg animate-pulse" />)}
+        {[0, 1, 2].map(i => <div key={i} className="h-9 bg-bg-main rounded-lg animate-pulse" />)}
       </div>
     )
   }
   if (error) {
     return (
-      <div className="flex items-center gap-3 bg-red-50 border border-red-100 rounded-lg px-4 py-3">
-        <p className="text-xs text-red-600 flex-1">{error}</p>
-        <button type="button" onClick={onRetry} className="flex items-center gap-1.5 text-xs font-semibold text-red-700 hover:text-red-900">
+      <div className="flex items-center gap-3 bg-status-incidente/5 border border-status-incidente/20 rounded-lg px-4 py-3">
+        <p className="text-xs text-status-incidente flex-1">{error}</p>
+        <button type="button" onClick={onRetry} className="flex items-center gap-1.5 text-xs font-semibold text-status-incidente hover:text-status-incidente">
           <RefreshCw size={12} /> Reintentar
         </button>
       </div>
@@ -66,7 +67,7 @@ export function SaveRowButton({
 }) {
   if (saved) {
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-600" role="status">
+      <span className="inline-flex items-center gap-1 text-etiqueta font-semibold text-resuelto" role="status">
         <Check size={12} /> Guardado
       </span>
     )
@@ -77,7 +78,7 @@ export function SaveRowButton({
       type="button"
       onClick={onClick}
       disabled={saving}
-      className="inline-flex items-center gap-1 text-[10px] font-semibold text-white bg-accent hover:bg-accent/90 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50"
+      className="inline-flex items-center gap-1 text-etiqueta font-semibold text-white bg-accent hover:bg-accent/90 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50"
     >
       {saving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
       Guardar

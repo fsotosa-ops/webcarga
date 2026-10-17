@@ -9,6 +9,7 @@ import type { StatusMeta } from '@/lib/types'
 import { GROUP_COLORS, GROUP_COLOR_IDS, GROUP_COLOR_LABEL } from '@/lib/ui/groupColors'
 import { PanelLateral } from '@/components/ui/PanelLateral'
 import { Button } from '@/components/ui/Button'
+import { Field, FIELD_LABEL, inputClass } from '@/components/ui/Field'
 
 // Fallback when meta hasn't loaded
 const STATUS_SECTIONS_FALLBACK = [
@@ -38,8 +39,6 @@ function buildSections(statuses?: StatusMeta[]) {
     statuses: items,
   }))
 }
-
-const FIELD_LABEL = 'mb-1.5 block text-etiqueta font-semibold text-informativo'
 
 interface Props {
   editing?:          FilterGroup
@@ -139,22 +138,21 @@ export function GroupBuilder({ editing, onSaved, onDeleted, onClose, statuses, i
       }
     >
       <div className="space-y-4">
-        <div>
-          <label htmlFor="group-name" className={FIELD_LABEL}>Nombre del grupo</label>
+        <Field label="Nombre del grupo">{id => (
           <input
-            id="group-name"
+            id={id}
             autoFocus
             value={name}
             onChange={e => setName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSave()}
             placeholder="Ej: Activos hoy, Por vencer…"
             maxLength={50}
-            className="w-full rounded-md border border-border px-3 py-2 text-dato focus:border-accent/30 focus:outline-none focus:ring-2 focus:ring-accent/20"
+            className={`${inputClass()} w-full`}
           />
-        </div>
+        )}</Field>
 
         <div>
-          <p className={FIELD_LABEL}>Color</p>
+          <p className={`${FIELD_LABEL} mb-1.5`}>Color</p>
           <div role="radiogroup" aria-label="Color" className="flex flex-wrap gap-2">
             {GROUP_COLOR_IDS.map(id => (
               <button
@@ -174,7 +172,7 @@ export function GroupBuilder({ editing, onSaved, onDeleted, onClose, statuses, i
         </div>
 
         <div>
-          <p className={FIELD_LABEL}>
+          <p className={`${FIELD_LABEL} mb-1.5`}>
             Estados{selected.size > 0 && <span className="ml-1.5 text-accion">({selected.size} seleccionados)</span>}
           </p>
           <div className="space-y-3">

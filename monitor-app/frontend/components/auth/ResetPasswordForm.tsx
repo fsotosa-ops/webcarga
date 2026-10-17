@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import PasswordStrength, { isPasswordValid, LARGO_MINIMO } from './PasswordStrength'
+import { inputClass } from '@/components/ui/Field'
 
 export default function ResetPasswordForm() {
   const [password, setPassword] = useState('')
@@ -66,13 +67,13 @@ export default function ResetPasswordForm() {
   if (done) {
     return (
       <div className="text-center space-y-3">
-        <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto">
-          <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="w-12 h-12 rounded-full bg-resuelto/10 flex items-center justify-center mx-auto">
+          <svg className="w-6 h-6 text-resuelto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         </div>
         <p className="font-medium text-text-primary">Contraseña actualizada</p>
-        <p className="text-sm text-gray-400">Redirigiendo al dashboard...</p>
+        <p className="text-sm text-informativo">Redirigiendo al dashboard...</p>
       </div>
     )
   }
@@ -80,7 +81,7 @@ export default function ResetPasswordForm() {
   if (error && !ready) {
     return (
       <div className="text-center space-y-4">
-        <p className="text-sm text-red-600 bg-red-50 px-4 py-3 rounded-lg">{error}</p>
+        <p className="text-sm text-status-incidente bg-status-incidente/5 px-4 py-3 rounded-lg">{error}</p>
         <Link href="/forgot-password" className="text-sm text-accent hover:underline">
           Solicitar nuevo enlace
         </Link>
@@ -89,7 +90,7 @@ export default function ResetPasswordForm() {
   }
 
   if (!ready) {
-    return <p className="text-center text-sm text-gray-400">Verificando enlace...</p>
+    return <p className="text-center text-sm text-informativo">Verificando enlace...</p>
   }
 
   return (
@@ -101,7 +102,7 @@ export default function ResetPasswordForm() {
           required
           value={password}
           onChange={e => setPassword(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+          className={`${inputClass()} w-full`}
           placeholder={`Mínimo ${LARGO_MINIMO} caracteres`}
         />
         <PasswordStrength password={password} />
@@ -114,13 +115,13 @@ export default function ResetPasswordForm() {
           required
           value={confirm}
           onChange={e => setConfirm(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+          className={`${inputClass()} w-full`}
           placeholder="Repite la contraseña"
         />
       </div>
 
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
+        <p className="text-sm text-status-incidente bg-status-incidente/5 px-3 py-2 rounded-lg">{error}</p>
       )}
 
       <button

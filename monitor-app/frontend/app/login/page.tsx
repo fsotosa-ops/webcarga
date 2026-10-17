@@ -54,10 +54,10 @@ export default function LoginPage() {
             {/* Divider */}
             <div className="relative my-5">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-100" />
+                <div className="w-full border-t border-border" />
               </div>
               <div className="relative flex justify-center">
-                <span className="bg-white px-3 text-[10px] font-semibold text-gray-300 uppercase tracking-[0.15em]">
+                <span className="bg-white px-3 text-etiqueta font-semibold text-informativo uppercase tracking-[0.15em]">
                   o con email
                 </span>
               </div>
@@ -68,7 +68,7 @@ export default function LoginPage() {
             <p className="text-center mt-4">
               <Link
                 href="/forgot-password"
-                className="text-[11px] text-gray-400 hover:text-accent transition-colors"
+                className="text-[11px] text-informativo hover:text-accent transition-colors"
               >
                 ¿Olvidaste tu contraseña?
               </Link>

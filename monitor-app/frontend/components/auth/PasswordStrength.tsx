@@ -65,10 +65,10 @@ export default function PasswordStrength({ password }: Props) {
       <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
         {checks.map(({ label: l, ok }) => (
           <div key={l} className="flex items-center gap-1.5">
-            <span className={`text-[10px] ${ok ? 'text-green-600' : 'text-gray-400'}`}>
+            <span className={`text-etiqueta ${ok ? 'text-resuelto' : 'text-informativo'}`}>
               {ok ? '✓' : '○'}
             </span>
-            <span className={`text-[10px] ${ok ? 'text-gray-600' : 'text-gray-400'}`}>{l}</span>
+            <span className={`text-etiqueta ${ok ? 'text-text-primary' : 'text-informativo'}`}>{l}</span>
           </div>
         ))}
       </div>

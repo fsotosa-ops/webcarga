@@ -21,17 +21,17 @@ export function ResumenImprimible({ fecha, porTipo, faltante, clientes }: {
       `}</style>
       <div id="closures-print-summary" data-testid="resumen-imprimible" className="hidden print:block text-sm">
         <h1 className="text-xl font-bold mb-1">WebCarga — Reporte de Estatus del Día</h1>
-        <p className="text-gray-500 mb-6">{fecha} · {clientes.length ? clientes.join(', ') : 'Todos los clientes'}</p>
+        <p className="text-informativo mb-6">{fecha} · {clientes.length ? clientes.join(', ') : 'Todos los clientes'}</p>
         <div className="grid grid-cols-2 gap-6 mb-6">
           {TIPOS_DE_OPERACION.map(t => (
             <div key={t.clave} className="space-y-3">
-              <p className="text-[10px] font-bold text-gray-500 uppercase">{SCOPE_LABEL[t.clave]}</p>
+              <p className="text-etiqueta font-bold text-informativo uppercase">{SCOPE_LABEL[t.clave]}</p>
               <CuatroCifras reporte={porTipo[t.clave]} />
               <ViajesDeVariosDias reporte={porTipo[t.clave]} />
               <table className="w-full text-xs border-collapse">
                 <tbody>
                   {porTipo[t.clave].summary.by_client.map(c => (
-                    <tr key={c.client_name} className="border-b border-gray-100">
+                    <tr key={c.client_name} className="border-b border-border">
                       <td className="py-1">{c.client_name}</td><td className="py-1 text-right">{c.assigned}</td>
                     </tr>
                   ))}
@@ -42,18 +42,18 @@ export function ResumenImprimible({ fecha, porTipo, faltante, clientes }: {
         </div>
         {faltante && faltante.length > 0 && (
           <>
-            <p className="text-[10px] font-bold text-gray-500 uppercase mb-1.5">
+            <p className="text-etiqueta font-bold text-informativo uppercase mb-1.5">
               Inconsistencias de dotación ({faltante.length} empresas)
             </p>
             <table className="w-full text-xs border-collapse mb-6">
               <thead>
-                <tr className="border-b border-gray-300 text-left">
+                <tr className="border-b border-border text-left">
                   <th className="py-1">Empresa</th><th className="py-1 text-right">Tractos</th><th className="py-1 text-right">Conductores</th><th className="py-1 text-right">Gap</th>
                 </tr>
               </thead>
               <tbody>
                 {faltante.map(r => (
-                  <tr key={r.carrier_id} className="border-b border-gray-100">
+                  <tr key={r.carrier_id} className="border-b border-border">
                     <td className="py-1">{r.business_name}</td>
                     <td className="py-1 text-right">{r.n_tractos}</td>
                     <td className="py-1 text-right">{r.n_conductores}</td>
@@ -64,7 +64,7 @@ export function ResumenImprimible({ fecha, porTipo, faltante, clientes }: {
             </table>
           </>
         )}
-        <p className="text-[10px] text-gray-400">Generado el {new Intl.DateTimeFormat('es-CL', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}</p>
+        <p className="text-etiqueta text-informativo">Generado el {new Intl.DateTimeFormat('es-CL', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date())}</p>
       </div>
     </>
   )

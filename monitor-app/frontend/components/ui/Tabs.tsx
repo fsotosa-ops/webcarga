@@ -20,7 +20,7 @@ export function Tabs<T extends string>({ label, tabs, value, onChange }: {
   onChange: (id: T) => void
 }) {
   return (
-    <div role="group" aria-label={label} className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit max-w-full overflow-x-auto">
+    <div role="group" aria-label={label} className="flex gap-1 bg-bg-main rounded-xl p-1 w-fit max-w-full overflow-x-auto">
       {tabs.map(t => {
         const active = value === t.id
         return (
@@ -31,12 +31,12 @@ export function Tabs<T extends string>({ label, tabs, value, onChange }: {
             aria-pressed={active}
             aria-label={t.ariaLabel}
             className={`shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-              active ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              active ? 'bg-white text-text-primary shadow-sm' : 'text-informativo hover:text-text-primary'
             }`}
           >
             {t.label}
             {t.count != null && (
-              <span className={`ml-1.5 ${t.urgent ? 'text-status-incidente font-bold' : 'text-gray-400'}`}>{t.count}</span>
+              <span className={`ml-1.5 ${t.urgent ? 'text-status-incidente font-bold' : 'text-informativo'}`}>{t.count}</span>
             )}
           </button>
         )

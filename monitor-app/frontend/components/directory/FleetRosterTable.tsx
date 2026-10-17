@@ -9,6 +9,7 @@ import { Estado } from '@/components/ui/Estado'
 import { SEVERITY_ORDER, documentStateStyle, fleetMemberStyle, isCarrierDeactivated, summaryStyle, type ComplianceSummary, type DocumentState } from '@/lib/states'
 import { assetHref, driverHref } from '@/lib/navegacion/directory'
 import type { CarrierOperationalStatus, OperationalStatus } from '@/lib/types'
+import { inputClass } from '@/components/ui/Field'
 
 export type RosterRow = {
   id: string
@@ -73,7 +74,7 @@ export function FleetRosterTable({
             onChange={e => onQuery(e.target.value)}
             placeholder={driver ? 'Filtrar por nombre o RUT…' : 'Filtrar por patente…'}
             aria-label={driver ? 'Filtrar conductores' : 'Filtrar equipos'}
-            className="w-56 rounded-lg border border-border bg-white py-1.5 pl-8 pr-3 text-xs placeholder:text-informativo focus:outline-none focus:ring-2 focus:ring-accent/20"
+            className={`${inputClass({ size: 'sm' })} w-56 pl-8`}
           />
         </div>
         <SegmentedControl label="Estado de sus documentos" options={healthOptions} value={health || 'all'}

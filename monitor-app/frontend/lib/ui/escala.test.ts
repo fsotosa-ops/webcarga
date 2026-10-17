@@ -54,7 +54,7 @@ describe('la escala tipografica', () => {
     expect(archivos().length).toBeGreaterThan(50)
   })
 
-  it('no crece la deuda de tamanos por debajo de 11px', () => {
+  it('nada se escribe por debajo de 11px', () => {
     // Deuda heredada, MEDIDA el 2026-08-16 (no estimada). Este numero SOLO
     // puede bajar: se reduce al migrar cada pantalla, y cuando llegue a 0 la
     // asercion pasa a `toEqual([])`. Subirlo para que pase la suite es
@@ -91,13 +91,7 @@ describe('la escala tipografica', () => {
     // 97 -> 80 el 2026-10-17: el Cierre y el Monitor a la escala (text-etiqueta en vez de 10px).
     // 80 -> 70 el 2026-10-17: Certificación a la escala (text-etiqueta en vez de 10px).
     // 70 -> 27 el 2026-10-17: los paneles del Monitor y la Reportería del Cierre con la escala.
-    const DEUDA = 27
-
-    const hallazgos = tamanosPorDebajoDelMinimo()
-    expect(
-      hallazgos.length,
-      `Tamanos por debajo de ${MINIMO_PX}px: ${hallazgos.length} (tope actual ${DEUDA}).\n` +
-        `Si subio, hay uno nuevo. Los primeros:\n${hallazgos.slice(0, 10).join('\n')}`,
-    ).toBeLessThanOrEqual(DEUDA)
+    // 27 -> 0 el 2026-10-17: el resto de la app. Desde aquí no es un tope: es la regla.
+    expect(tamanosPorDebajoDelMinimo(), `Usa text-etiqueta (11 px), el mínimo de la escala.`).toEqual([])
   })
 })

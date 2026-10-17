@@ -19,6 +19,7 @@ import { StatusChip } from '@/components/ui/StatusChip'
 import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
 import type { DocumentsFilter, FleetListResponse, FleetListRow } from '@/lib/types'
 import { PageContainer } from '@/components/ui/PageContainer'
+import { inputClass } from '@/components/ui/Field'
 
 export type FleetKind = 'driver' | 'asset'
 
@@ -113,7 +114,7 @@ export function FleetList({ kind }: { kind: FleetKind }) {
             onChange={e => setQ(e.target.value)}
             placeholder={v.search}
             aria-label={`Buscar ${v.noun[1]}`}
-            className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-64 bg-white placeholder:text-informativo"
+            className={`${inputClass({ size: 'sm' })} pl-8 w-64`}
           />
         </div>
         <ChipsDeFiltro opciones={chips} activo={flag} onElegir={id => setParams({ flag: id })} />
@@ -121,7 +122,7 @@ export function FleetList({ kind }: { kind: FleetKind }) {
           aria-label="Documentos"
           value={documents ?? ''}
           onChange={e => setParams({ documents: e.target.value || null })}
-          className="text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+          className={`${inputClass({ size: 'sm' })}`}
         >
           <option value="">Documentos: todos</option>
           {DOCUMENT_OPTIONS.map(o => <option key={o.id} value={o.id}>Documentos: {o.label.toLowerCase()}</option>)}

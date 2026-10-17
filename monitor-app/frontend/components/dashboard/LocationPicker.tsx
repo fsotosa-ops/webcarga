@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query'
 import { locationsApi } from '@/lib/api/locations'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import type { Location } from '@/lib/types'
+import { inputClass } from '@/components/ui/Field'
 
 interface Props {
   /** Nombre del local — texto libre o el nombre exacto de un local real de
@@ -42,14 +43,14 @@ export function LocationPicker({ value, onChange, onSelectLocation, placeholder,
   const searching = qDebounced.trim().length >= 2
 
   const inputCls = size === 'sm'
-    ? 'w-full text-xs border border-border rounded-lg pl-7 pr-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20'
-    : 'w-full text-sm border border-border rounded-lg pl-8 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-gray-300'
+    ? `w-full ${inputClass({ size: 'sm' })} pl-7`
+    : `w-full ${inputClass()} pl-8`
   const iconSize = size === 'sm' ? 12 : 13
 
   return (
     <div className="relative">
       <div className="relative">
-        <Search size={iconSize} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <Search size={iconSize} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-informativo pointer-events-none" />
         <input
           type="text"
           value={value}
@@ -64,7 +65,7 @@ export function LocationPicker({ value, onChange, onSelectLocation, placeholder,
       {open && searching && (
         <div className="max-h-40 overflow-y-auto border border-border rounded-lg divide-y divide-border/60 mt-1.5 absolute z-10 bg-white w-full shadow-lg">
           {locationsQuery.isFetching && (
-            <p className="px-3 py-2 text-center text-[11px] text-gray-400 flex items-center justify-center gap-1.5">
+            <p className="px-3 py-2 text-center text-[11px] text-informativo flex items-center justify-center gap-1.5">
               <Loader2 size={11} className="animate-spin" /> Buscando…
             </p>
           )}
@@ -74,17 +75,17 @@ export function LocationPicker({ value, onChange, onSelectLocation, placeholder,
               type="button"
               onMouseDown={e => e.preventDefault()}
               onClick={() => { onChange(loc.name); onSelectLocation?.(loc); setOpen(false) }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-bg-main transition-colors"
             >
-              <MapPin size={12} className="text-gray-400 shrink-0" />
+              <MapPin size={12} className="text-informativo shrink-0" />
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold text-text-primary truncate">{loc.name}</p>
-                {loc.site_number && <p className="text-[10px] text-gray-400 font-mono">{loc.site_number}</p>}
+                {loc.site_number && <p className="text-etiqueta text-informativo font-mono">{loc.site_number}</p>}
               </div>
             </button>
           ))}
           {!locationsQuery.isFetching && results.length === 0 && (
-            <p className="px-3 py-2 text-center text-[11px] text-gray-400">Sin locales existentes — se guardará como texto libre</p>
+            <p className="px-3 py-2 text-center text-[11px] text-informativo">Sin locales existentes — se guardará como texto libre</p>
           )}
         </div>
       )}

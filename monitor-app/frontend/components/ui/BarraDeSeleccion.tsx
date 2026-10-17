@@ -56,9 +56,9 @@ export function BarraDeSeleccion({ seleccionados, ayuda, onLimpiar, destructiva,
 
   if (!seleccionados) {
     return (
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-[11px] text-gray-500">
-        <span className="font-medium text-gray-400">Ninguno seleccionado</span>
-        <span className="text-gray-300" aria-hidden="true">·</span>
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-etiqueta text-informativo">
+        <span className="font-medium">Ninguno seleccionado</span>
+        <span aria-hidden="true">·</span>
         <span>{ayuda}</span>
       </div>
     )
@@ -75,7 +75,7 @@ export function BarraDeSeleccion({ seleccionados, ayuda, onLimpiar, destructiva,
 
       {destructiva && (confirmando ? (
         <>
-          <span className="text-[11px] text-amber-200">{destructiva.advertencia}</span>
+          <span className="text-etiqueta font-semibold text-white/80">{destructiva.advertencia}</span>
           {destructiva.motivos && (
             <CamposDeMotivo
               variante="barra"
@@ -94,7 +94,7 @@ export function BarraDeSeleccion({ seleccionados, ayuda, onLimpiar, destructiva,
               const ok = await destructiva.onConfirmar(destructiva.motivos ? eleccion : undefined)
               if (ok !== false) reiniciar()
             }}
-            className="text-[11px] font-bold bg-red-500 hover:bg-red-400 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded px-2 py-1 transition-colors focus:outline-none focus:ring-2 focus:ring-red-300"
+            className="rounded bg-status-incidente px-2 py-1 text-etiqueta font-bold text-white transition-colors hover:bg-status-incidente/90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
             {destructiva.confirmacion}
           </button>

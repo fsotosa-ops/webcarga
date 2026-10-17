@@ -1,6 +1,7 @@
 'use client'
 
 import { Check, Loader2, X } from 'lucide-react'
+import { inputClass } from '@/components/ui/Field'
 
 export type PolicyFormState = {
   insurance_company: string; policy_number: string
@@ -27,8 +28,8 @@ export function PolicyCreateForm({ form, onChange, onSubmit, onCancel, submittin
   compact?: boolean
 }) {
   const inputCls = compact
-    ? 'w-full text-xs border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30'
-    : 'w-full text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/30'
+    ? `w-full ${inputClass({ size: 'sm' })}`
+    : `w-full ${inputClass()}`
   const labelCls = 'text-etiqueta text-informativo'
   return (
     <div className={compact ? 'space-y-2' : 'space-y-2.5'}>

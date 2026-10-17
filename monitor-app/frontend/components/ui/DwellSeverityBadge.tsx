@@ -18,17 +18,20 @@ interface Props {
   compact?: boolean
 }
 
+/** Los cuatro niveles salen de los tres umbrales de Configuración. Verde es "va bien",
+ *  no "quedó cerrado": neutro, no `resuelto`. Amarillo y naranjo son dos intensidades
+ *  del mismo aviso (`warning`), así siguen siendo distintos sin inventar colores. */
 const COLOR_CLS: Record<DwellSeverity, string> = {
-  green:  'bg-green-50 text-resuelto hover:bg-green-100',
-  yellow: 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100',
-  orange: 'bg-orange-50 text-orange-700 hover:bg-orange-100',
-  red:    'bg-red-50 text-status-incidente hover:bg-red-100',
+  green:  'bg-informativo/10 text-informativo hover:bg-informativo/15',
+  yellow: 'bg-warning/10 text-warning hover:bg-warning/15',
+  orange: 'bg-warning/20 text-warning hover:bg-warning/25',
+  red:    'bg-status-incidente/10 text-status-incidente hover:bg-status-incidente/15',
 }
 
 const DOT_CLS: Record<DwellSeverity, string> = {
-  green:  'bg-resuelto',
-  yellow: 'bg-yellow-500',
-  orange: 'bg-orange-500',
+  green:  'bg-informativo',
+  yellow: 'bg-warning/60',
+  orange: 'bg-warning',
   red:    'bg-status-incidente',
 }
 
@@ -56,7 +59,7 @@ export function DwellSeverityBadge({ severity, label, onClick, compact = false }
       onClick={onClick}
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-etiqueta font-semibold whitespace-nowrap ${COLOR_CLS[severity]}`}
     >
-      <Clock size={9} /> {label}
+      <Clock size={11} aria-hidden="true" /> {label}
     </button>
   )
 }

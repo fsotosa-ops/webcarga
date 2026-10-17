@@ -11,5 +11,5 @@
  * —`text-text-primary`, `border-border`, `bg-bg-main`, `accent`, `espera`,
  * `accion`, `resuelto`— se usan directo, nunca a través de esto.
  */
-export const TEXTO_APOYO = 'text-gray-500'   // RUT, empresa, rótulos: acompaña al dato
+export const TEXTO_APOYO = 'text-informativo'   // RUT, empresa, rótulos: acompaña al dato (el token vale #6b7280, el gray-500 de antes)
 export const TEXTO_CUERPO = 'text-gray-600'  // texto que se lee de corrido

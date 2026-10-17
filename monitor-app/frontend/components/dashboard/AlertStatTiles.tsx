@@ -15,8 +15,8 @@ interface Props {
 
 const TONE_VALUE_CLS: Record<AlertStatTile['tone'], string> = {
   neutral: 'text-text-primary',
-  danger:  'text-red-600',
-  success: 'text-green-600',
+  danger:  'text-status-incidente',
+  success: 'text-resuelto',
 }
 
 /** Fila de tiles clickeables que resumen + filtran por habilitación —
@@ -40,11 +40,11 @@ export function AlertStatTiles({ tiles, active, onSelect }: Props) {
             onClick={() => onSelect(t.id)}
             aria-pressed={isActive}
             className={`text-left px-3.5 py-2.5 rounded-xl border transition-all ${
-              isActive ? 'border-accent bg-accent/5 ring-1 ring-accent/20' : 'border-border bg-white hover:border-gray-300'
+              isActive ? 'border-accent bg-accent/5 ring-1 ring-accent/20' : 'border-border bg-white hover:border-border'
             }`}
           >
             <p className={`text-xl font-bold leading-none ${TONE_VALUE_CLS[t.tone]}`}>{t.value}</p>
-            <p className="text-[11px] text-gray-400 mt-1">{t.label}</p>
+            <p className="text-[11px] text-informativo mt-1">{t.label}</p>
           </button>
         )
       })}

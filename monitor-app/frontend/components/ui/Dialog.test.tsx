@@ -1,0 +1,47 @@
+import { describe, it, expect, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { useState } from 'react'
+import { Dialog } from './Dialog'
+
+describe('Dialog', () => {
+  it('el marco lo pone quien lo usa: la ficha de un conductor llena la ventana entera', () => {
+    render(<Dialog label="Conductor Vidal" onClose={vi.fn()} className="inset-4 rounded-2xl"><p>ficha</p></Dialog>)
+    const dialogo = screen.getByRole('dialog', { name: 'Conductor Vidal' })
+    expect(dialogo).toHaveClass('inset-4')
+    expect(dialogo).toHaveAttribute('aria-modal', 'true')
+  })
+
+  it('mientras algo viaja (dismissible=false) ni Escape ni el fondo la cierran', () => {
+    const onClose = vi.fn()
+    const { rerender } = render(<Dialog label="Dar de baja" onClose={onClose} dismissible={false} className=""><p>x</p></Dialog>)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.click(screen.getByTestId('panel-overlay'))
+    expect(onClose).not.toHaveBeenCalled()
+
+    rerender(<Dialog label="Dar de baja" onClose={onClose} className=""><p>x</p></Dialog>)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('si un campo de adentro pide el foco al abrir (autoFocus), lo conserva', () => {
+    render(<Dialog label="Nuevo grupo" onClose={vi.fn()} className=""><input aria-label="Nombre" autoFocus /></Dialog>)
+    expect(screen.getByRole('textbox', { name: 'Nombre' })).toHaveFocus()
+  })
+
+  it('con un campo con autoFocus, al cerrar el foco vuelve al botón que la abrió', () => {
+    function Prueba() {
+      const [abierto, setAbierto] = useState(false)
+      return (<>
+        <button onClick={() => setAbierto(true)}>Abrir</button>
+        {abierto && <Dialog label="Nuevo grupo" onClose={() => setAbierto(false)} className=""><input aria-label="Nombre" autoFocus /></Dialog>}
+      </>)
+    }
+    render(<Prueba />)
+    const abrir = screen.getByRole('button', { name: 'Abrir' })
+    abrir.focus()
+    fireEvent.click(abrir)
+    expect(screen.getByRole('textbox', { name: 'Nombre' })).toHaveFocus()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(abrir).toHaveFocus()
+  })
+})

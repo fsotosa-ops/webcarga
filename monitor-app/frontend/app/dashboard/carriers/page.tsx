@@ -20,6 +20,7 @@ import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { directoryKeys, invalidateDirectory } from '@/lib/queries/directorio'
 import { PageContainer } from '@/components/ui/PageContainer'
+import { inputClass } from '@/components/ui/Field'
 
 
 type TransporterTab = 'active' | 'legacy' | 'onboarding'
@@ -210,7 +211,7 @@ function EmpresasTransportePageInner() {
             onChange={e => setQ(e.target.value)}
             placeholder="Empresa, conductor o patente…"
             aria-label="Buscar empresa, conductor o patente"
-            className="pl-8 pr-3 py-1.5 text-xs border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/30 w-72 max-w-full bg-white placeholder:text-informativo"
+            className={`${inputClass({ size: 'sm' })} pl-8 w-72 max-w-full`}
           />
         </div>
         <SegmentedControl

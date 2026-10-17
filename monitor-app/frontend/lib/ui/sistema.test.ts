@@ -42,14 +42,6 @@ const FAMILIAS = [
 ].join('|')
 const COLOR_CRUDO = new RegExp(`\\b(?:text|bg|border|ring|fill|stroke|from|to|via)-(?:${FAMILIAS})-\\d{2,3}\\b`, 'g')
 
-export function usosDeColorCrudo(): number {
-  let total = 0
-  for (const ruta of archivos()) {
-    total += (readFileSync(ruta, 'utf8').match(COLOR_CRUDO) ?? []).length
-  }
-  return total
-}
-
 export function h1FueraDelEncabezado(): string[] {
   const hallazgos: string[] = []
   for (const ruta of archivos()) {
@@ -80,7 +72,7 @@ describe('el sistema visual se usa, no solo existe', () => {
     expect(archivos().length).toBeGreaterThan(50)
   })
 
-  it('no crece el color decidido fuera del sistema', () => {
+  it('ningún color se decide fuera del sistema', () => {
     // Medido el 2026-08-16. Baja al migrar cada pantalla a los tokens.
     // 1.765 -> 1.755 en la Ronda 129: CarrierDrawer paso a tokens al soltar la
     // zona de arrastre (sky/gray/amber/red crudos -> accent/informativo/border).
@@ -143,21 +135,22 @@ describe('el sistema visual se usa, no solo existe', () => {
     //   lo que bajaron el Cierre con un solo patrón y Pendientes/Reporte con el kit.
     // 574 -> 504 el 2026-10-17: Certificación con tokens (Por asignar, Actualizar por planilla,
     //   Reasignar, Descartados y los paneles de Documentos exigidos).
-    // 504 -> 247 el 2026-10-17: los paneles del Monitor y la Reportería del Cierre con el kit
-    //   (Filtros sobre Popover y ToggleChip; Grupo, Carga masiva y Nuevo viaje sobre
-    //   PanelLateral centrado, con RouteEditor, FleetAssignSection y DriverSearchPicker).
-    //   De los 257, 72 no se eliminaron: son la paleta que elige quien arma un grupo, que
-    //   no es del sistema y ahora vive una vez en lib/ui/groupColors.ts (antes eran 88, en
-    //   dos archivos y distintos).
-    const DEUDA = 247
-
-    const total = usosDeColorCrudo()
+    // 504 -> 247 el 2026-10-17: los paneles del Monitor y la Reportería del Cierre con el kit.
+    //   De esa baja, 72 son la paleta que elige quien arma un grupo: no es del sistema y
+    //   vive una vez en lib/ui/groupColors.ts.
+    // 247 -> 0 el 2026-10-17: el resto de la app (administración, inicio de sesión, la
+    //   vista previa, los buscadores) con tokens. Desde aquí no es un tope: es la regla.
+    const usos: string[] = []
+    for (const ruta of archivos()) {
+      readFileSync(ruta, 'utf8').split('\n').forEach((linea, i) => {
+        for (const m of linea.match(COLOR_CRUDO) ?? []) usos.push(`${ruta.slice(RAIZ.length + 1)}:${i + 1} ${m}`)
+      })
+    }
     expect(
-      total,
-      `Usos de color crudo de Tailwind: ${total} (tope actual ${DEUDA}).\n` +
-        `Si subio, hay una decision de color nueva tomada fuera del sistema.\n` +
-        `Los tokens estan en app/globals.css: accent, espera, accion, resuelto, status-*.`,
-    ).toBeLessThanOrEqual(DEUDA)
+      usos,
+      `Color crudo de Tailwind: una decisión de color tomada fuera del sistema.\n` +
+        `Los tokens están en app/globals.css: accent, accion, resuelto, warning, informativo, status-*.`,
+    ).toEqual([])
   })
 
   it('no crecen los botones principales escritos a mano: el color y el tamaño salen de Button', () => {
@@ -170,8 +163,38 @@ describe('el sistema visual se usa, no solo existe', () => {
       total += (readFileSync(ruta, 'utf8').replace(/\n\s*/g, ' ').match(BOTON_A_MANO) ?? []).length
     }
     // 27 -> 23 el 2026-10-17: Grupo, Carga masiva y Nuevo viaje usan Button.
-    const TOPE = 23
+    // 23 -> 17 el 2026-10-17: las ventanas y confirmaciones sobre el kit (ConfirmDialog, PanelLateral).
+    const TOPE = 17
     expect(total, `Botones principales escritos a mano: ${total} (tope ${TOPE}). Usa Button del kit.`).toBeLessThanOrEqual(TOPE)
+  })
+
+  it('toda ventana es la Dialog del kit: nadie más reimplementa fondo, Escape, foco y Tab', () => {
+    // 2026-10-17: eran doce copias (cada modal con su atrapado de Tab, su Escape y su
+    // z-index). `Dialog` las reemplaza; `PanelLateral` y `ConfirmDialog` se arman encima.
+    const propias = archivos()
+      .filter(ruta => !ruta.endsWith(join('components', 'ui', 'Dialog.tsx')))
+      // `aria-modal` o un fondo oscuro a pantalla completa: hubo ventanas que ni lo declaraban.
+      .filter(ruta => /aria-modal=|(?:fixed|absolute) inset-0[^"'`]*bg-black/.test(readFileSync(ruta, 'utf8')))
+      .map(ruta => ruta.slice(RAIZ.length + 1))
+    expect(propias, 'Usa Dialog, PanelLateral o ConfirmDialog de components/ui').toEqual([])
+  })
+
+  it('el estilo de un campo sale de inputClass, no se escribe a mano', () => {
+    // 2026-10-17: había más de veinte maneras de escribir un campo (borde, anillo de foco,
+    // gris del placeholder). `inputClass` y `Field` (components/ui/Field.tsx) son la una.
+    // Las casillas y los botones marcan el foco con `focus-visible:`, que no cuenta aquí.
+    const A_MANO = /\bfocus:(?:ring|border)-accent\b/
+    // StopTimeInput no es un campo de texto: dibuja el valor con una capa encima y el
+    // control nativo solo aparece al enfocar (texto transparente, borde según quién lo cargó).
+    const EXCEPCIONES = [join('components', 'ui', 'Field.tsx'), join('components', 'dashboard', 'StopTimeInput.tsx')]
+    const hallazgos: string[] = []
+    for (const ruta of archivos()) {
+      if (EXCEPCIONES.some(e => ruta.endsWith(e))) continue
+      readFileSync(ruta, 'utf8').split('\n').forEach((linea, i) => {
+        if (A_MANO.test(linea)) hallazgos.push(`${ruta.slice(RAIZ.length + 1)}:${i + 1}`)
+      })
+    }
+    expect(hallazgos, `Usa inputClass() de components/ui/Field.tsx:\n${hallazgos.join('\n')}`).toEqual([])
   })
 
   it('no crecen los encabezados de pagina escritos a mano', () => {

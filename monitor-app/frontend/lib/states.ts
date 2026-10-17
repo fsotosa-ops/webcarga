@@ -82,9 +82,10 @@ const REQUIREMENT_LIFECYCLE: Record<string, StateStyle> = {
 }
 const LIFECYCLE_BY_KIND: Record<EntityKind | CatalogKind, Record<string, StateStyle>> = {
   carrier: CARRIER_LIFECYCLE, driver: FLEET_LIFECYCLE, asset: FLEET_LIFECYCLE,
-  shipper: CATALOG_LIFECYCLE, location: CATALOG_LIFECYCLE, requirement: REQUIREMENT_LIFECYCLE,
+  shipper: CATALOG_LIFECYCLE, location: CATALOG_LIFECYCLE, requirement: REQUIREMENT_LIFECYCLE, user: CATALOG_LIFECYCLE,
 }
-export type CatalogKind = 'shipper' | 'location' | 'requirement'
+/** Lo que se activa o desactiva sin baja ni onboarding; `user` es una persona con acceso. */
+export type CatalogKind = 'shipper' | 'location' | 'requirement' | 'user'
 
 export function lifecycleStyle(kind: EntityKind | CatalogKind, status: string): StateStyle {
   return LIFECYCLE_BY_KIND[kind][status] ?? { label: status, tone: 'neutral', icon: CircleDashed }

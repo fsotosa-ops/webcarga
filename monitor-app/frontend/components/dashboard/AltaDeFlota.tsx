@@ -14,6 +14,7 @@ import { CarrierSearchPicker, type CarrierSearchResult } from './CarrierSearchPi
 import { useAssetTypes } from '@/hooks/useAssetTypes'
 import type { AssetType, ManagementType } from '@/lib/types'
 import { nombreLegible } from '@/lib/utils/nombres'
+import { inputClass } from '@/components/ui/Field'
 
 /** Lo que devuelve el backend en un 409 al dar de alta un RUT que ya existe.
  *  Trae el id porque sin él el mensaje sería un callejón sin salida: la persona
@@ -29,7 +30,7 @@ function conductorYaExiste(e: unknown): ConductorYaExiste | null {
 // En un contenedor angosto (el popover del Monitor) cada campo toma la fila
 // entera; en uno ancho (la ficha) van en una sola fila. Container query: el
 // alta se adapta a donde la pongan, sin una variante por anfitrión.
-const INPUT = 'text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30 @max-md:basis-full @max-md:w-full'
+const INPUT = `${inputClass({ size: 'sm' })} @max-md:basis-full @max-md:w-full`
 
 interface Props {
   /** La empresa a la que se va a asignar lo que se cree. `null`: se pregunta en

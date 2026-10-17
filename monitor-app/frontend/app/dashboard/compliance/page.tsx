@@ -23,6 +23,7 @@ import { invalidateDirectory } from '@/lib/queries/directorio'
 import { carrierHref } from '@/lib/navegacion/directory'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { PageContainer } from '@/components/ui/PageContainer'
+import { inputClass } from '@/components/ui/Field'
 
 type Vista = 'empresas' | 'requisitos'
 
@@ -50,7 +51,7 @@ const REDIRECCIONES: Record<string, string> = {
   ...Object.fromEntries(AL_DIRECTORIO.map(d => [d.vistaVieja, d.href])),
 }
 
-const INPUT = 'text-dato border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all'
+const INPUT = inputClass({ size: 'sm' })
 
 export default function CertificationPage() {
   return (

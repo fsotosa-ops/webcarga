@@ -57,7 +57,6 @@ export function etiquetasEn(src: string): string[] {
 
 /** La misma palabra, otro dominio. Cada entrada dice por qué. */
 const OTROS_DOMINIOS: Record<string, { etiquetas: string[]; motivo: string }> = {
-  'components/admin/UsersTable.tsx':        { etiquetas: ['Activo', 'Inactivo'], motivo: 'cuenta de usuario, no ciclo de vida del Directorio' },
   'components/dashboard/LocationsTable.tsx': { etiquetas: ['Activo', 'Inactivo'], motivo: 'lugar de carga o entrega' },
   'components/dashboard/IndicatorSwitches.tsx': { etiquetas: ['Activo'], motivo: 'indicador is_active del viaje' },
   'lib/utils/alertSignals.ts':              { etiquetas: ['Activo'], motivo: 'indicador is_active del viaje' },

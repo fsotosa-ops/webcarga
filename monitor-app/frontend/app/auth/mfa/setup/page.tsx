@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ShieldCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { soloDigitos } from '@/lib/auth/codigo'
+import { inputClass } from '@/components/ui/Field'
 
 /** Inscribir la verificación en dos pasos (seguridad, 09/10).
  *
@@ -87,7 +88,7 @@ export default function MfaSetupPage() {
           value={codigo}
           onChange={e => setCodigo(soloDigitos(e.target.value))}
           aria-label="Código de 6 dígitos"
-          className="w-full px-3 py-2 rounded-lg border border-border text-center text-sm tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-accent"
+          className={`${inputClass()} w-full text-center tracking-[0.3em]`}
         />
         {error && <p className="text-sm text-status-incidente">{error}</p>}
         <button

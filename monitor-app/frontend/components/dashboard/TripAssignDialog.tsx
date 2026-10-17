@@ -9,6 +9,7 @@ import { RouteEditor } from '@/components/dashboard/RouteEditor'
 import { FleetAssignSection, EMPTY_FLEET_ASSIGN_VALUE, type FleetAssignValue } from '@/components/dashboard/FleetAssignSection'
 import { ClientPicker, type ClienteElegido } from '@/components/dashboard/ClientPicker'
 import { PanelLateral } from '@/components/ui/PanelLateral'
+import { Field, inputClass } from '@/components/ui/Field'
 import { Button } from '@/components/ui/Button'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
 
@@ -24,7 +25,7 @@ interface Props {
   initialFleet?: FleetAssignValue
 }
 
-const INPUT = "w-full text-dato border border-border rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-informativo/60"
+const INPUT = `w-full ${inputClass()}`
 
 /** Un aviso dentro del formulario: `info` explica lo que va a pasar, `warning` lo que
  *  conviene revisar antes de seguir. */
@@ -52,17 +53,6 @@ function SectionTitle({ icon, children }: { icon: React.ReactNode; children: Rea
     <div className="mb-3 flex items-center gap-2">
       <span className="text-accent" aria-hidden="true">{icon}</span>
       <h3 className="text-dato font-semibold text-text-primary">{children}</h3>
-    </div>
-  )
-}
-
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="mb-1.5 block text-etiqueta font-semibold text-informativo">
-        {label}{required && <span className="ml-0.5 text-status-incidente">*</span>}
-      </label>
-      {children}
     </div>
   )
 }
@@ -202,14 +192,14 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
 
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Fecha planificación" required>
-                  <input ref={firstFieldRef} type="date" value={form.planning_date ?? ''} onChange={e => set('planning_date', e.target.value)} className={INPUT} />
+                  {id => <input id={id} ref={firstFieldRef} type="date" value={form.planning_date ?? ''} onChange={e => set('planning_date', e.target.value)} className={INPUT} />}
                 </Field>
                 <Field label="Cliente" required>
-                  <ClientPicker value={cliente} onChange={setCliente} placeholder="Buscar o crear cliente…" />
+                  {id => <ClientPicker id={id} value={cliente} onChange={setCliente} placeholder="Buscar o crear cliente…" />}
                 </Field>
               </div>
               <Field label="Tipo de carga">
-                <select
+                {id => <select id={id}
                   value={form.cargo_type ?? ''}
                   onChange={e => set('cargo_type', e.target.value)}
                   aria-label="Tipo de carga"
@@ -219,15 +209,15 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
                   {cargoTypes.map(ct => (
                     <option key={ct} value={ct}>{ct}</option>
                   ))}
-                </select>
+                </select>}
               </Field>
               <Field label="Estado inicial">
-                <select value={form.current_status ?? ''} onChange={e => set('current_status', e.target.value)} className={INPUT}>
+                {id => <select id={id} value={form.current_status ?? ''} onChange={e => set('current_status', e.target.value)} className={INPUT}>
                   <option value="">— Sin estado</option>
                   {(meta?.statuses ?? []).map(s => (
                     <option key={s.id} value={s.id}>{s.label}</option>
                   ))}
-                </select>
+                </select>}
               </Field>
 
               {/* Sistema de origen — separa el canal de ingreso (manual) del origen real */}
@@ -240,13 +230,13 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
                 {originMode === 'none' && (
                   <div>
                     <Field label="ID de seguimiento (opcional)">
-                      <input
+                      {id => <input id={id}
                         type="text"
                         value={form.source_system_trip_id ?? ''}
                         onChange={e => set('source_system_trip_id', e.target.value)}
                         placeholder="Guía, hoja de ruta, factura…"
                         className={INPUT}
-                      />
+                      />}
                     </Field>
                     <p className="mt-2 text-etiqueta text-informativo">
                       El viaje queda igual con un ID interno de Webcarga para trazabilidad y facturación.
@@ -256,25 +246,25 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
                 {originMode === 'mapped' && (
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="TMS">
-                      <select value={originTms} onChange={e => setOriginTms(e.target.value)} aria-label="TMS de origen" className={INPUT}>
+                      {id => <select id={id} value={originTms} onChange={e => setOriginTms(e.target.value)} aria-label="TMS de origen" className={INPUT}>
                         <option value="">— Seleccionar…</option>
                         {mappedTms.map(t => (
                           <option key={t.id} value={t.id}>{t.label}</option>
                         ))}
-                      </select>
+                      </select>}
                     </Field>
                     <Field label="ID del viaje en ese TMS">
-                      <input type="text" value={form.source_system_trip_id ?? ''} onChange={e => set('source_system_trip_id', e.target.value)} placeholder="1994062" className={INPUT} />
+                      {id => <input id={id} type="text" value={form.source_system_trip_id ?? ''} onChange={e => set('source_system_trip_id', e.target.value)} placeholder="1994062" className={INPUT} />}
                     </Field>
                   </div>
                 )}
                 {originMode === 'other' && (
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Nombre del sistema">
-                      <input type="text" value={originTms} onChange={e => setOriginTms(e.target.value)} placeholder="Ej: Beetrack" className={INPUT} />
+                      {id => <input id={id} type="text" value={originTms} onChange={e => setOriginTms(e.target.value)} placeholder="Ej: Beetrack" className={INPUT} />}
                     </Field>
                     <Field label="ID del viaje (opcional)">
-                      <input type="text" value={form.source_system_trip_id ?? ''} onChange={e => set('source_system_trip_id', e.target.value)} placeholder="VJE-001" className={INPUT} />
+                      {id => <input id={id} type="text" value={form.source_system_trip_id ?? ''} onChange={e => set('source_system_trip_id', e.target.value)} placeholder="VJE-001" className={INPUT} />}
                     </Field>
                   </div>
                 )}

@@ -37,7 +37,7 @@ export function Estado({
 }) {
   if (tipo === 'cargando') {
     return (
-      <div role="status" className="flex items-center justify-center gap-2 py-10 text-gray-500">
+      <div role="status" className="flex items-center justify-center gap-2 py-10 text-informativo">
         <Loader2 size={16} className="motion-safe:animate-spin" />
         <span className="text-dato">Cargando…</span>
       </div>
@@ -51,7 +51,7 @@ export function Estado({
         className="mx-4 my-3 rounded-lg border border-status-incidente/20 bg-status-incidente/5 px-4 py-3"
       >
         <p className="text-lectura font-semibold text-status-incidente">{titulo}</p>
-        {detalle && <p className="text-dato text-gray-600 mt-1">{detalle}</p>}
+        {detalle && <p className="text-dato text-text-primary mt-1">{detalle}</p>}
         {children && <div className="mt-3 flex gap-2">{children}</div>}
       </div>
     )
@@ -60,7 +60,7 @@ export function Estado({
   return (
     <div className="flex flex-col items-center text-center gap-1.5 py-12 px-6">
       <p className="text-lectura font-semibold text-text-primary text-balance">{titulo}</p>
-      {detalle && <p className="text-dato text-gray-500 max-w-[46ch]">{detalle}</p>}
+      {detalle && <p className="text-dato text-informativo max-w-[46ch]">{detalle}</p>}
       {children && <div className="mt-3 flex gap-2">{children}</div>}
     </div>
   )

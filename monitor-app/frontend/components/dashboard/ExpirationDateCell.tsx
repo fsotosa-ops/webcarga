@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { CalendarPlus, Loader2 } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { formatExpiry } from '@/lib/compliance'
+import { inputClass } from '@/components/ui/Field'
 
 interface Props {
   recordId: string
@@ -49,7 +50,7 @@ export function ExpirationDateCell({ recordId, value, required, canEdit, onSaved
   }
 
   if (!canEdit) {
-    return <span className="text-[11px] text-gray-500">{value ? formatExpiry(value) : '—'}</span>
+    return <span className="text-[11px] text-informativo">{value ? formatExpiry(value) : '—'}</span>
   }
 
   if (!editing) {
@@ -58,7 +59,7 @@ export function ExpirationDateCell({ recordId, value, required, canEdit, onSaved
         type="button"
         onClick={openEditor}
         aria-label={value ? 'Editar vencimiento' : 'Agregar vencimiento'}
-        className="text-[11px] font-medium text-gray-600 hover:text-accent transition-colors flex items-center gap-1"
+        className="text-[11px] font-medium text-text-primary hover:text-accent transition-colors flex items-center gap-1"
       >
         {value ? formatExpiry(value) : (
           <><CalendarPlus size={11} /> {required ? 'Agregar vencimiento' : 'Sin vencimiento'}</>
@@ -81,10 +82,10 @@ export function ExpirationDateCell({ recordId, value, required, canEdit, onSaved
           if (e.key === 'Enter') save()
           if (e.key === 'Escape') { setDraft(value ?? ''); setEditing(false) }
         }}
-        className="text-[11px] border border-border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent"
+        className={`${inputClass({ size: 'xs' })}`}
       />
-      {saving && <Loader2 size={11} className="animate-spin text-gray-400" />}
-      {error && <span className="text-[10px] text-red-500">{error}</span>}
+      {saving && <Loader2 size={11} className="animate-spin text-informativo" />}
+      {error && <span className="text-etiqueta text-status-incidente">{error}</span>}
     </span>
   )
 }

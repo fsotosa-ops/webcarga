@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Check, Loader2 } from 'lucide-react'
+import { inputClass } from '@/components/ui/Field'
 
 export type ContactLike = {
   id:           string
@@ -70,17 +71,17 @@ export function ContactCard({ contact, canEdit, canDelete, onSaved, onDeleted }:
       <div className="border border-accent/40 rounded-lg p-3 space-y-1.5">
         <p className="text-etiqueta font-semibold text-informativo mb-1">{contactRoleLabel(contact.contact_role)}</p>
         <input value={draft.name} onChange={e => setDraft(v => ({ ...v, name: e.target.value }))} placeholder="Nombre"
-          className="w-full text-xs border border-border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30" />
+          className={`${inputClass({ size: 'xs' })} w-full`} />
         <input value={draft.phone} onChange={e => setDraft(v => ({ ...v, phone: e.target.value }))} placeholder="Teléfono"
-          className="w-full text-xs border border-border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30" />
+          className={`${inputClass({ size: 'xs' })} w-full`} />
         <input value={draft.email} onChange={e => setDraft(v => ({ ...v, email: e.target.value }))} placeholder="Email"
-          className="w-full text-xs border border-border rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30" />
-        {err && <p className="text-[10px] text-red-500">{err}</p>}
+          className={`${inputClass({ size: 'xs' })} w-full`} />
+        {err && <p className="text-etiqueta text-status-incidente">{err}</p>}
         <div className="flex gap-1.5 pt-1">
           <button onClick={save} disabled={busy} className="flex items-center gap-1 text-[11px] font-semibold text-white bg-accent rounded px-2 py-1 disabled:opacity-50">
             {busy ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Guardar
           </button>
-          <button onClick={() => setEditing(false)} className="text-[11px] text-gray-400 hover:text-gray-600 px-2 py-1">Cancelar</button>
+          <button onClick={() => setEditing(false)} className="text-[11px] text-informativo hover:text-text-primary px-2 py-1">Cancelar</button>
         </div>
       </div>
     )
@@ -89,14 +90,14 @@ export function ContactCard({ contact, canEdit, canDelete, onSaved, onDeleted }:
   return (
     <div className="border border-border/60 rounded-lg p-3 group relative">
       <p className="text-etiqueta font-semibold text-informativo mb-1.5">{contactRoleLabel(contact.contact_role)}</p>
-      <p className="text-xs font-semibold text-text-primary truncate">{name || <span className="text-gray-300 italic">sin nombre</span>}</p>
-      {contact.phone && <a href={`tel:${contact.phone}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent">{contact.phone}</a>}
-      {contact.email && <a href={`mailto:${contact.email}`} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-accent truncate"><span className="truncate">{contact.email}</span></a>}
+      <p className="text-xs font-semibold text-text-primary truncate">{name || <span className="text-informativo italic">sin nombre</span>}</p>
+      {contact.phone && <a href={`tel:${contact.phone}`} className="flex items-center gap-1 text-[11px] text-informativo hover:text-accent">{contact.phone}</a>}
+      {contact.email && <a href={`mailto:${contact.email}`} className="flex items-center gap-1 text-[11px] text-informativo hover:text-accent truncate"><span className="truncate">{contact.email}</span></a>}
       {canEdit && (
         <div className="flex gap-2 mt-1">
-          <button onClick={openEdit} className="text-[10px] text-gray-400 hover:text-accent">Editar</button>
+          <button onClick={openEdit} className="text-etiqueta text-informativo hover:text-accent">Editar</button>
           {canDelete && (
-            <button onClick={onDeleted} className="text-[10px] text-gray-400 hover:text-red-500">Eliminar</button>
+            <button onClick={onDeleted} className="text-etiqueta text-informativo hover:text-status-incidente">Eliminar</button>
           )}
         </div>
       )}
@@ -144,7 +145,7 @@ export function AddContactForm({ roleOptions, onAdd }: {
         <button onClick={submit} disabled={busy} className="flex items-center gap-1 text-[11px] font-semibold text-white bg-accent rounded px-2 py-1 disabled:opacity-50">
           {busy ? <Loader2 size={10} className="animate-spin" /> : <Check size={10} />} Guardar
         </button>
-        <button onClick={() => setOpen(false)} className="text-[11px] text-gray-400 hover:text-gray-600 px-2 py-1">Cancelar</button>
+        <button onClick={() => setOpen(false)} className="text-[11px] text-informativo hover:text-text-primary px-2 py-1">Cancelar</button>
       </div>
     </div>
   )

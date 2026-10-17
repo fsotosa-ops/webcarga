@@ -6,6 +6,7 @@ import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useQuery } from '@tanstack/react-query'
 import { CARRIER_DEACTIVATED_LABEL, isCarrierDeactivated } from '@/lib/states'
 import type { DriverPickCandidate } from '@/lib/types'
+import { inputClass } from '@/components/ui/Field'
 
 interface Props {
   query:          string
@@ -46,7 +47,7 @@ export function DriverSearchPicker({
           onChange={e => onQueryChange(e.target.value)}
           placeholder={placeholder}
           aria-label="Buscar conductor"
-          className="w-full text-dato border border-border rounded-md pl-8 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-informativo/60"
+          className={`${inputClass({ size: 'sm' })} w-full pl-8`}
         />
       </div>
 

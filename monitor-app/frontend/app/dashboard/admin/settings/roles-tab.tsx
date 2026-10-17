@@ -6,6 +6,7 @@ import { accessApi, type PermisoInfo, type RoleInfo } from '@/lib/api/access'
 import { useAcceso, usePermiso } from '@/lib/authz/PermisosProvider'
 import { AREAS, TITULO_DE_AREA, codigoDe } from '@/lib/authz/roles'
 import { LoadState } from './shared'
+import { inputClass } from '@/components/ui/Field'
 
 /** El código de un rol personalizado sale de su nombre, con el formato que
  *  exige la API (^custom_[a-z0-9_]{2,40}$). Nadie lo escribe a mano. El
@@ -258,12 +259,12 @@ function FormularioDeRol({ catalogo, rol, onCancel, onSaved }: {
         <div className="space-y-1.5">
           <label htmlFor="rol-nombre" className="block text-dato font-medium text-text-primary">Nombre</label>
           <input id="rol-nombre" value={nombre} onChange={e => setNombre(e.target.value)} required minLength={2}
-            className="w-full px-3 py-2 rounded-lg border border-border text-dato focus:outline-none focus:ring-2 focus:ring-accent" />
+            className={`${inputClass()} w-full`} />
         </div>
         <div className="space-y-1.5">
           <label htmlFor="rol-descripcion" className="block text-dato font-medium text-text-primary">Para qué sirve</label>
           <input id="rol-descripcion" value={descripcion} onChange={e => setDescripcion(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border border-border text-dato focus:outline-none focus:ring-2 focus:ring-accent" />
+            className={`${inputClass()} w-full`} />
         </div>
       </div>
 

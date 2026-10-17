@@ -11,6 +11,7 @@ import { useTripNotes, useAddTripNote, usePinTripNote, useResolveTripNote } from
 import { formatRelativeTime, fmtDT } from '@/lib/utils/datetime'
 import { StatusChip, type StatusTone } from '@/components/ui/StatusChip'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { inputClass } from '@/components/ui/Field'
 
 const NOTE_TYPES: { id: Exclude<TripNoteType, 'sistema'>; label: string; Icon: typeof Phone; tone: StatusTone }[] = [
   { id: 'observacion', label: 'Observación', Icon: StickyNote,    tone: 'neutral'  },
@@ -308,7 +309,7 @@ export function TripNotesFeed({ trip }: Props) {
                   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleSubmit() }
                 }}
                 placeholder="Registrar novedad… (⌘↵ para enviar)"
-                className="w-full resize-none rounded-md border border-border bg-white px-3 py-2 pr-9 text-dato text-text-primary placeholder:text-informativo focus:outline-none focus:ring-2 focus:ring-accent/30"
+                className={`${inputClass()} w-full resize-none pr-9`}
               />
               <button
                 type="button"

@@ -29,7 +29,7 @@ export default function TripDetailStandalonePage() {
 
   if (tripQuery.isPending) {
     return (
-      <div className="h-screen flex items-center justify-center bg-white text-gray-400 gap-2 text-sm">
+      <div className="h-screen flex items-center justify-center bg-white text-informativo gap-2 text-sm">
         <Loader2 size={16} className="animate-spin" /> Cargando viaje…
       </div>
     )
@@ -38,7 +38,7 @@ export default function TripDetailStandalonePage() {
   if (tripQuery.isError || !tripQuery.data) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-white gap-3">
-        <p className="text-sm text-gray-500">No se pudo cargar este viaje.</p>
+        <p className="text-sm text-informativo">No se pudo cargar este viaje.</p>
         <button
           type="button"
           onClick={() => router.push(volver)}

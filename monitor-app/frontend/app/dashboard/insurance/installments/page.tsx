@@ -11,6 +11,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { Estado } from '@/components/ui/Estado'
 import { InstallmentsTable } from '@/components/insurance/InstallmentsTable'
 import { PageContainer } from '@/components/ui/PageContainer'
+import { inputClass } from '@/components/ui/Field'
 
 const FILTERS: { id: InstallmentFilter; label: string; empty: string }[] = [
   { id: 'OVERDUE', label: 'Vencidas', empty: 'No hay cuotas vencidas' },
@@ -59,7 +60,7 @@ function CuotasPageInner() {
         <div className="relative shrink-0">
           <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-informativo" aria-hidden="true" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Empresa, aseguradora o N° de póliza…" aria-label="Buscar cuotas"
-                 className="w-72 max-w-full rounded-lg border border-border bg-white py-1.5 pl-8 pr-3 text-xs placeholder:text-informativo focus:outline-none focus:ring-2 focus:ring-accent/20" />
+                 className={`${inputClass({ size: 'sm' })} w-72 max-w-full pl-8`} />
         </div>
         <SegmentedControl
           label="Cuotas"

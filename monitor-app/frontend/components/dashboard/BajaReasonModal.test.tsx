@@ -33,7 +33,7 @@ describe('BajaReasonModal', () => {
 
   it('calls onClose when the backdrop, X, or Cancelar are clicked', () => {
     const onClose = vi.fn()
-    const { container } = render(<BajaReasonModal label="esta empresa" onClose={onClose} onConfirm={vi.fn().mockResolvedValue(undefined)} />)
+    render(<BajaReasonModal label="esta empresa" onClose={onClose} onConfirm={vi.fn().mockResolvedValue(undefined)} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
     expect(onClose).toHaveBeenCalledTimes(1)
@@ -41,9 +41,7 @@ describe('BajaReasonModal', () => {
     fireEvent.click(screen.getByLabelText('Cerrar'))
     expect(onClose).toHaveBeenCalledTimes(2)
 
-    const backdrop = container.querySelector('.absolute.inset-0')
-    expect(backdrop).not.toBeNull()
-    fireEvent.click(backdrop!)
+    fireEvent.click(screen.getByTestId('panel-overlay'))
     expect(onClose).toHaveBeenCalledTimes(3)
   })
 })

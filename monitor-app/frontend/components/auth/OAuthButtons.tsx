@@ -34,7 +34,7 @@ export default function OAuthButtons() {
   return (
     <div className="space-y-3">
       {error && (
-        <p className="text-xs text-red-500 text-center bg-red-50 rounded-lg px-3 py-2">{error}</p>
+        <p className="text-xs text-status-incidente text-center bg-status-incidente/5 rounded-lg px-3 py-2">{error}</p>
       )}
 
       <div className="flex gap-3">
@@ -43,7 +43,7 @@ export default function OAuthButtons() {
           onClick={() => signInWith('google')}
           disabled={loading !== null}
           title="Continuar con Google"
-          className="flex-1 flex items-center justify-center h-11 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 active:scale-[0.97] disabled:opacity-50 transition-all duration-150 shadow-sm"
+          className="flex-1 flex items-center justify-center h-11 rounded-xl border border-border bg-white hover:bg-bg-main hover:border-border active:scale-[0.97] disabled:opacity-50 transition-all duration-150 shadow-sm"
         >
           {loading === 'google' ? <Spinner /> : <GoogleIcon />}
         </button>
@@ -53,7 +53,7 @@ export default function OAuthButtons() {
           onClick={() => signInWith('azure')}
           disabled={loading !== null}
           title="Continuar con Microsoft"
-          className="flex-1 flex items-center justify-center h-11 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 active:scale-[0.97] disabled:opacity-50 transition-all duration-150 shadow-sm"
+          className="flex-1 flex items-center justify-center h-11 rounded-xl border border-border bg-white hover:bg-bg-main hover:border-border active:scale-[0.97] disabled:opacity-50 transition-all duration-150 shadow-sm"
         >
           {loading === 'azure' ? <Spinner /> : <MicrosoftIcon />}
         </button>

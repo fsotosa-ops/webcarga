@@ -21,6 +21,7 @@ import { TmsClientLinks } from '@/components/directory/TmsClientLinks'
 import { useClients } from '@/hooks/useClients'
 import { ClientNamePanel } from '@/components/directory/ClientNamePanel'
 import { PageContainer } from '@/components/ui/PageContainer'
+import { inputClass } from '@/components/ui/Field'
 
 type Vista = 'activos' | 'inactivos' | 'sin-vincular'
 const VISTAS: { id: Vista; label: string }[] = [
@@ -101,7 +102,7 @@ function ClientsList() {
           <div className="relative shrink-0">
             <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-informativo pointer-events-none" aria-hidden />
             <input value={q} onChange={e => cambiar({ q: e.target.value })} placeholder="Buscar cliente…" aria-label="Buscar cliente"
-              className="pl-8 pr-3 py-1.5 text-dato border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 w-64 max-w-full bg-white placeholder:text-informativo" />
+              className={`${inputClass({ size: 'sm' })} pl-8 w-64 max-w-full`} />
           </div>
         )}
         <SegmentedControl

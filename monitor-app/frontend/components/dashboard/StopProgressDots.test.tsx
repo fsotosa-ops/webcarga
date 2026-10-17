@@ -43,15 +43,15 @@ describe('StopProgressDots', () => {
     expect(screen.getByTitle('Parada A')).toBeInTheDocument()
   })
 
-  it('colors done stops green, the active stop with an accent ring, and pending gray (hito 13, mismo lenguaje que StopTimeline)', () => {
+  it('colors done stops as resolved, the active stop with an accent ring, and pending gray (hito 13, mismo lenguaje que StopTimeline)', () => {
     const stops = [
       makeStop({ stop_id: 'a', local: 'Parada A', arrival_date: '2026-07-04 10:00:00', departure_date: '2026-07-04 10:30:00' }),
       makeStop({ stop_id: 'b', local: 'Parada B', is_active: true }),
       makeStop({ stop_id: 'c', local: 'Parada C' }),
     ]
     render(<StopProgressDots stops={stops} />)
-    expect(screen.getByTitle('Parada A')).toHaveClass('bg-green-500')
+    expect(screen.getByTitle('Parada A')).toHaveClass('bg-resuelto')
     expect(screen.getByTitle('Parada B')).toHaveClass('border-accent')
-    expect(screen.getByTitle('Parada C')).toHaveClass('bg-gray-200')
+    expect(screen.getByTitle('Parada C')).toHaveClass('bg-border')
   })
 })

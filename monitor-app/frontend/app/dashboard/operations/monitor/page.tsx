@@ -42,6 +42,7 @@ import { MONITOR, monitorFiltersFromUrl } from '@/lib/navegacion/viaje'
 import { TRIP_STAGES, SIGNAL_TONE_TEXT, tripStageStyle } from '@/lib/states'
 import { STATUS_TONE_CLASS, STATUS_TONE_DOT } from '@/components/ui/StatusChip'
 import { PageContainer } from '@/components/ui/PageContainer'
+import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { Tabs } from '@/components/ui/Tabs'
 import { SearchInput } from '@/components/ui/SearchInput'
@@ -665,9 +666,8 @@ function DiarioPageInner() {
         meta={tripsMeta}
       />
       {asignando?.driver_name_tms && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20"
-             onClick={() => setAsignando(null)}>
-          <div onClick={e => e.stopPropagation()}>
+        <Dialog label={`Asignar conductor a ${asignando.driver_name_tms}`} onClose={() => setAsignando(null)}
+          className="inset-0 m-auto h-fit w-fit animate-modal-in">
             <AsignarConductorPopover
               nombreTms={asignando.driver_name_tms}
               candidatos={candidatosQuery.data?.candidatos ?? []}
@@ -693,8 +693,7 @@ function DiarioPageInner() {
               // El alta es la común (AltaDeFlota): crea y después llama a onAsignar.
               puedeDarDeAlta={puedeDarDeAlta}
             />
-          </div>
-        </div>
+        </Dialog>
       )}
       <FleetCenterDialog
         open={showFleetCenter}

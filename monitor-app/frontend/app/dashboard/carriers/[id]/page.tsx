@@ -297,12 +297,12 @@ function EmpresaDetailPageInner() {
 
 
   if (carrierQuery.isPending) return (
-    <div className="p-6 flex items-center gap-2 text-sm text-gray-400">
+    <div className="p-6 flex items-center gap-2 text-sm text-informativo">
       <Loader2 size={16} className="animate-spin" /> Cargando…
     </div>
   )
   if (carrierQuery.error || !carrier) return (
-    <div className="p-6 text-sm text-red-500">
+    <div className="p-6 text-sm text-status-incidente">
       {carrierQuery.error instanceof Error ? carrierQuery.error.message : 'No encontrado'}
       <a href="/dashboard/carriers" className="block mt-2 text-accent hover:underline text-xs">← Volver</a>
     </div>

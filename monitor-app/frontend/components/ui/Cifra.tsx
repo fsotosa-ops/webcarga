@@ -42,7 +42,7 @@ export function Cifra({
   if (cargando) {
     return (
       <span
-        className="h-7 w-32 rounded bg-gray-100 motion-safe:animate-pulse inline-block align-middle"
+        className="h-7 w-32 rounded bg-bg-main motion-safe:animate-pulse inline-block align-middle"
         aria-hidden
       />
     )
@@ -52,7 +52,7 @@ export function Cifra({
     return (
       <span className="flex items-baseline gap-2">
         <span className="text-cifra font-bold tabular-nums leading-none text-informativo">—</span>
-        <span className="text-etiqueta text-gray-500">{etiqueta}</span>
+        <span className="text-etiqueta text-informativo">{etiqueta}</span>
       </span>
     )
   }
@@ -60,7 +60,7 @@ export function Cifra({
   return (
     <span className="flex items-baseline gap-2">
       <span className={`text-cifra font-bold tabular-nums leading-none ${color}`}>{valor}</span>
-      <span className="text-etiqueta text-gray-500">{etiqueta}</span>
+      <span className="text-etiqueta text-informativo">{etiqueta}</span>
     </span>
   )
 }

@@ -26,10 +26,10 @@ export function StopProgressDots({ stops }: Props) {
             title={stop.local ?? stop.destination_city ?? undefined}
             className={`w-2 h-2 rounded-full shrink-0 ${
               state === 'done'
-                ? 'bg-green-500'
+                ? 'bg-resuelto'
                 : state === 'active'
                 ? 'bg-white border-2 border-accent ring-1 ring-accent/20'
-                : 'bg-gray-200'
+                : 'bg-border'
             }`}
           />
         )

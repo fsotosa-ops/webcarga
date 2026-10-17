@@ -23,6 +23,7 @@ import { alertSeverityStyle, tripStageStyle, enablementStyleFromFlag, lifecycleS
 import { EntityCell } from './EntityCell'
 import { Section } from '@/components/ui/Section'
 import { KeyValueList } from '@/components/ui/KeyValueList'
+import { inputClass } from '@/components/ui/Field'
 
 const NOTICE_TONE = {
   urgent:  'border-status-incidente/20 bg-status-incidente/5 text-status-incidente',
@@ -259,7 +260,7 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
                 value={estadoDraft}
                 onChange={e => setEstadoDraft(e.target.value)}
                 aria-label="Estado operativo manual"
-                className="text-dato border border-border rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
+                className={`${inputClass({ size: 'sm' })}`}
               >
                 <option value="">— Seleccionar estado…</option>
                 {(meta?.operational_states ?? []).map(s => (
@@ -319,7 +320,7 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
                   setReasonSaving(false)
                 }
               }}
-              className="w-full text-dato border border-border rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/30"
+              className={`${inputClass({ size: 'sm' })} w-full`}
             >
               <option value="">— Sin especificar —</option>
               {(motivosDeViaje.data ?? []).map(r => (

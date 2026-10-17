@@ -7,6 +7,7 @@ import { useClients } from '@/hooks/useClients'
 import { invalidateClients } from '@/lib/queries/clientes'
 import { shippersApi } from '@/lib/api/locations'
 import { ApiError } from '@/lib/api/client'
+import { inputClass } from '@/components/ui/Field'
 
 export type ClienteElegido = { id: string; name: string }
 
@@ -17,6 +18,8 @@ interface Props {
   onChange:     (cliente: ClienteElegido | null) => void
   placeholder?: string
   size?:        'sm' | 'md'
+  /** El id del campo, para que una etiqueta (`Field`) lo nombre. */
+  id?:          string
 }
 
 const normalizar = (s: string) => s.trim().toLowerCase()
@@ -24,7 +27,7 @@ const normalizar = (s: string) => s.trim().toLowerCase()
 /** Elige el cliente del viaje del directorio, o lo crea si no existe. Elegido,
  *  queda fijo con "Cambiar" (el mismo patrón que el conductor en el formulario):
  *  así nunca conviven un texto escrito y un id elegido que digan cosas distintas. */
-export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size = 'md' }: Props) {
+export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size = 'md', id }: Props) {
   const [texto, setTexto]       = useState('')
   const [open, setOpen]         = useState(false)
   const [creating, setCreating] = useState(false)
@@ -77,7 +80,7 @@ export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size
     return (
       <div className={`flex items-center justify-between gap-2 border border-border rounded-lg px-3 py-2 bg-white ${textSize}`}>
         <span className="flex items-center gap-2 min-w-0">
-          <Building2 size={13} className="text-gray-400 shrink-0" />
+          <Building2 size={13} className="text-informativo shrink-0" />
           <span className="font-semibold text-text-primary truncate">{value.name}</span>
         </span>
         <button
@@ -93,15 +96,16 @@ export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size
   }
 
   const inputCls = size === 'sm'
-    ? 'w-full text-xs border border-border rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent/20'
-    : 'w-full text-sm border border-border rounded-lg pl-8 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-gray-300'
+    ? `w-full ${inputClass({ size: 'sm' })} pl-7`
+    : `w-full ${inputClass()} pl-8`
   const iconSize = size === 'sm' ? 12 : 13
 
   return (
     <div className="relative">
       <div className="relative">
-        <Search size={iconSize} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <Search size={iconSize} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-informativo pointer-events-none" />
         <input
+          id={id}
           type="text"
           value={texto}
           onChange={e => { setTexto(e.target.value); setOpen(true) }}
@@ -115,7 +119,7 @@ export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size
       {open && (
         <div className="max-h-40 overflow-y-auto border border-border rounded-lg divide-y divide-border/60 mt-1.5 absolute z-10 bg-white w-full shadow-lg">
           {shippersQuery.isLoading && (
-            <p className="px-3 py-2 text-center text-[11px] text-gray-400 flex items-center justify-center gap-1.5">
+            <p className="px-3 py-2 text-center text-[11px] text-informativo flex items-center justify-center gap-1.5">
               <Loader2 size={11} className="animate-spin" /> Cargando…
             </p>
           )}
@@ -125,14 +129,14 @@ export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size
               type="button"
               onMouseDown={e => e.preventDefault()}
               onClick={() => elegir(s)}
-              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-50 transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-bg-main transition-colors"
             >
-              <Building2 size={12} className="text-gray-400 shrink-0" />
+              <Building2 size={12} className="text-informativo shrink-0" />
               <p className="text-[11px] font-semibold text-text-primary truncate">{s.name}</p>
             </button>
           ))}
           {!shippersQuery.isLoading && inactivo && (
-            <p className="px-3 py-2 text-[11px] text-gray-500">«{inactivo.name}» está inactivo en el directorio</p>
+            <p className="px-3 py-2 text-[11px] text-informativo">«{inactivo.name}» está inactivo en el directorio</p>
           )}
           {!shippersQuery.isLoading && q && !exactMatch && !inactivo && (
             <button
@@ -147,11 +151,11 @@ export function ClientPicker({ value, onChange, placeholder = 'Cliente…', size
             </button>
           )}
           {!shippersQuery.isLoading && !q && results.length === 0 && (
-            <p className="px-3 py-6 text-center text-xs text-gray-400">Sin clientes registrados</p>
+            <p className="px-3 py-6 text-center text-xs text-informativo">Sin clientes registrados</p>
           )}
         </div>
       )}
-      {err && <p className="text-[11px] text-red-500 mt-1">{err}</p>}
+      {err && <p className="text-[11px] text-status-incidente mt-1">{err}</p>}
     </div>
   )
 }

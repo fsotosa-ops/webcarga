@@ -41,6 +41,7 @@ import { EntityQuickView } from '@/components/dashboard/EntityQuickView'
 import { useQuickView, type QuickViewTarget } from '@/lib/quickView'
 import { PageContainer } from '@/components/ui/PageContainer'
 import { Button } from '@/components/ui/Button'
+import { inputClass } from '@/components/ui/Field'
 
 
 function todayISO() {
@@ -343,7 +344,7 @@ function ClosuresCenterPageInner() {
             aria-label="Fecha del cierre"
             value={fecha}
             onChange={e => setFecha(e.target.value)}
-            className="rounded-lg border border-border bg-white px-2.5 py-1.5 text-dato focus:outline-none focus:ring-2 focus:ring-accent/20"
+            className={`${inputClass({ size: 'sm' })}`}
           />
         </label>
       </EncabezadoDePagina>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { inputClass } from '@/components/ui/Field'
 
 interface Props {
   page: number
@@ -42,12 +43,12 @@ export function PaginationControls({
       <button
         onClick={() => onPageChange(Math.max(1, page - 1))}
         disabled={page === 1}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-lg bg-white hover:bg-gray-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-gray-600"
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-lg bg-white hover:bg-bg-main transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-text-primary"
       >
         <ChevronLeft size={13} /> Anterior
       </button>
 
-      <div className="flex items-center gap-3 text-xs text-gray-500">
+      <div className="flex items-center gap-3 text-xs text-informativo">
         <span className="flex items-center gap-1.5">
           Página
           <input
@@ -59,10 +60,10 @@ export function PaginationControls({
             onBlur={commitPageDraft}
             onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur() } }}
             aria-label="Ir a la página"
-            className="w-12 px-1.5 py-1 text-xs text-center border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+            className={`${inputClass({ size: 'xs' })} w-12 text-center`}
           />
-          de <span className="font-semibold text-gray-700">{totalPages}</span>
-          <span className="text-gray-400">· {total.toLocaleString('es-CL')} viajes</span>
+          de <span className="font-semibold text-text-primary">{totalPages}</span>
+          <span className="text-informativo">· {total.toLocaleString('es-CL')} viajes</span>
         </span>
 
         <label className="flex items-center gap-1.5">
@@ -71,7 +72,7 @@ export function PaginationControls({
             value={pageSize}
             onChange={e => onPageSizeChange(Number(e.target.value))}
             aria-label="Registros por página"
-            className="px-1.5 py-1 text-xs border border-border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-accent/20"
+            className={`${inputClass({ size: 'xs' })}`}
           >
             {pageSizeOptions.map(size => (
               <option key={size} value={size}>{size}</option>
@@ -83,7 +84,7 @@ export function PaginationControls({
       <button
         onClick={() => onPageChange(Math.min(totalPages, page + 1))}
         disabled={page >= totalPages}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-lg bg-white hover:bg-gray-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-gray-600"
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-lg bg-white hover:bg-bg-main transition-colors disabled:opacity-30 disabled:cursor-not-allowed text-text-primary"
       >
         Siguiente <ChevronRight size={13} />
       </button>

@@ -12,6 +12,7 @@ import { ReassignDocument } from '@/components/compliance/ReassignDocument'
 import { DocumentPreviewModal } from './DocumentPreviewModal'
 import type { ComplianceStatus, PoliticaVencimiento } from '@/lib/types'
 import { alertSeverityStyle, documentStateCounts, documentStateStyle, type AlertSeverity, type DocumentState } from '@/lib/states'
+import { inputClass } from '@/components/ui/Field'
 
 /** Fila del checklist — mapea 1:1 contra un public.compliance_records real
  *  (ver lib/utils/complianceChecklist.ts), no un catálogo hardcodeado. */
@@ -119,7 +120,7 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
   return (
     <div
       title={`${item.label} — ${state.label}`}
-      className="px-3 py-2 rounded-lg bg-gray-50"
+      className="px-3 py-2 rounded-lg bg-bg-main"
       {...zona}
     >
     <div className="flex items-center gap-2.5">
@@ -128,8 +129,8 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
         {(item.expiration_date || relative || (canUpload && onExpirationChange)) && (
           <div className="flex items-center gap-1.5 mt-0.5">
             {item.expiration_date && (
-              <span className="text-[10px] text-gray-400">
-                Vence: <span className="font-mono text-gray-500">{formatExpiry(item.expiration_date)}</span>
+              <span className="text-etiqueta text-informativo">
+                Vence: <span className="font-mono text-informativo">{formatExpiry(item.expiration_date)}</span>
               </span>
             )}
             {relative && (
@@ -143,7 +144,7 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
                 aria-label={`Fecha de vencimiento de ${item.label}`}
                 value={item.expiration_date ?? ''}
                 onChange={e => onExpirationChange(item.id, e.target.value)}
-                className="text-[10px] text-gray-500 border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-accent/30 bg-white"
+                className={`${inputClass({ size: 'xs' })}`}
               />
             )}
           </div>
@@ -162,7 +163,7 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
           onClick={() => setPreviewOpen(true)}
           aria-label={`Ver ${item.label}`}
           title="Ver documento"
-          className="flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-accent hover:underline shrink-0"
+          className="flex items-center gap-1 text-[11px] font-semibold text-informativo hover:text-accent hover:underline shrink-0"
         >
           <Eye size={12} /> Ver
         </button>
@@ -195,7 +196,7 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
       {canUpload && conArchivo && item.file_url && onUpload && (
         <label
           title="Reemplazar archivo"
-          className="flex items-center gap-1 text-[11px] font-semibold text-gray-400 hover:text-accent cursor-pointer shrink-0"
+          className="flex items-center gap-1 text-[11px] font-semibold text-informativo hover:text-accent cursor-pointer shrink-0"
         >
           <Upload size={11} />
           <input
@@ -211,7 +212,7 @@ function ChecklistRow({ item, canUpload, canReview, onUpload, onStatusChange, on
           aria-label={`Estado de ${item.label}`}
           value={item.status}
           onChange={e => onStatusChange(item.id, e.target.value as ComplianceStatus)}
-          className="text-[11px] font-semibold border border-border rounded-md px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-accent/30 bg-white shrink-0"
+          className={`${inputClass({ size: 'xs' })} font-semibold shrink-0`}
         >
           {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
@@ -266,7 +267,7 @@ export function DocumentChecklist({ items, canUpload, canReview = false, onUploa
   return (
     <div>
       {items.length > 0 && !hideCounter && (
-        <p className="text-xs text-gray-400 mb-2">{upToDate} de {items.length} {documentStateStyle('UP_TO_DATE').label.toLowerCase()}</p>
+        <p className="text-xs text-informativo mb-2">{upToDate} de {items.length} {documentStateStyle('UP_TO_DATE').label.toLowerCase()}</p>
       )}
       <div className="flex flex-col gap-1.5">
         {items.map(item => (

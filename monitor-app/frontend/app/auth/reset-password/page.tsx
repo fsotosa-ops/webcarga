@@ -10,9 +10,9 @@ export default function ResetPasswordPage() {
           <div className="flex flex-col items-center mb-6">
             <LogoWebCarga forma="isotipo" alto={48} className="mb-3" />
             <h1 className="font-mulish font-bold text-xl text-text-primary">Nueva contraseña</h1>
-            <p className="text-sm text-gray-400 mt-1">Elige una contraseña segura para tu cuenta</p>
+            <p className="text-sm text-informativo mt-1">Elige una contraseña segura para tu cuenta</p>
           </div>
-          <Suspense fallback={<p className="text-center text-sm text-gray-400">Cargando...</p>}>
+          <Suspense fallback={<p className="text-center text-sm text-informativo">Cargando...</p>}>
             <ResetPasswordForm />
           </Suspense>
         </div>

@@ -9,7 +9,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
  *  tiene por que saber como se llaman las columnas de quien lo dibuja. Los
  *  llamadores comparan y le pasan el resultado. */
 export function OrdenIcono({ activo, direccion }: { activo: boolean; direccion: 'asc' | 'desc' }) {
-  if (!activo) return <ArrowUpDown size={10} className="inline ml-0.5 text-gray-300" aria-hidden="true" />
+  if (!activo) return <ArrowUpDown size={10} className="inline ml-0.5 text-informativo" aria-hidden="true" />
   if (direccion === 'asc') return <ArrowUp size={10} className="inline ml-0.5 text-accent" aria-hidden="true" />
   return <ArrowDown size={10} className="inline ml-0.5 text-accent" aria-hidden="true" />
 }

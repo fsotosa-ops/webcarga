@@ -2,6 +2,7 @@
 
 import { forwardRef } from 'react'
 import { Search } from 'lucide-react'
+import { inputClass } from '@/components/ui/Field'
 
 /** El campo de búsqueda de la app, una sola vez (antes, una copia por lista). */
 export const SearchInput = forwardRef<HTMLInputElement, {
@@ -21,8 +22,7 @@ export const SearchInput = forwardRef<HTMLInputElement, {
         className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-informativo" />
       <input ref={ref} type="search" value={value} onChange={e => onChange(e.target.value)}
         aria-label={label} placeholder={placeholder}
-        className={`w-full rounded-lg border border-border bg-white text-dato placeholder:text-informativo focus:outline-none focus:ring-2 focus:ring-accent/20 ${
-          compacto ? 'py-1 pl-7 pr-2' : 'py-1.5 pl-8 pr-3'}`} />
+        className={`w-full ${inputClass({ size: compacto ? 'xs' : 'sm' })} ${compacto ? 'pl-7' : 'pl-8'}`} />
     </div>
   )
 })

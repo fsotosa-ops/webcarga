@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { X, Loader2, ArrowRightLeft, Building2 } from 'lucide-react'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { CarrierSearchPicker, type CarrierSearchResult } from '@/components/dashboard/CarrierSearchPicker'
 
 interface Props {
@@ -34,84 +34,39 @@ export function TransferModal({ open, title, currentCarrierId, onClose, onTransf
   const esPrimeraAsignacion = !currentCarrierId
   const [q, setQ]             = useState('')
   const [selected, setSelected] = useState<CarrierSearchResult | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-  const [err, setErr]         = useState<string | null>(null)
 
   if (!open) return null
 
-  async function handleConfirm() {
-    if (!selected) return
-    setSubmitting(true); setErr(null)
-    try {
-      await onTransfer(selected.id, selected.business_name)
-      handleClose()
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Error al transferir')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
+  // No cerrar mientras el pedido viaja, y quedar abierto con el mensaje si falla (por
+  // ejemplo el 409 de un día ya cerrado en el Cierre): es `ConfirmDialog`.
   function handleClose() {
-    // Mismo criterio que ConfirmarBaja: mientras el pedido viaja, ni el
-    // fondo ni la X cierran — cerrarlo desmontaría el modal, el `catch` de
-    // `handleConfirm` escribiría `setErr` sobre un componente muerto y el
-    // mensaje (por ejemplo el 409 de un día ya cerrado en el Cierre) no se vería.
-    if (submitting) return
-    setQ(''); setSelected(null); setErr(null)
+    setQ(''); setSelected(null)
     onClose()
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30" onClick={handleClose} />
-      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-        <div className="px-4 py-3 bg-slate-900 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            {esPrimeraAsignacion ? <Building2 size={14} /> : <ArrowRightLeft size={14} />} {title}
-          </h3>
-          <button onClick={handleClose} aria-label="Cerrar" className="text-white/50 hover:text-white transition-colors">
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="p-4 space-y-3">
-          <CarrierSearchPicker
-            query={q}
-            onQueryChange={v => { setQ(v); setSelected(null) }}
-            onPick={c => setSelected(c)}
-            placeholder={esPrimeraAsignacion
-              ? 'Buscar la empresa a la que pertenece (nombre o RUT)…'
-              : 'Buscar empresa destino (nombre o tax_id)…'}
-            excludeId={currentCarrierId ?? undefined}
-            selectedId={selected?.id ?? null}
-            autoFocus
-            size="md"
-            maxHeightClass="max-h-56"
-            showMinCharsHint
-          />
-
-          {err && <p className="text-xs text-red-500">{err}</p>}
-
-          <div className="flex gap-2 pt-1">
-            <button
-              onClick={handleConfirm}
-              disabled={!selected || submitting}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-50"
-            >
-              {submitting
-                ? <Loader2 size={13} className="animate-spin" />
-                : esPrimeraAsignacion ? 'Asignar a esta empresa' : 'Confirmar transferencia'}
-            </button>
-            <button
-              onClick={handleClose}
-              className="px-3 py-2 rounded-lg border border-border text-xs text-gray-500 hover:bg-gray-50"
-            >
-              Cancelar
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <ConfirmDialog
+      title={title}
+      confirmLabel={esPrimeraAsignacion ? 'Asignar a esta empresa' : 'Confirmar transferencia'}
+      confirmDisabled={!selected}
+      errorFallback="Error al transferir"
+      onConfirm={() => onTransfer(selected!.id, selected!.business_name)}
+      onClose={handleClose}
+    >
+      <CarrierSearchPicker
+        query={q}
+        onQueryChange={v => { setQ(v); setSelected(null) }}
+        onPick={c => setSelected(c)}
+        placeholder={esPrimeraAsignacion
+          ? 'Buscar la empresa a la que pertenece (nombre o RUT)…'
+          : 'Buscar empresa destino (nombre o RUT)…'}
+        excludeId={currentCarrierId ?? undefined}
+        selectedId={selected?.id ?? null}
+        autoFocus
+        size="md"
+        maxHeightClass="max-h-56"
+        showMinCharsHint
+      />
+    </ConfirmDialog>
   )
 }

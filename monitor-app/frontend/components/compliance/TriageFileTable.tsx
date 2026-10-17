@@ -65,7 +65,7 @@ export function TriageFileTable({
 
   return (
     <table
-      className="w-full text-left focus:outline-none focus:ring-2 focus:ring-accent/40 rounded-lg"
+      className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded-lg"
       tabIndex={0}
       onKeyDown={handleKey}
     >
@@ -77,7 +77,7 @@ export function TriageFileTable({
               aria-label="Seleccionar todos"
               checked={allSelected}
               onChange={onToggleAll}
-              className="cursor-pointer accent-accent focus:outline-none focus:ring-2 focus:ring-accent/40 rounded-sm"
+              className="cursor-pointer accent-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded-sm"
             />
           </th>
           <th scope="col" className={CABECERA}>Archivo</th>
@@ -127,7 +127,7 @@ export function TriageFileTable({
                     aria-label={`Seleccionar ${r.file_name}`}
                     checked={checked}
                     onChange={() => {}}
-                    className="cursor-pointer accent-accent focus:outline-none focus:ring-2 focus:ring-accent/40 rounded-sm"
+                    className="cursor-pointer accent-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded-sm"
                     onClick={e => {
                       e.stopPropagation()
                       onToggle(r.id, e.shiftKey ? { range: true } : undefined)

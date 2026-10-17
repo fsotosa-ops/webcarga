@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { CalendarClock } from 'lucide-react'
 import type { PoliticaVencimiento } from '@/lib/types'
 import { ejemploDeVigencia, type Vigencia } from '@/lib/vigencia'
+import { inputClass } from '@/components/ui/Field'
 
 /** Cómo vence un tipo de documento (HU-C1, entrega 2b).
  *
@@ -55,8 +56,7 @@ function conTipo(v: Vigencia, tipo: Tipo): Vigencia {
   }
 }
 
-const CAMPO = 'mx-1 w-14 rounded-md border border-border bg-white px-1.5 py-0.5 text-center text-dato '
-  + 'tabular-nums focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-60'
+const CAMPO = `${inputClass({ size: 'xs' })} mx-1 w-14 text-center tabular-nums`
 
 function Numero({ etiqueta, valor, min, max, disabled, onCambiar }: {
   etiqueta: string
@@ -171,8 +171,7 @@ export function EditorVigencia({ value, onChange, disabled = false }: {
                   value={value.period_offset_months ?? ''}
                   disabled={disabled}
                   onChange={e => poner({ period_offset_months: Number(e.target.value) })}
-                  className="mx-1 rounded-md border border-border bg-white px-1.5 py-0.5 text-dato
-                             focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-60"
+                  className={`${inputClass({ size: 'xs' })} mx-1`}
                 >
                   <option value={1}>mes anterior</option>
                   <option value={0}>mes en curso</option>

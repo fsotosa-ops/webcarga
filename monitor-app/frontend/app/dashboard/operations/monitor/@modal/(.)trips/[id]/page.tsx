@@ -1,7 +1,5 @@
 'use client'
 
-import { useLayer } from '@/lib/ui/layers'
-import { useEffect, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
@@ -9,50 +7,19 @@ import { tripsApi, type TripListResponse } from '@/lib/api/trips'
 import { useTripsMeta } from '@/hooks/useTripsMeta'
 import type { Trip } from '@/lib/types'
 import { TripDetailView } from '@/components/dashboard/TripDetailView'
+import { Dialog } from '@/components/ui/Dialog'
+import { Button } from '@/components/ui/Button'
 
 export default function TripDetailOverlay() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
-  const panelRef = useRef<HTMLDivElement>(null)
 
   const tripQuery = useQuery({ queryKey: ['trip', id], queryFn: () => tripsApi.get(id) })
   const metaQuery = useTripsMeta()
 
   function dismiss() { router.back() }
-  const isTop = useLayer()
-
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null
-    panelRef.current?.focus()
-
-    const onKey = (e: KeyboardEvent) => {
-      // Solo la capa de arriba: la vista rápida puede abrirse sobre el viaje.
-      if (!isTop()) return
-      if (e.key === 'Escape') { dismiss(); return }
-      if (e.key === 'Tab' && panelRef.current) {
-        const focusables = panelRef.current.querySelectorAll<HTMLElement>(
-          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-        )
-        if (!focusables.length) return
-        const first = focusables[0]
-        const last  = focusables[focusables.length - 1]
-        const active = document.activeElement
-        if (e.shiftKey && (active === first || active === panelRef.current)) {
-          e.preventDefault(); last.focus()
-        } else if (!e.shiftKey && active === last) {
-          e.preventDefault(); first.focus()
-        }
-      }
-    }
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      previouslyFocused?.focus?.()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
 
   function handleSaved(updated: Trip) {
     queryClient.setQueryData(['trip', id], updated)
@@ -61,37 +28,31 @@ export default function TripDetailOverlay() {
   }
 
   return (
-    <>
-      <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={dismiss} aria-hidden="true" />
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={tripQuery.data ? `Detalle de viaje ${tripQuery.data.source_system_trip_id ?? tripQuery.data.tractor_plate ?? ''}` : 'Detalle de viaje'}
-        tabIndex={-1}
-        className="fixed inset-0 z-50 flex flex-col bg-white md:inset-4 md:rounded-2xl md:shadow-2xl overflow-hidden focus:outline-none animate-modal-in"
-      >
-        {tripQuery.isPending ? (
-          <div className="flex-1 flex items-center justify-center text-gray-400 gap-2 text-sm">
-            <Loader2 size={16} className="animate-spin" /> Cargando viaje…
-          </div>
-        ) : tripQuery.isError || !tripQuery.data ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3">
-            <p className="text-sm text-gray-500">No se pudo cargar este viaje.</p>
-            <button type="button" onClick={dismiss} className="text-xs font-semibold text-accent hover:underline">
-              Volver a Monitor
-            </button>
-          </div>
-        ) : (
-          <TripDetailView
-            trip={tripQuery.data}
-            onSaved={handleSaved}
-            onDismiss={dismiss}
-            meta={metaQuery.data ?? null}
-            focusNotes={searchParams.get('focus') === 'bitacora'}
-          />
-        )}
-      </div>
-    </>
+    // La ventana del kit (fondo, Escape, foco, Tab y capas: la vista rápida puede
+    // abrirse encima). Ocupa la pantalla en el teléfono y deja un margen desde md.
+    <Dialog
+      label={tripQuery.data ? `Detalle de viaje ${tripQuery.data.source_system_trip_id ?? tripQuery.data.tractor_plate ?? ''}` : 'Detalle de viaje'}
+      onClose={dismiss}
+      className="inset-0 flex flex-col overflow-hidden bg-white animate-modal-in md:inset-4 md:rounded-2xl md:shadow-2xl"
+    >
+      {tripQuery.isPending ? (
+        <div className="flex flex-1 items-center justify-center gap-2 text-dato text-informativo">
+          <Loader2 size={16} className="animate-spin" aria-hidden="true" /> Cargando viaje…
+        </div>
+      ) : tripQuery.isError || !tripQuery.data ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3">
+          <p className="text-dato text-informativo">No se pudo cargar este viaje.</p>
+          <Button variant="link" onClick={dismiss}>Volver a Monitor</Button>
+        </div>
+      ) : (
+        <TripDetailView
+          trip={tripQuery.data}
+          onSaved={handleSaved}
+          onDismiss={dismiss}
+          meta={metaQuery.data ?? null}
+          focusNotes={searchParams.get('focus') === 'bitacora'}
+        />
+      )}
+    </Dialog>
   )
 }

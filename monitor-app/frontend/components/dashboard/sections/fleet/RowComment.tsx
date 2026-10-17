@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { inputClass } from '@/components/ui/Field'
 
 /** El comentario de una fila del cierre.
  *
@@ -23,6 +24,6 @@ export function RowComment({ valor, guardando, onGuardar, etiqueta }: {
       onChange={e => setTexto(e.target.value)}
       onBlur={() => { if (texto.trim() !== valor.trim()) onGuardar(texto) }}
       onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-      className="w-full min-w-[12rem] rounded-lg border border-border bg-white px-2 py-1 text-etiqueta placeholder:text-informativo focus:outline-none focus:ring-2 focus:ring-accent/20" />
+      className={`${inputClass({ size: 'xs' })} w-full min-w-[12rem]`} />
   )
 }

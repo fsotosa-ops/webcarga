@@ -39,7 +39,7 @@ export default function Topbar({ displayName, roleName }: TopbarProps) {
         </div>
         <div className="hidden sm:block min-w-0" aria-hidden="true">
           <p className="text-sm font-medium text-text-primary leading-tight truncate">{displayName}</p>
-          {roleName && <p className="text-xs text-gray-400 truncate">{roleName}</p>}
+          {roleName && <p className="text-xs text-informativo truncate">{roleName}</p>}
         </div>
       </div>
     </header>

@@ -26,6 +26,7 @@ import { useRequirementVocabulary } from '@/components/compliance/requirements/u
 import { MarcaDeRevision, useRevisiones } from '@/app/dashboard/admin/settings/revision'
 import { formatCount } from '@/lib/clients'
 import { PageContainer } from '@/components/ui/PageContainer'
+import { inputClass } from '@/components/ui/Field'
 
 /** Certificación › Documentos exigidos (Configuración, Parte 2): el catálogo de
  *  trabajo de Certificación. La lista filtra y cuenta; cada documento se lee y
@@ -103,7 +104,7 @@ function RequirementsList() {
         <div className="relative shrink-0">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-informativo pointer-events-none" aria-hidden />
           <input value={q} onChange={e => cambiar({ q: e.target.value })} placeholder="Documento o código…" aria-label="Buscar documento"
-            className="pl-8 pr-3 py-1.5 text-dato border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent/20 w-64 max-w-full bg-white placeholder:text-informativo" />
+            className={`${inputClass({ size: 'sm' })} pl-8 w-64 max-w-full`} />
         </div>
         <SegmentedControl
           label="Entidad"

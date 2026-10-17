@@ -63,7 +63,7 @@ export function BuscadorConfig() {
       <Search
         size={13}
         aria-hidden="true"
-        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
+        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-informativo"
       />
       <input
         value={texto}
@@ -80,12 +80,12 @@ export function BuscadorConfig() {
           className="absolute z-30 mt-1 w-full rounded-xl border border-border bg-white shadow-lg
                      max-h-80 overflow-y-auto"
         >
-          {q.isPending && <p className="px-3 py-2 text-[11px] text-gray-400">Buscando…</p>}
+          {q.isPending && <p className="px-3 py-2 text-[11px] text-informativo">Buscando…</p>}
           {q.isError && (
-            <p className="px-3 py-2 text-[11px] text-gray-500">No se pudo buscar. Intenta de nuevo.</p>
+            <p className="px-3 py-2 text-[11px] text-informativo">No se pudo buscar. Intenta de nuevo.</p>
           )}
           {q.data?.length === 0 && (
-            <p className="px-3 py-2 text-[11px] text-gray-400">
+            <p className="px-3 py-2 text-[11px] text-informativo">
               {`Ningún ajuste coincide con "${consulta}".`}
             </p>
           )}
@@ -97,11 +97,11 @@ export function BuscadorConfig() {
               role="option"
               aria-selected={false}
               onClick={() => setTexto('')}
-              className="block px-3 py-2 hover:bg-gray-50 focus-visible:outline-none
+              className="block px-3 py-2 hover:bg-bg-main focus-visible:outline-none
                          focus-visible:bg-accent/5"
             >
               <span className="block text-xs font-semibold text-text-primary truncate">{r.label}</span>
-              <span className="block text-[10.5px] text-gray-400 truncate">
+              <span className="block text-etiqueta text-informativo truncate">
                 {ubicacion(r.domain, r.section)}
               </span>
             </Link>

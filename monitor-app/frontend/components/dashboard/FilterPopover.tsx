@@ -11,6 +11,7 @@ import { GROUP_COLORS } from '@/lib/ui/groupColors'
 import { Button } from '@/components/ui/Button'
 import { Popover } from '@/components/ui/Popover'
 import { ToggleChip } from '@/components/ui/ToggleChip'
+import { inputClass } from '@/components/ui/Field'
 
 interface DefaultGroup {
   id:       string
@@ -237,11 +238,11 @@ export function FilterPopover({
               <div className="flex items-center gap-1.5">
                 <input type="date" value={f.fechaDesde} aria-label="Desde"
                   onChange={e => dispatch({ type: 'patch', patch: { fechaDesde: e.target.value } })}
-                  className="min-w-0 flex-1 rounded-md border border-border bg-white px-2 py-1.5 text-dato focus:outline-none focus:ring-2 focus:ring-accent/20" />
+                  className={`${inputClass({ size: 'sm' })} min-w-0 flex-1`} />
                 <span className="shrink-0 text-dato text-informativo">a</span>
                 <input type="date" value={f.fechaHasta} aria-label="Hasta"
                   onChange={e => dispatch({ type: 'patch', patch: { fechaHasta: e.target.value } })}
-                  className="min-w-0 flex-1 rounded-md border border-border bg-white px-2 py-1.5 text-dato focus:outline-none focus:ring-2 focus:ring-accent/20" />
+                  className={`${inputClass({ size: 'sm' })} min-w-0 flex-1`} />
               </div>
             </div>
           )}

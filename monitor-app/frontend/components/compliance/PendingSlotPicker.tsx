@@ -76,7 +76,7 @@ export function PendingSlotPicker({ rows, selected, onPick }: Props) {
                           document_name:  r.document_name,
                         })}
                         aria-pressed={activo}
-                        className={`w-full text-left rounded-md px-2 py-1.5 text-etiqueta transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent/40 ${
+                        className={`w-full text-left rounded-md px-2 py-1.5 text-etiqueta transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 ${
                           activo
                             ? 'bg-accent text-white font-semibold'
                             : 'bg-bg-main hover:bg-bg-main text-text-primary'

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Check, Loader2, X } from 'lucide-react'
 import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
 import type { ManagementType } from '@/lib/types'
+import { inputClass } from '@/components/ui/Field'
 
 interface Props {
   open:                 boolean
@@ -79,17 +80,17 @@ export function NewCarrierPanel({ open, initialBusinessName = '', onClose, onCre
         aria-label="Tax ID"
         value={form.tax_id}
         onChange={e => setForm(v => ({ ...v, tax_id: e.target.value }))}
-        className="w-full text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
+        className={`${inputClass({ size: 'sm' })} w-full`}
       />
       {form.tax_id.trim() === '' && (
-        <p className="text-[11px] text-gray-400">Se creará en estado Onboarding, pendiente de RUT.</p>
+        <p className="text-[11px] text-informativo">Se creará en estado Onboarding, pendiente de RUT.</p>
       )}
       <input
         placeholder="Razón social"
         aria-label="Razón social"
         value={form.business_name}
         onChange={e => setForm(v => ({ ...v, business_name: e.target.value }))}
-        className="w-full text-sm border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent/30"
+        className={`${inputClass({ size: 'sm' })} w-full`}
       />
       {/* Tipo de gestión (D7). Son dos marcas independientes, no un desplegable
           de tres opciones: marcar las dos ES el caso mixto. Un valor 'AMBAS'
@@ -100,7 +101,7 @@ export function NewCarrierPanel({ open, initialBusinessName = '', onClose, onCre
           la empresa que todavía no registró vehículos, y propone el subtipo
           correcto al registrar el primero. */}
       <fieldset className="pt-0.5">
-        <legend className="text-[11px] text-gray-500 pb-1">Tipo de gestión</legend>
+        <legend className="text-[11px] text-informativo pb-1">Tipo de gestión</legend>
         <div className="flex gap-3">
           {GESTIONES.map(({ codigo, label }) => (
             <label key={codigo} className="flex items-center gap-1.5 text-xs text-text-primary cursor-pointer">
@@ -115,12 +116,12 @@ export function NewCarrierPanel({ open, initialBusinessName = '', onClose, onCre
             </label>
           ))}
         </div>
-        <p className="text-[10.5px] text-gray-400 pt-1">
+        <p className="text-etiqueta text-informativo pt-1">
           Opcional. Si no la eliges, se deduce de los vehículos que registres.
         </p>
       </fieldset>
 
-      {err && <p className="text-xs text-red-500">{err}</p>}
+      {err && <p className="text-xs text-status-incidente">{err}</p>}
       <div className="flex items-center gap-2 pt-1">
         <button
           onClick={handleCreate}
@@ -130,7 +131,7 @@ export function NewCarrierPanel({ open, initialBusinessName = '', onClose, onCre
           {creating ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
           Crear empresa
         </button>
-        <button onClick={handleClose} aria-label="Cancelar" className="p-1.5 text-gray-400 hover:text-gray-600">
+        <button onClick={handleClose} aria-label="Cancelar" className="p-1.5 text-informativo hover:text-text-primary">
           <X size={14} />
         </button>
       </div>

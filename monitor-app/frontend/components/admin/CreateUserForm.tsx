@@ -1,13 +1,16 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useId, useState, useTransition } from 'react'
 import { usersApi } from '@/lib/api/users'
-import { X, UserPlus, Eye, EyeOff, Copy, Check } from 'lucide-react'
+import { Eye, EyeOff, Copy, Check } from 'lucide-react'
 import PasswordStrength, { isPasswordValid } from '@/components/auth/PasswordStrength'
 import type { PermisoInfo, RoleInfo } from '@/lib/api/access'
 import { useAcceso } from '@/lib/authz/PermisosProvider'
 import { puedeOtorgar } from '@/lib/authz/acceso'
 import SelectorDeRoles from './SelectorDeRoles'
+import { FIELD_LABEL, inputClass } from '@/components/ui/Field'
+import { PanelLateral } from '@/components/ui/PanelLateral'
+import { Button } from '@/components/ui/Button'
 
 interface Props {
   roles:     RoleInfo[]
@@ -33,6 +36,7 @@ export function mensajeDeAcceso(p: {
 
 export default function CreateUserForm({ roles, catalogo, onCreated, onClose }: Props) {
   const acceso = useAcceso()
+  const formId = useId()
   // Parte con Lectura (ver todo sin editar) cuando quien invita puede darla.
   const lectura = roles.find(r => r.code === 'reader')
   const [creado, setCreado] = useState<{ mensaje: string; invitationSent: boolean } | null>(null)
@@ -81,125 +85,118 @@ export default function CreateUserForm({ roles, catalogo, onCreated, onClose }: 
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-5 border-b border-border sticky top-0 bg-white">
-          <div className="flex items-center gap-2.5">
-            <UserPlus size={18} className="text-accent" />
-            <h2 className="font-semibold text-text-primary">Crear usuario</h2>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
-            <X size={16} className="text-gray-500" />
-          </button>
+    <PanelLateral
+      placement="center"
+      titulo="Crear usuario"
+      onCerrar={onClose}
+      dismissible={!isPending}
+      pie={creado ? (
+        <div className="flex gap-3">
+          <Button className="flex-1" onClick={() => { void navigator.clipboard.writeText(creado.mensaje).then(() => setCopiado(true)) }}>
+            {copiado ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}
+            {copiado ? 'Copiado' : 'Copiar mensaje'}
+          </Button>
+          <Button variant="primary" className="flex-1" onClick={onCreated}>Listo</Button>
         </div>
+      ) : (
+        <div className="flex gap-3">
+          <Button className="flex-1" onClick={onClose}>Cancelar</Button>
+          <Button variant="primary" type="submit" form={formId} className="flex-1" disabled={isPending || !canSubmit}>
+            {isPending ? 'Creando…' : 'Crear usuario'}
+          </Button>
+        </div>
+      )}
+    >
 
         {creado ? (
-          <div className="p-6 space-y-4">
-            <p className="text-sm text-text-primary">
+          <div className="space-y-4">
+            <p className="text-dato text-text-primary">
               {creado.invitationSent
                 ? 'Cuenta creada. Le enviamos un correo de invitación. Si no le llega, envíale este mensaje:'
                 : 'Cuenta creada. Envíale este mensaje por WhatsApp o correo:'}
             </p>
-            <pre className="whitespace-pre-wrap text-sm text-text-primary bg-bg-main rounded-lg px-3 py-2.5 border border-border">
+            <pre className="whitespace-pre-wrap rounded-md border border-border bg-bg-main px-3 py-2.5 font-sans text-dato text-text-primary">
               {creado.mensaje}
             </pre>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  void navigator.clipboard.writeText(creado.mensaje).then(() => setCopiado(true))
-                }}
-                className="flex-1 inline-flex items-center justify-center gap-2 py-2 rounded-lg border border-border text-sm text-text-primary hover:bg-bg-main transition-colors"
-              >
-                {copiado ? <Check size={15} /> : <Copy size={15} />}
-                {copiado ? 'Copiado' : 'Copiar mensaje'}
-              </button>
-              <button
-                type="button"
-                onClick={onCreated}
-                className="flex-1 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent/90 transition-colors"
-              >
-                Listo
-              </button>
-            </div>
           </div>
         ) : (
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form id={formId} onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-text-primary mb-1.5">Nombre completo</label>
+            <label className={`${FIELD_LABEL} mb-1.5`}>Nombre completo</label>
             <input
               name="full_name"
               type="text"
               required
               placeholder="Felipe Rodríguez"
-              className="w-full px-3 py-2 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+              className={`${inputClass()} w-full`}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-text-primary mb-1.5">Email</label>
+            <label className={`${FIELD_LABEL} mb-1.5`}>Email</label>
             <input
               name="email"
               type="email"
               required
               placeholder="usuario@empresa.cl"
-              className="w-full px-3 py-2 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+              className={`${inputClass()} w-full`}
             />
           </div>
 
           {/* Auth method toggle */}
-          <div className="rounded-xl border border-border overflow-hidden">
+          <div className="overflow-hidden rounded-md border border-border">
             <button
               type="button"
               onClick={() => setOauthOnly(true)}
               className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
-                oauthOnly ? 'bg-accent/5 border-b border-accent/20' : 'hover:bg-gray-50 border-b border-border'
+                oauthOnly ? 'bg-accent/5 border-b border-accent/20' : 'hover:bg-bg-main border-b border-border'
               }`}
             >
               <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
-                oauthOnly ? 'border-accent' : 'border-gray-300'
+                oauthOnly ? 'border-accent' : 'border-border'
               }`}>
                 {oauthOnly && <div className="w-2 h-2 rounded-full bg-accent" />}
               </div>
               <div>
-                <p className="text-sm font-medium text-text-primary">Solo Google / Microsoft</p>
-                <p className="text-xs text-gray-400">El usuario entra con su cuenta corporativa. Sin contraseña.</p>
+                <p className="text-dato font-medium text-text-primary">Solo Google / Microsoft</p>
+                <p className="text-etiqueta text-informativo">El usuario entra con su cuenta corporativa. Sin contraseña.</p>
               </div>
             </button>
             <button
               type="button"
               onClick={() => setOauthOnly(false)}
               className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
-                !oauthOnly ? 'bg-accent/5' : 'hover:bg-gray-50'
+                !oauthOnly ? 'bg-accent/5' : 'hover:bg-bg-main'
               }`}
             >
               <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
-                !oauthOnly ? 'border-accent' : 'border-gray-300'
+                !oauthOnly ? 'border-accent' : 'border-border'
               }`}>
                 {!oauthOnly && <div className="w-2 h-2 rounded-full bg-accent" />}
               </div>
               <div>
-                <p className="text-sm font-medium text-text-primary">Con contraseña</p>
-                <p className="text-xs text-gray-400">El usuario puede entrar con email y contraseña.</p>
+                <p className="text-dato font-medium text-text-primary">Con contraseña</p>
+                <p className="text-etiqueta text-informativo">El usuario puede entrar con email y contraseña.</p>
               </div>
             </button>
           </div>
 
           {!oauthOnly && (
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">Contraseña inicial</label>
+              <label className={`${FIELD_LABEL} mb-1.5`}>Contraseña inicial</label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder="Crea una contraseña segura"
-                  className="w-full px-3 py-2 pr-10 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                  className={`${inputClass()} w-full pr-10`}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(p => !p)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-informativo hover:text-text-primary"
                 >
                   {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
@@ -209,39 +206,22 @@ export default function CreateUserForm({ roles, catalogo, onCreated, onClose }: 
           )}
 
           <div>
-            <p className="block text-sm font-medium text-text-primary mb-2">Roles</p>
+            <p className={`${FIELD_LABEL} mb-2`}>Roles</p>
             <SelectorDeRoles roles={roles} catalogo={catalogo} value={elegidos} onChange={setElegidos} />
           </div>
 
           {oauthOnly && (
-            <p className="text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2.5">
+            <p className="rounded-md bg-bg-main px-3 py-2.5 text-etiqueta text-informativo">
               Le llegará un correo de invitación. Entrará con su Google o Microsoft del mismo email.
             </p>
           )}
 
           {error && (
-            <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
+            <p role="alert" className="rounded-md border border-status-incidente/20 bg-status-incidente/5 px-3 py-2 text-dato text-status-incidente">{error}</p>
           )}
 
-          <div className="flex gap-3 pt-1">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2 rounded-lg border border-border text-sm text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isPending || !canSubmit}
-              className="flex-1 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent/90 disabled:opacity-60 transition-colors"
-            >
-              {isPending ? 'Creando...' : 'Crear usuario'}
-            </button>
-          </div>
         </form>
         )}
-      </div>
-    </div>
+    </PanelLateral>
   )
 }

@@ -6,9 +6,9 @@ import { Check, Loader2 } from 'lucide-react'
 import { locationsApi } from '@/lib/api/locations'
 import type { DriverPatchBody } from '@/lib/api/drivers'
 import type { Driver } from '@/lib/types'
+import { FIELD_LABEL, inputClass } from '@/components/ui/Field'
 
-const LABEL = 'text-etiqueta font-semibold text-informativo'
-const INPUT = 'w-full rounded-lg border border-border bg-white px-3 py-1.5 text-dato focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-60'
+const INPUT = `w-full ${inputClass({ size: 'sm' })}`
 
 /** Editar los datos de un conductor, en el bloque Detalles de su ficha. Movido
  *  del panel de conductor (Entrega 1 de fichas, 15/10): nombre y origen
@@ -49,12 +49,12 @@ export function DriverEditForm({ driver, onSave, onClose }: {
   return (
     <div className="space-y-3">
       <label className="block space-y-1">
-        <span className={LABEL}>Nombre</span>
+        <span className={FIELD_LABEL}>Nombre</span>
         <input aria-label="Nombre" value={draft.full_name}
                onChange={e => setDraft(d => ({ ...d, full_name: e.target.value }))} className={INPUT} />
       </label>
       <div className="space-y-1">
-        <label htmlFor="cd-base" className={LABEL}>Origen habitual</label>
+        <label htmlFor="cd-base" className={FIELD_LABEL}>Origen habitual</label>
         {/* Si el catálogo no carga, NO se dibuja un desplegable vacío que
             parezca "no hay CD": se dice qué pasó. */}
         {cdsQuery.isError ? (

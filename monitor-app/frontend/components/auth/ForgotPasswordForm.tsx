@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
+import { inputClass } from '@/components/ui/Field'
 
 export default function ForgotPasswordForm() {
   const [email, setEmail] = useState('')
@@ -40,7 +41,7 @@ export default function ForgotPasswordForm() {
         </div>
         <div>
           <h3 className="font-mulish font-bold text-text-primary">Email enviado</h3>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-informativo mt-1">
             Revisa <strong>{email}</strong> y sigue el enlace para restablecer tu contraseña.
           </p>
         </div>
@@ -62,13 +63,13 @@ export default function ForgotPasswordForm() {
           required
           value={email}
           onChange={e => setEmail(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+          className={`${inputClass()} w-full`}
           placeholder="usuario@webcarga.cl"
         />
       </div>
 
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
+        <p className="text-sm text-status-incidente bg-status-incidente/5 px-3 py-2 rounded-lg">{error}</p>
       )}
 
       <button
@@ -80,7 +81,7 @@ export default function ForgotPasswordForm() {
       </button>
 
       <p className="text-center">
-        <Link href="/login" className="text-sm text-gray-500 hover:text-accent">
+        <Link href="/login" className="text-sm text-informativo hover:text-accent">
           ← Volver al inicio de sesión
         </Link>
       </p>

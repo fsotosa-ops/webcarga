@@ -1,14 +1,16 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import {
-  AlertTriangle, ArrowLeft, CheckCircle2, Download, FileText, Loader2, Upload, X,
+  AlertTriangle, ArrowLeft, CheckCircle2, Download, FileText, Loader2, Upload,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 
 import { complianceApi } from '@/lib/api/compliance'
 import { ApiError } from '@/lib/api/client'
 import { TEXTO_APOYO, TEXTO_CUERPO } from '@/lib/ui/texto'
+import { PanelLateral } from '@/components/ui/PanelLateral'
+import { buttonClass } from '@/components/ui/Button'
 import type { ResultadoDePlanilla } from '@/lib/types'
 
 /** Registrar lo que ya se sabe de cada documento, sin adjuntarlo.
@@ -40,15 +42,7 @@ interface Props {
   puedeEditar: boolean
 }
 
-const BOTON_PRIMARIO =
-  'inline-flex items-center gap-1.5 text-dato font-semibold text-white bg-accent rounded-lg ' +
-  'px-3 py-1.5 hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer'
-const BOTON_SECUNDARIO =
-  'inline-flex items-center gap-1.5 text-dato font-semibold text-accion border border-accent/30 ' +
-  'rounded-lg px-3 py-1.5 hover:bg-accent/5 transition-colors disabled:opacity-50 cursor-pointer'
-
 export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEditar }: Props) {
-  const panelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [paso, setPaso]           = useState<Paso>('inicio')
   const [historico, setHistorico] = useState(false)
@@ -73,19 +67,6 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
   }, [])
 
   const cerrar = useCallback(() => { reiniciar(); onClose() }, [reiniciar, onClose])
-
-  // Semántica de diálogo: Escape cierra, foco inicial y retorno.
-  useEffect(() => {
-    if (!open) return
-    const enfocadoAntes = document.activeElement as HTMLElement | null
-    panelRef.current?.focus()
-    const alTeclear = (e: KeyboardEvent) => { if (e.key === 'Escape') cerrar() }
-    document.addEventListener('keydown', alTeclear)
-    return () => {
-      document.removeEventListener('keydown', alTeclear)
-      enfocadoAntes?.focus?.()
-    }
-  }, [open, cerrar])
 
   async function descargar() {
     setBajando(true); setError(null)
@@ -142,33 +123,40 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
   const vacia = resumen.data?.filas === 0
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-backdrop-in">
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Actualizar por planilla"
-        tabIndex={-1}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh] focus:outline-none animate-modal-in"
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-          <div className="min-w-0">
-            <h2 className="font-bold text-lectura text-text-primary">Actualizar por planilla</h2>
-            <p className={`text-dato ${TEXTO_APOYO} mt-0.5`}>
-              Marca qué documentos tienes y cuándo vencen, sin subir los archivos
-            </p>
-          </div>
-          <button
-            type="button" onClick={cerrar} aria-label="Cerrar"
-            className={`shrink-0 ${TEXTO_APOYO} hover:text-text-primary transition-colors cursor-pointer`}
-          >
-            <X size={18} />
-          </button>
+    <PanelLateral
+      placement="center"
+      titulo="Actualizar por planilla"
+      description="Marca qué documentos tienes y cuándo vencen, sin subir los archivos"
+      onCerrar={cerrar}
+      dismissible={!trabajando}
+      pie={
+        <div className="flex items-center justify-end gap-2">
+          {paso === 'previa' && previa && (
+            <>
+              <button type="button" onClick={reiniciar} disabled={trabajando} className={buttonClass()}>
+                <ArrowLeft size={13} aria-hidden="true" /> Volver
+              </button>
+              <button
+                type="button" onClick={aplicar}
+                disabled={trabajando || previa.total_errores > 0 || previa.cambian === 0}
+                className={buttonClass({ variant: 'primary' })}
+              >
+                {trabajando && <Loader2 size={13} className="motion-safe:animate-spin" aria-hidden="true" />}
+                Aplicar
+              </button>
+            </>
+          )}
+          {paso !== 'previa' && (
+            <button type="button" onClick={cerrar} className={buttonClass()}>
+              {paso === 'listo' ? 'Cerrar' : 'Listo'}
+            </button>
+          )}
         </div>
-
-        <div className="px-5 py-4 overflow-y-auto space-y-4">
+      }
+    >
+        <div className="space-y-4">
           {error && (
-            <p className="flex items-start gap-1.5 text-dato font-semibold text-espera">
+            <p role="alert" className="flex items-start gap-1.5 text-dato font-semibold text-status-incidente">
               <AlertTriangle size={14} className="shrink-0 mt-px" aria-hidden="true" />
               {error}
             </p>
@@ -207,7 +195,7 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
                 <div className="flex items-center gap-3 flex-wrap">
                   <button
                     type="button" onClick={descargar} disabled={bajando || vacia}
-                    className={BOTON_SECUNDARIO}
+                    className={buttonClass()}
                   >
                     {bajando
                       ? <Loader2 size={13} className="motion-safe:animate-spin" aria-hidden="true" />
@@ -359,30 +347,6 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
             </section>
           )}
         </div>
-
-        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border shrink-0">
-          {paso === 'previa' && previa && (
-            <>
-              <button type="button" onClick={reiniciar} disabled={trabajando} className={BOTON_SECUNDARIO}>
-                <ArrowLeft size={13} aria-hidden="true" /> Volver
-              </button>
-              <button
-                type="button" onClick={aplicar}
-                disabled={trabajando || previa.total_errores > 0 || previa.cambian === 0}
-                className={BOTON_PRIMARIO}
-              >
-                {trabajando && <Loader2 size={13} className="motion-safe:animate-spin" aria-hidden="true" />}
-                Aplicar
-              </button>
-            </>
-          )}
-          {paso !== 'previa' && (
-            <button type="button" onClick={cerrar} className={BOTON_SECUNDARIO}>
-              {paso === 'listo' ? 'Cerrar' : 'Listo'}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+    </PanelLateral>
   )
 }

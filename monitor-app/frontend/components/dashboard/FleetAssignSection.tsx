@@ -7,6 +7,7 @@ import { StatusChip } from '@/components/ui/StatusChip'
 import { lifecycleStyle } from '@/lib/states'
 import { DriverSearchPicker } from './DriverSearchPicker'
 import { Button } from '@/components/ui/Button'
+import { inputClass } from '@/components/ui/Field'
 
 export type FleetAssignValue = {
   driver_id:        string | null
@@ -44,8 +45,8 @@ interface Props {
   notFoundHint?:   React.ReactNode
 }
 
-const INPUT = "w-full text-dato border border-border rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-informativo/60"
-const INPUT_SM = "w-full text-etiqueta border border-border rounded-md px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all placeholder:text-informativo/60"
+const INPUT = `w-full ${inputClass()}`
+const INPUT_SM = `w-full ${inputClass({ size: 'xs' })}`
 
 export function FleetAssignSection({ value, onChange, suggested = [], suggestedLabel, size = 'md', notFoundHint }: Props) {
   const [query, setQuery] = useState('')

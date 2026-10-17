@@ -250,5 +250,10 @@ describe('PanelLateral', () => {
       expect(onCerrar).toHaveBeenCalledTimes(2)
     })
   })
-})
 
+  it('mientras algo viaja (dismissible=false) el botón de cerrar no cierra', () => {
+    const onCerrar = vi.fn()
+    render(<PanelLateral titulo="Dar de baja" onCerrar={onCerrar} pie={null} dismissible={false}><p>x</p></PanelLateral>)
+    expect(screen.getByRole('button', { name: 'Cerrar' })).toBeDisabled()
+  })
+})

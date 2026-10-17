@@ -338,7 +338,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                       checked={todosMarcados}
                       onChange={() => {}}
                       onClick={e => { e.stopPropagation(); sel.onToggleAll() }}
-                      className="mr-2 align-middle cursor-pointer accent-accent focus:outline-none focus:ring-2 focus:ring-accent/40 rounded-sm"
+                      className="mr-2 align-middle cursor-pointer accent-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded-sm"
                     />
                   )}
                   Estado<OrdenIcono activo={sortKey === 'current_status'} direccion={sortDir} />
@@ -401,7 +401,7 @@ export function TripTable({ trips, selectedId, onSelect, onSelectFocusNotes, met
                             title={trip.can_void ? undefined : (trip.void_blocked_reason ?? undefined)}
                             onChange={() => {}}
                             onClick={e => { e.stopPropagation(); if (trip.can_void) sel.onToggle(trip.id) }}
-                            className="mt-0.5 shrink-0 cursor-pointer accent-accent disabled:cursor-not-allowed disabled:opacity-30 focus:outline-none focus:ring-2 focus:ring-accent/40 rounded-sm"
+                            className="mt-0.5 shrink-0 cursor-pointer accent-accent disabled:cursor-not-allowed disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded-sm"
                           />
                         )}
                         <div className="min-w-0 flex-1">

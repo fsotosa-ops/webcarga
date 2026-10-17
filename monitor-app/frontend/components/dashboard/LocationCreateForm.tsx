@@ -5,13 +5,14 @@ import { Loader2, Plus } from 'lucide-react'
 import type { Location } from '@/lib/types'
 import { locationsApi, type Shipper } from '@/lib/api/locations'
 import { useTripsMeta } from '@/hooks/useTripsMeta'
+import { inputClass } from '@/components/ui/Field'
 
 const EMPTY_LOCATION = {
   shipperId: '', name: '', site_number: '', format: '', address: '',
   region_name: '', operation_type: '',
 }
 
-const INPUT = 'text-xs border border-border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent/40 transition-all'
+const INPUT = inputClass({ size: 'sm' })
 
 interface Props {
   shippers: Shipper[]
@@ -90,7 +91,7 @@ export function LocationCreateForm({ shippers, onCreated }: Props) {
           Crear local
         </button>
         <button type="button" onClick={() => { setNuevo(null); setCreateErr(null) }}
-          className="text-xs text-gray-400 hover:text-gray-600">Cancelar</button>
+          className="text-xs text-informativo hover:text-text-primary">Cancelar</button>
       </div>
     </div>
   )

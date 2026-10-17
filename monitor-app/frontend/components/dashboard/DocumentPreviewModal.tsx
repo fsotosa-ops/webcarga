@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { X, Download, Trash2, Loader2 } from 'lucide-react'
+import { Dialog } from '@/components/ui/Dialog'
+import { Button } from '@/components/ui/Button'
 
 /** PDF/imagen se embeben directo (el navegador ya sabe renderizarlos sin
  *  librerías extra); Word/Excel no tienen visor nativo — se ofrece
@@ -83,34 +85,31 @@ export function DocumentPreviewModal({ label, url, canEdit, onClose, onDelete }:
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className="bg-white rounded-2xl w-full max-w-3xl h-[80vh] flex flex-col shadow-xl"
-        onClick={e => e.stopPropagation()}
-      >
+    <Dialog label={label} onClose={onClose} dismissible={!deleting}
+      className="inset-0 m-auto flex h-[80vh] w-[calc(100%-2rem)] max-w-3xl flex-col rounded-xl bg-white shadow-xl animate-modal-in">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-          <span className="text-sm font-semibold text-text-primary truncate pr-2">{label}</span>
+          <span className="truncate pr-2 font-mulish text-sm font-bold text-text-primary">{label}</span>
           <div className="flex items-center gap-1 shrink-0">
             <button
               type="button" onClick={handleDownload} disabled={downloading} title="Descargar"
               aria-label={`Descargar ${label}`}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-accent hover:bg-gray-50 transition-colors disabled:opacity-50"
+              className="rounded-md p-1.5 text-informativo transition-colors hover:bg-bg-main hover:text-accion disabled:opacity-50"
             >
               {downloading ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
             </button>
             {canEdit && onDelete && (
               confirmDelete ? (
                 <span className="flex items-center gap-1.5 pl-1">
-                  <span className="text-[11px] text-red-500">¿Eliminar?</span>
+                  <span className="text-etiqueta text-status-incidente">¿Eliminar?</span>
                   <button
                     type="button" onClick={handleDelete} disabled={deleting}
-                    className="text-[11px] font-semibold text-red-600 hover:underline disabled:opacity-50"
+                    className="text-etiqueta font-semibold text-status-incidente hover:underline disabled:opacity-50"
                   >
                     {deleting ? 'Eliminando…' : 'Sí'}
                   </button>
                   <button
                     type="button" onClick={() => setConfirmDelete(false)}
-                    className="text-[11px] text-gray-400 hover:underline"
+                    className="text-etiqueta text-informativo hover:underline"
                   >
                     No
                   </button>
@@ -119,7 +118,7 @@ export function DocumentPreviewModal({ label, url, canEdit, onClose, onDelete }:
                 <button
                   type="button" onClick={() => setConfirmDelete(true)} title="Eliminar"
                   aria-label={`Eliminar ${label}`}
-                  className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                  className="rounded-md p-1.5 text-informativo transition-colors hover:bg-status-incidente/5 hover:text-status-incidente"
                 >
                   <Trash2 size={16} />
                 </button>
@@ -127,16 +126,16 @@ export function DocumentPreviewModal({ label, url, canEdit, onClose, onDelete }:
             )}
             <button
               type="button" onClick={onClose} title="Cerrar" aria-label="Cerrar"
-              className="p-1.5 rounded-lg text-gray-400 hover:text-text-primary hover:bg-gray-50 transition-colors"
+              className="rounded-md p-1.5 text-informativo transition-colors hover:bg-bg-main hover:text-text-primary"
             >
               <X size={16} />
             </button>
           </div>
         </div>
 
-        {error && <p className="text-[11px] text-red-500 px-4 pt-2">{error}</p>}
+        {error && <p role="alert" className="px-4 pt-2 text-etiqueta text-status-incidente">{error}</p>}
 
-        <div className="flex-1 min-h-0 bg-gray-50 flex items-center justify-center overflow-auto">
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-bg-main">
           {kind === 'pdf' && <iframe src={url} title={label} className="w-full h-full" />}
           {kind === 'image' && (
             // eslint-disable-next-line @next/next/no-img-element
@@ -144,17 +143,13 @@ export function DocumentPreviewModal({ label, url, canEdit, onClose, onDelete }:
           )}
           {kind === 'none' && (
             <div className="text-center p-6">
-              <p className="text-sm text-gray-400 mb-3">Vista previa no disponible para este tipo de archivo.</p>
-              <button
-                type="button" onClick={handleDownload} disabled={downloading}
-                className="text-sm font-semibold text-accent hover:underline disabled:opacity-50"
-              >
+              <p className="mb-3 text-dato text-informativo">Vista previa no disponible para este tipo de archivo.</p>
+              <Button variant="link" onClick={handleDownload} disabled={downloading}>
                 {downloading ? 'Descargando…' : 'Descargar para verlo'}
-              </button>
+              </Button>
             </div>
           )}
         </div>
-      </div>
-    </div>
+    </Dialog>
   )
 }

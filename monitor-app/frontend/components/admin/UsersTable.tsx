@@ -14,6 +14,9 @@ import {
   UserPlus, Trash2, Search,
   ShieldCheck, UserCheck, UserX, MoreHorizontal, KeyRound, X,
 } from 'lucide-react'
+import { inputClass } from '@/components/ui/Field'
+import { StatusChip } from '@/components/ui/StatusChip'
+import { lifecycleStyle } from '@/lib/states'
 
 const METODO: Record<string, string> = { google: 'Google', azure: 'Microsoft', email: 'Email' }
 
@@ -163,7 +166,7 @@ export default function UsersTable({ users: initial, currentUserId, roles, catal
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Buscar por nombre o email…"
                 aria-label="Buscar personas"
-                className="w-full rounded-lg border border-border py-1.5 pl-8 pr-3 text-dato focus:outline-none focus:ring-2 focus:ring-accent/20"
+                className={`${inputClass({ size: 'sm' })} w-full pl-8`}
               />
             </div>
             <button
@@ -204,7 +207,7 @@ export default function UsersTable({ users: initial, currentUserId, roles, catal
                 return (
                   <tr
                     key={user.id}
-                    className={`group transition-colors hover:bg-gray-50/60 ${deletingId === user.id ? 'opacity-40 pointer-events-none' : ''}`}
+                    className={`group transition-colors hover:bg-bg-main/60 ${deletingId === user.id ? 'opacity-40 pointer-events-none' : ''}`}
                   >
                     {/* Avatar + name + email */}
                     <td className="px-5 py-3.5">
@@ -215,9 +218,9 @@ export default function UsersTable({ users: initial, currentUserId, roles, catal
                         <div className="min-w-0">
                           <p className="font-medium text-text-primary text-sm truncate">
                             {user.full_name ?? '—'}
-                            {isMe && <span className="ml-2 text-[10px] font-normal text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">tú</span>}
+                            {isMe && <span className="ml-2 text-etiqueta font-normal text-informativo bg-bg-main px-1.5 py-0.5 rounded-full">tú</span>}
                           </p>
-                          <p className="text-xs text-gray-400 truncate">{user.email ?? '—'}</p>
+                          <p className="text-xs text-informativo truncate">{user.email ?? '—'}</p>
                         </div>
                       </div>
                     </td>
@@ -228,18 +231,14 @@ export default function UsersTable({ users: initial, currentUserId, roles, catal
 
                     {/* Estado */}
                     <td className="px-5 py-3.5">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                        user.active !== false
-                          ? 'bg-green-50 text-green-700 border border-green-200'
-                          : 'bg-red-50 text-red-600 border border-red-200'
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${user.active !== false ? 'bg-green-500' : 'bg-red-400'}`} />
-                        {user.active !== false ? 'Activo' : 'Inactivo'}
-                      </span>
+                      {(() => {
+                        const estado = lifecycleStyle('user', user.active !== false ? 'ACTIVE' : 'INACTIVE')
+                        return <StatusChip tone={estado.tone} icon={estado.icon}>{estado.label}</StatusChip>
+                      })()}
                     </td>
 
                     {/* Último ingreso, cómo entra y si tiene MFA (seguridad, 09/10) */}
-                    <td className="px-5 py-3.5 text-xs text-gray-400 whitespace-nowrap">
+                    <td className="px-5 py-3.5 text-xs text-informativo whitespace-nowrap">
                       {user.last_sign_in_at ? fmtDate(user.last_sign_in_at) : 'Nunca'}
                       <span className="block text-informativo">
                         {(user.providers ?? []).map(p => METODO[p] ?? p).join(' · ') || '—'}
@@ -254,7 +253,7 @@ export default function UsersTable({ users: initial, currentUserId, roles, catal
                           <button
                             aria-label="Acciones"
                             onClick={() => setActionMenuId(actionMenuId === user.id ? null : user.id)}
-                            className="p-1.5 rounded-lg text-gray-300 hover:text-gray-600 hover:bg-gray-100 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                            className="p-1.5 rounded-lg text-informativo hover:text-text-primary hover:bg-bg-main transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
                           >
                             <MoreHorizontal size={16} />
                           </button>
@@ -270,17 +269,17 @@ export default function UsersTable({ users: initial, currentUserId, roles, catal
                               </button>
                               <button
                                 onClick={() => toggleActive(user)}
-                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left hover:bg-gray-50 transition-colors"
+                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left hover:bg-bg-main transition-colors"
                               >
                                 {user.active !== false
-                                  ? <><UserX size={13} className="text-orange-400" /><span>Desactivar acceso</span></>
-                                  : <><UserCheck size={13} className="text-green-500" /><span>Activar acceso</span></>
+                                  ? <><UserX size={13} className="text-warning" aria-hidden="true" /><span>Desactivar acceso</span></>
+                                  : <><UserCheck size={13} className="text-accion" aria-hidden="true" /><span>Activar acceso</span></>
                                 }
                               </button>
                               <div className="h-px bg-border mx-2 my-1" />
                               <button
                                 onClick={() => handleDelete(user)}
-                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left text-red-600 hover:bg-red-50 transition-colors"
+                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left text-status-incidente hover:bg-status-incidente/5 transition-colors"
                               >
                                 <Trash2 size={13} />
                                 Eliminar permanentemente
@@ -289,9 +288,9 @@ export default function UsersTable({ users: initial, currentUserId, roles, catal
                           )}
                         </div>
                       ) : isMe ? (
-                        <span className="text-[10px] text-gray-300 px-2">—</span>
+                        <span className="text-etiqueta text-informativo px-2">—</span>
                       ) : (
-                        <ShieldCheck size={13} className="text-gray-200 mx-auto" />
+                        <ShieldCheck size={13} aria-hidden="true" className="mx-auto text-informativo/40" />
                       )}
                     </td>
                   </tr>
@@ -301,7 +300,7 @@ export default function UsersTable({ users: initial, currentUserId, roles, catal
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-5 py-14 text-center">
-                    <p className="text-sm text-gray-400">
+                    <p className="text-sm text-informativo">
                       {search ? `Sin resultados para "${search}"` : 'No hay usuarios en esta vista'}
                     </p>
                   </td>

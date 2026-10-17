@@ -56,6 +56,21 @@ Reasignar, Descartados, Documentos exigidos) pasan a los tokens y a la escala; c
 - Trinquetes: color crudo 504 → 247 (72 de la baja son la paleta de grupos movida a lib), bajo 11 px 70 → 27, botones
   a mano 27 → 23.
 
+**17/10 — Kit completo para ventanas, campos y color (en dev):**
+- `Dialog` (components/ui): el comportamiento de toda ventana, una vez (fondo, Escape, foco de ida y vuelta, Tab, capas,
+  `dismissible` mientras algo viaja). `PanelLateral` = Dialog + encabezado/pie; `ConfirmDialog` = las reglas de
+  `ConfirmarBaja` (foco en Cancelar, no cerrar mientras viaja, quedar abierta si falla). 17 ventanas migradas (incluidas 4
+  que ni declaraban `aria-modal`: CreateUserForm, DocumentPreviewModal, TransferModal, asignar conductor). Guardia:
+  `aria-modal` o fondo oscuro solo en Dialog.tsx. Arreglado de paso: Dialog robaba el foco a un `autoFocus` y no lo
+  devolvía al botón que la abrió.
+- `inputClass` + `Field` + `FIELD_LABEL` (components/ui/Field.tsx): ~45 archivos; guardia `focus:ring-accent` a mano = 0
+  (excepción con motivo: StopTimeInput). Casillas y botones pasan a `focus-visible:`.
+- Color crudo y bajo 11 px en `app/` y `components/`: **0, ahora regla** (`toEqual([])`). Decisiones de significado:
+  semáforo de espera verde → neutro (no `resuelto`), amarillo/naranjo = dos intensidades de `warning`; persona
+  Activo/Inactivo por el glosario (`lifecycleStyle('user')`, Inactivo neutro, no rojo); aviso de viajes activos en
+  ConfirmarBaja `espera` → `warning`. Barra del teléfono z-30 (bajo el fondo de las ventanas).
+- Verificado: vitest 1962/1962, tsc, build; capturas 1440/390 (Monitor, empresa, viaje, asignar conductor, login).
+
 **Siguiente paso exacto:**
 1. Confirmar Deploy Frontend y Deploy Monitor API en verde y recorrer el Cierre en dev con sesión.
 2. ~~Hallazgo 3~~ RESUELTO (16/10, decisión del usuario): modelo estándar estado + tipo de motivo (`e2b45aeb`, `42a732d0`,
@@ -66,12 +81,10 @@ Reasignar, Descartados, Documentos exigidos) pasan a los tokens y a la escala; c
    Conductor sin empresa ignora tractos sin tipo.
 4. Prioridad #2 del usuario: descarga de viajes para cuadrar con las fuentes (Propietario/admins, diario y fin de mes).
 5. `SearchInput` compartido en las 12 listas.
-6. Kit sin campo de texto: 25 archivos escriben su propio estilo de input (`focus:ring-accent/20`…). Pieza `TextField` /
-   `inputClass` y migración, como se hizo con `Button`.
-7. Quedan 10 modales escritos a mano (`aria-modal` propio): BajaReasonModal, DeleteCarrierModal, ReactivateCarrierModal,
-   CorrectIdentityModal, CarrierClientsModal, FleetCenterDialog, ConfirmarBaja, ActualizarPorPlanillaModal,
-   EditarRolesPanel, DetailShell. Pasarlos a `PanelLateral placement="center"`.
-8. Color crudo restante (247) fuera de Monitor/Cierre/Certificación: admin, auth, ui, admin/settings, DocumentPreviewModal.
+6. ~~Campo, ventanas y color restante~~ HECHO 17/10 (ver abajo).
+7. Pendiente menor: `AsignarConductorPopover` conserva la etiqueta en mayúsculas ("El TMS reportó"); 17 botones
+   principales escritos a mano (trinquete en 17); `TEXTO_CUERPO` (gray-600, lib/ui/texto.ts) sin token equivalente.
+8. Administración (Personas, Crear usuario) no se pudo mirar en la copia local: el Propietario exige TOTP. Mirarla en dev.
 
 **Decisiones de arquitectura:**
 - Un solo modelo de filtro por pantalla; recuadros, embudos y chips son puertas al mismo filtro; cifras facetadas.

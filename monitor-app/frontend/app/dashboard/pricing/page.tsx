@@ -58,21 +58,21 @@ function Tarifario() {
         {canEdit && <LocationCreateForm shippers={shippers} onCreated={invalidate} />}
       </div>
 
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit flex-wrap">
+      <div className="flex gap-1 bg-bg-main rounded-xl p-1 w-fit flex-wrap">
         <button
           onClick={() => setTab('pending')}
           aria-pressed={tab === 'pending'}
           className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-            tab === 'pending' ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            tab === 'pending' ? 'bg-white text-text-primary shadow-sm' : 'text-informativo hover:text-text-primary'
           }`}
         >
-          Por revisar <span className="ml-1 text-gray-400">{pendingItems.length}</span>
+          Por revisar <span className="ml-1 text-informativo">{pendingItems.length}</span>
         </button>
         <button
           onClick={() => setTab('all')}
           aria-pressed={tab === 'all'}
           className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-            tab === 'all' ? 'bg-white text-text-primary shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            tab === 'all' ? 'bg-white text-text-primary shadow-sm' : 'text-informativo hover:text-text-primary'
           }`}
         >
           Todos los locales

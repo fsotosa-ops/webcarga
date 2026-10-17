@@ -29,9 +29,11 @@ dependen.** El botón "Confirmar cierre" firmaba el día con el área de datos v
 
 ## Sistema visual
 
-Ver `docs/superpowers/specs/2026-08-16-sistema-visual-design.md`. En resumen, y hasta que los
-tokens existan: **no agregar tamaños de letra ni colores nuevos**. Hoy hay 8-9 tamaños y 13-21
-colores de texto por pantalla, y 1.824 usos de color crudo de Tailwind contra 571 de tokens propios.
+Ver `docs/superpowers/specs/2026-08-16-sistema-visual-design.md`. **Cero color crudo de Tailwind y
+nada bajo 11 px** en `app/` y `components/` (desde el 17/10 es regla, `lib/ui/sistema.test.ts` y
+`escala.test.ts`): los colores salen de los tokens de `app/globals.css` por significado. Las piezas
+del kit (`components/ui`) son la única manera de escribir una ventana (`Dialog`, `PanelLateral`,
+`ConfirmDialog`), un campo (`inputClass`, `Field`) y un botón (`Button`).
 
 ## Antes de dar algo por listo
 

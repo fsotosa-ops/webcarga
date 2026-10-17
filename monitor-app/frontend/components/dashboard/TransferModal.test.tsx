@@ -61,13 +61,12 @@ describe('TransferModal', () => {
     let resolver: () => void = () => {}
     const onTransfer = vi.fn(() => new Promise<void>(r => { resolver = r }))
     const onClose = vi.fn()
-    const { container } = montar({ onTransfer, onClose })
+    montar({ onTransfer, onClose })
 
     await elegirEmpresaDestino()
     fireEvent.click(screen.getByRole('button', { name: /confirmar transferencia/i }))
 
-    const fondo = container.querySelector('.absolute.inset-0') as Element
-    fireEvent.click(fondo)
+    fireEvent.click(screen.getByTestId('panel-overlay'))
     expect(onClose).not.toHaveBeenCalled()
 
     resolver()

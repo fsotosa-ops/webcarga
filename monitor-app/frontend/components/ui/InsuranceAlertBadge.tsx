@@ -29,7 +29,7 @@ export function InsuranceAlertBadge({ alert, compact = false }: Props) {
     return (
       <span
         title={LABEL[alert]}
-        className={`inline-block w-2 h-2 rounded-full shrink-0 ${critical ? 'bg-status-incidente' : 'bg-amber-400'}`}
+        className={`inline-block w-2 h-2 rounded-full shrink-0 ${critical ? 'bg-status-incidente' : 'bg-warning'}`}
       />
     )
   }
@@ -38,7 +38,7 @@ export function InsuranceAlertBadge({ alert, compact = false }: Props) {
     <span
       title={LABEL[alert]}
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-etiqueta font-semibold whitespace-nowrap ${
-        critical ? 'bg-red-100 text-status-incidente' : 'bg-amber-50 text-amber-600'
+        critical ? 'bg-status-incidente/5 text-status-incidente' : 'bg-warning/10 text-warning'
       }`}
     >
       {critical ? <ShieldAlert size={9} /> : <Clock size={9} />}

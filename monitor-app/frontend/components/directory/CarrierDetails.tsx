@@ -6,9 +6,9 @@ import { Check, Loader2 } from 'lucide-react'
 import { StatusChip } from '@/components/ui/StatusChip'
 import { carrierInsuranceStyle } from '@/lib/states'
 import type { CarrierInsuranceRow } from '@/lib/api/insurance'
+import { FIELD_LABEL, inputClass } from '@/components/ui/Field'
 
-const LABEL = 'text-etiqueta font-semibold text-informativo'
-const INPUT = 'w-full rounded-lg border border-border bg-white px-3 py-1.5 text-dato focus:outline-none focus:ring-2 focus:ring-accent/30'
+const INPUT = `w-full ${inputClass({ size: 'sm' })}`
 
 /** Editar los datos de una empresa, en el bloque Detalles de su ficha (Entrega 1
  *  de fichas, 15/10). La razón social se editaba sobre el título; el ID de la
@@ -40,7 +40,7 @@ export function CarrierEditForm({ businessName, legacyAdminId, onSave, onClose }
   return (
     <div className="space-y-3">
       <label className="block space-y-1">
-        <span className={LABEL}>Razón social</span>
+        <span className={FIELD_LABEL}>Razón social</span>
         <input aria-label="Razón social" value={name} onChange={e => setName(e.target.value)} className={INPUT} />
       </label>
       {legacyAdminId != null && (

@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, Truck, X, ChevronDown, ArrowRight, ClipboardCheck } from 'lucide-react'
+import { Loader2, ChevronDown, ArrowRight, ClipboardCheck } from 'lucide-react'
 import { tripsApi } from '@/lib/api/trips'
 import { SearchInput } from '@/components/ui/SearchInput'
+import { PanelLateral } from '@/components/ui/PanelLateral'
 import { AlertStatTiles } from './AlertStatTiles'
 import type { AvailableAsset, BusyAsset } from '@/lib/types'
 import type { FleetAssignValue } from './FleetAssignSection'
@@ -38,7 +39,6 @@ function toFleetValue(a: AvailableAsset): FleetAssignValue {
  *  Reemplaza el pill "conductores disponibles" + los botones "Agregar viaje"
  *  y "Carga masiva (CSV)" del Diario — un solo punto de entrada. */
 export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssign, onNewTrip, onImportCsv, onSelectTrip }: Props) {
-  const dialogRef = useRef<HTMLDivElement>(null)
   const [category, setCategory] = useState<Category>('')
   const [q, setQ] = useState('')
   const [showNewMenu, setShowNewMenu] = useState(false)
@@ -49,18 +49,11 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
     enabled: open,
   })
 
+  // Cada apertura parte limpia. Fondo, Escape y foco son del kit (PanelLateral).
   useEffect(() => {
     if (!open) return
     setCategory(''); setQ(''); setShowNewMenu(false)
-    const previouslyFocused = document.activeElement as HTMLElement | null
-    dialogRef.current?.focus()
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      previouslyFocused?.focus?.()
-    }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
 
@@ -87,27 +80,8 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
   )
 
   return (
-    <>
-      <div className="fixed inset-0 bg-black/50 z-40 animate-backdrop-in" onClick={onClose} aria-hidden="true" />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div
-          ref={dialogRef}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Centro de Flota"
-          tabIndex={-1}
-          className="relative bg-white rounded-2xl shadow-2xl w-[92vw] max-w-3xl max-h-[85vh] overflow-hidden flex flex-col focus:outline-none animate-modal-in"
-        >
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-            <h2 className="text-lectura font-semibold text-text-primary flex items-center gap-2">
-              <Truck size={16} className="text-accent" /> Centro de Flota — {fecha}
-            </h2>
-            <button type="button" onClick={onClose} aria-label="Cerrar" className="text-informativo hover:text-text-primary transition-colors">
-              <X size={18} />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+    <PanelLateral placement="center" ancho="amplio" titulo={`Centro de Flota — ${fecha}`} onCerrar={onClose} pie={null}>
+          <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
               <button
                 type="button"
@@ -249,8 +223,6 @@ export function FleetCenterDialog({ open, fecha, onClose, onOpenCloseDay, onAssi
               </>
             )}
           </div>
-        </div>
-      </div>
-    </>
+    </PanelLateral>
   )
 }

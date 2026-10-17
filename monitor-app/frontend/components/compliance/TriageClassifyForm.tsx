@@ -13,6 +13,7 @@ import { PendingSlotPicker, type Slot } from './PendingSlotPicker'
 import type { PendingComplianceRow } from '@/lib/types'
 import { CarrierSearchPicker, type CarrierSearchResult } from '@/components/dashboard/CarrierSearchPicker'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
+import { inputClass } from '@/components/ui/Field'
 
 const ETIQUETA_DEL_DATO = {
   vencimiento: 'Fecha de vencimiento',
@@ -163,7 +164,7 @@ export function TriageClassifyForm({
     )
   }
 
-  const SELECT = 'w-full mt-1 text-dato border border-border rounded-lg px-2 py-1.5 bg-white text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 transition-all disabled:bg-bg-main disabled:text-informativo'
+  const SELECT = `${inputClass({ size: 'sm' })} mt-1 w-full`
 
   return (
     // Enter asigna, como en una bandeja de triage (Gmail, Linear): el gesto más
@@ -330,7 +331,7 @@ export function TriageClassifyForm({
           type="button"
           onClick={apply}
           disabled={!canApply}
-          className="flex-1 flex items-center justify-center gap-2 text-dato font-semibold px-4 py-2 rounded-lg transition-colors bg-accent text-white hover:bg-accent/90 focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:bg-bg-main disabled:text-informativo disabled:cursor-not-allowed"
+          className="flex-1 flex items-center justify-center gap-2 text-dato font-semibold px-4 py-2 rounded-lg transition-colors bg-accent text-white hover:bg-accent/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:bg-bg-main disabled:text-informativo disabled:cursor-not-allowed"
         >
           {saving && <Loader2 size={14} className="motion-safe:animate-spin" />}
           Asignar

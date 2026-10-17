@@ -9,9 +9,9 @@ import { taxonomyKey } from '@/lib/queries/taxonomies'
 import { directoryKeys, invalidateDirectory } from '@/lib/queries/directorio'
 import { useAssetTypes } from '@/hooks/useAssetTypes'
 import type { Asset } from '@/lib/types'
+import { FIELD_LABEL, inputClass } from '@/components/ui/Field'
 
-const LABEL = 'text-etiqueta font-semibold text-informativo'
-const INPUT = 'w-full rounded-lg border border-border bg-white px-3 py-1.5 text-dato focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-60'
+const INPUT = `w-full ${inputClass({ size: 'sm' })}`
 
 /** Editar los datos de un equipo, en el bloque Detalles de su ficha. Movido del
  *  panel de equipo (Entrega 1 de fichas, 15/10): tipo, año, tipo de operación y
@@ -93,21 +93,21 @@ export function AssetEditForm({ asset, carrierId, drivers, onSave, onClose }: {
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
         <label className="space-y-1">
-          <span className={LABEL}>Tipo de equipo</span>
+          <span className={FIELD_LABEL}>Tipo de equipo</span>
           <select aria-label="Tipo de equipo" value={draft.asset_type}
                   onChange={e => setDraft(d => ({ ...d, asset_type: e.target.value as AssetType }))} className={INPUT}>
             {assetTypes.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
           </select>
         </label>
         <label className="space-y-1">
-          <span className={LABEL}>Año</span>
+          <span className={FIELD_LABEL}>Año</span>
           <input type="number" aria-label="Año del vehículo" min={1950} max={2100} placeholder="—"
                  value={draft.manufacture_year}
                  onChange={e => setDraft(d => ({ ...d, manufacture_year: e.target.value }))} className={INPUT} />
         </label>
       </div>
       <div className="space-y-1">
-        <label htmlFor="tipo-operacion" className={LABEL}>Tipo de operación</label>
+        <label htmlFor="tipo-operacion" className={FIELD_LABEL}>Tipo de operación</label>
         <select id="tipo-operacion" aria-label="Tipo de operación" value={draft.webcarga_operation_type_id}
                 onChange={e => setDraft(d => ({ ...d, webcarga_operation_type_id: e.target.value }))} className={INPUT}>
           <option value="">Sin clasificar</option>
@@ -126,7 +126,7 @@ export function AssetEditForm({ asset, carrierId, drivers, onSave, onClose }: {
           para resolver el conductor de los viajes nuevos de esta patente. Se
           guarda al elegirlo, no con "Guardar". */}
       <div className="space-y-1">
-        <span className={LABEL}>Conductor habitual</span>
+        <span className={FIELD_LABEL}>Conductor habitual</span>
         {driverAssignmentQuery.isPending ? (
           <p className="text-dato text-informativo">Cargando…</p>
         ) : driverAssignmentQuery.data ? (

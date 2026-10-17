@@ -178,8 +178,8 @@ export function CeldaDeRevision({
       onClick={() => revisiones.confirmar.mutate(id)}
       disabled={revisiones.confirmar.isPending}
       title="Lo miré y está bien así"
-      className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5
-                 text-[10px] font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50
+      className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5
+                 text-etiqueta font-semibold text-warning hover:bg-warning/10 disabled:opacity-50
                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
     >
       {revisiones.confirmar.isPending

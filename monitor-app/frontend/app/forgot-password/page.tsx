@@ -9,7 +9,7 @@ export default function ForgotPasswordPage() {
           <div className="flex flex-col items-center mb-6">
             <LogoWebCarga forma="isotipo" alto={48} className="mb-3" />
             <h1 className="font-mulish font-bold text-xl text-text-primary">Recuperar contraseña</h1>
-            <p className="text-sm text-gray-400 mt-1 text-center">
+            <p className="text-sm text-informativo mt-1 text-center">
               Te enviaremos un enlace para restablecer tu contraseña
             </p>
           </div>

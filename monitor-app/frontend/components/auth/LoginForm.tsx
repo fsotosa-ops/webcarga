@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { inputClass } from '@/components/ui/Field'
 
 export default function LoginForm() {
   const [email, setEmail] = useState('')
@@ -39,7 +40,7 @@ export default function LoginForm() {
           required
           value={email}
           onChange={e => setEmail(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+          className={`${inputClass()} w-full`}
           placeholder="usuario@webcarga.cl"
         />
       </div>
@@ -53,13 +54,13 @@ export default function LoginForm() {
           required
           value={password}
           onChange={e => setPassword(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg border border-border text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+          className={`${inputClass()} w-full`}
           placeholder="••••••••"
         />
       </div>
 
       {error && (
-        <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
+        <p className="text-sm text-status-incidente bg-status-incidente/5 px-3 py-2 rounded-lg">{error}</p>
       )}
 
       <button

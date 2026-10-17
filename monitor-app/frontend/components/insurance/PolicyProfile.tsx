@@ -24,10 +24,11 @@ import { EntityCell } from '@/components/dashboard/EntityCell'
 import { InstallmentsTable, PayInstallmentsDialog } from './InstallmentsTable'
 import { PolicyFileRow } from './PolicyFileRow'
 import { PageContainer } from '@/components/ui/PageContainer'
+import { inputClass } from '@/components/ui/Field'
 
 type Dialog = 'pay' | 'renew' | 'extend' | 'cancel' | 'delete' | 'installments' | null
 
-const INPUT = 'w-full rounded-lg border border-border px-2.5 py-1.5 text-dato focus:outline-none focus:ring-2 focus:ring-accent/20'
+const INPUT = `w-full ${inputClass({ size: 'sm' })}`
 const nombre = (p: { insurance_company: string; policy_number: string | null }) =>
   `${p.insurance_company}${p.policy_number ? ` · ${p.policy_number}` : ''}`
 const masUnAno = (d: string) => `${Number(d.slice(0, 4)) + 1}${d.slice(4, 10)}`
@@ -264,7 +265,7 @@ function ChipList({ items, empty, canEdit, onRemove, mono = false }: {
 function AddSelect({ label, options, onAdd }: { label: string; options: { id: string; label: string }[]; onAdd: (id: string) => void }) {
   return (
     <select aria-label={label} value="" onChange={e => { if (e.target.value) onAdd(e.target.value) }}
-            className="mt-2 rounded-lg border border-border px-2 py-1 text-etiqueta focus:outline-none focus:ring-2 focus:ring-accent/20">
+            className={`${inputClass({ size: 'xs' })} mt-2`}>
       <option value="">+ {label}…</option>
       {options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
     </select>

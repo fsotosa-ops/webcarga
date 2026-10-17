@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { X } from 'lucide-react'
+import { PanelLateral } from '@/components/ui/PanelLateral'
+import { Button } from '@/components/ui/Button'
 import { accessApi, type PermisoInfo, type RoleInfo } from '@/lib/api/access'
 import { diferencia, permisosDe } from '@/lib/authz/roles'
 import SelectorDeRoles from './SelectorDeRoles'
@@ -43,29 +44,13 @@ export default function EditarRolesPanel({ persona, roles, catalogo, onSaved, on
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="editar-roles-titulo"
-        onClick={e => e.stopPropagation()}
-        className="w-full sm:max-w-[460px] h-full bg-white flex flex-col shadow-2xl"
-      >
-        <header className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border">
-          <div className="min-w-0">
-            <h2 id="editar-roles-titulo" className="text-titulo font-semibold text-text-primary">Editar roles</h2>
-            <p className="text-dato text-informativo truncate">{persona.full_name ?? '—'} · {persona.email ?? '—'}</p>
-          </div>
-          <button onClick={onClose} aria-label="Cerrar" className="p-1.5 rounded-lg text-informativo hover:bg-bg-main">
-            <X size={16} />
-          </button>
-        </header>
-
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          <SelectorDeRoles roles={roles} catalogo={catalogo} value={elegidos} onChange={setElegidos} originales={originales} />
-        </div>
-
-        <footer className="px-5 py-4 border-t border-border bg-bg-main space-y-3">
+    <PanelLateral
+      titulo="Editar roles"
+      description={`${persona.full_name ?? '—'} · ${persona.email ?? '—'}`}
+      onCerrar={onClose}
+      dismissible={!guardando}
+      pie={
+        <div className="space-y-3">
           {sinRoles ? (
             <p className="text-dato text-text-primary">
               Elige al menos un rol: sin roles la persona no puede entrar. Para quitarle el acceso, desactívala.
@@ -79,22 +64,18 @@ export default function EditarRolesPanel({ persona, roles, catalogo, onSaved, on
             </div>
           )}
           {error && (
-            <p role="alert" className="text-dato text-status-incidente bg-white border border-border rounded-lg px-3 py-2">{error}</p>
+            <p role="alert" className="rounded-md border border-border bg-white px-3 py-2 text-dato text-status-incidente">{error}</p>
           )}
           <div className="flex justify-end gap-2">
-            <button onClick={onClose} className="px-4 py-2 rounded-lg border border-border text-dato text-text-primary hover:bg-white">
-              Cancelar
-            </button>
-            <button
-              onClick={guardar}
-              disabled={!cambio || sinRoles || guardando}
-              className="px-4 py-2 rounded-lg bg-accent text-white text-dato font-medium hover:bg-accent/90 disabled:opacity-50"
-            >
+            <Button onClick={onClose} disabled={guardando}>Cancelar</Button>
+            <Button variant="primary" onClick={guardar} disabled={!cambio || sinRoles || guardando}>
               {guardando ? 'Guardando…' : 'Guardar roles'}
-            </button>
+            </Button>
           </div>
-        </footer>
-      </aside>
-    </div>
+        </div>
+      }
+    >
+      <SelectorDeRoles roles={roles} catalogo={catalogo} value={elegidos} onChange={setElegidos} originales={originales} />
+    </PanelLateral>
   )
 }
