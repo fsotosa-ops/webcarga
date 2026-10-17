@@ -32,6 +32,15 @@ describe('la barra de cada perfil (N3)', () => {
     expect(hrefs(bar)).not.toContain('/dashboard/compliance/inbox')
     expect(bar).toHaveLength(3)
   })
+  it('las etiquetas de la barra no se repiten en ningún perfil (un lector de pantalla no oye el ícono)', () => {
+    for (const roles of [['operations_supervisor'], ['certification_supervisor'], ['insurance_supervisor'],
+                         ['commercial_supervisor'], ['owner']]) {
+      const etiquetas = mobileBar({ roles, permissions: TODO }).map(b => b.label)
+      expect(new Set(etiquetas).size, roles.join()).toBe(etiquetas.length)
+    }
+    expect(mobileBar({ roles: ['owner'], permissions: TODO }).map(b => b.label))
+      .toEqual(['Monitor', 'Empresas', 'Certificación', 'Pólizas'])
+  })
   it('nunca más de 4 destinos', () => {
     for (const roles of [['operations_supervisor'], ['certification_supervisor'], ['insurance_supervisor'],
                          ['commercial_supervisor'], ['owner']]) {

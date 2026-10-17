@@ -118,7 +118,7 @@ export default function SidebarAccount({
             <p className="text-dato font-medium text-text-primary truncate" title={displayName}>{displayName}</p>
             <p className="text-xs text-informativo truncate" title={email}>{email}</p>
           </div>
-          <AccountActions canConfigure={canConfigure} onSignOut={() => { setOpen(false); onSignOut() }} />
+          <AccountActions asMenuItems canConfigure={canConfigure} onSignOut={() => { setOpen(false); onSignOut() }} />
         </div>
       )}
     </div>

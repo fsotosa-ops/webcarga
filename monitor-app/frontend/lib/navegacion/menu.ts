@@ -11,11 +11,6 @@ import { AREAS, nivelEnArea, type Area } from '@/lib/authz/roles'
  *  del teléfono era una segunda lista derivada a mano (`MOBILE_NAV_ITEMS`) que aplanaba
  *  todo el menú: creció a 15 entradas en una fila que se desplazaba de lado. */
 
-// "Operaciones" son los dos trabajos del día: seguir los viajes (Monitor) y
-// cerrar el día (Cierre del día). El Cierre salió del menú en julio, cuando era
-// la vieja Cuadratura, y quedó como un botón del Monitor hasta que existiera el
-// Centro de Cierre; desde que existe es un destino propio (17/10). Su histórico
-// (/operations/closures/history) es una vista del Cierre, no otra entrada.
 export type NavBadge = 'inbox' | 'requests' | 'installments'
 
 export type NavLeaf = {
@@ -34,6 +29,11 @@ export type NavGroup = { label: string; icon: LucideIcon; items: NavLeaf[] }
 export type NavTopLeaf = NavLeaf & { icon: LucideIcon }
 export type NavEntry = NavGroup | NavTopLeaf
 
+// "Operaciones" son los dos trabajos del día: seguir los viajes (Monitor) y
+// cerrar el día (Cierre del día). El Cierre salió del menú en julio, cuando era
+// la vieja Cuadratura, y quedó como un botón del Monitor hasta que existiera el
+// Centro de Cierre; desde que existe es un destino propio (17/10). Su histórico
+// (/operations/closures/history) es una vista del Cierre, no otra entrada.
 // Un modulo por objeto de trabajo, con sus vistas adentro (HU-04). La
 // certificacion de una empresa se resuelve sin saltar entre modulos: la cola
 // transversal, la sabana de pendientes y la ficha viven bajo el mismo techo.
@@ -121,7 +121,6 @@ export const NAV: readonly NavEntry[] = [
   NAV_ITEMS[0],                                               // Tarifario
 ]
 
-
 export const isGroup = (e: NavEntry): e is NavGroup => 'items' in e
 
 const leaves = (e: NavEntry): NavLeaf[] => (isGroup(e) ? e.items : [e])
@@ -164,18 +163,29 @@ export const MOBILE_DESTINATIONS: Record<MobileProfile, readonly string[]> = {
   general:       ['/dashboard/operations/monitor', '/dashboard/carriers', '/dashboard/compliance', '/dashboard/insurance'],
 }
 
-/** Una entrada de la barra, con su grupo (de él sale el ícono si la entrada no tiene). */
-export type MobileBarItem = { leaf: NavLeaf; group: NavGroup | null }
+/** Una entrada de la barra, con su grupo (de él sale el ícono si la entrada no tiene) y la
+ *  etiqueta que muestra la barra. */
+export type MobileBarItem = { leaf: NavLeaf; group: NavGroup | null; label: string }
 
 /** Los destinos de la barra de alguien, en el orden de su perfil y sin lo que no puede ver. */
 export function mobileBar(acceso: Pick<Acceso, 'roles' | 'permissions'>): MobileBarItem[] {
-  const disponibles = new Map<string, MobileBarItem>()
+  const disponibles = new Map<string, Omit<MobileBarItem, 'label'>>()
   for (const e of visibleNav(acceso.permissions)) {
     for (const leaf of leaves(e)) disponibles.set(leaf.href, { leaf, group: isGroup(e) ? e : null })
   }
-  return MOBILE_DESTINATIONS[mobileProfile(acceso.roles)]
+  const elegidas = MOBILE_DESTINATIONS[mobileProfile(acceso.roles)]
     .flatMap(href => disponibles.get(href) ?? [])
     .slice(0, 4)
+  // Sin el grupo al lado, dos "Empresas" (Directorio y Certificación) serían iguales para
+  // quien no ve el ícono: una etiqueta repetida en la barra toma el nombre de su grupo.
+  const corta = (i: Omit<MobileBarItem, 'label'>) => i.leaf.short ?? i.leaf.label
+  const repetidas = new Set(elegidas.map(corta).filter((l, i, all) => all.indexOf(l) !== i))
+  return elegidas.map((i, n) => ({
+    ...i,
+    // La primera conserva su nombre; las siguientes toman el de su grupo.
+    label: repetidas.has(corta(i)) && elegidas.findIndex(j => corta(j) === corta(i)) !== n && i.group
+      ? i.group.label : corta(i),
+  }))
 }
 
 /** La entrada que corresponde a la pantalla: la de ruta más larga que la contiene (el

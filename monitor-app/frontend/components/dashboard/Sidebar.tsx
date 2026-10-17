@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { ChevronLeft, ChevronDown } from 'lucide-react'
 import { getDisplayName, puedeVerConfiguracion, type Acceso } from '@/lib/authz/acceso'
-import { NAV, activeHref, isGroup, visibleNav, type NavBadge, type NavGroup } from '@/lib/navegacion/menu'
+import { activeHref, isGroup, visibleNav, type NavBadge, type NavGroup } from '@/lib/navegacion/menu'
 import { useNavCounts } from '@/hooks/useNavCounts'
 import LogoWebCarga from '@/components/brand/LogoWebCarga'
 import SidebarAccount from './SidebarAccount'
@@ -117,9 +117,7 @@ export default function Sidebar({ acceso }: SidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
 
-  // Match más específico primero — evita 2 items activos a la vez. Hoy
-  // Seguros y Tarifario no comparten prefijo, pero la regla se deja escrita
-  // acá y no en cada item.
+  // Las entradas sueltas del primer nivel (Tarifario): la activa, por `activeHref`.
   const nav = visibleNav(acceso.permissions)
   const topActive = activeHref(pathname, nav.flatMap(e => (isGroup(e) ? [] : [e.href])))
 

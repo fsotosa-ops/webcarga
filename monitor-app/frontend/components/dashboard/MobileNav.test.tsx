@@ -29,6 +29,7 @@ function montar(acceso: Acceso = OPERACIONES) {
 }
 
 const barra = () => screen.getByRole('navigation', { name: 'Navegación del teléfono' })
+const GENERAL: Acceso = { ...OPERACIONES, roles: ['owner'], role_names: ['Propietario'] }
 
 beforeEach(() => { nav.ruta = '/dashboard/operations/monitor'; contadores.valor = {} })
 
@@ -77,7 +78,7 @@ describe('MobileNav: el cajón "Menú"', () => {
       expect(within(cajon).getByRole('heading', { name: grupo })).toBeInTheDocument()
     }
     expect(within(cajon).getByText('Óscar Operaciones')).toBeInTheDocument()
-    expect(within(cajon).getByRole('menuitem', { name: 'Cerrar sesión' })).toBeInTheDocument()
+    expect(within(cajon).getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument()
   })
 
   it('tocar una entrada lo cierra; cambiar de ruta con el cajón abierto también (N6)', () => {
@@ -97,5 +98,47 @@ describe('MobileNav: el cajón "Menú"', () => {
     expect(within(barra()).queryByRole('link', { name: 'Por asignar' })).toBeNull()
     fireEvent.click(within(barra()).getByRole('button', { name: /^Menú/ }))
     expect(within(screen.getByRole('dialog', { name: 'Menú' })).queryByRole('link', { name: /Por asignar/ })).toBeNull()
+  })
+})
+
+describe('MobileNav: la entrada activa se calcula sobre todo el menú', () => {
+  it('perfil General en Por asignar: no marca "Certificación" (Empresas), marca "Menú"', () => {
+    nav.ruta = '/dashboard/compliance/inbox'
+    montar(GENERAL)
+    for (const a of within(barra()).getAllByRole('link')) expect(a).not.toHaveAttribute('aria-current')
+    expect(within(barra()).getByRole('button', { name: /^Menú/ })).toHaveAttribute('aria-current', 'true')
+  })
+
+  it('en el cajón solo la entrada de la pantalla queda marcada (Cuotas, no también Pólizas)', () => {
+    nav.ruta = '/dashboard/insurance/installments'
+    montar()
+    fireEvent.click(within(barra()).getByRole('button', { name: /^Menú/ }))
+    const marcadas = within(screen.getByRole('dialog', { name: 'Menú' })).getAllByRole('link')
+      .filter(a => a.getAttribute('aria-current') === 'page').map(a => a.textContent)
+    expect(marcadas).toEqual(['Cuotas'])
+  })
+})
+
+describe('MobileNav: el cajón y el ancho de la pantalla', () => {
+  it('si la pantalla pasa a escritorio con el cajón abierto, el cajón se cierra (no queda el fondo oscuro)', () => {
+    let alCambiar: ((e: { matches: boolean }) => void) | undefined
+    window.matchMedia = vi.fn().mockReturnValue({
+      matches: false,
+      addEventListener: (_: string, f: (e: { matches: boolean }) => void) => { alCambiar = f },
+      removeEventListener: vi.fn(),
+    }) as unknown as typeof window.matchMedia
+    montar()
+    fireEvent.click(within(barra()).getByRole('button', { name: /^Menú/ }))
+    expect(screen.getByRole('dialog', { name: 'Menú' })).toBeInTheDocument()
+    act(() => { alCambiar?.({ matches: true }) })
+    expect(screen.queryByRole('dialog', { name: 'Menú' })).toBeNull()
+  })
+
+  it('la cuenta del cajón es una lista de acciones, no un menú sin teclado', () => {
+    montar()
+    fireEvent.click(within(barra()).getByRole('button', { name: /^Menú/ }))
+    const cajon = screen.getByRole('dialog', { name: 'Menú' })
+    expect(within(cajon).queryByRole('menu')).toBeNull()
+    expect(within(cajon).getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument()
   })
 })

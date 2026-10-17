@@ -13,7 +13,7 @@
      mismo lado del círculo que el azul del producto: las superficies
      blancas flotan sobre él en vez de pelearle. */
   --sidebar-bg: #141d2b;
-  /* La barra de navegación del teléfono (Sidebar, `md:hidden`): lo que tapa abajo. El
+  /* La barra de navegación del teléfono (`MobileNav`, `md:hidden`): lo que tapa abajo. El
      contenido la reserva y un panel flotante no baja hasta ella. Desde `md` no existe. */
   --mobile-nav-height: 4rem;
   --accent: #1cb9ec;
