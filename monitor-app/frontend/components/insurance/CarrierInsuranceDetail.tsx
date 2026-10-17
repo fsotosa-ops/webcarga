@@ -1,11 +1,9 @@
 import Link from 'next/link'
 import type { CarrierInsuranceDetail as Detail } from '@/lib/api/insurance'
-import { fechaCorta, installmentStateStyle, policyStateStyle } from '@/lib/states'
+import { fechaCorta, formatUf, installmentStateStyle, policyStateStyle } from '@/lib/states'
 import { policyHref } from '@/lib/navegacion/insurance'
 import { StatusChip } from '@/components/ui/StatusChip'
 import { Button } from '@/components/ui/Button'
-
-const ufTexto = (n: number) => `${n.toLocaleString('es-CL', { maximumFractionDigits: 1 })} UF`
 
 /** El seguro de una empresa: una tarjeta por póliza no cancelada con sus cuotas impagas
  *  (Seguros por empresa, 17/10). Una sola pieza: la usan el panel de Seguros › Empresas y
@@ -50,7 +48,7 @@ export function CarrierInsuranceDetail({ detail, canEdit, onAddPolicy, returnTo 
                     <li key={i.id} className="flex items-center justify-between gap-2 py-1.5 text-dato text-text-primary">
                       <span>
                         Cuota {i.installment_number} de {i.installments_total}
-                        {i.amount_uf != null && <span className="text-informativo"> · {ufTexto(i.amount_uf)}</span>}
+                        {i.amount_uf != null && <span className="text-informativo"> · {formatUf(i.amount_uf)}</span>}
                       </span>
                       <StatusChip tone={s.tone} icon={s.icon}>{s.label}</StatusChip>
                     </li>

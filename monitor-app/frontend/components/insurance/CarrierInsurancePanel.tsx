@@ -1,8 +1,8 @@
 'use client'
 
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { insuranceApi, insuranceKeys } from '@/lib/api/insurance'
 import { insuranceVerdictStyle } from '@/lib/states'
@@ -12,6 +12,8 @@ import { Estado } from '@/components/ui/Estado'
 import { CarrierInsuranceDetail } from './CarrierInsuranceDetail'
 
 type Target = { id: string; label: string }
+/** La empresa abierta y la vista desde la que se abrió (a ella vuelve la ficha de una póliza). */
+type Opened = Target & { returnTo: string }
 
 const OpenContext = createContext<((t: Target) => void) | null>(null)
 
@@ -26,8 +28,12 @@ export function useOpenCarrierInsurance(): (t: Target) => void {
 /** El panel de seguro de una empresa (Seguros por empresa, 17/10): vista rápida sin fondo,
  *  como la del Directorio; adentro, el mismo detalle que la ficha de empresa. */
 export function CarrierInsurancePanelProvider({ children }: { children: ReactNode }) {
-  const [target, setTarget] = useState<Target | null>(null)
-  const open = useCallback((t: Target) => setTarget(t), [])
+  const [target, setTarget] = useState<Opened | null>(null)
+  const open = useCallback((t: Target) => setTarget({ ...t, returnTo: `${window.location.pathname}${window.location.search}` }), [])
+  // Cambiar de pantalla ("Abrir la póliza", el menú, atrás) cierra el panel: el proveedor
+  // vive en el layout de Seguros y no se desmonta entre rutas (como QuickViewProvider).
+  const pathname = usePathname()
+  useEffect(() => { setTarget(null) }, [pathname])
   return (
     <OpenContext.Provider value={open}>
       {children}
@@ -36,7 +42,7 @@ export function CarrierInsurancePanelProvider({ children }: { children: ReactNod
   )
 }
 
-function CarrierInsurancePanel({ target, onClose }: { target: Target; onClose: () => void }) {
+function CarrierInsurancePanel({ target, onClose }: { target: Opened; onClose: () => void }) {
   const router = useRouter()
   const canEdit = usePermiso('policies.edit')
   const q = useQuery({ queryKey: insuranceKeys.carrier(target.id), queryFn: () => insuranceApi.carrier(target.id) })
@@ -62,7 +68,7 @@ function CarrierInsurancePanel({ target, onClose }: { target: Target; onClose: (
       {q.isError ? <Estado tipo="error" titulo="No se pudo cargar el seguro de la empresa" detalle="Reintenta en unos segundos." />
         : !q.data ? <Estado tipo="cargando" />
         // Registrar una póliza se hace en la pestaña Seguros de la ficha, donde vive el formulario.
-        : <CarrierInsuranceDetail detail={q.data} canEdit={canEdit}
+        : <CarrierInsuranceDetail detail={q.data} canEdit={canEdit} returnTo={target.returnTo}
             onAddPolicy={() => router.push(`/dashboard/carriers/${target.id}?tab=seguros`)} />}
     </PanelLateral>
   )

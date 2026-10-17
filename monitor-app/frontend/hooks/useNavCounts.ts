@@ -34,6 +34,7 @@ export function useNavCounts(permissions: readonly PermissionCode[]): Partial<Re
     queryKey: insuranceKeys.overview(),
     queryFn: () => insuranceApi.carrierOverview(),
     staleTime: 60_000,
+    enabled: permissions.includes('insurance.read'),
   }).data?.facets
   const insurance = facets && INSURANCE_VERDICT_ORDER
     .filter(v => insuranceStanding(v) === 'not_up_to_date')

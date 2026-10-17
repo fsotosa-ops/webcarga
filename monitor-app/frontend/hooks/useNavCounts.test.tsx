@@ -22,6 +22,7 @@ function wrapper({ children }: { children: ReactNode }) {
 
 describe('useNavCounts', () => {
   beforeEach(() => {
+    carrierOverview.mockClear()
     listQueue.mockResolvedValue({ total: 12 })
     listOpen.mockResolvedValue({ total: 0 })
     // No al día = Vencida + Sin póliza + Cuotas vencidas + Sin fechas (el glosario): 1 + 2 + 3 + 4.
@@ -29,21 +30,28 @@ describe('useNavCounts', () => {
   })
 
   it('sin documents.review no pide ni cuenta Por asignar ni Pendientes', async () => {
-    const { result } = renderHook(() => useNavCounts([]), { wrapper })
+    const { result } = renderHook(() => useNavCounts(['insurance.read'] as PermissionCode[]), { wrapper })
     await waitFor(() => expect(result.current.insurance).toBe(10))
     expect(listQueue).not.toHaveBeenCalled()
     expect(listOpen).not.toHaveBeenCalled()
     expect('inbox' in result.current).toBe(false)
   })
 
+  it('sin insurance.read no pide el resumen de Seguros (sería un 403 en cada pantalla)', async () => {
+    const { result } = renderHook(() => useNavCounts(['documents.review'] as PermissionCode[]), { wrapper })
+    await waitFor(() => expect(result.current.inbox).toBe(12))
+    expect(carrierOverview).not.toHaveBeenCalled()
+    expect('insurance' in result.current).toBe(false)
+  })
+
   it('mientras la consulta viaja, la cifra no existe (no se dibuja un cero que miente)', () => {
     carrierOverview.mockReturnValue(new Promise(() => {}))
-    const { result } = renderHook(() => useNavCounts([]), { wrapper })
+    const { result } = renderHook(() => useNavCounts(['insurance.read'] as PermissionCode[]), { wrapper })
     expect('insurance' in result.current).toBe(false)
   })
 
   it('con el dato, el número, incluido el cero', async () => {
-    const { result } = renderHook(() => useNavCounts(['documents.review'] as PermissionCode[]), { wrapper })
+    const { result } = renderHook(() => useNavCounts(['documents.review', 'insurance.read'] as PermissionCode[]), { wrapper })
     await waitFor(() => expect(result.current).toEqual({ inbox: 12, requests: 0, insurance: 10 }))
   })
 })

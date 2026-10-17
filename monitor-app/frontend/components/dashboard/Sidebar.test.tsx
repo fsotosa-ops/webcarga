@@ -348,7 +348,8 @@ describe('Sidebar — Seguros con submódulos', () => {
   it('S8/E7: Seguros tiene Empresas, Pólizas y Cuotas, y Empresas cuenta las no al día', async () => {
     vi.mocked(documentIngestApi.listQueue).mockResolvedValue({ total: 0, rows: [] })
     nav.ruta = '/dashboard/insurance/installments'
-    setup()
+    // Quien ve Seguros: el contador se pide solo con insurance.read.
+    setup(null, ['operations.read', 'insurance.read'])
     const aside = document.querySelector('aside')!
     await waitFor(() => {
       const delGrupo = within(aside).getAllByRole('link')

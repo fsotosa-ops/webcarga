@@ -364,7 +364,8 @@ export function insuranceStanding(v: InsuranceVerdict): InsuranceStanding {
   return v === 'EXPIRING' ? 'expiring' : v === 'UP_TO_DATE' ? 'up_to_date' : 'not_up_to_date'
 }
 
-const uf = (n: number) => `${n.toLocaleString('es-CL', { maximumFractionDigits: 1 })} UF`
+/** Un monto en UF, igual en toda la app de Seguros: sin ceros de relleno y sin perder centésimas. */
+export const formatUf = (n: number) => `${n.toLocaleString('es-CL', { maximumFractionDigits: 2 })} UF`
 
 /** La razón del veredicto, en una línea, con los datos de la fila (sin recalcular nada). */
 export function insuranceVerdictReason(r: CarrierInsuranceRow, hoy: string = hoyEnChile()): string {
@@ -379,7 +380,7 @@ export function insuranceVerdictReason(r: CarrierInsuranceRow, hoy: string = hoy
       return r.operational_status === 'ACTIVE' ? 'Activa sin pólizas registradas' : 'Dada de baja, sin pólizas'
     case 'OVERDUE': {
       const base = r.oldest_overdue_date ? `La más antigua venció el ${fechaCorta(r.oldest_overdue_date, hoy)}` : 'Cuotas vencidas'
-      return r.unpaid_uf ? `${base} · ${uf(r.unpaid_uf)} impagas` : base
+      return r.unpaid_uf ? `${base} · ${formatUf(r.unpaid_uf)} impagas` : base
     }
     case 'NO_DATES':
       return `${aseguradora} sin fecha de término`

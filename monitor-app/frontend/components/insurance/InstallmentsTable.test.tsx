@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }), usePathname: () => '/dashboard/insurance/installments' }))
 vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
 vi.mock('@/lib/api/insurance', async orig => ({ ...(await orig<object>()), insuranceApi: { pay: vi.fn(), unpay: vi.fn(), carrier: vi.fn() } }))
 vi.mock('@/lib/utils/datetime', async orig => ({ ...(await orig<object>()), hoyEnChile: () => '2026-10-15' }))

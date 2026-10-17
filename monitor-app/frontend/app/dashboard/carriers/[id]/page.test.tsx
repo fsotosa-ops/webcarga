@@ -709,6 +709,18 @@ describe('ficha de empresa liviana', () => {
     expect(within(aside).queryByText(/al día/i)).not.toBeInTheDocument()
   })
 
+  // Revisión final de Seguros por empresa: sin pólizas, un solo control para registrar
+  // una (el "+ Póliza" de la pestaña), no también el "Registrar póliza" del detalle.
+  it('la pestaña Seguros sin pólizas ofrece un solo control para registrar una', async () => {
+    const { insuranceApi } = await import('@/lib/api/insurance')
+    vi.mocked(insuranceApi.carrier).mockResolvedValue({ summary: null, policies: [] } as never)
+    vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams({ tab: 'seguros' }) as unknown as ReturnType<typeof useSearchParams>)
+    renderPage()
+    expect((await screen.findAllByText('Sin pólizas registradas')).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: '+ Póliza' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Registrar póliza' })).toBeNull()
+  })
+
   // Revisión final E2 (M3): mientras las pólizas cargan, la pestaña no afirma que no hay.
   it('la pestaña Seguros no dice "Sin pólizas registradas" mientras carga', async () => {
     const { insuranceApi } = await import('@/lib/api/insurance')

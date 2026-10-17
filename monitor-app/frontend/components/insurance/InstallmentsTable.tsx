@@ -9,14 +9,13 @@ import { StatusChip } from '@/components/ui/StatusChip'
 import { BarraDeSeleccion } from '@/components/ui/BarraDeSeleccion'
 import { PanelLateral } from '@/components/ui/PanelLateral'
 import { EntityCell } from '@/components/dashboard/EntityCell'
-import { OUTSIDE_VALIDITY_STYLE, fechaCorta, installmentStateStyle } from '@/lib/states'
+import { OUTSIDE_VALIDITY_STYLE, fechaCorta, formatUf, installmentStateStyle } from '@/lib/states'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { hoyEnChile } from '@/lib/utils/datetime'
 import { policyHref } from '@/lib/navegacion/insurance'
 import { useOpenCarrierInsurance } from './CarrierInsurancePanel'
 import { insuranceApi, type InstallmentRow } from '@/lib/api/insurance'
 
-const uf = (n: number | null) => (n == null ? '—' : `${n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} UF`)
 
 /** Cuotas con selección múltiple y "Marcar pagadas…" (Seguros E2). La usan la
  *  ficha de la póliza y Seguros › Cuotas (`showPolicy`, con empresa y póliza). El
@@ -116,7 +115,7 @@ export function InstallmentsTable({ rows, showPolicy = false, returnTo, empty, b
                   )}
                   <td className="px-3 py-2.5 tabular-nums">{r.installment_number} de {r.installments_total}</td>
                   <td className="px-3 py-2.5 tabular-nums text-informativo">{r.due_date ? fechaCorta(r.due_date) : '—'}</td>
-                  <td className="px-3 py-2.5 tabular-nums">{uf(r.amount_uf)}</td>
+                  <td className="px-3 py-2.5 tabular-nums">{r.amount_uf == null ? '—' : formatUf(r.amount_uf)}</td>
                   <td className="px-3 py-2.5">
                     <span className="flex items-center gap-1.5">
                       <StatusChip tone={s.tone} icon={s.icon}>{s.label}</StatusChip>

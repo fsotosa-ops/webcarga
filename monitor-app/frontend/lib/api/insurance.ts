@@ -34,7 +34,8 @@ export type InsuranceVerdict = 'EXPIRED' | 'NO_POLICY' | 'OVERDUE' | 'NO_DATES' 
 export type CarrierInsuranceRow = {
   carrier_id: string
   carrier_name: string
-  carrier_tax_id: string
+  /** `public.carriers.tax_id` admite nulo. */
+  carrier_tax_id: string | null
   operational_status: string
   policies: number
   worst_state: CarrierInsuranceState

@@ -535,8 +535,9 @@ function EmpresaDetailPageInner() {
         ) : !insuranceQuery.data ? (
           <Estado tipo="cargando" />
         ) : (
+          // Sin `onAddPolicy`: aquí registrar es el "+ Póliza" de la pestaña, uno solo.
           <CarrierInsuranceDetail detail={insuranceQuery.data} canEdit={canEditPolicies}
-            onAddPolicy={() => setAddPolicyOpen(true)} returnTo={`/dashboard/carriers/${id}?tab=seguros`} />
+            returnTo={`/dashboard/carriers/${id}?tab=seguros`} />
         )}
       </div>
       )}

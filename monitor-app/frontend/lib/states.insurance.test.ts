@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { installmentStateStyle, policyStateStyle } from './states'
+import { formatUf, installmentStateStyle, policyStateStyle } from './states'
 
 // Seguros E2: los estados de póliza y cuota los calcula la API (app.insurance_status);
 // aquí solo se vuelven palabra, tono e ícono. Fechas cortas; con año si no es el actual.
@@ -90,5 +90,13 @@ describe('el veredicto de una empresa (E5)', () => {
 
   it('el orden de gravedad es el del spec', () => {
     expect(INSURANCE_VERDICT_ORDER).toEqual(['EXPIRED', 'NO_POLICY', 'OVERDUE', 'NO_DATES', 'EXPIRING', 'UP_TO_DATE'])
+  })
+})
+
+describe('formatUf', () => {
+  it('un solo formato de UF en Seguros: sin ceros de relleno y sin perder centésimas', () => {
+    expect(formatUf(18.4)).toBe('18,4 UF')
+    expect(formatUf(1.25)).toBe('1,25 UF')
+    expect(formatUf(2)).toBe('2 UF')
   })
 })

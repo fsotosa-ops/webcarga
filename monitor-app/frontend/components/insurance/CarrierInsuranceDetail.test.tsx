@@ -5,7 +5,8 @@ import type { CarrierInsuranceDetail as Detail, CarrierInsuranceRow } from '@/li
 
 const carrier = vi.fn()
 const push = vi.fn()
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
+const nav = vi.hoisted(() => ({ ruta: '/dashboard/insurance' }))
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push }), usePathname: () => nav.ruta }))
 vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
 vi.mock('@/lib/api/insurance', async orig => ({ ...(await orig<object>()), insuranceApi: { carrier: (id: string) => carrier(id) } }))
 
@@ -80,5 +81,33 @@ describe('CarrierInsurancePanel: registrar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Registrar póliza' }))
     expect(push).toHaveBeenCalledWith('/dashboard/carriers/c1?tab=seguros')
+  })
+})
+
+describe('CarrierInsurancePanel: al cambiar de pantalla', () => {
+  const montar = () => (
+    <QueryClientProvider client={new QueryClient()}><CarrierInsurancePanelProvider><Abrir /></CarrierInsurancePanelProvider></QueryClientProvider>
+  )
+
+  it('se cierra (el proveedor vive en el layout de Seguros y no se desmonta entre rutas)', async () => {
+    carrier.mockResolvedValue(DETAIL)
+    nav.ruta = '/dashboard/insurance'
+    const { rerender } = render(montar())
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
+    await screen.findByRole('dialog', { name: 'Fletes Maipo Ltda' })
+    nav.ruta = '/dashboard/insurance/policies/p1'
+    rerender(montar())
+    expect(screen.queryByRole('dialog', { name: 'Fletes Maipo Ltda' })).toBeNull()
+  })
+
+  it('"Abrir la póliza" vuelve a la vista desde la que se abrió, con su filtro', async () => {
+    carrier.mockResolvedValue(DETAIL)
+    nav.ruta = '/dashboard/insurance'
+    window.history.replaceState(null, '', '/dashboard/insurance?f.standing=Al+d%C3%ADa')
+    render(montar())
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir' }))
+    const enlace = await screen.findByRole('link', { name: 'Abrir la póliza' })
+    expect(enlace.getAttribute('href')).toBe(`/dashboard/insurance/policies/p1?next=${encodeURIComponent('/dashboard/insurance?f.standing=Al+d%C3%ADa')}`)
+    window.history.replaceState(null, '', '/')
   })
 })

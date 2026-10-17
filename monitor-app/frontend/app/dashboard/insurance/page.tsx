@@ -8,6 +8,7 @@ import {
   fechaCorta, insuranceStanding, insuranceVerdictReason, insuranceVerdictStyle,
 } from '@/lib/states'
 import type { TableView } from '@/lib/table/viewInUrl'
+import { rutDigits, rutSearchKey } from '@/lib/identity'
 import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
 import { PageContainer } from '@/components/ui/PageContainer'
 import { Estado } from '@/components/ui/Estado'
@@ -66,7 +67,11 @@ function EmpresasPageInner() {
   const model = useDataTable({
     rows: overview.data?.data ?? [], columns: columnas, getRowId: r => r.carrier_id, view, onViewChange: setView,
     columnPrefs: preferencias.columns,
-    search: (r, q) => [r.carrier_name, r.carrier_tax_id].some(x => x.toLowerCase().includes(q)),
+    // El RUT se busca por sus dígitos (con o sin puntos y guion), como en el resto de la app.
+    search: (r, q) => {
+      const rut = rutSearchKey(q)
+      return r.carrier_name.toLowerCase().includes(q) || (rut !== '' && rutDigits(r.carrier_tax_id).includes(rut))
+    },
   })
 
   const recuadros: ShortcutTileGroup[] = [{ tiles: [
@@ -74,7 +79,10 @@ function EmpresasPageInner() {
     { column: 'standing', value: INSURANCE_STANDING_LABEL.expiring, label: INSURANCE_STANDING_LABEL.expiring, tone: 'warning' },
     { column: 'standing', value: INSURANCE_STANDING_LABEL.up_to_date, label: INSURANCE_STANDING_LABEL.up_to_date, tone: 'resolved' },
   ] }]
-  const soloNoAlDia = (view.filters.standing ?? []).join() === NOT_UP_TO_DATE
+  // "Todas están al día" solo es cierto en la vista inicial: con otro filtro o una búsqueda,
+  // una tabla vacía no dice eso.
+  const enVistaInicial = !view.q && Object.keys(view.filters).length === 1
+    && (view.filters.standing ?? []).join() === NOT_UP_TO_DATE
 
   return (
     <PageContainer>
@@ -88,7 +96,7 @@ function EmpresasPageInner() {
           <ShortcutTiles model={model} groups={recuadros} />
           <TableToolbar model={model} searchPlaceholder="Empresa o RUT…" preferences={preferencias} />
           <DataTable model={model} label="Seguros por empresa" pageSizes={[50, 100]}
-            empty={soloNoAlDia && !view.q ? 'Todas las empresas están al día' : 'Nada en esta vista. Prueba con otro recuadro o limpia los filtros.'} />
+            empty={enVistaInicial ? 'Todas las empresas están al día' : 'Nada en esta vista. Prueba con otro recuadro o limpia los filtros.'} />
         </div>
       )}
     </PageContainer>

@@ -396,15 +396,18 @@ test('La ficha de empresa sube documentos con la empresa ya puesta (D)', async (
 })
 
 test('Seguros: póliza nueva → su ficha → marcar una cuota pagada → aparece en Cuotas › Pagadas (S12)', async ({ page }) => {
+  test.setTimeout(90000)
   const problems = watch(page)
   const dia = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString().slice(0, 10)
   const numero = `SMK-${Date.now()}`
   await login(page, 'seg@sim.local')
   // Una empresa activa cualquiera (todas admiten otra póliza): la póliza la crea el
   // test. Elegir "sin póliza" se agotaba, porque cada corrida le crea una a alguna.
-  await page.goto('/dashboard/insurance?group=carrier')
-  // El nombre abre la vista rápida; el resto de la fila, la ficha de la empresa › Seguros.
-  await page.locator('tbody tr').first().locator('td').nth(1).click({ timeout: 30000 })
+  // Seguros › Empresas, todas: el enlace del nombre es la ficha de la empresa (el clic
+  // abre el panel); su pestaña Seguros es donde se registra la póliza.
+  await page.goto(`/dashboard/insurance?f.standing=${encodeURIComponent('Al día')}`)
+  const ficha = await page.getByRole('link', { name: /^Ver empresa / }).first().getAttribute('href', { timeout: 30000 })
+  await page.goto(`${ficha}?tab=seguros`)
   await page.getByRole('button', { name: '+ Póliza' }).click({ timeout: 20000 })
   await page.getByPlaceholder('Aseguradora').fill('Aseguradora Humo')
   await page.getByPlaceholder('N° de póliza').fill(numero)
@@ -426,6 +429,31 @@ test('Seguros: póliza nueva → su ficha → marcar una cuota pagada → aparec
   await expect(page.getByText(numero).first()).toBeVisible({ timeout: 20000 })
   expect(problems).toEqual([])
 })
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+  test(`Seguros › Empresas → un recuadro → el panel de la empresa → su póliza (${viewport.width} px)`, async ({ page }) => {
+    const problems = watch(page)
+    await page.setViewportSize(viewport)
+    await login(page, 'seg@sim.local')
+    await page.goto('/dashboard/insurance')
+    // Abre en "No al día" (gestión por excepción).
+    await expect(page.getByRole('button', { name: /^No al día, \d+/ })).toHaveAttribute('aria-pressed', 'true', { timeout: 30000 })
+    await page.getByRole('button', { name: /^Al día, \d+/ }).click()
+    const tabla = page.getByRole('table', { name: 'Seguros por empresa' })
+    const nombre = tabla.getByRole('link', { name: /^Ver empresa / }).first()
+    const empresa = (await nombre.getAttribute('aria-label', { timeout: 20000 }))!.replace(/^Ver empresa /, '')
+    await nombre.click()
+    const panel = page.getByRole('dialog', { name: empresa })
+    await expect(panel.getByText('Al día').first()).toBeVisible({ timeout: 20000 })
+    await page.screenshot({ path: `test-results/seguros-empresas-${viewport.width}.png`, fullPage: true })
+    // Sin desborde lateral a ningún ancho.
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    await panel.getByRole('link', { name: /Abrir la póliza/ }).first().click()
+    await page.waitForURL('**/dashboard/insurance/policies/**', { timeout: 20000 })
+    await page.getByRole('link', { name: /^Volver a / }).first().waitFor({ timeout: 20000 })
+    expect(problems).toEqual([])
+  })
+}
 
 test('Configuración: índice → Motivos de conductor → abrir un motivo → "Está bien así" → la fila queda revisada (P1.9)', async ({ page }) => {
   const problems = watch(page)

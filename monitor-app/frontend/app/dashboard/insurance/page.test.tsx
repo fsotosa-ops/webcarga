@@ -19,7 +19,7 @@ import EmpresasPage from './page'
 import InsuranceLayout from './layout'
 
 const fila = (id: string, name: string, p: Partial<CarrierInsuranceRow>): CarrierInsuranceRow => ({
-  carrier_id: id, carrier_name: name, carrier_tax_id: `76.${id}`, operational_status: 'ACTIVE', policies: 1,
+  carrier_id: id, carrier_name: name, carrier_tax_id: `76.${id}11.111-1`, operational_status: 'ACTIVE', policies: 1,
   worst_state: 'VALID', insurance_verdict: 'UP_TO_DATE', insurance_alert: null, severe_overdue: false,
   unpaid_installments: 0, overdue_installments: 0, unpaid_uf: null, oldest_overdue_date: null, next_due_date: null,
   reason_insurer: null, reason_valid_to: null, ...p,
@@ -75,7 +75,7 @@ describe('Seguros › Empresas', () => {
   })
 
   it('un enlace con ?q=RUT abre con esa búsqueda, sin el filtro inicial', async () => {
-    memoryUrl.reset('/dashboard/insurance?q=76.4')
+    memoryUrl.reset('/dashboard/insurance?q=76.411.111-1')
     montar()
     await screen.findByRole('table', { name: 'Seguros por empresa' })
     expect(empresas().map(t => t?.split('76.')[0])).toEqual(['Logistica Pacifico SpA'])
@@ -86,5 +86,33 @@ describe('Seguros › Empresas', () => {
     fireEvent.click(await screen.findByRole('link', { name: 'Ver empresa Fletes Maipo Ltda' }))
     expect(await screen.findByRole('dialog', { name: 'Fletes Maipo Ltda' })).toBeInTheDocument()
     expect(carrier).toHaveBeenCalledWith('1')
+  })
+})
+
+describe('Seguros › Empresas: buscar y vacíos (revisión final)', () => {
+  it('el RUT se encuentra con o sin puntos y guion, como en el resto de la app', async () => {
+    carrierOverview.mockResolvedValue({ data: [fila('9', 'Fletes Norte SpA', { carrier_tax_id: '76.123.456-7' })], facets: FACETS })
+    memoryUrl.reset('/dashboard/insurance?q=76123456')
+    montar()
+    await screen.findByRole('table', { name: 'Seguros por empresa' })
+    expect(empresas().map(t => t?.split('76.')[0])).toEqual(['Fletes Norte SpA'])
+  })
+
+  it('una empresa sin RUT no rompe la búsqueda', async () => {
+    carrierOverview.mockResolvedValue({
+      data: [fila('8', 'Sin Rut Ltda', { carrier_tax_id: null }), fila('9', 'Fletes Norte SpA', {})], facets: FACETS,
+    })
+    memoryUrl.reset('/dashboard/insurance?q=norte')
+    montar()
+    await screen.findByRole('table', { name: 'Seguros por empresa' })
+    expect(empresas().map(t => t?.split('76.')[0])).toEqual(['Fletes Norte SpA'])
+  })
+
+  it('"No al día" con otro filtro sin resultados no afirma que todas están al día', async () => {
+    memoryUrl.reset(`/dashboard/insurance?f.standing=${encodeURIComponent('No al día')}&f.verdict=${encodeURIComponent('Póliza sin fechas')}`)
+    montar()
+    await screen.findByRole('table', { name: 'Seguros por empresa' }).catch(() => null)
+    expect(await screen.findByText(/Nada en esta vista/)).toBeInTheDocument()
+    expect(screen.queryByText('Todas las empresas están al día')).toBeNull()
   })
 })
