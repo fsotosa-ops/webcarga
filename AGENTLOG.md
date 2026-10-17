@@ -84,7 +84,10 @@ Reasignar, Descartados, Documentos exigidos) pasan a los tokens y a la escala; c
 6. ~~Campo, ventanas y color restante~~ HECHO 17/10 (ver abajo).
 7. Pendiente menor: `AsignarConductorPopover` conserva la etiqueta en mayúsculas ("El TMS reportó"); 17 botones
    principales escritos a mano (trinquete en 17); `TEXTO_CUERPO` (gray-600, lib/ui/texto.ts) sin token equivalente.
-8. Administración (Personas, Crear usuario) no se pudo mirar en la copia local: el Propietario exige TOTP. Mirarla en dev.
+8. ~~Administración en dev~~ MIRADA 17/10 (Personas, Crear usuario, Editar roles; 1440 y 390). Halló que el fondo de una
+   ventana abierta dentro de un `space-y` heredaba margin-bottom y medía 16 px menos: `Dialog` va envuelta en un
+   contenedor sin caja (`251ec162`, test incluido). Queda menor: `SelectorDeRoles` con etiquetas en mayúsculas
+   ("POR ÁREA", "TODA LA APP").
 
 **Decisiones de arquitectura:**
 - Un solo modelo de filtro por pantalla; recuadros, embudos y chips son puertas al mismo filtro; cifras facetadas.
