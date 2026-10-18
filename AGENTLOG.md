@@ -123,7 +123,8 @@ Reasignar, Descartados, Documentos exigidos) pasan a los tokens y a la escala; c
    definición), contadores en `useNavCounts`, `MobileNav` (barra por perfil + cajón sobre `Dialog`), `AccountActions` y
    `useSignOut` compartidos con la barra lateral, cabecera oscura con el logo oficial. Revisión opus: 3 Important + 1
    re-graduado, arreglados con test. Diferidos: `aria-current` en el botón Menú; Atrás de Android con el cajón abierto.
-   **Siguiente:** los temas diferidos (descarga de viajes para conciliar,
+   **Siguiente (próxima sesión):** 1) decidir el modo tarjetas de `DataTable` para teléfono (maqueta primero, sirve a
+   todas las tablas); 2) los temas diferidos (descarga de viajes para conciliar,
    SearchInput común).
 
 **Decisiones de arquitectura:**
