@@ -125,3 +125,22 @@ async def test_E1_que_empresas_tienen_veredicto(conexion_revertida):
     await _policy(conn, inactiva_con, valid_from=hoy - timedelta(days=400), valid_to=hoy - timedelta(days=5))
     assert await _fila(conn, inactiva_sin) is None
     assert (await _fila(conn, inactiva_con))["insurance_verdict"] == "EXPIRED"
+
+
+
+async def test_E1_cancelar_la_sucesora_devuelve_la_renovada_a_su_estado(conexion_revertida):
+    """Una renovada siempre tiene una sucesora viva: cancelar la sucesora borra el enlace
+    (`cancel_policy`) y la vieja vuelve a su estado. Así una empresa nunca queda "Sin póliza"
+    con la deuda de una renovada escondida, ni aparece por una renovada sin deuda."""
+    from app.services import insurance
+
+    conn = conexion_revertida
+    hoy = await _today(conn)
+    c = await _empresa(conn, status="INACTIVE")
+    vieja = await _policy(conn, c, valid_from=hoy - timedelta(days=400), valid_to=hoy - timedelta(days=30))
+    await _cuota(conn, vieja, 1, hoy - timedelta(days=60))
+    nueva = await _policy(conn, c, valid_from=hoy - timedelta(days=30), valid_to=hoy + timedelta(days=335))
+    await insurance.link_renewal(conn, vieja, nueva, actor="11111111-1111-1111-1111-111111111111")
+    await insurance.cancel_policy(conn, nueva, reason="Dada de baja", actor="11111111-1111-1111-1111-111111111111")
+    fila = await _fila(conn, c)
+    assert (fila["insurance_verdict"], fila["policies"], fila["overdue_installments"]) == ("EXPIRED", 1, 1)

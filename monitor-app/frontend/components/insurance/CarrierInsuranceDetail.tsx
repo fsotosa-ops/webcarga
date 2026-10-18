@@ -40,6 +40,9 @@ export function CarrierInsuranceDetail({ detail, canEdit, onAddPolicy, returnTo 
             <p className="mt-0.5 text-etiqueta text-informativo">
               {p.valid_from && p.valid_to ? `Vigencia ${fechaCorta(p.valid_from)} – ${fechaCorta(p.valid_to)}` : 'Sin fechas de vigencia'}
             </p>
+            <p className="text-etiqueta text-informativo">
+              {p.coverages.length ? `Coberturas: ${p.coverages.map(c => c.name).join(', ')}` : 'Sin coberturas'}
+            </p>
             {impagas.length > 0 && (
               <ul className="mt-2 divide-y divide-border/60 border-t border-border">
                 {impagas.map(i => {

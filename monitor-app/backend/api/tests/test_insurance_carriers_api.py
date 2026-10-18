@@ -103,3 +103,27 @@ async def test_E3_una_inactiva_sin_polizas_existe_pero_no_tiene_veredicto(conexi
 
     c = await _empresa(conexion_revertida, status="INACTIVE")
     assert await insurance.carrier_insurance(conexion_revertida, c) == {"summary": None, "policies": []}
+
+
+async def test_E3_cada_poliza_del_detalle_trae_sus_coberturas(conexion_revertida):
+    """La tarjeta del panel dice las coberturas (spec: aseguradora · N°, estado y vigencia,
+    coberturas), en el mismo formato que la ficha de la póliza."""
+    from app.services import insurance
+
+    conn = conexion_revertida
+    hoy = await _today(conn)
+    c = await _empresa(conn)
+    p = await _policy(conn, c, valid_from=hoy - timedelta(days=30), valid_to=hoy + timedelta(days=335))
+    sin = await _policy(conn, c, valid_from=hoy - timedelta(days=30), valid_to=hoy + timedelta(days=200))
+    rc, carga = [await conn.fetchval(
+        "INSERT INTO public.coverage_types (code, name) VALUES ($1, $2) RETURNING id", code, name)
+        for code, name in (("ZZ_RC", "Responsabilidad civil"), ("ZZ_CARGA", "Carga"))]
+    for t in (rc, carga):
+        await conn.execute("INSERT INTO public.policy_coverages (policy_id, coverage_type_id) VALUES ($1, $2)", p, t)
+
+    polizas = {x["id"]: x for x in (await insurance.carrier_insurance(conn, c))["policies"]}
+    assert polizas[p]["coverages"] == [
+        {"coverage_type_id": str(carga), "code": "ZZ_CARGA", "name": "Carga"},
+        {"coverage_type_id": str(rc), "code": "ZZ_RC", "name": "Responsabilidad civil"},
+    ]
+    assert polizas[sin]["coverages"] == []

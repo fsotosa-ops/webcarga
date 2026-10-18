@@ -683,7 +683,7 @@ describe('ficha de empresa liviana', () => {
       id: 'p1', carrier_id: 't1', carrier_name: 'Transportes Test', carrier_tax_id: '11111111-1', insurance_company: 'SURA',
       policy_number: '8581440-RC', valid_from: '2025-05-22', valid_to: '2026-05-22', has_file: false, policy_state: 'EXPIRED',
       expires_in_days: -146, installments_total: 2, paid_installments: 0, unpaid_installments: 2, overdue_installments: 2,
-      next_due_date: null, has_outside_validity: false, installments: [],
+      next_due_date: null, has_outside_validity: false, installments: [], coverages: [],
     }] } as never)
     vi.mocked(useSearchParams).mockReturnValue(new URLSearchParams({ tab: 'seguros' }) as unknown as ReturnType<typeof useSearchParams>)
     renderPage()

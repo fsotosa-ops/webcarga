@@ -117,9 +117,19 @@ async def carrier_overview(db) -> dict:
     return {"data": rows, "facets": {**facets, "total": len(rows)}}
 
 
+def policy_coverages_sql(policy_ref: str) -> str:
+    """Las coberturas de una póliza, por nombre: una consulta para la ficha de la póliza y
+    para cada tarjeta del detalle de empresa. `policy_ref` es `$1` o una columna."""
+    return (
+        "SELECT ct.id AS coverage_type_id, ct.code, ct.name "
+        "FROM public.policy_coverages pc JOIN public.coverage_types ct ON ct.id = pc.coverage_type_id "
+        f"WHERE pc.policy_id = {policy_ref} ORDER BY ct.name"
+    )
+
+
 async def carrier_insurance(db, carrier_id: str) -> dict | None:
     """El detalle de una empresa: su fila y sus pólizas no canceladas, cada una con sus
-    cuotas, en una consulta. Una renovada aparece solo si todavía tiene cuotas impagas
+    cuotas y sus coberturas, en una consulta. Una renovada aparece solo si todavía tiene cuotas impagas
     (son deudas); si no, es historia. `None` si la empresa no existe; una que existe sin
     veredicto (inactiva sin pólizas, fuera de la vista) da `summary` vacío."""
     if not await db.fetchval("SELECT 1 FROM public.carriers WHERE id = $1", carrier_id):
@@ -137,7 +147,8 @@ async def carrier_insurance(db, carrier_id: str) -> dict | None:
                 'paid_on', s.paid_on, 'paid_by', s.paid_by, 'outside_validity', s.outside_validity)
                 ORDER BY s.installment_number)
             FROM app.insurance_status s WHERE s.policy_id = pol.id AND s.installment_id IS NOT NULL
-        ), '[]') AS installments
+        ), '[]') AS installments,
+        coalesce((SELECT json_agg(cv ORDER BY cv.name) FROM ({policy_coverages_sql('pol.id')}) cv), '[]') AS coverages
         FROM pol
         WHERE pol.carrier_id = $1 AND pol.policy_state <> 'CANCELLED'
           AND (pol.policy_state <> 'RENEWED' OR pol.unpaid_installments > 0)
@@ -145,7 +156,8 @@ async def carrier_insurance(db, carrier_id: str) -> dict | None:
         carrier_id,
     )
     return {"summary": dict(summary),
-            "policies": [{**dict(r), "installments": json.loads(r["installments"])} for r in rows]}
+            "policies": [{**dict(r), "installments": json.loads(r["installments"]),
+                          "coverages": json.loads(r["coverages"])} for r in rows]}
 
 
 # ── Cuotas: la cola de pagos ───────────────────────────────────────────────────

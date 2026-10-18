@@ -73,16 +73,36 @@ describe('useUrlView', () => {
       expect(replace).toHaveBeenCalledWith('/dashboard/operations/closures?f.standing=not_up_to_date')
     })
 
-    it('quitar el filtro deja la URL sin él y no se vuelve a poner', () => {
+    it('quitar el filtro lo deja dicho en la URL (view=all), y no se vuelve a poner', () => {
       query = ''
       const { result, rerender } = renderHook(() => useUrlView({ initial: INICIAL }))
       query = 'f.standing=not_up_to_date'
       rerender()
       act(() => result.current[1]({ filters: {}, q: '', sort: null }))
-      query = ''
+      query = 'view=all'
       rerender()
       expect(result.current[0].filters).toEqual({})
-      expect(replace).toHaveBeenLastCalledWith('/dashboard/operations/closures')
+      expect(replace).toHaveBeenLastCalledWith('/dashboard/operations/closures?view=all')
+    })
+
+    it('volver a la pantalla (Atrás, un marcador) con view=all no reaplica la inicial', () => {
+      query = 'view=all'
+      const { result } = renderHook(() => useUrlView({ initial: INICIAL }))
+      expect(result.current[0]).toEqual({ filters: {}, q: '', sort: null })
+      expect(replace).not.toHaveBeenCalled()
+    })
+
+    it('con un filtro de nuevo, view=all sobra y se va', () => {
+      query = 'view=all'
+      const { result } = renderHook(() => useUrlView({ initial: INICIAL }))
+      act(() => result.current[1]({ filters: { standing: ['up_to_date'] }, q: '', sort: null }))
+      expect(replace).toHaveBeenLastCalledWith('/dashboard/operations/closures?f.standing=up_to_date')
+    })
+
+    it('una tabla sin vista inicial no escribe view=all al vaciarse', () => {
+      const { result } = renderHook(() => useUrlView())
+      act(() => result.current[1]({ filters: {}, q: '', sort: null }))
+      expect(replace).toHaveBeenLastCalledWith('/dashboard/operations/closures?date=2026-10-16&tab=fleet')
     })
 
     it('un enlace con su propia vista (?q=RUT) manda sobre la inicial', () => {

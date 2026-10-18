@@ -14,6 +14,16 @@ export type TableView = {
 export const EMPTY_VIEW: TableView = { filters: {}, q: '', sort: null }
 
 const PREFIJO = 'f.'
+
+/** "Sin filtros, a propósito": en una tabla que abre con una vista inicial (Seguros ›
+ *  Empresas abre en "No al día"), una URL sin vista vuelve a la inicial. Quien la vació
+ *  deja esta marca, así Atrás o un marcador la encuentran vacía. */
+const ALL_VIEW = { key: 'view', value: 'all' } as const
+export const isAllView = (params: Pick<URLSearchParams, 'get'>) => params.get(ALL_VIEW.key) === ALL_VIEW.value
+export function markAllView(params: URLSearchParams, on: boolean): URLSearchParams {
+  if (on) params.set(ALL_VIEW.key, ALL_VIEW.value); else params.delete(ALL_VIEW.key)
+  return params
+}
 type Leible = Pick<URLSearchParams, 'get' | 'forEach'>
 
 /** Un valor escrito a mano en la URL ("50%") no viene codificado: se lee tal cual en

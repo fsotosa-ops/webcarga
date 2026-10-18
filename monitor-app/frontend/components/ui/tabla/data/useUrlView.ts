@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { readView, writeView, type TableView } from '@/lib/table/viewInUrl'
+import { isAllView, markAllView, readView, writeView, type TableView } from '@/lib/table/viewInUrl'
 
 const isEmpty = (v: TableView) => !Object.keys(v.filters).length && !v.q && !v.sort
 
@@ -21,8 +21,9 @@ const isEmpty = (v: TableView) => !Object.keys(v.filters).length && !v.q && !v.s
  *
  *  `initial`: la vista con que abre la pantalla cuando la URL no trae ninguna (Seguros ›
  *  Empresas abre en "No al día"). Se escribe en la URL al entrar, así se comparte y se
- *  ve como un filtro más; quitarlo después no la vuelve a poner. Un enlace con su
- *  propia vista (`?q=RUT`) manda sobre ella. */
+ *  ve como un filtro más. Vaciar la vista deja `view=all` en la URL: Atrás y los
+ *  marcadores la encuentran vacía en vez de volver a la inicial. Un enlace con su propia
+ *  vista (`?q=RUT`) manda sobre ella. */
 export function useUrlView({ initial }: { initial?: TableView } = {}): [TableView, (view: TableView) => void] {
   const pathname = usePathname()
   const params = useSearchParams()
@@ -30,7 +31,10 @@ export function useUrlView({ initial }: { initial?: TableView } = {}): [TableVie
 
   // `pendientes`: las consultas que esta vista escribió y la URL todavía no confirmó.
   // Al entrar sin vista en la URL, la inicial; un efecto la escribe en la URL (una vez).
-  const [usaInicial] = useState(() => !!initial && isEmpty(readView(new URLSearchParams(clave))))
+  const [usaInicial] = useState(() => {
+    const p = new URLSearchParams(clave)
+    return !!initial && isEmpty(readView(p)) && !isAllView(p)
+  })
   const [vista, setVista] = useState(() => ({
     clave,
     view: usaInicial && initial ? initial : readView(new URLSearchParams(clave)),
@@ -50,12 +54,13 @@ export function useUrlView({ initial }: { initial?: TableView } = {}): [TableVie
   base.current = vista.pendientes.at(-1) ?? clave
 
   const setView = useCallback((next: TableView) => {
-    const s = writeView(new URLSearchParams(base.current), next).toString()
+    // Solo una tabla con vista inicial necesita decir que está vacía a propósito.
+    const s = markAllView(writeView(new URLSearchParams(base.current), next), !!initial && isEmpty(next)).toString()
     base.current = s
     setVista(v => ({ ...v, view: next, pendientes: [...v.pendientes, s] }))
     // `null`: Next sincroniza useSearchParams solo si el estado no es el suyo propio.
     window.history.replaceState(null, '', s ? `${pathname}?${s}` : pathname)
-  }, [pathname])
+  }, [pathname, initial])
 
   useEffect(() => {
     if (usaInicial && initial) setView(initial)

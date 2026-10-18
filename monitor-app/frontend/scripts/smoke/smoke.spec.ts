@@ -455,6 +455,22 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
   })
 }
 
+test('Seguros: un marcador viejo de Pólizas cae en Pólizas, y quitar el filtro de Empresas sobrevive a Atrás', async ({ page }) => {
+  test.setTimeout(90000)
+  const problems = watch(page)
+  await login(page, 'seg@sim.local')
+  await page.goto('/dashboard/insurance?state=EXPIRED')
+  await page.waitForURL('**/dashboard/insurance/policies?state=EXPIRED', { timeout: 30000 })
+  await page.goto('/dashboard/insurance')
+  await page.getByRole('button', { name: /^Quitar|Limpiar/ }).first().click({ timeout: 30000 })
+  await page.waitForURL('**/dashboard/insurance?view=all', { timeout: 20000 })
+  await page.goto('/dashboard/insurance/installments')
+  await page.goBack()
+  await page.waitForURL('**/dashboard/insurance?view=all', { timeout: 20000 })
+  await expect(page.getByRole('button', { name: /^No al día, \d+/ })).toHaveAttribute('aria-pressed', 'false', { timeout: 20000 })
+  expect(problems).toEqual([])
+})
+
 test('Configuración: índice → Motivos de conductor → abrir un motivo → "Está bien así" → la fila queda revisada (P1.9)', async ({ page }) => {
   const problems = watch(page)
   await login(page, 'ops@sim.local')

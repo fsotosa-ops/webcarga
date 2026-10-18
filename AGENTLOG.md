@@ -102,9 +102,14 @@ Reasignar, Descartados, Documentos exigidos) pasan a los tokens y a la escala; c
    - Frontend: Seguros › Empresas (abre en "No al día", recuadros, razón, panel con pólizas y cuotas), Pólizas en
      `/dashboard/insurance/policies`, contador del menú en Empresas (con `insurance.read`), `useUrlView({ initial })`,
      `formatUf` único, guardia E9 (el veredicto solo por el glosario).
-   - Revisión opus: 2 Important + 4 re-graduados, arreglados con test. Diferidos: quitar el filtro inicial no sobrevive
-     a Atrás; razón de NO_POLICY con una renovada con deuda; coberturas en la tarjeta del panel; `worst_state` sin uso
-     en el frontend; marcadores viejos de Pólizas conservan parámetros.
+   - Revisión opus: 2 Important + 4 re-graduados, arreglados con test. Pendientes menores cerrados el 17/10 (noche):
+     vaciar la vista deja `view=all` (Atrás y marcadores no reaplican "No al día"; `markAllView`/`isAllView` en
+     `lib/table/viewInUrl.ts`); coberturas en la tarjeta del panel (`policy_coverages_sql`, una consulta para la ficha
+     de la póliza y el detalle de empresa); marcadores viejos de Pólizas (`?state`, `?page`, `?group`) redirigen
+     desde el servidor (`legacyPoliciesHref`; la vista pasó a `components/insurance/CarrierInsuranceOverview.tsx`).
+     "NO_POLICY con una renovada con deuda" no puede ocurrir: cancelar la sucesora borra el enlace y la vieja vuelve a
+     su estado (test que lo fija). Queda: `worst_state` sin uso en el frontend; tabla del kit sin diseño para teléfono
+     (propuesta: modo tarjetas en `DataTable`, para todas las tablas).
    - Verificación: vitest 2.023/2.023, tsc, build, backend del área 110 (copia local), humo 29/29 (8 reintentados por
      carga de la máquina, load 150; todos timeouts). Backend: 11 fallos previos al plan (D1 Directorio, identity,
      cliente del viaje, tablero retirado) siguen fuera de alcance.

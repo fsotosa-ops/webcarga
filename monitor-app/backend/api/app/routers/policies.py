@@ -44,14 +44,7 @@ async def _assemble_policy_detail(policy_id: str, pool, supabase=None) -> dict:
     if not policy:
         raise HTTPException(404, "Póliza no encontrada")
 
-    coverages = await pool.fetch(
-        """
-        SELECT ct.id AS coverage_type_id, ct.code, ct.name
-        FROM public.policy_coverages pc JOIN public.coverage_types ct ON ct.id = pc.coverage_type_id
-        WHERE pc.policy_id = $1 ORDER BY ct.name
-        """,
-        policy_id,
-    )
+    coverages = await pool.fetch(insurance.policy_coverages_sql("$1"), policy_id)
     assets = await pool.fetch(
         """
         SELECT a.id AS asset_id, a.license_plate, a.asset_type

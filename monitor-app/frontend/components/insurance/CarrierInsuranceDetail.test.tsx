@@ -32,6 +32,7 @@ const DETAIL: Detail = {
     expires_in_days: -24, installments_total: 12, paid_installments: 8, unpaid_installments: 3, overdue_installments: 2,
     next_due_date: '2026-09-05', has_outside_validity: false,
     installments: [cuota(8, 'PAID', '2026-08-05'), cuota(9, 'OVERDUE', '2026-09-05'), cuota(10, 'OVERDUE', '2026-10-05'), cuota(11, 'PENDING', '2026-11-05')],
+    coverages: [{ coverage_type_id: 't1', code: 'CARGA', name: 'Carga' }, { coverage_type_id: 't2', code: 'RC', name: 'Responsabilidad civil' }],
   }],
 }
 
@@ -44,6 +45,14 @@ describe('CarrierInsuranceDetail (E6)', () => {
     ])
     expect(within(tarjeta).getByText('1 pagada')).toBeInTheDocument()
     expect(within(tarjeta).getByRole('link', { name: 'Abrir la póliza' })).toHaveAttribute('href', expect.stringContaining('/p1'))
+  })
+
+  it('la tarjeta dice las coberturas de la póliza, o que no tiene', () => {
+    const { rerender } = render(<CarrierInsuranceDetail detail={DETAIL} canEdit={false} />)
+    const tarjeta = () => screen.getByRole('article', { name: 'HDI · Póliza 2024-118' })
+    expect(within(tarjeta()).getByText('Coberturas: Carga, Responsabilidad civil')).toBeInTheDocument()
+    rerender(<CarrierInsuranceDetail detail={{ ...DETAIL, policies: [{ ...DETAIL.policies[0], coverages: [] }] }} canEdit={false} />)
+    expect(within(tarjeta()).getByText('Sin coberturas')).toBeInTheDocument()
   })
 
   it('sin pólizas lo dice, y ofrece registrar una solo a quien puede', () => {

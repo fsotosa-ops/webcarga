@@ -53,11 +53,15 @@ export type CarrierInsuranceRow = {
   reason_valid_to: string | null
 }
 
-/** Una empresa con sus pólizas no canceladas (las renovadas, solo con deuda) y sus cuotas.
+/** Una cobertura de una póliza (catálogo `coverage_types`). */
+export type PolicyCoverage = { coverage_type_id: string; code: string; name: string }
+
+/** Una empresa con sus pólizas no canceladas (las renovadas, solo con deuda), sus cuotas y
+ *  sus coberturas.
  *  `summary` vacío: la empresa existe pero no tiene veredicto (inactiva y sin pólizas). */
 export type CarrierInsuranceDetail = {
   summary: CarrierInsuranceRow | null
-  policies: (PolicyRow & { installments: InstallmentRow[] })[]
+  policies: (PolicyRow & { installments: InstallmentRow[]; coverages: PolicyCoverage[] })[]
 }
 
 export type CarrierInsuranceOverview = {
@@ -111,7 +115,7 @@ export type PolicyDetail = {
   expires_in_days: number | null
   renews_policy_id: string | null
   renewed_by_policy_id: string | null
-  coverages: { coverage_type_id: string; code: string; name: string }[]
+  coverages: PolicyCoverage[]
   assets: { asset_id: string; license_plate: string; asset_type: string }[]
   installments: InstallmentRow[]
   term_changes: { previous_valid_to: string | null; new_valid_to: string; endorsement_number: string | null; endorsement_date: string | null; changed_at: string }[]
