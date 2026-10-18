@@ -108,7 +108,9 @@ Reasignar, Descartados, Documentos exigidos) pasan a los tokens y a la escala; c
    - Verificación: vitest 2.023/2.023, tsc, build, backend del área 110 (copia local), humo 29/29 (8 reintentados por
      carga de la máquina, load 150; todos timeouts). Backend: 11 fallos previos al plan (D1 Directorio, identity,
      cliente del viaje, tablero retirado) siguen fuera de alcance.
-   - Falta: mirarlo en dev a 1440 y 390 tras el despliegue.
+   - Verificado en dev 17/10 (Deploy Frontend y Monitor API verdes): Empresas abre en "No al día" con 41, recarga con
+     el filtro, sin desborde a 390, panel → "Abrir la póliza" cierra el panel y ofrece "Volver a Seguros" con el
+     filtro; API sin errores (el 404 de table-preferences es "sin preferencias guardadas").
 10. Navegación en el teléfono: spec `docs/superpowers/specs/2026-10-17-navegacion-movil-design.md` (aprobado 17/10:
    barra con hasta 4 destinos según el perfil + "Menú", cajón con el menú completo, cabecera oscura con el logo
    oficial; etiquetas siempre, no solo íconos) y plan `docs/superpowers/plans/2026-10-17-navegacion-movil.md`
@@ -116,7 +118,7 @@ Reasignar, Descartados, Documentos exigidos) pasan a los tokens y a la escala; c
    definición), contadores en `useNavCounts`, `MobileNav` (barra por perfil + cajón sobre `Dialog`), `AccountActions` y
    `useSignOut` compartidos con la barra lateral, cabecera oscura con el logo oficial. Revisión opus: 3 Important + 1
    re-graduado, arreglados con test. Diferidos: `aria-current` en el botón Menú; Atrás de Android con el cajón abierto.
-   **Siguiente:** revisar Seguros › Empresas en dev; luego los temas diferidos (descarga de viajes para conciliar,
+   **Siguiente:** los temas diferidos (descarga de viajes para conciliar,
    SearchInput común).
 
 **Decisiones de arquitectura:**
