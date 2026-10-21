@@ -197,6 +197,8 @@ async def _sujeto(conn, tabla: str) -> uuid.UUID:
 
 @pytest.mark.parametrize("tabla, valor", [
     ("drivers", "LEGACY_INACTIVE"), ("assets", "LEGACY_INACTIVE"), ("carriers", "PAUSED"),
+    # La baja es un estado desde el 21/10 (20261028090100): el valor viejo ya no entra.
+    ("carriers", "LEGACY_INACTIVE"),
 ])
 async def test_el_ciclo_de_vida_fuera_del_glosario_se_rechaza(conexion_revertida, tabla, valor):
     conn = conexion_revertida

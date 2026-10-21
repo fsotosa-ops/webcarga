@@ -29,14 +29,14 @@ interface Props {
 }
 
 /** Qué códigos agrupa cada pestaña. Las etiquetas son las del glosario: acá
- *  solo se agrupan códigos. INACTIVE y LEGACY_INACTIVE se muestran igual (§3).
+ *  solo se agrupan códigos.
  *  `fromCatalog`: la pestaña necesita el catálogo; ONBOARDING no, porque sigue
  *  en el alcance activo (R-E2, decisión del usuario). */
 const LIFECYCLE_TABS: { id: 'active' | 'onboarding' | 'inactive'; label: string;
                         status: CarrierOperationalStatus[]; fromCatalog: boolean }[] = [
   { id: 'active',     label: CARRIER_LIFECYCLE_GROUP_LABELS.active,     status: ['ACTIVE'],                      fromCatalog: false },
   { id: 'onboarding', label: CARRIER_LIFECYCLE_GROUP_LABELS.onboarding, status: ['ONBOARDING'],                  fromCatalog: false },
-  { id: 'inactive',   label: CARRIER_LIFECYCLE_GROUP_LABELS.inactive,   status: ['INACTIVE', 'LEGACY_INACTIVE'], fromCatalog: true },
+  { id: 'inactive',   label: CARRIER_LIFECYCLE_GROUP_LABELS.inactive,   status: ['INACTIVE'],                    fromCatalog: true },
 ]
 
 type LifecycleTab = (typeof LIFECYCLE_TABS)[number]

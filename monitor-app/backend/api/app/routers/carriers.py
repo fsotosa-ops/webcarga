@@ -10,16 +10,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from ..auth import get_current_user, get_supabase
-from ..authz import Permission, exigir, require, require_fields
+from ..authz import Permission, require, require_fields
 from ..db import get_pool
-from ..schemas.assignment import (
-    AssetAssignmentCreateBody, CarrierReactivateBody, CarrierShipperLinkBody, DriverAssignmentCreateBody,
-)
+from ..schemas.assignment import AssetAssignmentCreateBody, CarrierShipperLinkBody, DriverAssignmentCreateBody
 from ..schemas.carrier import CARRIER_FIELD_PERMISSIONS, CarrierCreateBody, CarrierListResponse, CarrierPatchBody
 from ..schemas.common import PaginatedResponse
 from ..schemas.contact import ContactCreateBody
+from ..schemas.lifecycle import CarrierActivateBody, CarrierReactivateBody, LifecycleReasonBody
 from ..schemas.insurance import InsurancePolicyCreateBody
-from ..services import fleet_assignments
+from ..services import fleet_assignments, lifecycle
 from ..services.entity_documents import entity_documents
 from ..services.audit import log_change, record_manual_edit
 from ..services.fleet_compliance import (
@@ -36,7 +35,7 @@ from ..services.entity_summary import carrier_summary
 from ..services.fleet_driver_gap import compute_fleet_driver_gap
 from ..services.vencimientos import por_vencer_predicate, vence_el_sql, vencido_predicate
 from ..services import insurance
-from ..utils.identity import plate_matches_sql, rut_matches_sql
+from ..utils.identity import plate_matches_sql, rut_matches_sql, same_rut_sql
 from ..utils.document_storage import build_documents_zip, resolve_signed_url, safe_storage_name
 
 router = APIRouter(prefix="/carriers", tags=["carriers"])
@@ -74,11 +73,7 @@ async def list_carriers(
     operational_status: str = Query(
         "",
         description=(
-            "ACTIVE|INACTIVE|LEGACY_INACTIVE|ONBOARDING. Acepta VARIOS separados por coma: "
-            "la pestaña 'Inactivas' del Directorio manda 'LEGACY_INACTIVE,INACTIVE' porque el "
-            "resumen de esa misma pantalla ya cuenta las dos juntas — filtrar por una sola dejaba "
-            "fuera a las empresas dadas de baja desde la app, que es justo lo que el usuario "
-            "acababa de hacer y no encontraba."
+            "ACTIVE|INACTIVE|ONBOARDING. Acepta VARIOS separados por coma."
         ),
     ),
     enablement: Annotated[Literal["enabled", "not_enabled", ""], Query(
@@ -184,6 +179,7 @@ async def _assemble_carrier_detail(carrier_id: str, pool, supabase=None) -> dict
         SELECT c.id, c.tax_id, c.country_code, c.business_name, c.operational_status,
                c.legacy_admin_id, c.erp_id, c.is_manual_override, c.overridden_by, c.overridden_at,
                c.created_at, c.updated_at, c.management_types,
+               {lifecycle.status_reason_columns_sql('c')},
                {carrier_summary_columns_sql('cc')}
         FROM public.carriers c
         LEFT JOIN carrier_compliance cc ON cc.carrier_id = c.id
@@ -273,8 +269,7 @@ _SQL_DIRECTORIO = """
 SELECT
   (SELECT count(*) FROM public.carriers)                                          AS empresas_total,
   (SELECT count(*) FROM public.carriers WHERE operational_status = 'ACTIVE')      AS activas,
-  (SELECT count(*) FROM public.carriers
-    WHERE operational_status IN ('LEGACY_INACTIVE', 'INACTIVE'))                  AS inactivas,
+  (SELECT count(*) FROM public.carriers WHERE operational_status = 'INACTIVE')    AS inactivas,
   (SELECT count(*) FROM public.carriers WHERE operational_status = 'ONBOARDING')  AS onboarding,
   (SELECT count(DISTINCT f.entity_id) FROM app.active_fleet f
      JOIN public.carriers c ON c.id = f.carrier_id AND c.operational_status = 'ACTIVE'
@@ -475,7 +470,7 @@ async def create_carrier(
                 RETURNING id, tax_id, country_code, business_name, operational_status,
                           created_at, management_types
                 """,
-                body.tax_id, body.country_code, body.business_name, body.operational_status,
+                body.tax_id, body.country_code, body.business_name, body.initial_status,
                 body.management_types,
             )
             await log_change(
@@ -496,69 +491,41 @@ async def patch_carrier(
             # `management_types` va en el SELECT porque el bucle de auditoría de
             # más abajo lee `current[field]` para cada campo tocado: sin traerla,
             # patchear la gestión revienta con KeyError en vez de guardar.
-            # FOR UPDATE: el permiso de abajo depende del estado leído. Sin el
-            # bloqueo, una baja concurrente (ONBOARDING → INACTIVE) entre esta
-            # lectura y el UPDATE quedaría pisada por una "activación" que en
-            # realidad es reactivar, y eso exige directory.delete.
+            # El estado no se toca aquí: cambia con las acciones de más abajo.
             current = await conn.fetchrow(
-                "SELECT updated_at, business_name, operational_status, tax_id, management_types "
+                "SELECT updated_at, business_name, tax_id, management_types "
                 "FROM public.carriers WHERE id = $1 FOR UPDATE",
                 carrier_id,
             )
             if not current:
                 raise HTTPException(404, "Empresa no encontrada")
-            # Dar de baja o reactivar una empresa es de Certificación (D-e,
-            # 12/10): directory.delete. La excepción es activar una empresa
-            # nueva (ONBOARDING → ACTIVE), que el Supervisor de Operaciones
-            # hace desde el pre-cierre con directory.edit (R5). Depende del
-            # estado actual, por eso no cabe en CARRIER_FIELD_PERMISSIONS; va
-            # antes de cualquier escritura. Reenviar el estado que ya tiene no
-            # es cambiarlo: ni exige directory.delete ni se audita.
-            cambia_estado = (body.operational_status is not None
-                             and body.operational_status != current["operational_status"])
-            if cambia_estado and not (
-                current["operational_status"] == "ONBOARDING" and body.operational_status == "ACTIVE"
-            ):
-                exigir(user, Permission.DIRECTORY_DELETE)
             if body.expected_updated_at is not None and current["updated_at"] != body.expected_updated_at:
                 raise HTTPException(409, "El registro fue modificado por otro usuario; recargue e intente de nuevo")
 
             touched = body.sent_fields()
             if not touched:
                 raise HTTPException(422, "Ningún campo enviado")
-            if not cambia_estado:
-                touched = [f for f in touched if f != "operational_status"]
-
-            if cambia_estado and body.operational_status == "ACTIVE" and not body.tax_id and not current["tax_id"]:
-                raise HTTPException(422, "No se puede activar una empresa sin RUT/tax_id")
 
             if body.tax_id:
                 # En forma canónica (D3): "76.123.456-7" y "761234567" son el mismo RUT.
                 dup = await conn.fetchval(
-                    "SELECT id FROM public.carriers WHERE public.canonical_rut(tax_id) = public.canonical_rut($1) "
+                    f"SELECT id FROM public.carriers WHERE {same_rut_sql('tax_id', '$1')} "
                     "AND id != $2", body.tax_id, carrier_id,
                 )
                 if dup:
                     raise HTTPException(409, f"Ya existe una empresa con tax_id {body.tax_id}")
 
-            # Si solo reenvió el estado que ya tiene, `touched` quedó vacío: no
-            # hay nada que escribir ni auditar, y tampoco se toca updated_at (el
-            # bloqueo optimista de otra persona no tiene por qué ver un cambio
-            # que no hubo).
-            if touched:
-                await conn.execute(
-                    """
-                    UPDATE public.carriers SET
-                        business_name = COALESCE($2, business_name),
-                        operational_status = COALESCE($3, operational_status),
-                        tax_id = COALESCE($4, tax_id),
-                        management_types = COALESCE($5, management_types),
-                        updated_at = NOW()
-                    WHERE id = $1
-                    """,
-                    carrier_id, body.business_name, body.operational_status, body.tax_id,
-                    body.management_types,
-                )
+            await conn.execute(
+                """
+                UPDATE public.carriers SET
+                    business_name = COALESCE($2, business_name),
+                    tax_id = COALESCE($3, tax_id),
+                    management_types = COALESCE($4, management_types),
+                    updated_at = NOW()
+                WHERE id = $1
+                """,
+                carrier_id, body.business_name, body.tax_id, body.management_types,
+            )
             for field in touched:
                 await record_manual_edit(
                     conn, table="carriers", where={"id": carrier_id}, actor=user["sub"],
@@ -901,12 +868,45 @@ async def carrier_deactivation_impact(
         return await fleet_assignments.deactivation_impact(conn, carrier_id)
 
 
+# ── Ciclo de vida (plan 2026-10-21): una acción por transición. La regla de cada
+# una (desde qué estado, qué permiso, qué motivo) está en
+# schemas/states.LIFECYCLE_TRANSITIONS; services/lifecycle.py la aplica. ────────
+
+@router.post("/{carrier_id}/activate")
+async def activate_carrier(
+    carrier_id: str, body: CarrierActivateBody, pool=Depends(get_pool),
+    user=Depends(require(lifecycle.transition_for("CARRIER", "activate").permission)),
+):
+    """Completa el alta de una empresa nueva (ONBOARDING → ACTIVE)."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            return await lifecycle.transition(
+                conn, entity="CARRIER", entity_id=carrier_id, action="activate", actor=user["sub"],
+                tax_id=body.tax_id)
+
+
+@router.post("/{carrier_id}/deactivate")
+async def deactivate_carrier(
+    carrier_id: str, body: LifecycleReasonBody, pool=Depends(get_pool),
+    user=Depends(require(lifecycle.transition_for("CARRIER", "deactivate").permission)),
+):
+    """Dar de baja, con motivo. Su flota queda vinculada como historial (P1)."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            return await lifecycle.transition(
+                conn, entity="CARRIER", entity_id=carrier_id, action="deactivate", actor=user["sub"],
+                reason_id=body.reason_id, note=body.note)
+
+
 @router.post("/{carrier_id}/reactivate")
 async def reactivate_carrier(
     carrier_id: str, body: CarrierReactivateBody, pool=Depends(get_pool),
-    user=Depends(require(Permission.DIRECTORY_DELETE)),
+    user=Depends(require(lifecycle.transition_for("CARRIER", "reactivate").permission)),
 ):
+    """Reactivar, con motivo, eligiendo qué flota vuelve (P3)."""
     async with pool.acquire() as conn:
         async with conn.transaction():
-            return await fleet_assignments.reactivate(
-                conn, carrier_id, driver_ids=body.driver_ids, asset_ids=body.asset_ids, actor=user["sub"])
+            return await lifecycle.transition(
+                conn, entity="CARRIER", entity_id=carrier_id, action="reactivate", actor=user["sub"],
+                reason_id=body.reason_id, note=body.note,
+                driver_ids=body.driver_ids, asset_ids=body.asset_ids)

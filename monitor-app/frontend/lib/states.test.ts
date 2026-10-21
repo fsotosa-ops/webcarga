@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   alertSeverityStyle, documentEvidenceStyle, documentStateCount, documentStateCounts, documentStateStyle,
   enablementStyle, enablementStyleFromFlag, FUNNEL_BUCKET_ORDER, funnelBucketStyle, fleetMemberStyle, isBlocking, lifecycleStyle, stateCountsLine, summaryStyle,
-  blockingReason, carrierBlockingReason,
+  blockingReason, carrierBlockingReason, isCarrierDeactivated,
   type ComplianceSummary,
 } from './states'
 
@@ -13,15 +13,16 @@ const summary = (over: Partial<ComplianceSummary> = {}): ComplianceSummary => ({
 })
 
 describe('glosario de estados (spec D1 §3)', () => {
-  it('ciclo de vida: concuerda en género y dice igual INACTIVE y LEGACY_INACTIVE', () => {
+  it('ciclo de vida: concuerda en género; la baja es un estado (el origen es su motivo)', () => {
     expect(lifecycleStyle('carrier', 'ACTIVE').label).toBe('Activa')
     expect(lifecycleStyle('carrier', 'ONBOARDING').label).toBe('En onboarding')
     expect(lifecycleStyle('carrier', 'INACTIVE').label).toBe('Dada de baja')
-    expect(lifecycleStyle('carrier', 'LEGACY_INACTIVE').label).toBe('Dada de baja')
     expect(lifecycleStyle('driver', 'ACTIVE').label).toBe('Activo')
     expect(lifecycleStyle('asset', 'INACTIVE').label).toBe('Dado de baja')
     expect(lifecycleStyle('carrier', 'ACTIVE').tone).toBe('resolved')
-    expect(lifecycleStyle('carrier', 'LEGACY_INACTIVE').tone).toBe('neutral')
+    expect(lifecycleStyle('carrier', 'INACTIVE').tone).toBe('neutral')
+    expect(isCarrierDeactivated('INACTIVE')).toBe(true)
+    expect(isCarrierDeactivated('ONBOARDING')).toBe(false)
   })
 
   it('estado del documento: las cinco palabras y sus señales', () => {
@@ -36,7 +37,7 @@ describe('glosario de estados (spec D1 §3)', () => {
     expect(enablementStyle(summary(), true)).toMatchObject({ label: 'Habilitada', tone: 'resolved' })
     expect(enablementStyle(summary({ can_operate: false, worst_state: 'OVERDUE' }), true))
       .toMatchObject({ label: 'No habilitada', tone: 'urgent' })
-    // Las 205 LEGACY dejan de verse en rojo (§1): mismo texto, gris.
+    // Las dadas de baja no se ven en rojo (§1): mismo texto, gris.
     expect(enablementStyle(summary({ can_operate: false, worst_state: 'MISSING' }), false))
       .toMatchObject({ label: 'No habilitada', tone: 'neutral' })
   })
@@ -54,8 +55,8 @@ describe('glosario de estados (spec D1 §3)', () => {
   })
 
   it('miembro de flota: la empresa dada de baja reemplaza "Activo", no la baja propia', () => {
-    expect(fleetMemberStyle('driver', 'ACTIVE', 'LEGACY_INACTIVE').label).toBe('Empresa dada de baja')
-    expect(fleetMemberStyle('driver', 'INACTIVE', 'LEGACY_INACTIVE').label).toBe('Dado de baja')
+    expect(fleetMemberStyle('driver', 'ACTIVE', 'INACTIVE').label).toBe('Empresa dada de baja')
+    expect(fleetMemberStyle('driver', 'INACTIVE', 'INACTIVE').label).toBe('Dado de baja')
     expect(fleetMemberStyle('asset', 'ACTIVE', 'ONBOARDING').label).toBe('Activo')
   })
 

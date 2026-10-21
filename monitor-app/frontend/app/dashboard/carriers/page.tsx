@@ -34,18 +34,14 @@ const VIEW_LABELS = { tablero: 'Tarjetas', tabla: 'Tabla' }
  *  mira. Filtrar server-side, no sobre una sola página — 214 > el límite de 100
  *  por página del backend.
  *
- *  "Dadas de baja" manda LOS DOS estados de baja. `LEGACY_INACTIVE` es la empresa
- *  que llegó inactiva desde el padrón viejo; `INACTIVE` es la que alguien dio
- *  de baja desde la app. La distinción existe en la base y no le importa a
- *  nadie acá: hasta el 2026-09-07 la pestaña filtraba sólo la primera, así que
- *  el resumen de esta misma pantalla decía "214 inactivas" y la lista mostraba
- *  206 — y las 8 que faltaban eran justo las dadas de baja desde la app. Pablo,
- *  04/09: *"yo di de baja esa empresa y no aparece"*. Una de las 8 era la suya.
+ *  "Dadas de baja" es un estado (INACTIVE), venga la baja de la app o del padrón
+ *  viejo: de dónde vino es su motivo (21/10). Antes eran dos valores y la pestaña
+ *  llegó a filtrar uno solo (Pablo, 04/09: *"yo di de baja esa empresa y no aparece"*).
  *
  *  ONBOARDING (empresa creada sin tax_id) es la tercera tab. */
 const TABS: { id: TransporterTab; label: string; status: CarrierOperationalStatus[] }[] = [
   { id: 'active',     label: CARRIER_LIFECYCLE_GROUP_LABELS.active,     status: ['ACTIVE'] },
-  { id: 'legacy',     label: CARRIER_LIFECYCLE_GROUP_LABELS.inactive,   status: ['LEGACY_INACTIVE', 'INACTIVE'] },
+  { id: 'legacy',     label: CARRIER_LIFECYCLE_GROUP_LABELS.inactive,   status: ['INACTIVE'] },
   { id: 'onboarding', label: CARRIER_LIFECYCLE_GROUP_LABELS.onboarding, status: ['ONBOARDING'] },
 ]
 

@@ -10,12 +10,61 @@ Ningún otro módulo escribe estos valores a mano. El espejo del frontend es
 lib/states.ts."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel
 
-CarrierLifecycle = Literal["ACTIVE", "ONBOARDING", "INACTIVE", "LEGACY_INACTIVE"]
+from ..authz.permissions import Permission
+
+# La baja es UN estado. De dónde vino (la app, el padrón viejo) es su motivo:
+# status_reason_id, del vocabulario DEACTIVATION_REASON (plan 2026-10-21).
+CarrierLifecycle = Literal["ACTIVE", "ONBOARDING", "INACTIVE"]
 FleetLifecycle = Literal["ACTIVE", "INACTIVE"]
+
+# ── Transiciones del ciclo de vida (plan 2026-10-21) ──────────────────────────
+# El estado no se edita como un campo: cambia con una acción, y cada acción dice
+# desde qué estados vale, quién puede hacerla y qué motivo pide. La regla vive
+# aquí, una vez; la aplica services/lifecycle.py y las rutas de acción leen su
+# permiso de esta misma tabla.
+LifecycleEntity = Literal["CARRIER", "DRIVER", "ASSET"]
+LifecycleAction = Literal["activate", "deactivate", "reactivate"]
+DEACTIVATION_REASON = "DEACTIVATION_REASON"
+REACTIVATION_REASON = "REACTIVATION_REASON"
+
+
+@dataclass(frozen=True)
+class LifecycleTransition:
+    from_states: frozenset[str]
+    to_state: str
+    permission: Permission
+    #: El vocabulario del motivo; None = la acción no pide motivo (activar una
+    #: empresa nueva no es una decisión sobre su relación, es completar el alta).
+    reason_domain: str | None
+    #: Una empresa activa necesita RUT (se puede mandar al activarla).
+    requires_tax_id: bool = False
+
+
+LIFECYCLE_TRANSITIONS: dict[tuple[str, str], LifecycleTransition] = {
+    # Activar una empresa nueva lo hace el Supervisor de Operaciones desde el
+    # pre-cierre (R5): directory.edit. Dar de baja o reactivar una empresa es de
+    # Certificación (D-e, 12/10): directory.delete.
+    ("CARRIER", "activate"): LifecycleTransition(
+        frozenset({"ONBOARDING"}), "ACTIVE", Permission.DIRECTORY_EDIT, None, requires_tax_id=True),
+    ("CARRIER", "deactivate"): LifecycleTransition(
+        frozenset({"ACTIVE", "ONBOARDING"}), "INACTIVE", Permission.DIRECTORY_DELETE, DEACTIVATION_REASON),
+    ("CARRIER", "reactivate"): LifecycleTransition(
+        frozenset({"INACTIVE"}), "ACTIVE", Permission.DIRECTORY_DELETE, REACTIVATION_REASON, requires_tax_id=True),
+    # Conductores y equipos: los da de baja y reactiva Operaciones (bloque 0, D-e).
+    ("DRIVER", "deactivate"): LifecycleTransition(
+        frozenset({"ACTIVE"}), "INACTIVE", Permission.DIRECTORY_FLEET_STATUS, DEACTIVATION_REASON),
+    ("DRIVER", "reactivate"): LifecycleTransition(
+        frozenset({"INACTIVE"}), "ACTIVE", Permission.DIRECTORY_FLEET_STATUS, REACTIVATION_REASON),
+    ("ASSET", "deactivate"): LifecycleTransition(
+        frozenset({"ACTIVE"}), "INACTIVE", Permission.DIRECTORY_FLEET_STATUS, DEACTIVATION_REASON),
+    ("ASSET", "reactivate"): LifecycleTransition(
+        frozenset({"INACTIVE"}), "ACTIVE", Permission.DIRECTORY_FLEET_STATUS, REACTIVATION_REASON),
+}
 DocumentState = Literal["UP_TO_DATE", "EXPIRING", "OVERDUE", "MISSING", "NOT_REQUIRED"]
 AlertSeverity = Literal["warning", "critical"]
 # Los baldes del embudo de Certificación (D1-R2). Salen de la escala del

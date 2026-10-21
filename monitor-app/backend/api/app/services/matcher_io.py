@@ -42,8 +42,8 @@ async def cargar_catalogo(conn) -> Catalog:
 # Cambiar el orden no falla al desplegar: falla proponiendo el documento
 # equivocado, en silencio.
 #
-# El filtro de estado SOLO aplica en la bandeja global (sin carrier_id): 207
-# de 248 empresas del universo completo son LEGACY_INACTIVE, y proponer un
+# El filtro de estado SOLO aplica en la bandeja global (sin carrier_id): unas
+# 210 de 248 empresas del universo completo están dadas de baja, y proponer un
 # documento al 0,95 hacia una empresa con la que nadie trabaja es peor que no
 # proponer nada. Cuando el operador ya eligió la empresa desde su ficha
 # (carrier_id fijo), esa empresa ES el destino querido aunque esté de baja —

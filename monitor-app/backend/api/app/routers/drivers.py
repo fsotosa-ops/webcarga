@@ -20,6 +20,8 @@ from ..services.directory_lists import directory_list
 from ..services.entity_profile import activity, assignment_history
 from ..services.entity_documents import entity_document_rows, entity_documents
 from ..schemas.identity import IdentityCorrectionBody
+from ..schemas.lifecycle import LifecycleReasonBody
+from ..services import lifecycle
 from ..services.cliente_del_viaje import join_cliente, nombre_del_cliente
 from ..services.entity_summary import usual_tractor_lateral
 from ..services.origen_del_viaje import origen_del_viaje
@@ -166,9 +168,10 @@ async def get_driver_summary(driver_id: UUID, pool=Depends(get_pool), _=Depends(
 @router.get("/{driver_id}")
 async def get_driver(driver_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
     row = await pool.fetchrow(
-        """
+        f"""
         SELECT d.id, d.tax_id, d.country_code, d.full_name, d.operational_status,
                d.is_manual_override, d.created_at,
+               {lifecycle.status_reason_columns_sql('d')},
                dcs.total_requirements, dcs.last_document_update,
                -- La empresa a la que pertenece hoy, por su asignación ACTIVE
                -- (mismo criterio que el resto del roster). Sin ella no hay
@@ -311,12 +314,11 @@ async def create_driver(body: DriverCreateBody, pool=Depends(get_pool), user=Dep
                     """
                     INSERT INTO public.drivers
                         (tax_id, country_code, full_name, operational_status, home_location_id)
-                    VALUES ($1, $2, $3, $4, $5::uuid)
+                    VALUES ($1, $2, $3, 'ACTIVE', $4::uuid)
                     RETURNING id, tax_id, country_code, full_name, operational_status,
                               home_location_id::text AS home_location_id, created_at
                     """,
-                    canonico, body.country_code, body.full_name, body.operational_status,
-                    body.home_location_id or None,
+                    canonico, body.country_code, body.full_name, body.home_location_id or None,
                 )
             except UniqueViolationError:
                 raise HTTPException(409, {
@@ -352,7 +354,7 @@ async def patch_driver(
     async with pool.acquire() as conn:
         async with conn.transaction():
             current = await conn.fetchrow(
-                "SELECT full_name, operational_status, home_location_id "
+                "SELECT full_name, home_location_id "
                 "FROM public.drivers WHERE id = $1", driver_id,
             )
             if not current:
@@ -363,7 +365,7 @@ async def patch_driver(
             # (`get_driver`). Derivar sólo una dejó un SELECT corto y un 500 con
             # toda la suite en verde.
             touched = [
-                f for f in ("full_name", "operational_status", "home_location_id")
+                f for f in ("full_name", "home_location_id")
                 if getattr(body, f) is not None
             ]
             if not touched:
@@ -378,12 +380,11 @@ async def patch_driver(
                     """
                     UPDATE public.drivers SET
                         full_name = COALESCE($2, full_name),
-                        operational_status = COALESCE($3, operational_status),
-                        home_location_id = CASE WHEN $5 THEN NULL
-                                                ELSE COALESCE($4::uuid, home_location_id) END
+                        home_location_id = CASE WHEN $4 THEN NULL
+                                                ELSE COALESCE($3::uuid, home_location_id) END
                     WHERE id = $1
                     """,
-                    driver_id, body.full_name, body.operational_status,
+                    driver_id, body.full_name,
                     (body.home_location_id or None) if not borra_cd else None, borra_cd,
                 )
             except ForeignKeyViolationError:
@@ -398,6 +399,35 @@ async def patch_driver(
                     entity_type="DRIVER", entity_id=driver_id, action="update", field=field,
                     old_value=current[field], new_value=getattr(body, field),
                 )
+    return await get_driver(driver_id, pool, user)
+
+
+# ── Ciclo de vida (plan 2026-10-21): dar de baja y reactivar, con motivo. La regla
+# está en schemas/states.LIFECYCLE_TRANSITIONS; services/lifecycle.py la aplica. ──
+
+@router.post("/{driver_id}/deactivate")
+async def deactivate_driver(
+    driver_id: str, body: LifecycleReasonBody, pool=Depends(get_pool),
+    user=Depends(require(lifecycle.transition_for("DRIVER", "deactivate").permission)),
+):
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await lifecycle.transition(
+                conn, entity="DRIVER", entity_id=driver_id, action="deactivate", actor=user["sub"],
+                reason_id=body.reason_id, note=body.note)
+    return await get_driver(driver_id, pool, user)
+
+
+@router.post("/{driver_id}/reactivate")
+async def reactivate_driver(
+    driver_id: str, body: LifecycleReasonBody, pool=Depends(get_pool),
+    user=Depends(require(lifecycle.transition_for("DRIVER", "reactivate").permission)),
+):
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await lifecycle.transition(
+                conn, entity="DRIVER", entity_id=driver_id, action="reactivate", actor=user["sub"],
+                reason_id=body.reason_id, note=body.note)
     return await get_driver(driver_id, pool, user)
 
 

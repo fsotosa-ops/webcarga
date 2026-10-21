@@ -103,22 +103,17 @@ def _facets_row(**overrides):
 
 
 def test_list_carriers_acepta_varios_estados_separados_por_coma():
-    """El resumen del Directorio cuenta `LEGACY_INACTIVE + INACTIVE` como
-    "inactivas" (_SQL_DIRECTORIO) y la pestana filtraba solo por el primero:
-    la cifra del encabezado y la lista de abajo no podian coincidir, y las
-    empresas dadas de baja DESDE LA APP —las 8 que hoy estan en INACTIVE— no
-    aparecian en ninguna pestana. Pablo, 04/09: *"yo di de baja esa empresa y
-    no aparece"*."""
+    """Una pestaña puede agrupar más de un estado (p. ej. Activas + En onboarding)."""
     pool = AsyncMock()
     pool.fetch.return_value = []
     pool.fetchval.return_value = 0
     pool.fetchrow.return_value = _carrier_facets_row()
     client = make_client(pool)
 
-    res = client.get("/api/v1/carriers?operational_status=LEGACY_INACTIVE,INACTIVE")
+    res = client.get("/api/v1/carriers?operational_status=ACTIVE,ONBOARDING")
 
     assert res.status_code == 200
-    assert pool.fetch.call_args.args[1] == ["LEGACY_INACTIVE", "INACTIVE"]
+    assert pool.fetch.call_args.args[1] == ["ACTIVE", "ONBOARDING"]
 
 
 def test_list_carriers_ignora_estados_vacios_entre_comas():
@@ -226,18 +221,19 @@ def test_create_carrier_without_tax_id_defaults_onboarding():
     assert insert_params[4] == "ONBOARDING"  # operational_status
 
 
-def test_create_carrier_active_without_tax_id_rejected():
+def test_create_carrier_does_not_take_a_status():
+    """El estado inicial sale del RUT; una empresa no nace dada de baja (la baja es
+    una acción con motivo). Mandarlo es un 422, no un dato que se ignora."""
     pool = AsyncMock()
     client = make_client(pool)
 
     res = client.post(
         "/api/v1/carriers",
-        json={"business_name": "Acme", "operational_status": "ACTIVE"},
+        json={"business_name": "Acme", "operational_status": "INACTIVE"},
     )
 
     assert res.status_code == 422
-    body = res.json()
-    assert any("ONBOARDING" in err.get("msg", "") for err in body["detail"])
+    assert not pool.acquire.called
 
 
 def test_create_carrier_with_tax_id_defaults_active():
@@ -375,27 +371,13 @@ def test_patch_carrier_management_types_audits_without_keyerror():
     assert "management_types" in update_sql
 
 
-def test_patch_carrier_activate_without_tax_id_422():
+def test_patch_carrier_sets_tax_id():
+    """Activar es una acción aparte (POST /activate, test_lifecycle_integration)."""
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
     conn.fetchrow.return_value = {
-        "updated_at": None, "business_name": "A", "operational_status": "ONBOARDING", "tax_id": None,
-    }
-    client = make_client(pool)
-
-    res = client.patch("/api/v1/carriers/c1", json={"operational_status": "ACTIVE"})
-
-    assert res.status_code == 422
-    assert "RUT" in res.json()["detail"] or "tax_id" in res.json()["detail"]
-
-
-def test_patch_carrier_sets_tax_id_and_activates():
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    conn.fetchrow.return_value = {
-        "updated_at": None, "business_name": "A", "operational_status": "ONBOARDING", "tax_id": None,
+        "updated_at": None, "business_name": "A", "tax_id": None,
     }
     conn.fetchval.return_value = None  # sin duplicado de tax_id
     pool.fetchrow.return_value = {
@@ -407,12 +389,9 @@ def test_patch_carrier_sets_tax_id_and_activates():
     pool.fetch.side_effect = [[], []]
     client = make_client(pool)
 
-    res = client.patch(
-        "/api/v1/carriers/c1", json={"tax_id": "1-9", "operational_status": "ACTIVE"},
-    )
+    res = client.patch("/api/v1/carriers/c1", json={"tax_id": "1-9"})
 
     assert res.status_code == 200
-    assert res.json()["operational_status"] == "ACTIVE"
     update_call = conn.execute.call_args_list[0]
     update_sql = update_call.args[0]
     assert "tax_id" in update_sql
@@ -424,7 +403,7 @@ def test_patch_carrier_rejects_duplicate_tax_id():
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
     conn.fetchrow.return_value = {
-        "updated_at": None, "business_name": "A", "operational_status": "ONBOARDING", "tax_id": None,
+        "updated_at": None, "business_name": "A", "tax_id": None,
     }
     conn.fetchval.return_value = "other-carrier-id"
     client = make_client(pool)

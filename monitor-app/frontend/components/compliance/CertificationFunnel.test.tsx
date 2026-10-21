@@ -128,7 +128,7 @@ describe('CertificationFunnel', () => {
   // Spec §3: la empresa no activa se muestra en gris y con su ciclo de vida.
   it('en Dadas de baja la fila dice su ciclo de vida y la habilitación va en gris', () => {
     setup({ catalogEstado: 'listo', catalogRows: [
-      fila({ entity_id: 'v', entity_name: 'Vieja Ltda', operational_status: 'LEGACY_INACTIVE', funnel_bucket: null }),
+      fila({ entity_id: 'v', entity_name: 'Vieja Ltda', operational_status: 'INACTIVE', funnel_bucket: null }),
     ] })
     fireEvent.click(screen.getByRole('button', { name: /Dadas de baja/ }))
     const enlace = screen.getByRole('link', { name: /Vieja Ltda/ })

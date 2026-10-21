@@ -104,7 +104,7 @@ def test_patch_asset_updates_manufacture_year():
     assert res.status_code == 200
     assert res.json()["manufacture_year"] == 2019
     update_sql = conn.execute.call_args_list[0].args[0]
-    assert "manufacture_year = COALESCE($4, manufacture_year)" in update_sql
+    assert "manufacture_year = COALESCE($3, manufacture_year)" in update_sql
 
 
 def test_create_asset_rejects_out_of_range_year():
@@ -225,7 +225,7 @@ def test_create_asset_with_classification_protects_it_from_the_ingestion():
         "fleet_service_type_id": "t1",
     })
 
-    assert conn.fetchrow.call_args.args[5] is True   # is_manual_override
+    assert conn.fetchrow.call_args.args[4] is True   # is_manual_override ($4)
 
 
 def test_create_asset_without_classification_leaves_it_to_the_ingestion():
@@ -245,7 +245,7 @@ def test_create_asset_without_classification_leaves_it_to_the_ingestion():
 
     client.post("/api/v1/assets", json={"license_plate": "abcd12", "asset_type": "TRACTOCAMION"})
 
-    assert conn.fetchrow.call_args.args[5] is False
+    assert conn.fetchrow.call_args.args[4] is False  # is_manual_override ($4)
 
 
 def test_patch_asset_can_reclassify():

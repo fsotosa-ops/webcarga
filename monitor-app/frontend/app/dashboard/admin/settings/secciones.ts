@@ -24,6 +24,10 @@ export const PERMISO_DE_SECCION = {
   'operations/void-reasons':         'operations.configure',
   'fleet/subtypes':                  'operations.configure',
   'fleet/operation-types':           'operations.configure',
+  // Los vocabularios de app.status_taxonomies se editan con operations.configure
+  // (PATCH /config/taxonomies), igual que los de Flota.
+  'directory/deactivation-reasons':  'operations.configure',
+  'directory/reactivation-reasons':  'operations.configure',
   'insurance/expiry-alerts':         'insurance.configure',
   'people/users':                    'users.manage',
   'people/roles':                    'roles.manage',

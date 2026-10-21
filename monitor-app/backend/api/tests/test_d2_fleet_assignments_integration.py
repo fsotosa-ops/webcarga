@@ -138,25 +138,8 @@ async def test_a8_deactivation_impact_counts_the_fleet(conexion_revertida):
     assert impact["open_closure_days"] >= 0
 
 
-async def test_a9_reactivating_keeps_only_the_chosen_fleet(conexion_revertida):
-    conn = conexion_revertida
-    actor = await _actor(conn)
-    carrier = await _carrier(conn)
-    kept, released = await _driver(conn), await _driver(conn)
-    for d in (kept, released):
-        await fa.assign(conn, fa.DRIVER, d, carrier, actor=actor)
-    await conn.execute("UPDATE public.carriers SET operational_status = 'INACTIVE' WHERE id = $1", carrier)
-
-    result = await fa.reactivate(conn, carrier, driver_ids=[kept], asset_ids=[], actor=actor)
-
-    assert result == {"released_drivers": 1, "released_assets": 0}
-    assert await conn.fetchval("SELECT operational_status FROM public.carriers WHERE id = $1", carrier) == "ACTIVE"
-    assert str(await conn.fetchval("SELECT app.carrier_of('DRIVER', $1::uuid)", kept)) == carrier
-    assert await conn.fetchval("SELECT app.carrier_of('DRIVER', $1::uuid)", released) is None
-    # Solo se reactiva una empresa dada de baja.
-    with pytest.raises(HTTPException) as exc:
-        await fa.reactivate(conn, carrier, driver_ids=[], asset_ids=[], actor=actor)
-    assert exc.value.status_code == 409
+# A9 (reactivar eligiendo la flota que vuelve) se mudó con la acción a
+# services/lifecycle.py: test_lifecycle_integration.py, la heredada del padrón viejo.
 
 
 async def test_a10_the_monitor_mismatch_uses_the_carrier_of_the_trip_day(conexion_revertida):

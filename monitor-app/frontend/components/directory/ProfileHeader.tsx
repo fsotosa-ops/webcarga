@@ -11,10 +11,12 @@ import type { StateStyle } from '@/lib/states'
  *  acción principal y el "⋯". Nada más: los pendientes viven en la sección
  *  Documentos (cada dato, una vez). Mientras no llega el resumen no se dibuja
  *  ningún chip: un estado en vuelo miente. */
-export function ProfileHeader({ title, chips, reason, onSeeDocuments, primaryAction, menuItems }: {
+export function ProfileHeader({ title, chips, statusReason, reason, onSeeDocuments, primaryAction, menuItems }: {
   title: string
   /** `null` mientras carga el resumen. */
   chips: StateStyle[] | null
+  /** Por qué está dada de baja: el motivo de Configuración › Directorio. Solo si lo está. */
+  statusReason?: string | null
   /** Por qué no puede operar, y cómo llegar a sus documentos. Solo las fichas
    *  con documentos (empresa, conductor, equipo) lo tienen. */
   reason?: string | null
@@ -28,6 +30,7 @@ export function ProfileHeader({ title, chips, reason, onSeeDocuments, primaryAct
       bajada={chips && (
         <span className="flex flex-wrap items-center gap-2">
           {chips.map(c => <StatusChip key={c.label} tone={c.tone} icon={c.icon}>{c.label}</StatusChip>)}
+          {statusReason && <span className="text-dato text-informativo">Motivo: {statusReason}</span>}
           {reason && onSeeDocuments && (
             <span className="text-dato text-informativo">
               <span>{reason}</span> ·{' '}

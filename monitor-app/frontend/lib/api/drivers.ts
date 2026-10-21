@@ -10,7 +10,6 @@ export type DriverCreateBody = {
   tax_id:              string
   country_code?:       string
   full_name:           string
-  operational_status?: OperationalStatus
   /** Origen habitual (HU-28), opcional: se puede enrolar a alguien antes de saber de
    *  qué CD va a salir. */
   home_location_id?:   string
@@ -18,7 +17,6 @@ export type DriverCreateBody = {
 
 export type DriverPatchBody = {
   full_name?:          string
-  operational_status?: OperationalStatus
   /** Cadena vacía = quitarlo. Omitirlo = no tocarlo. No es lo mismo, y
    *  confundirlos es como el cierre llegó a borrar comentarios al cambiar un
    *  motivo. */

@@ -22,11 +22,22 @@ vi.mock('@/lib/api/entitySummary', async (orig) => ({ ...(await orig<object>()),
 vi.mock('@/lib/api/locations', () => ({ locationsApi: { list: vi.fn().mockResolvedValue({ data: [{ id: 'cd1', name: 'CD Quilicura' }] }) } }))
 vi.mock('@/lib/api/carriers', () => ({ carriersApi: { listDrivers: vi.fn().mockResolvedValue([]), unassignDriver: vi.fn().mockResolvedValue({}), unassignAsset: vi.fn(), assignDriver: vi.fn(), assignAsset: vi.fn(), list: vi.fn().mockResolvedValue({ data: [] }) } }))
 vi.mock('@/lib/api/compliance', () => ({ complianceApi: { listPending: vi.fn(), get: vi.fn() } }))
-vi.mock('@/lib/api/config', () => ({ taxonomiesApi: { list: vi.fn().mockResolvedValue([]) } }))
+// Los catálogos de motivos (Configuración › Directorio); `group` dice a quién aplica.
+const MOTIVOS: Record<string, object[]> = {
+  DEACTIVATION_REASON: [
+    { id: 'r-fin', label: 'Término de la relación comercial', group: 'all', code: 'RELATIONSHIP_ENDED' },
+    { id: 'r-equipo', label: 'Vendido o siniestrado', group: 'asset', code: 'ASSET_RETIRED' },
+    { id: 'r-otro', label: 'Otro', group: 'all', code: 'OTHER' },
+  ],
+  REACTIVATION_REASON: [{ id: 'r-vuelve', label: 'Retoma la relación comercial', group: 'all', code: 'RELATIONSHIP_RESUMED' }],
+}
+vi.mock('@/lib/api/config', () => ({ taxonomiesApi: { list: vi.fn((d: string) => Promise.resolve(MOTIVOS[d] ?? [])) } }))
+vi.mock('@/lib/api/lifecycle', () => ({ lifecycleApi: { deactivate: vi.fn(), reactivate: vi.fn() } }))
 vi.mock('@/hooks/useAssetTypes', () => ({ useAssetTypes: () => ({ types: [{ code: 'TRACTOCAMION', label: 'Tracto' }], labelOf: () => 'Tracto' }) }))
 
 import { driversApi } from '@/lib/api/drivers'
 import { assetsApi } from '@/lib/api/assets'
+import { lifecycleApi } from '@/lib/api/lifecycle'
 import { fetchEntitySummary } from '@/lib/api/entitySummary'
 import { complianceApi } from '@/lib/api/compliance'
 import { complianceSummary } from '@/lib/states.fixtures'
@@ -200,14 +211,33 @@ describe('FleetProfile (Entrega 1 de fichas)', () => {
   })
 
   // Los flujos destructivos que probaban los paneles retirados, ahora desde el ⋯.
-  it('"Dar de baja" pide confirmación y deja al conductor INACTIVE', async () => {
-    vi.mocked(driversApi.patch).mockResolvedValue(DRIVER as never)
+  it('"Dar de baja" pide un motivo antes de confirmar y lo envía', async () => {
+    vi.mocked(lifecycleApi.deactivate).mockResolvedValue({})
     renderProfile()
     fireEvent.click(await screen.findByRole('button', { name: 'Más acciones' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Dar de baja' }))
+    const confirmar = screen.getByRole('button', { name: 'Confirmar baja' })
+    expect(confirmar).toBeDisabled()
+    await screen.findByRole('option', { name: 'Término de la relación comercial' })
+    const motivo = screen.getByRole('combobox', { name: 'Motivo' })
+    // Un motivo solo de equipos no se le ofrece a un conductor.
+    expect(within(motivo).queryByRole('option', { name: 'Vendido o siniestrado' })).not.toBeInTheDocument()
+    fireEvent.change(motivo, { target: { value: 'r-fin' } })
+    fireEvent.click(confirmar)
+    await waitFor(() => expect(lifecycleApi.deactivate).toHaveBeenCalledWith('driver', 'd1', { reason_id: 'r-fin', note: undefined }))
     expect(driversApi.patch).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar baja' }))
-    await waitFor(() => expect(driversApi.patch).toHaveBeenCalledWith('d1', { operational_status: 'INACTIVE' }))
+  })
+
+  it('con «Otro» el comentario es obligatorio', async () => {
+    renderProfile()
+    fireEvent.click(await screen.findByRole('button', { name: 'Más acciones' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Dar de baja' }))
+    await screen.findByRole('option', { name: 'Otro' })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Motivo' }), { target: { value: 'r-otro' } })
+    const confirmar = screen.getByRole('button', { name: 'Confirmar baja' })
+    expect(confirmar).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Comentario (obligatorio)' }), { target: { value: 'Se fue a otra empresa' } })
+    expect(confirmar).toBeEnabled()
   })
 
   it('"Quitar de la empresa" pide confirmación antes de quitar', async () => {
@@ -220,14 +250,19 @@ describe('FleetProfile (Entrega 1 de fichas)', () => {
     await waitFor(() => expect(carriersApi.unassignDriver).toHaveBeenCalledWith('c1', 'd1'))
   })
 
-  it('si Reactivar falla, la ficha lo dice', async () => {
+  it('dado de baja: la ficha dice el motivo, y si Reactivar falla, la ventana lo dice', async () => {
     vi.mocked(fetchEntitySummary).mockResolvedValue({ ...RESUMEN_CONDUCTOR, operational_status: 'INACTIVE' } as never)
-    vi.mocked(driversApi.get).mockResolvedValue({ ...DRIVER, operational_status: 'INACTIVE' } as never)
-    vi.mocked(driversApi.patch).mockRejectedValue(new Error('La empresa está dada de baja.'))
+    vi.mocked(driversApi.get).mockResolvedValue({ ...DRIVER, operational_status: 'INACTIVE', status_reason: 'Término de la relación comercial' } as never)
+    vi.mocked(lifecycleApi.reactivate).mockRejectedValue(new Error('El conductor está activo: no se puede reactivar'))
     renderProfile()
-    fireEvent.click(await screen.findByRole('button', { name: 'Más acciones' }))
+    expect(await screen.findByText('Motivo: Término de la relación comercial')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Más acciones' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Reactivar' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('La empresa está dada de baja.')
+    await screen.findByRole('option', { name: 'Retoma la relación comercial' })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Motivo' }), { target: { value: 'r-vuelve' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Reactivar' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('El conductor está activo: no se puede reactivar')
+    expect(lifecycleApi.reactivate).toHaveBeenCalledWith('driver', 'd1', { reason_id: 'r-vuelve', note: undefined })
   })
 })
 

@@ -43,7 +43,7 @@ async def _vinculo_manual(conn, trip_id: str):
 
 # ── POST /trips/{id}/fleet-link ──────────────────────────────────────────────
 
-@pytest.mark.parametrize("estado", ["INACTIVE", "LEGACY_INACTIVE", "ONBOARDING"])
+@pytest.mark.parametrize("estado", ["INACTIVE", "ONBOARDING"])
 async def test_empresa_no_activa_es_409_y_no_escribe(conexion_revertida, estado):
     conn = conexion_revertida
     usuario = await _usuario_real(conn)

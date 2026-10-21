@@ -15,19 +15,18 @@ def test_carrier_create_normalizes_name_and_tax_id():
     assert body.tax_id == "77123456-9"
     assert body.business_name == "Transportes Acme Spa"
     assert body.country_code == "CL"
-    assert body.operational_status == "ACTIVE"
+    assert body.initial_status == "ACTIVE"
 
 
-def test_carrier_create_rejects_invalid_operational_status():
+def test_carrier_create_without_tax_id_starts_in_onboarding():
+    assert CarrierCreateBody(business_name="X").initial_status == "ONBOARDING"
+
+
+@pytest.mark.parametrize("status", ["ACTIVE", "INACTIVE", "LEGACY_INACTIVE"])
+def test_carrier_create_does_not_take_a_status(status):
+    """El estado inicial sale del RUT; la baja es una acción con motivo."""
     with pytest.raises(ValidationError):
-        CarrierCreateBody(tax_id="1-9", business_name="X", operational_status="LIMBO")
-
-
-def test_carrier_create_accepts_legacy_inactive():
-    """Valor real verificado contra Supabase: 208/246 carriers están en
-    LEGACY_INACTIVE, no 'INACTIVE' (ver schemas/carrier.py)."""
-    body = CarrierCreateBody(tax_id="1-9", business_name="X", operational_status="LEGACY_INACTIVE")
-    assert body.operational_status == "LEGACY_INACTIVE"
+        CarrierCreateBody(tax_id="1-9", business_name="X", operational_status=status)
 
 
 def test_carrier_patch_sent_fields_tracks_only_provided():

@@ -19,6 +19,8 @@ from ..services.directory_lists import directory_list
 from ..services.entity_profile import activity, assignment_history
 from ..services.entity_documents import entity_document_rows, entity_documents
 from ..schemas.identity import IdentityCorrectionBody
+from ..schemas.lifecycle import LifecycleReasonBody
+from ..services import lifecycle
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 
@@ -63,9 +65,10 @@ async def get_asset_summary(asset_id: UUID, pool=Depends(get_pool), _=Depends(re
 @router.get("/{asset_id}")
 async def get_asset(asset_id: str, pool=Depends(get_pool), _=Depends(require(Permission.DIRECTORY_READ))):
     row = await pool.fetchrow(
-        """
+        f"""
         SELECT a.id, a.license_plate, a.asset_type, a.operational_status, a.manufacture_year,
                a.is_manual_override, a.created_at,
+               {lifecycle.status_reason_columns_sql('a')},
                a.fleet_service_type_id, acs.fleet_service_type_label,
                -- "Tipo de Operacion WebCarga" (Tractoreo / Equipo Completo).
                -- El PATCH lo acepta desde el 2026-08-03 y el GET no lo
@@ -117,12 +120,12 @@ async def create_asset(body: AssetCreateBody, pool=Depends(get_pool), user=Depen
                         (license_plate, asset_type, operational_status, manufacture_year,
                          is_manual_override, overridden_by, overridden_at,
                          fleet_service_type_id, webcarga_operation_type_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $5 THEN NOW() END, $7, $8)
+                    VALUES ($1, $2, 'ACTIVE', $3, $4, $5, CASE WHEN $4 THEN NOW() END, $6, $7)
                     RETURNING id, license_plate, asset_type, operational_status, manufacture_year,
                               created_at, fleet_service_type_id, webcarga_operation_type_id,
                               is_manual_override
                     """,
-                    body.license_plate, body.asset_type, body.operational_status, body.manufacture_year,
+                    body.license_plate, body.asset_type, body.manufacture_year,
                     body.declara_clasificacion(),
                     user["sub"] if body.declara_clasificacion() else None,
                     body.fleet_service_type_id, body.webcarga_operation_type_id,
@@ -150,7 +153,7 @@ async def patch_asset(
         async with pool.acquire() as conn:
             async with conn.transaction():
                 current = await conn.fetchrow(
-                    "SELECT asset_type, operational_status, manufacture_year, "
+                    "SELECT asset_type, manufacture_year, "
                     "fleet_service_type_id, webcarga_operation_type_id "
                     "FROM public.assets WHERE id = $1", asset_id,
                 )
@@ -159,7 +162,7 @@ async def patch_asset(
 
                 touched = [
                     f for f in (
-                        "asset_type", "operational_status", "manufacture_year",
+                        "asset_type", "manufacture_year",
                         "fleet_service_type_id", "webcarga_operation_type_id",
                     ) if getattr(body, f) is not None
                 ] + (["webcarga_operation_type_id"] if clears_type else [])
@@ -170,14 +173,13 @@ async def patch_asset(
                     """
                     UPDATE public.assets SET
                         asset_type = COALESCE($2, asset_type),
-                        operational_status = COALESCE($3, operational_status),
-                        manufacture_year = COALESCE($4, manufacture_year),
-                        fleet_service_type_id = COALESCE($5::uuid, fleet_service_type_id),
-                        webcarga_operation_type_id = CASE WHEN $7 THEN NULL
-                            ELSE COALESCE($6::uuid, webcarga_operation_type_id) END
+                        manufacture_year = COALESCE($3, manufacture_year),
+                        fleet_service_type_id = COALESCE($4::uuid, fleet_service_type_id),
+                        webcarga_operation_type_id = CASE WHEN $6 THEN NULL
+                            ELSE COALESCE($5::uuid, webcarga_operation_type_id) END
                     WHERE id = $1
                     """,
-                    asset_id, body.asset_type, body.operational_status, body.manufacture_year,
+                    asset_id, body.asset_type, body.manufacture_year,
                     body.fleet_service_type_id, body.webcarga_operation_type_id, clears_type,
                 )
                 for field in touched:
@@ -188,6 +190,35 @@ async def patch_asset(
                     )
     except ForeignKeyViolationError as exc:
         raise _unknown_asset_type(exc) from exc
+    return await get_asset(asset_id, pool, user)
+
+
+# ── Ciclo de vida (plan 2026-10-21): dar de baja y reactivar, con motivo. La regla
+# está en schemas/states.LIFECYCLE_TRANSITIONS; services/lifecycle.py la aplica. ──
+
+@router.post("/{asset_id}/deactivate")
+async def deactivate_asset(
+    asset_id: str, body: LifecycleReasonBody, pool=Depends(get_pool),
+    user=Depends(require(lifecycle.transition_for("ASSET", "deactivate").permission)),
+):
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await lifecycle.transition(
+                conn, entity="ASSET", entity_id=asset_id, action="deactivate", actor=user["sub"],
+                reason_id=body.reason_id, note=body.note)
+    return await get_asset(asset_id, pool, user)
+
+
+@router.post("/{asset_id}/reactivate")
+async def reactivate_asset(
+    asset_id: str, body: LifecycleReasonBody, pool=Depends(get_pool),
+    user=Depends(require(lifecycle.transition_for("ASSET", "reactivate").permission)),
+):
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await lifecycle.transition(
+                conn, entity="ASSET", entity_id=asset_id, action="reactivate", actor=user["sub"],
+                reason_id=body.reason_id, note=body.note)
     return await get_asset(asset_id, pool, user)
 
 

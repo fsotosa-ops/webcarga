@@ -84,6 +84,15 @@ def _plate_key_sql(expr: str) -> str:
     return f"upper(regexp_replace({expr}, '[^A-Za-z0-9]', '', 'g'))"
 
 
+def same_rut_sql(column: str, param: str) -> str:
+    """El RUT de `column` es el mismo que `param` (placeholder $n), escrito con o sin
+    puntos y guion: "76.123.456-7" y "761234567". Compara la clave y no la forma
+    canónica a propósito: `canonical_rut` devuelve NULL para un RUT con dígito
+    verificador inválido, y NULL = NULL no es igual, así que un duplicado exacto
+    pasaba el chequeo y reventaba contra el UNIQUE de la base (hallado el 21/10)."""
+    return f"({_rut_key_sql(column)} = {_rut_key_sql(param + '::text')})"
+
+
 def rut_matches_sql(column: str, param: str) -> str:
     """El RUT de `column` calza con el texto buscado `param` (placeholder $n):
     igual en forma canónica, o contiene la clave buscada (búsqueda con un

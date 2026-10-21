@@ -77,8 +77,8 @@ COLUMNAS_EDITABLES = [c["csv_key"] for c in COLUMNAS if c["editable"]]
 TENENCIA_SI = {"si", "sí", "s", "x", "yes", "true", "1", "recibido"}
 TENENCIA_NO = {"no", "n", "false", "0", "falta", "no recibido"}
 
-# `activas` es el default y es lo que pidió Pablo. `todas` suma las 207
-# LEGACY_INACTIVE, las 2 INACTIVE y las 88 filas sin empresa — el histórico que
+# `activas` es el default y es lo que pidió Pablo. `todas` suma las ~210 dadas de
+# baja (casi todas heredadas del padrón viejo) y las 88 filas sin empresa — el histórico que
 # dijo que NO quería cargar, disponible para quien lo pida a propósito.
 ALCANCES = ("activas", "todas")
 

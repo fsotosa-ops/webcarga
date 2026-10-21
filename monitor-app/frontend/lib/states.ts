@@ -58,13 +58,12 @@ export const SEVERITY_ORDER: readonly DocumentState[] = ['OVERDUE', 'MISSING', '
 export const BLOCKING_STATES: readonly DocumentState[] = ['OVERDUE', 'MISSING']
 
 // ── Ciclo de vida (lo decide una persona) ─────────────────────────────────────
-// INACTIVE y LEGACY_INACTIVE se dicen igual a propósito: de dónde vino la baja
-// no cambia nada para quien mira (Pablo, 04/09).
+// La baja es un estado; de dónde vino (la app, el padrón viejo) es su motivo
+// (`status_reason`, Configuración › Directorio). Pablo, 04/09.
 const CARRIER_LIFECYCLE: Record<string, StateStyle> = {
   ACTIVE:          { label: 'Activa',        tone: 'resolved', icon: CircleCheck },
   ONBOARDING:      { label: 'En onboarding', tone: 'warning',  icon: Hourglass },
   INACTIVE:        { label: 'Dada de baja',  tone: 'neutral',  icon: Ban },
-  LEGACY_INACTIVE: { label: 'Dada de baja',  tone: 'neutral',  icon: Ban },
 }
 const FLEET_LIFECYCLE: Record<string, StateStyle> = {
   ACTIVE:   { label: 'Activo',       tone: 'resolved', icon: CircleCheck },
@@ -95,7 +94,7 @@ export function lifecycleStyle(kind: EntityKind | CatalogKind, status: string): 
 /** La empresa está dada de baja (no "en onboarding"). Su flota queda vinculada
  *  como historial (P1) y se marca (bloque 0, 0.9). */
 export function isCarrierDeactivated(status: string | null | undefined): boolean {
-  return status === 'INACTIVE' || status === 'LEGACY_INACTIVE'
+  return status === 'INACTIVE'
 }
 export const CARRIER_DEACTIVATED_LABEL = 'Empresa dada de baja'
 

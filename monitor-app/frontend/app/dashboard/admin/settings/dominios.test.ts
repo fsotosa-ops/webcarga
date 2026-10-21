@@ -57,6 +57,8 @@ describe('registro de dominios', () => {
         'tms-statuses', 'unassigned-reasons', 'void-reasons',
       ],
       fleet:    ['operation-types', 'subtypes'],
+      // Ciclo de vida del Directorio (21/10): por qué se da de baja o se reactiva.
+      directory: ['deactivation-reasons', 'reactivation-reasons'],
       insurance: ['expiry-alerts'],
       people:   ['roles', 'users'],
       billing:  [],

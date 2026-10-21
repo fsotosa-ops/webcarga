@@ -112,6 +112,9 @@ REVISABLES: tuple[Revisable, ...] = (
               f"doc_type AS abre FROM app.alert_thresholds WHERE doc_type = '{POLIZA_POR_VENCER}'",
               Permission.INSURANCE_CONFIGURE),
     _taxonomia("fleet", "operation-types", "WEBCARGA_OPERATION_TYPE"),
+    # Por qué se da de baja o se reactiva una empresa, un conductor o un equipo.
+    _taxonomia("directory", "deactivation-reasons", "DEACTIVATION_REASON"),
+    _taxonomia("directory", "reactivation-reasons", "REACTIVATION_REASON"),
 )
 
 POR_SECCION = {(r.dominio, r.seccion): r for r in REVISABLES}

@@ -5,25 +5,18 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from ..authz.permissions import Permission
 
 from .common import ManagementType, normalize_management_types
 from .states import CarrierLifecycle, ComplianceSummary
 
-# Verificado contra datos reales (2026-07-16): public.carriers.operational_status
-# no tiene CHECK constraint, y los valores en uso hoy son 'ACTIVE' (38) y
-# 'LEGACY_INACTIVE' (208 — carriers heredados del sistema viejo, nunca
-# migrados a cuenta operativa real). 'INACTIVE' se agrega para la baja
-# manual de una empresa que sí llegó a estar ACTIVE (distinto de "nunca
-# migrada") — todavía no hay datos reales con ese valor.
-# 'ONBOARDING' (Tarea 2, plan Cierre del Día 4.1): empresa recién creada sin
-# RUT todavía, no operativa, no entra en cierres — distinta de 'INACTIVE'
-# (fue ACTIVE y se dio de baja) y de 'LEGACY_INACTIVE' (dato heredado nunca
-# migrado).
-# Los valores viven en el glosario (D1, app/schemas/states.py); el comentario de
-# arriba cuenta de dónde sale cada uno.
+# Los valores viven en el glosario (D1, app/schemas/states.py). 'ONBOARDING' es la
+# empresa recién creada sin RUT (no operativa, no entra en cierres); 'INACTIVE', la
+# dada de baja, venga de donde venga: las ~200 heredadas del padrón viejo eran un
+# cuarto valor (LEGACY_INACTIVE) y desde el 21/10 son INACTIVE con el motivo
+# LEGACY_IMPORT (migración 20261028090000).
 OperationalStatus = CarrierLifecycle
 
 # Única fuente de verdad para "empresa activa" en filtros que deben excluir
@@ -57,11 +50,16 @@ class CarrierCreateBody(BaseModel):
     """Onboarding manual de UNA empresa nueva (POST /carriers) — distinto del
     bulk-load de Mage desde el Excel EETT. Ver context_carriers.md §4.1: el
     endpoint debe además sembrar compliance_records MISSING en la misma
-    transacción (H2.2)."""
+    transacción (H2.2).
+
+    El estado inicial no se elige: sale del RUT (ACTIVE con RUT, ONBOARDING sin él).
+    Una empresa no nace dada de baja; la baja es una acción con motivo
+    (services/lifecycle.py)."""
+    model_config = ConfigDict(extra="forbid")
+
     tax_id: Optional[str] = None
     country_code: str = "CL"
     business_name: str
-    operational_status: Optional[OperationalStatus] = None
     management_types: Optional[list[ManagementType]] = None
 
     @field_validator("management_types", mode="after")
@@ -84,18 +82,17 @@ class CarrierCreateBody(BaseModel):
     def _upper_country(cls, v):
         return v.strip().upper() if isinstance(v, str) else v
 
-    @model_validator(mode="after")
-    def _default_status_from_tax_id(self):
-        if self.operational_status is None:
-            self.operational_status = "ACTIVE" if self.tax_id is not None else "ONBOARDING"
-        elif self.operational_status == "ACTIVE" and self.tax_id is None:
-            raise ValueError("No se puede crear una empresa ACTIVA sin RUT/tax_id — use ONBOARDING")
-        return self
+    @property
+    def initial_status(self) -> OperationalStatus:
+        return "ACTIVE" if self.tax_id is not None else "ONBOARDING"
 
 
 class CarrierPatchBody(BaseModel):
+    """Los datos de la empresa. El estado no se edita aquí: cambia con una acción
+    (activate / deactivate / reactivate), que pide su permiso y su motivo."""
+    model_config = ConfigDict(extra="forbid")
+
     business_name: Optional[str] = None
-    operational_status: Optional[OperationalStatus] = None
     tax_id: Optional[str] = None
     management_types: Optional[list[ManagementType]] = None
     expected_updated_at: Optional[datetime] = None  # optimistic lock, mismo patrón que transporter_relational
@@ -119,8 +116,6 @@ class CarrierPatchBody(BaseModel):
         touched = []
         if self.business_name is not None:
             touched.append("business_name")
-        if self.operational_status is not None:
-            touched.append("operational_status")
         if self.tax_id is not None:
             touched.append("tax_id")
         if self.management_types is not None:
@@ -128,18 +123,13 @@ class CarrierPatchBody(BaseModel):
         return touched
 
 
-# Permiso por campo del PATCH (bloque 0 del Directorio, 0.3). El estado va con
-# directory.edit en el mapa porque UNA transición lo es: ONBOARDING → ACTIVE,
-# que el Supervisor de Operaciones hace desde el pre-cierre (excepción R5).
-# Toda otra (dar de baja, reactivar) exige además directory.delete, y eso
-# depende del estado actual: lo decide patch_carrier después de leerlo, no
-# este mapa.
+# Permiso por campo del PATCH (bloque 0 del Directorio, 0.3). El estado no está:
+# sus permisos van por acción en schemas/states.LIFECYCLE_TRANSITIONS.
 CARRIER_FIELD_PERMISSIONS: dict[str, Permission] = {
     "business_name": Permission.DIRECTORY_EDIT,
     "tax_id": Permission.DIRECTORY_EDIT,
     "management_types": Permission.DIRECTORY_EDIT,
     "expected_updated_at": Permission.DIRECTORY_EDIT,
-    "operational_status": Permission.DIRECTORY_EDIT,
 }
 
 

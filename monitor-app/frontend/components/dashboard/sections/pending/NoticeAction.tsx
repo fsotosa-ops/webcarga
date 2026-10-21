@@ -1,8 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
+import { lifecycleApi } from '@/lib/api/lifecycle'
+import { directoryKeys } from '@/lib/queries/directorio'
+import { LifecycleDialog } from '@/components/dashboard/LifecycleDialog'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { NewCarrierPanel } from '../../NewCarrierPanel'
 import { AltaDeFlota } from '@/components/dashboard/AltaDeFlota'
@@ -42,10 +45,13 @@ export function NoticeAction({ notice, fecha }: { notice: Notice; fecha: string 
     case 'PATENTE_NO_REGISTRADA':
       return canEditDirectory ? <CrearEmpresa tmsCarrierName={notice.source.tms_carrier_name ?? null} onChanged={onChanged} /> : noPermission
     case 'EMPRESA_ONBOARDING': {
-      // ONBOARDING -> ACTIVE es un alta (directory.edit); cualquier otro estado de
-      // origen es una reactivación (directory.delete).
-      const puede = notice.source.operational_status === 'ONBOARDING' ? canEditDirectory : canChangeCarrierStatus
-      return puede ? <ActivarEmpresa carrierId={notice.source.carrier_id} carrierName={notice.source.carrier_name} onChanged={onChanged} /> : noPermission
+      // Una empresa nueva se activa (directory.edit); una dada de baja se reactiva,
+      // con motivo y eligiendo su flota (directory.delete). Son acciones distintas.
+      const s = notice.source
+      if (s.operational_status === 'ONBOARDING' || !s.operational_status) {
+        return canEditDirectory ? <ActivarEmpresa carrierId={s.carrier_id} carrierName={s.carrier_name} onChanged={onChanged} /> : noPermission
+      }
+      return canChangeCarrierStatus ? <ReactivarEmpresa carrierId={s.carrier_id} carrierName={s.carrier_name} onChanged={onChanged} /> : noPermission
     }
     case 'SIN_TIPO_OPERACION':
       return <a href={`/dashboard/carriers/${notice.source.carrier_id}?tab=equipos`} target="_blank" className={ENLACE}>Ir a la ficha de la empresa</a>
@@ -101,11 +107,11 @@ function ActivarEmpresa({ carrierId, carrierName, onChanged }: {
   const [error, setError] = useState('')
   const [rut, setRut] = useState('')
 
-  async function activar(cambios: Parameters<typeof carriersApi.patch>[1]) {
+  async function activar(cambios: { tax_id?: string } = {}) {
     setActivando(true)
     setError('')
     try {
-      await carriersApi.patch(carrierId, cambios)
+      await lifecycleApi.activateCarrier(carrierId, cambios)
       await onChanged({ entity: 'carrier', id: carrierId, type: 'update' })
     } catch (e) {
       // El 422 de "falta RUT" llega en dos formas según el endpoint: en vez de parsearla,
@@ -124,15 +130,49 @@ function ActivarEmpresa({ carrierId, carrierName, onChanged }: {
           <input value={rut} onChange={e => setRut(e.target.value)} placeholder="RUT / Tax ID" aria-label={`RUT de ${carrierName}`}
             className="rounded-lg border border-border bg-white px-2 py-1 text-etiqueta" />
           <button type="button" disabled={activando || !rut.trim()}
-            onClick={() => activar({ tax_id: rut.trim(), operational_status: 'ACTIVE' })}
+            onClick={() => activar({ tax_id: rut.trim() })}
             className="rounded-lg bg-accent px-2 py-1 text-etiqueta font-semibold text-white disabled:opacity-50">
             Guardar RUT y activar
           </button>
         </span>
       </>)}
-      <button type="button" disabled={activando} onClick={() => activar({ operational_status: 'ACTIVE' })} className={`${ENLACE} disabled:opacity-50`}>
+      <button type="button" disabled={activando} onClick={() => activar()} className={`${ENLACE} disabled:opacity-50`}>
         Activar empresa
       </button>
     </span>
   )
+}
+
+/** Reactivar una empresa dada de baja desde el pre-cierre: la misma ventana que en su
+ *  ficha (motivo y qué flota vuelve), no un atajo sin ellos. La flota se pide al abrir. */
+function ReactivarEmpresa({ carrierId, carrierName, onChanged }: {
+  carrierId: string; carrierName: string; onChanged: (c: DirectoryChange) => Promise<void>
+}) {
+  const [abierto, setAbierto] = useState(false)
+  const drivers = useQuery({
+    queryKey: directoryKeys.carrierDrivers(carrierId), queryFn: () => carriersApi.listDrivers(carrierId), enabled: abierto,
+  })
+  const assets = useQuery({
+    queryKey: directoryKeys.carrierAssets(carrierId), queryFn: () => carriersApi.listAssets(carrierId), enabled: abierto,
+  })
+  const listo = abierto && !!drivers.data && !!assets.data
+  return (<>
+    <button type="button" disabled={abierto && !listo} onClick={() => setAbierto(true)} className={`${ENLACE} disabled:opacity-50`}>
+      {abierto && !listo ? 'Cargando su flota…' : 'Reactivar empresa'}
+    </button>
+    {listo && (
+      <LifecycleDialog
+        action="reactivate" scope="carrier" label={carrierName}
+        fleet={{
+          drivers: drivers.data!.map(d => ({ id: d.id, label: d.full_name })),
+          assets: assets.data!.map(a => ({ id: a.id, label: a.license_plate })),
+        }}
+        onClose={() => setAbierto(false)}
+        onConfirm={async body => {
+          await lifecycleApi.reactivate('carrier', carrierId, body)
+          await onChanged({ entity: 'carrier', id: carrierId, type: 'assignment' })
+        }}
+      />
+    )}
+  </>)
 }

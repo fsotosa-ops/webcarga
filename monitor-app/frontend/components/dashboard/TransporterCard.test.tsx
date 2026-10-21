@@ -28,8 +28,8 @@ describe('TransporterCard', () => {
     expect(screen.getByText('No habilitada')).toHaveClass('text-status-incidente')
   })
 
-  it('una dada de baja no se ve en rojo (las 205 LEGACY, §1)', () => {
-    render(<TransporterCard item={{ ...ITEM, operational_status: 'LEGACY_INACTIVE', compliance_summary: complianceSummary({ worst_state: 'MISSING', can_operate: false }) }} />)
+  it('una dada de baja no se ve en rojo (§1)', () => {
+    render(<TransporterCard item={{ ...ITEM, operational_status: 'INACTIVE', compliance_summary: complianceSummary({ worst_state: 'MISSING', can_operate: false }) }} />)
     expect(screen.getByText('No habilitada')).toHaveClass('text-informativo')
   })
 
@@ -45,8 +45,8 @@ describe('TransporterCard', () => {
     expect(screen.getByText('Sin nombre')).toBeInTheDocument()
   })
 
-  it('shows Dada de baja for legacy_inactive companies (concept exposed to the user is Activo/Inactivo, not Activo/Legacy)', () => {
-    render(<TransporterCard item={{ ...ITEM, operational_status: 'LEGACY_INACTIVE' }} />)
+  it('shows Dada de baja for deactivated companies', () => {
+    render(<TransporterCard item={{ ...ITEM, operational_status: 'INACTIVE' }} />)
     expect(screen.getByText('Dada de baja')).toBeInTheDocument()
   })
 

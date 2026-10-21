@@ -1,19 +1,18 @@
 """Pydantic schemas para public.drivers (H2.2 — routers/drivers.py)."""
 from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from ..authz.permissions import Permission
-from .states import FleetLifecycle
-
-OperationalStatus = FleetLifecycle  # glosario (D1)
 
 
 class DriverCreateBody(BaseModel):
+    """Un conductor nace activo; la baja es una acción con motivo (services/lifecycle.py)."""
+    model_config = ConfigDict(extra="forbid")
+
     tax_id: str
     country_code: str = "CL"
     full_name: str
-    operational_status: OperationalStatus = "ACTIVE"
     # Origen habitual (HU-28). Opcional en el alta: se puede enrolar a alguien antes de
     # saber de qué CD va a salir, y queda como pendiente del directorio.
     home_location_id: Optional[str] = None
@@ -36,8 +35,10 @@ class DriverCreateBody(BaseModel):
 
 
 class DriverPatchBody(BaseModel):
+    """Los datos del conductor. El estado cambia con deactivate / reactivate."""
+    model_config = ConfigDict(extra="forbid")
+
     full_name: Optional[str] = None
-    operational_status: Optional[OperationalStatus] = None
     # Cadena vacía = "quítaselo". None = "no mandó la clave", que no es lo
     # mismo: sin esa distinción, cambiar el nombre le borraba el CD.
     home_location_id: Optional[str] = None
@@ -49,11 +50,10 @@ class DriverPatchBody(BaseModel):
 
 
 # Permiso por campo del PATCH (bloque 0 del Directorio, 0.3; patrón de
-# TRIP_FIELD_PERMISSIONS). Dar de baja o reactivar es de Operaciones; el resto
-# de la ficha, de los supervisores. Un campo nuevo sin entrada acá hace fallar
-# test_directory_permissions.test_todo_campo_del_patch_tiene_permiso.
+# TRIP_FIELD_PERMISSIONS). Un campo nuevo sin entrada acá hace fallar
+# test_directory_permissions.test_todo_campo_del_patch_tiene_permiso. Dar de baja
+# o reactivar va por acción (schemas/states.LIFECYCLE_TRANSITIONS).
 DRIVER_FIELD_PERMISSIONS: dict[str, Permission] = {
     "full_name": Permission.DIRECTORY_EDIT,
     "home_location_id": Permission.DIRECTORY_EDIT,
-    "operational_status": Permission.DIRECTORY_FLEET_STATUS,
 }

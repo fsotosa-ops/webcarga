@@ -53,14 +53,13 @@ async def test_una_empresa_activa_suma_en_las_dos_cifras(conexion_revertida):
 
 
 async def test_las_dadas_de_baja_cuentan_como_inactivas_y_no_como_activas(conexion_revertida):
-    """`INACTIVE` (baja manual) y `LEGACY_INACTIVE` (histórico) son dos formas
-    de lo mismo para quien mira el directorio: no operan. Separarlas en la tira
-    de cifras obligaría a Pablo a sumar dos números para saber cuántas quedan
-    fuera, que es justo lo que la cifra viene a evitar."""
+    """Dada de baja es un estado (INACTIVE), venga de la app o del padrón viejo:
+    lo que cambia es el motivo. Pablo, 04/09: *"yo di de baja esa empresa y no
+    aparece"* — la cifra cuenta todas las dadas de baja."""
     pool = PoolDeUnaConexion(conexion_revertida)
     antes = await get_directorio(pool=pool, _=None)
     await _empresa(conexion_revertida, "INACTIVE")
-    await _empresa(conexion_revertida, "LEGACY_INACTIVE")
+    await _empresa(conexion_revertida, "INACTIVE")
     despues = await get_directorio(pool=pool, _=None)
 
     assert despues["empresas"]["inactivas"] == antes["empresas"]["inactivas"] + 2
@@ -75,7 +74,7 @@ async def test_la_flota_de_una_empresa_dada_de_baja_no_se_cuenta(conexion_revert
     antes = await get_directorio(pool=pool, _=None)
 
     activa = await _empresa(conexion_revertida, "ACTIVE")
-    de_baja = await _empresa(conexion_revertida, "LEGACY_INACTIVE")
+    de_baja = await _empresa(conexion_revertida, "INACTIVE")
     await _tracto_de(conexion_revertida, activa)
     await _tracto_de(conexion_revertida, de_baja)
 

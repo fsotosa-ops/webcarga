@@ -50,7 +50,7 @@ def _resumen(*, can_operate=True, own=(0, 0, 0), fleet=(0, 0, 0)):
 
 def test_el_balde_de_una_empresa_no_activa_es_ninguno():
     assert funnel_bucket_for(_resumen(can_operate=False), "ONBOARDING") is None
-    assert funnel_bucket_for(_resumen(can_operate=False), "LEGACY_INACTIVE") is None
+    assert funnel_bucket_for(_resumen(can_operate=False), "INACTIVE") is None
 
 
 def test_no_habilitada_gana_a_todo():

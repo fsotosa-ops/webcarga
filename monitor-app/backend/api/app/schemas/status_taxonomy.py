@@ -28,6 +28,10 @@ GRUPOS_POR_DOMINIO = {
     "OPERATIONAL_STATE": BOARD_COLUMNS,
     # Si el conductor trabajo sin asignacion o no trabajo (migracion 20260917000000).
     "DRIVER_REASON": {"no_trabajando", "trabajando_sin_asignacion"},
+    # A quien aplica un motivo de baja o de reactivacion (services/lifecycle.py):
+    # a todos, o solo a empresas, conductores o equipos (migracion 20261028090000).
+    "DEACTIVATION_REASON": {"all", "carrier", "driver", "asset"},
+    "REACTIVATION_REASON": {"all", "carrier", "driver", "asset"},
 }
 
 

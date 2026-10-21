@@ -37,7 +37,7 @@ DRIVER_INACTIVE = "DRIVER_INACTIVE"
 ASSET_INACTIVE = "ASSET_INACTIVE"
 CARRIER_NOT_ENABLED = "CARRIER_NOT_ENABLED"
 
-# Las palabras del glosario (spec D1 §3): INACTIVE y LEGACY_INACTIVE se dicen igual ("dada de baja").
+# Las palabras del glosario (spec D1 §3): INACTIVE se dice "dada de baja".
 
 
 @dataclass(frozen=True)

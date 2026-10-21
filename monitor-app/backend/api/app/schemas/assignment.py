@@ -28,9 +28,3 @@ class CarrierShipperCreateBody(BaseModel):
 class CarrierShipperLinkBody(BaseModel):
     shipper_id: str
     effective_date: date | None = None
-
-
-class CarrierReactivateBody(BaseModel):
-    """P3: al reactivar se elige qué conductores y equipos vuelven."""
-    driver_ids: list[str] = []
-    asset_ids: list[str] = []

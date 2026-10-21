@@ -1,10 +1,11 @@
 import type { ComponentType } from 'react'
 import {
-  Shield, ShieldCheck, LayoutDashboard, Truck, Users, Receipt, type LucideIcon,
+  Shield, ShieldCheck, LayoutDashboard, Truck, Users, Receipt, BookUser, type LucideIcon,
 } from 'lucide-react'
 import {
   EstadosDelViajePanel, EstadosOperacionalesPanel, EstadosDeEquipoPanel, MotivosDeConductorPanel,
   MotivosDeNoAsignacionPanel, MotivosDeAnulacionPanel, SubtiposPanel, TiposDeOperacionPanel,
+  MotivosDeBajaPanel, MotivosDeReactivacionPanel,
   SECCIONES_CON_LISTA, AlertasDeDocumentosPanel, AlertasDePolizasPanel, RangosDeTemperaturaPanel,
   UmbralesDelMonitorPanel,
 } from './paneles'
@@ -94,6 +95,18 @@ export const DOMINIOS: Dominio[] = [
         proposito: 'Furgón congelado, sider, rampla plana', Panel: SubtiposPanel },
       { clave: 'operation-types', titulo: 'Tipos de operación',
         proposito: 'Tractoreo y equipo completo', Panel: TiposDeOperacionPanel },
+    ],
+  },
+  {
+    clave: 'directory',
+    icono: BookUser,
+    titulo: 'Directorio',
+    proposito: 'Por qué se da de baja o se reactiva una empresa, un conductor o un equipo',
+    secciones: [
+      { clave: 'deactivation-reasons', titulo: 'Motivos de baja',
+        proposito: 'Por qué deja de operar', Panel: MotivosDeBajaPanel },
+      { clave: 'reactivation-reasons', titulo: 'Motivos de reactivación',
+        proposito: 'Por qué vuelve a operar', Panel: MotivosDeReactivacionPanel },
     ],
   },
   {

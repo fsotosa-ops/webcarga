@@ -16,6 +16,36 @@
 > la historia de usuario de Operación/CD, que ES la Ronda 162; lo demás que seguía abierto está
 > consolidado en el checklist de abajo antes de mover nada.)
 
+### CHECKPOINT VIGENTE — Ciclo de vida del Directorio con motivo (21/10, SIN COMITEAR, en pausa)
+
+**Por qué:** "Reactivar" fallaba para ~205 empresas: `LEGACY_INACTIVE` (padrón viejo) se veía "Dada de baja" pero
+`/reactivate` solo aceptaba `INACTIVE` (409). El usuario pidió solución estándar, no parche
+(plan `~/.claude/plans/zany-wishing-cloud.md`). Decisiones: aplica a empresas, conductores y equipos; motivos editables
+en Configuración.
+
+**Hecho (working tree, nada comiteado):**
+- Migraciones `20261028090000_lifecycle_reasons.sql` (expand: dominios DEACTIVATION_REASON/REACTIVATION_REASON en
+  app.status_taxonomies con `group_id` all/carrier/driver/asset; columnas status_reason_id/status_note/status_changed_at
+  en carriers/drivers/assets; LEGACY_INACTIVE → INACTIVE + motivo LEGACY_IMPORT, copia en audit_log) y
+  `20261028090100_lifecycle_reasons_contract.sql` (CHECK sin LEGACY). Aplicadas SOLO en la copia local; NO en la real.
+- Backend: `schemas/states.LIFECYCLE_TRANSITIONS` (regla por acción) + `services/lifecycle.py` (único escritor del estado);
+  rutas POST carriers/{id}/activate|deactivate|reactivate, drivers|assets/{id}/deactivate|reactivate; PATCH y altas
+  ya no aceptan operational_status (extra=forbid → 422); `utils/identity.same_rut_sql` (el chequeo de RUT duplicado con
+  canonical_rut dejaba pasar duplicados de RUT inválido → 500). Configuración: área "directory" (REVISABLES, inventario).
+- Frontend: `LifecycleDialog` (reemplaza BajaReasonModal/ReactivateCarrierModal, borrados), `hooks/useReasons`,
+  `CamposDeMotivo` variante `dialogo`, `lib/api/lifecycle.ts`, ficha muestra "Motivo: …", pre-cierre reactiva con
+  el mismo diálogo, área Configuración › Directorio. Humo nuevo `scripts/smoke/ciclo-de-vida.spec.ts` (3/3 en local).
+- Verificado: backend del área 223 + lifecycle 32 (mutaciones detectadas) en local; vitest completo 2023/2025 (los 2 son
+  de tiempo por carga, pasan solos); tsc limpio; capturas 1440/390.
+
+**Siguiente paso exacto:**
+1. Repetir la lista amplia del backend (la última corrida se cortó para liberar la máquina).
+2. Commit + push a dev; ensayo de la migración expand en la base real con ROLLBACK y pedir autorización para aplicarla.
+3. Tras el deploy de la API, aplicar el contract.
+
+**Hallazgos aparte (no tocados):** `test_columnas_del_tablero` ya fallaba (busca BOARD_COLUMN_STYLE, renombrado a
+TRIP_STAGE_STYLE el 17/10). Los tests que llamaban list_carriers sin shipper_id se arreglaron de paso.
+
 ### CHECKPOINT VIGENTE — Cierre con un solo patrón (16/10, desplegado en dev)
 
 **Qué hicimos** (plan `docs/superpowers/plans/2026-10-17-cierre-un-solo-patron.md`, spec

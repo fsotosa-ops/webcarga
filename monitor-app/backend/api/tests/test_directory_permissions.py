@@ -4,8 +4,11 @@ Operaciones (Operador y Supervisor) da de baja y reactiva conductores y
 equipos; la baja de una empresa es de Certificación (y del Propietario).
 Activar una empresa nueva (ONBOARDING → ACTIVE) sigue siendo editar: el
 Supervisor de Operaciones la activa desde el pre-cierre (excepción R5).
-Quitar del roster es editar. Un campo sin permiso invalida el cuerpo entero:
-aceptar la parte permitida dejaría al cliente creyendo que guardó todo."""
+Desde el 21/10 el estado cambia con acciones (activate / deactivate /
+reactivate), no por PATCH; cada una exige el permiso de su transición
+(schemas/states.LIFECYCLE_TRANSITIONS). Quitar del roster es editar. Un campo
+sin permiso invalida el cuerpo entero: aceptar la parte permitida dejaría al
+cliente creyendo que guardó todo."""
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -57,7 +60,7 @@ def cliente(user, pool):
 def pool_de_conductor():
     pool, conn = AsyncMock(), AsyncMock()
     wire_transactional_conn(pool, conn)
-    conn.fetchrow.return_value = {"full_name": "Juan", "operational_status": "ACTIVE", "home_location_id": "cd-1"}
+    conn.fetchrow.return_value = {"full_name": "Juan", "home_location_id": "cd-1"}
     pool.fetchrow.return_value = FILA_CONDUCTOR   # tiene origen: get_driver no pide sugerencia
     return pool, conn
 
@@ -66,15 +69,15 @@ def pool_de_equipo():
     pool, conn = AsyncMock(), AsyncMock()
     wire_transactional_conn(pool, conn)
     conn.fetchrow.return_value = {
-        "asset_type": "TRACTOCAMION", "operational_status": "ACTIVE", "manufacture_year": None,
+        "asset_type": "TRACTOCAMION", "manufacture_year": None,
         "fleet_service_type_id": None, "webcarga_operation_type_id": None}
     pool.fetchrow.return_value = FILA_EQUIPO
     return pool, conn
 
 
 def pool_de_empresa(monkeypatch, estado_actual: str):
-    """La empresa en `estado_actual`, con RUT (activarla no choca con el 422 de
-    "sin RUT"). El detalle que devuelve el PATCH no es lo que se prueba acá."""
+    """La empresa en `estado_actual`, con RUT. El detalle que devuelve el PATCH no
+    es lo que se prueba acá."""
     pool, conn = AsyncMock(), AsyncMock()
     wire_transactional_conn(pool, conn)
     conn.fetchrow.return_value = {"updated_at": None, "business_name": "Acme", "operational_status": estado_actual,
@@ -106,13 +109,48 @@ def test_todo_campo_del_patch_tiene_permiso():
     assert set(CarrierPatchBody.model_fields) == set(CARRIER_FIELD_PERMISSIONS)
 
 
-# ── Conductores y equipos ────────────────────────────────────────────────────
+# ── El estado ya no se edita por PATCH (plan 2026-10-21) ─────────────────────
 
-def test_el_operador_da_de_baja_a_un_conductor():
-    pool, conn = pool_de_conductor()
-    res = cliente(OPERADOR, pool).patch("/api/v1/drivers/d1", json={"operational_status": "INACTIVE"})
-    assert res.status_code == 200
-    assert conn.execute.called
+@pytest.mark.parametrize("ruta,pool_de", [
+    ("/api/v1/drivers/d1", "conductor"), ("/api/v1/assets/a1", "equipo"), ("/api/v1/carriers/c1", "empresa")])
+def test_el_patch_rechaza_el_estado(monkeypatch, ruta, pool_de):
+    """Un campo que el PATCH no conoce es un 422, no un dato que se ignora: el
+    estado cambia con una acción, que pide su permiso y su motivo."""
+    pool, conn = (pool_de_conductor() if pool_de == "conductor" else pool_de_equipo() if pool_de == "equipo"
+                  else pool_de_empresa(monkeypatch, "ACTIVE"))
+    res = cliente(SUP_CERT, pool).patch(ruta, json={"operational_status": "INACTIVE"})
+    assert res.status_code == 422
+    assert not conn.execute.called
+
+
+# ── Las acciones: cada una exige el permiso de su transición ─────────────────
+
+MOTIVO = {"reason_id": "00000000-0000-0000-0000-0000000000aa"}
+
+
+@pytest.fixture
+def transicion(monkeypatch):
+    """La regla de la transición se prueba contra la base (test_lifecycle_integration);
+    aquí solo quién puede llamar cada acción."""
+    fake = AsyncMock(return_value={"operational_status": "X"})
+    monkeypatch.setattr(carriers_router.lifecycle, "transition", fake)
+    return fake
+
+
+@pytest.mark.parametrize("ruta", [
+    "/api/v1/drivers/d1/deactivate", "/api/v1/drivers/d1/reactivate",
+    "/api/v1/assets/a1/deactivate", "/api/v1/assets/a1/reactivate"])
+def test_operaciones_da_de_baja_y_reactiva_conductores_y_equipos(transicion, ruta):
+    pool = pool_de_conductor()[0] if "/drivers/" in ruta else pool_de_equipo()[0]
+    assert cliente(OPERADOR, pool).post(ruta, json=MOTIVO).status_code == 200
+    assert transicion.await_count == 1
+
+
+@pytest.mark.parametrize("ruta", ["/api/v1/drivers/d1/deactivate", "/api/v1/assets/a1/reactivate"])
+def test_lectura_no_da_de_baja_ni_reactiva(transicion, ruta):
+    pool = pool_de_conductor()[0] if "/drivers/" in ruta else pool_de_equipo()[0]
+    assert cliente(LECTURA, pool).post(ruta, json=MOTIVO).status_code == 403
+    assert not transicion.called
 
 
 def test_el_operador_no_renombra():
@@ -122,110 +160,47 @@ def test_el_operador_no_renombra():
     assert not conn.execute.called
 
 
-def test_un_cuerpo_mixto_del_operador_se_rechaza_entero_y_no_escribe():
-    """Review Focus 1."""
-    pool, conn = pool_de_conductor()
-    res = cliente(OPERADOR, pool).patch(
-        "/api/v1/drivers/d1", json={"operational_status": "INACTIVE", "full_name": "Otro"})
-    assert res.status_code == 403 and "full_name" in res.json()["detail"]
-    assert not conn.execute.called
-
-
-def test_un_cuerpo_mixto_pasa_con_los_dos_permisos():
-    """El Supervisor de Operaciones tiene editar y dar de baja: el mismo cuerpo
-    mixto que se le rechaza al Operador se le acepta (R8: los dos permisos)."""
-    pool, conn = pool_de_conductor()
-    res = cliente(SUP_OPS, pool).patch(
-        "/api/v1/drivers/d1", json={"operational_status": "INACTIVE", "full_name": "Otro"})
-    assert res.status_code == 200
-    assert conn.execute.called
-
-
-def test_lectura_no_da_de_baja():
-    pool, conn = pool_de_conductor()
-    res = cliente(LECTURA, pool).patch("/api/v1/drivers/d1", json={"operational_status": "INACTIVE"})
-    assert res.status_code == 403
-    assert not conn.execute.called
-
-
-def test_el_operador_da_de_baja_un_equipo_y_no_edita_el_resto():
-    pool, _ = pool_de_equipo()
-    assert cliente(OPERADOR, pool).patch("/api/v1/assets/a1", json={"operational_status": "INACTIVE"}).status_code == 200
+def test_el_operador_no_edita_un_equipo():
     pool, conn = pool_de_equipo()
     assert cliente(OPERADOR, pool).patch("/api/v1/assets/a1", json={"manufacture_year": 2019}).status_code == 403
     assert not conn.execute.called
 
 
-# ── Empresas ─────────────────────────────────────────────────────────────────
-
-def test_el_supervisor_de_operaciones_activa_una_empresa_nueva(monkeypatch):
-    """Excepción R5 (decisión del usuario, 12/10): ONBOARDING → ACTIVE es
-    editar; el Supervisor de Operaciones activa desde el pre-cierre."""
-    pool, conn = pool_de_empresa(monkeypatch, "ONBOARDING")
-    res = cliente(SUP_OPS, pool).patch("/api/v1/carriers/c1", json={"operational_status": "ACTIVE"})
-    assert res.status_code == 200
-    assert conn.execute.called
+def test_el_supervisor_de_operaciones_activa_una_empresa_nueva(monkeypatch, transicion):
+    """Excepción R5 (decisión del usuario, 12/10): activar una empresa nueva es
+    editar; el Supervisor de Operaciones la activa desde el pre-cierre."""
+    pool, _ = pool_de_empresa(monkeypatch, "ONBOARDING")
+    assert cliente(SUP_OPS, pool).post("/api/v1/carriers/c1/activate", json={}).status_code == 200
+    assert transicion.await_args.kwargs["action"] == "activate"
 
 
-@pytest.mark.parametrize("actual,nuevo", [("ACTIVE", "INACTIVE"), ("INACTIVE", "ACTIVE")])
-def test_el_supervisor_de_operaciones_no_da_de_baja_ni_reactiva_una_empresa(monkeypatch, actual, nuevo):
-    pool, conn = pool_de_empresa(monkeypatch, actual)
-    res = cliente(SUP_OPS, pool).patch("/api/v1/carriers/c1", json={"operational_status": nuevo})
-    assert res.status_code == 403
-    assert not conn.execute.called
+def test_el_operador_no_activa_una_empresa_nueva(monkeypatch, transicion):
+    """La excepción es de editar: el Operador no edita empresas."""
+    pool, _ = pool_de_empresa(monkeypatch, "ONBOARDING")
+    assert cliente(OPERADOR, pool).post("/api/v1/carriers/c1/activate", json={}).status_code == 403
+    assert not transicion.called
 
 
-def test_un_cuerpo_mixto_de_baja_de_empresa_se_rechaza_entero(monkeypatch):
-    pool, conn = pool_de_empresa(monkeypatch, "ACTIVE")
-    res = cliente(SUP_OPS, pool).patch(
-        "/api/v1/carriers/c1", json={"operational_status": "INACTIVE", "business_name": "Otra"})
-    assert res.status_code == 403
-    assert not conn.execute.called
+@pytest.mark.parametrize("accion,cuerpo", [("deactivate", MOTIVO), ("reactivate", MOTIVO)])
+def test_el_supervisor_de_operaciones_no_da_de_baja_ni_reactiva_una_empresa(monkeypatch, transicion, accion, cuerpo):
+    pool, _ = pool_de_empresa(monkeypatch, "ACTIVE")
+    assert cliente(SUP_OPS, pool).post(f"/api/v1/carriers/c1/{accion}", json=cuerpo).status_code == 403
+    assert not transicion.called
 
 
-def test_el_operador_no_activa_una_empresa_nueva(monkeypatch):
-    """La excepción es de editar, no de dar de baja: el Operador no edita empresas."""
-    pool, conn = pool_de_empresa(monkeypatch, "ONBOARDING")
-    res = cliente(OPERADOR, pool).patch("/api/v1/carriers/c1", json={"operational_status": "ACTIVE"})
-    assert res.status_code == 403
-    assert not conn.execute.called
+@pytest.mark.parametrize("accion", ["deactivate", "reactivate"])
+def test_certificacion_da_de_baja_y_reactiva_una_empresa(monkeypatch, transicion, accion):
+    pool, _ = pool_de_empresa(monkeypatch, "ACTIVE")
+    assert cliente(SUP_CERT, pool).post(f"/api/v1/carriers/c1/{accion}", json=MOTIVO).status_code == 200
+    assert transicion.await_args.kwargs["action"] == accion
 
 
-def test_el_supervisor_de_certificacion_da_de_baja_una_empresa(monkeypatch):
-    pool, conn = pool_de_empresa(monkeypatch, "ACTIVE")
-    res = cliente(SUP_CERT, pool).patch("/api/v1/carriers/c1", json={"operational_status": "INACTIVE"})
-    assert res.status_code == 200
-    assert conn.execute.called
-
-
-def test_la_lectura_del_estado_bloquea_la_fila(monkeypatch):
-    """Sin FOR UPDATE, una baja concurrente de Certificación (ONBOARDING →
-    INACTIVE) entre la lectura y el UPDATE quedaría pisada por la activación
-    del Supervisor de Operaciones: una reactivación que exige directory.delete."""
-    pool, conn = pool_de_empresa(monkeypatch, "ONBOARDING")
-    res = cliente(SUP_OPS, pool).patch("/api/v1/carriers/c1", json={"operational_status": "ACTIVE"})
-    assert res.status_code == 200
-    sql = conn.fetchrow.call_args_list[0].args[0]
-    assert "FROM public.carriers" in sql and "FOR UPDATE" in sql
-
-
-def test_reenviar_el_estado_actual_no_es_cambiarlo(monkeypatch):
-    """El formulario de edición puede mandar el estado que ya tiene: no es una
-    baja ni una reactivación, no exige directory.delete y no se audita."""
-    pool, conn = pool_de_empresa(monkeypatch, "ACTIVE")
-    record = AsyncMock()
-    monkeypatch.setattr(carriers_router, "record_manual_edit", record)
-    res = cliente(SUP_OPS, pool).patch(
-        "/api/v1/carriers/c1", json={"operational_status": "ACTIVE", "business_name": "Otra"})
-    assert res.status_code == 200
-    assert [c.kwargs["field"] for c in record.call_args_list] == ["business_name"]
-
-
-def test_reenviar_solo_el_estado_actual_no_escribe(monkeypatch):
-    pool, conn = pool_de_empresa(monkeypatch, "ACTIVE")
-    res = cliente(SUP_OPS, pool).patch("/api/v1/carriers/c1", json={"operational_status": "ACTIVE"})
-    assert res.status_code == 200
-    assert not conn.execute.called   # ni UPDATE (updated_at) ni auditoría
+@pytest.mark.parametrize("ruta", [
+    "/api/v1/carriers/c1/deactivate", "/api/v1/carriers/c1/reactivate", "/api/v1/drivers/d1/deactivate"])
+def test_dar_de_baja_o_reactivar_sin_motivo_es_422(monkeypatch, transicion, ruta):
+    pool, _ = pool_de_empresa(monkeypatch, "ACTIVE")
+    assert cliente(SUP_CERT, pool).post(ruta, json={}).status_code == 422
+    assert not transicion.called
 
 
 # ── Quitar del roster y conductor habitual ───────────────────────────────────

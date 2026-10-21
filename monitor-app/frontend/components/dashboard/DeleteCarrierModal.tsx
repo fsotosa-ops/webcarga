@@ -9,7 +9,7 @@ interface Props {
 }
 
 /** Confirmación de borrado real de una empresa — a diferencia de
- *  BajaReasonModal (soft, siempre permitido), el backend puede rechazar
+ *  dar de baja (LifecycleDialog, siempre permitido), el backend puede rechazar
  *  esto con 409 si la empresa tiene datos asociados; ese mensaje ya viene
  *  listo para mostrar (ver carriersApi.delete / DELETE /carriers/{id}). */
 export function DeleteCarrierModal({ label, onClose, onConfirm }: Props) {

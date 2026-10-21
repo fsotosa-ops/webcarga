@@ -13,13 +13,11 @@ export type { AssetType }
 export type AssetCreateBody = {
   license_plate:       string
   asset_type:          AssetType
-  operational_status?: OperationalStatus
   manufacture_year?:   number
 }
 
 export type AssetPatchBody = {
   asset_type?:          AssetType
-  operational_status?:  OperationalStatus
   manufacture_year?:    number
   /** Tractoreo / Equipo Completo. El backend lo acepta desde el 2026-08-03 y
    *  este tipo no lo declaraba, así que la única forma de fijarlo era el alta

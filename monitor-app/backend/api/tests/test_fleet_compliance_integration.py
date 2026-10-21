@@ -272,7 +272,7 @@ async def test_empresa_no_activa_nunca_habilitada_y_resume_lo_suyo_y_su_flota(co
 
 async def test_empresa_no_activa_sin_pendientes_tampoco_esta_habilitada(conexion_revertida):
     conn = conexion_revertida
-    empresa = await _empresa(conn, "LEGACY_INACTIVE")
+    empresa = await _empresa(conn, "INACTIVE")
     await _sin_registros(conn, empresa)
     fila = await _de_la_empresa(conn, empresa)
     assert (fila["worst_state"], fila["can_operate"]) == ("UP_TO_DATE", False)

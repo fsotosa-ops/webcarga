@@ -36,7 +36,7 @@ async def _flota_mixta(conn) -> dict:
 
 
 async def _lista(conn) -> dict:
-    return await list_carriers(q=s.PREFIX, operational_status="", enablement="",
+    return await list_carriers(q=s.PREFIX, operational_status="", enablement="", shipper_id=None,
                                page=1, limit=100, pool=PoolDeUnaConexion(conn), _=None)
 
 
@@ -100,7 +100,7 @@ async def test_por_vencer_y_opcionales_no_quitan_la_habilitacion(conexion_revert
 async def test_una_empresa_dada_de_baja_nunca_esta_habilitada(conexion_revertida):
     """D1-R1: sus cifras se calculan (historial) y can_operate es false."""
     conn = conexion_revertida
-    c = await s.carrier(conn, status="LEGACY_INACTIVE")
+    c = await s.carrier(conn, status="INACTIVE")
     await s.without_seeding(conn, c)
 
     resumen = next(r for r in (await _lista(conn))["data"] if str(r["id"]) == c)["compliance_summary"]
@@ -120,7 +120,7 @@ async def test_el_filtro_de_habilitacion_corre_en_el_servidor(conexion_revertida
     pool = PoolDeUnaConexion(conn)
 
     async def pedir(enablement: str) -> dict:
-        return await list_carriers(q=s.PREFIX, operational_status="", enablement=enablement,
+        return await list_carriers(q=s.PREFIX, operational_status="", enablement=enablement, shipper_id=None,
                                    page=1, limit=100, pool=pool, _=None)
 
     assert [str(r["id"]) for r in (await pedir("enabled"))["data"]] == [habilitada]

@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, Building2, Upload } from 'lucide-react'
 import { driversApi, type DriverPatchBody } from '@/lib/api/drivers'
 import { assetsApi, type AssetPatchBody } from '@/lib/api/assets'
+import { lifecycleApi, type LifecycleBody } from '@/lib/api/lifecycle'
 import { carriersApi } from '@/lib/api/carriers'
 import { entitySummaryKey, fetchEntitySummary, type AssetSummary, type DriverSummary } from '@/lib/api/entitySummary'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
@@ -30,7 +31,7 @@ import { EntityCell } from './EntityCell'
 import { TransferModal } from './TransferModal'
 import { DetailShell } from './DetailShell'
 import { CorrectIdentityModal } from './CorrectIdentityModal'
-import { BajaReasonModal } from './BajaReasonModal'
+import { LifecycleDialog } from './LifecycleDialog'
 import { ConfirmarBaja } from '@/components/compliance/ConfirmarBaja'
 import { EntityDocuments, useEntityPendingRows } from '@/components/compliance/EntityDocuments'
 import type { AssignmentPeriod, EntityActivity } from '@/lib/types'
@@ -62,11 +63,8 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
   const back = returnLink(searchParams.get('next'))
-  const [modal, setModal] = useState<'transfer' | 'identity' | 'baja' | 'remove' | null>(null)
+  const [modal, setModal] = useState<'transfer' | 'identity' | 'deactivate' | 'reactivate' | 'remove' | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  // Lo que se hace desde el ⋯ sin diálogo propio (Reactivar) dice si falló:
-  // en silencio parecía hecho (revisión final de la Entrega 1).
-  const [actionError, setActionError] = useState<string | null>(null)
   const { labelOf } = useAssetTypes()
 
   const canEdit = usePermiso('directory.edit')
@@ -143,17 +141,19 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
     else await assetsApi.patch(id, body as AssetPatchBody)
     await afterChange({ entity: kind, id, type: 'update', carrierIds: [carrierId] })
   }
+  /** Dar de baja o reactivar, con motivo (lib/api/lifecycle.ts). */
+  async function changeStatus(action: 'deactivate' | 'reactivate', body: LifecycleBody) {
+    await lifecycleApi[action](kind, id, body)
+    await afterChange({ entity: kind, id, type: 'update', carrierIds: [carrierId] })
+  }
 
   const menuItems: ActionsMenuItem[] = [
     ...(canEdit ? [{ id: 'transfer', label: carrierId ? 'Transferir a otra empresa' : 'Asignar a una empresa', onSelect: () => setModal('transfer') }] : []),
     ...(canCorrectIdentity ? [{ id: 'identity', label: kind === 'driver' ? 'Corregir RUT' : 'Corregir patente', onSelect: () => setModal('identity') }] : []),
     ...(canChangeFleetStatus
       ? [status === 'INACTIVE'
-          ? { id: 'reactivate', label: 'Reactivar', onSelect: () => {
-              setActionError(null)
-              patch({ operational_status: 'ACTIVE' }).catch(e => setActionError(e instanceof Error ? e.message : 'No se pudo reactivar.'))
-            } }
-          : { id: 'baja', label: 'Dar de baja', destructive: true, onSelect: () => setModal('baja') }]
+          ? { id: 'reactivate', label: 'Reactivar', onSelect: () => setModal('reactivate') }
+          : { id: 'baja', label: 'Dar de baja', destructive: true, onSelect: () => setModal('deactivate') }]
       : []),
     ...(canEdit && carrierId ? [{ id: 'remove', label: 'Quitar de la empresa', destructive: true, onSelect: () => setModal('remove') }] : []),
   ]
@@ -203,10 +203,10 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
         <ProfileBreadcrumb module="Directorio" list={LIST[kind]} title={title} back={back} />
       )}
       <ProfileHeader title={title} chips={chips} reason={reason}
+                     statusReason={status === 'INACTIVE' ? entity.data.status_reason : null}
                      onSeeDocuments={() => document.getElementById(documentsId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                      primaryAction={primaryAction} menuItems={menuItems} />
       {notice && <p role="status" className="text-dato text-resuelto">{notice}</p>}
-      {actionError && <p role="alert" className="text-dato text-status-incidente">{actionError}</p>}
 
       {/* Sin pestañas (15/10): lo que se trabaja al centro y los datos al costado. */}
       <ProfileLayout aside={<>
@@ -251,9 +251,9 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
           }}
         />
       )}
-      {modal === 'baja' && (
-        <BajaReasonModal label={`${LIST[kind].noun} ${title}`} onClose={() => setModal(null)}
-                         onConfirm={() => patch({ operational_status: 'INACTIVE' })} />
+      {(modal === 'deactivate' || modal === 'reactivate') && (
+        <LifecycleDialog action={modal} scope={kind} label={`${LIST[kind].noun} ${title}`}
+                         onClose={() => setModal(null)} onConfirm={body => changeStatus(modal, body)} />
       )}
       <ConfirmarBaja
         abierto={modal === 'remove'}

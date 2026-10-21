@@ -18,7 +18,7 @@ from datetime import date
 import asyncpg
 from fastapi import HTTPException
 
-from .audit import log_change, record_manual_edit
+from .audit import record_manual_edit
 
 
 @dataclass(frozen=True)
@@ -163,37 +163,3 @@ async def deactivation_impact(conn, carrier_id: str) -> dict:
     """Lo que toca dar de baja la empresa, para mostrarlo antes de confirmar (P4)."""
     await _require(conn, "carriers", carrier_id, "Empresa no encontrada")
     return dict(await conn.fetchrow(_IMPACT_SQL, carrier_id))
-
-
-async def reactivate(conn, carrier_id: str, *, driver_ids: list[str], asset_ids: list[str], actor: str) -> dict:
-    """Reactivar eligiendo qué flota vuelve (P3). La empresa vuelve a ACTIVE (y queda
-    No habilitada hasta regularizar, porque eso se calcula); la flota que no se eligió
-    sale de su roster hoy, con historial."""
-    current = await conn.fetchrow(
-        "SELECT operational_status, tax_id FROM public.carriers WHERE id = $1 FOR UPDATE", carrier_id)
-    if not current:
-        raise HTTPException(404, "Empresa no encontrada")
-    if current["operational_status"] != "INACTIVE":
-        raise HTTPException(409, "Solo se reactiva una empresa dada de baja")
-    if not current["tax_id"]:
-        raise HTTPException(422, "No se puede activar una empresa sin RUT/tax_id")
-    await conn.execute(
-        "UPDATE public.carriers SET operational_status = 'ACTIVE', updated_at = NOW() WHERE id = $1", carrier_id)
-    await record_manual_edit(
-        conn, table="carriers", where={"id": carrier_id}, actor=actor, entity_type="CARRIER",
-        entity_id=carrier_id, action="update", field="operational_status",
-        old_value="INACTIVE", new_value="ACTIVE",
-    )
-    kept = {"DRIVER": set(driver_ids), "ASSET": set(asset_ids)}
-    released = {"DRIVER": 0, "ASSET": 0}
-    for rel in (DRIVER, ASSET):
-        roster = await conn.fetch(
-            f"SELECT {rel.subject_col}::text AS id FROM public.{rel.table} "
-            f"WHERE {rel.counterpart_col} = $1 AND status = 'ACTIVE'", carrier_id)
-        for row in roster:
-            if row["id"] not in kept[rel.entity_type]:
-                await end(conn, rel, row["id"], carrier_id, actor=actor)
-                released[rel.entity_type] += 1
-    await log_change(conn, actor=actor, entity_type="CARRIER", entity_id=carrier_id, action="reactivate",
-                     new_value={"drivers": sorted(kept["DRIVER"]), "assets": sorted(kept["ASSET"])})
-    return {"released_drivers": released["DRIVER"], "released_assets": released["ASSET"]}

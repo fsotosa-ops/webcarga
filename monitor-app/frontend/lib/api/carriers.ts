@@ -15,11 +15,7 @@ import { apiFetch, apiFetchBlob } from './client'
 
 export type CarrierListParams = {
   q?:                  string
-  /** Uno o varios. La pestaña "Inactivas" del Directorio manda los DOS
-   *  —`LEGACY_INACTIVE` y `INACTIVE`— porque el resumen de esa misma pantalla
-   *  ya los cuenta juntos: con uno solo la cifra del encabezado (214) y la
-   *  lista de abajo (206) no podían coincidir, y las empresas dadas de baja
-   *  desde la app quedaban fuera de las tres pestañas. */
+  /** Uno o varios estados. */
   operational_status?: CarrierOperationalStatus | CarrierOperationalStatus[] | ''
   /** D-R6: habilitación calculada por la API (Habilitada / No habilitada). */
   enablement?:         'enabled' | 'not_enabled' | ''
@@ -33,7 +29,6 @@ export type CarrierCreateBody = {
   tax_id?:              string
   country_code?:       string
   business_name:       string
-  operational_status?: CarrierOperationalStatus
   /** Tipo de gestión DECLARADO en el alta. Se omite cuando nadie eligió: la
    *  flota manda cuando existe, y un arreglo vacío sería una tercera manera
    *  de decir "no declarado" — la base lo rechaza por eso. */
@@ -43,7 +38,6 @@ export type CarrierCreateBody = {
 export type CarrierPatchBody = {
   business_name?:       string
   tax_id?:              string
-  operational_status?:  CarrierOperationalStatus
   /** El backend lo acepta desde que existe la columna (`carriers.py`,
    *  `management_types = COALESCE($5, management_types)`), pero este tipo no lo
    *  exponía y lo único que lo escribía era el panel de alta: al 27/08,
@@ -146,7 +140,7 @@ export const carriersApi = {
   patch: (id: string, body: CarrierPatchBody) =>
     apiFetch<Carrier>(`/api/v1/carriers/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
-  /** Borrado real — a diferencia de patch(operational_status), el backend
+  /** Borrado real — a diferencia de dar de baja (lib/api/lifecycle.ts), el backend
    *  lo rechaza con 409 si la empresa tiene datos asociados (ver
    *  DELETE /carriers/{id}); el mensaje del error ya viene listo para
    *  mostrar al usuario. */
@@ -208,13 +202,8 @@ export const carriersApi = {
   endShipper: (id: string, shipperId: string) =>
     apiFetch<{ ok: boolean }>(`/api/v1/carriers/${id}/shippers/${shipperId}`, { method: 'DELETE' }),
 
-  // ── Baja y reactivación (D2: P4 impacto, P3 elegir la flota) ────────────
+  // ── Baja (D2: P4 impacto). Las acciones de estado están en lib/api/lifecycle.ts ──
 
   deactivationImpact: (id: string) =>
     apiFetch<CarrierDeactivationImpact>(`/api/v1/carriers/${id}/deactivation-impact`),
-
-  reactivate: (id: string, body: { driver_ids: string[]; asset_ids: string[] }) =>
-    apiFetch<{ released_drivers: number; released_assets: number }>(`/api/v1/carriers/${id}/reactivate`, {
-      method: 'POST', body: JSON.stringify(body),
-    }),
 }

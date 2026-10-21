@@ -12,7 +12,7 @@ import { Tabs } from '@/components/ui/Tabs'
 import { ProfileHeader } from '@/components/directory/ProfileHeader'
 import { DetailsBlock } from '@/components/directory/DetailsBlock'
 import { CarrierEditForm, InsuranceLine } from '@/components/directory/CarrierDetails'
-import { SEVERITY_ORDER, enablementStyle, lifecycleStyle, carrierBlockingReason, type ComplianceSummary, type DocumentState } from '@/lib/states'
+import { SEVERITY_ORDER, enablementStyle, lifecycleStyle, carrierBlockingReason, isCarrierDeactivated, type ComplianceSummary, type DocumentState } from '@/lib/states'
 import { canonicalPlate, canonicalRut, plateSearchKey, rutDigits, rutSearchKey } from '@/lib/identity'
 import { ContactCard, AddContactForm } from '@/components/dashboard/ContactCard'
 import { CarrierDocumentsTab } from '@/components/dashboard/carriers/CarrierDocumentsTab'
@@ -23,8 +23,8 @@ import { Estado } from '@/components/ui/Estado'
 import { DirectoryNotice } from '@/components/dashboard/DirectoryNotice'
 import { FleetProfile } from '@/components/dashboard/FleetProfile'
 import { AltaDeFlota } from '@/components/dashboard/AltaDeFlota'
-import { BajaReasonModal } from '@/components/dashboard/BajaReasonModal'
-import { ReactivateCarrierModal } from '@/components/dashboard/ReactivateCarrierModal'
+import { LifecycleDialog } from '@/components/dashboard/LifecycleDialog'
+import { lifecycleApi, type LifecycleBody } from '@/lib/api/lifecycle'
 import { CarrierClientsModal } from '@/components/dashboard/CarrierClientsModal'
 import { DeleteCarrierModal } from '@/components/dashboard/DeleteCarrierModal'
 import { PolicyCreateForm, type PolicyFormState } from '@/components/insurance/PolicyCreateForm'
@@ -162,18 +162,19 @@ function EmpresaDetailPageInner() {
     await carriersApi.patch(id, { business_name: value })
     await afterChange({ entity: 'carrier', id, type: 'update' })
   }
-  async function handleDeactivateCarrier() {
-    await carriersApi.patch(id, { operational_status: 'INACTIVE' })
+  // El estado cambia con una acción, con motivo (lib/api/lifecycle.ts).
+  async function handleDeactivateCarrier(body: LifecycleBody) {
+    await lifecycleApi.deactivate('carrier', id, body)
     await afterChange({ entity: 'carrier', id, type: 'update' })
   }
-  /** Activar una empresa en onboarding: no tiene flota que elegir. */
+  /** Activar una empresa en onboarding: completa el alta, sin motivo ni flota que elegir. */
   async function handleActivateCarrier() {
-    await carriersApi.patch(id, { operational_status: 'ACTIVE' })
+    await lifecycleApi.activateCarrier(id)
     await afterChange({ entity: 'carrier', id, type: 'update' })
   }
-  /** Reactivar una dada de baja eligiendo qué flota vuelve (D2, P3). */
-  async function handleReactivateCarrier(body: { driver_ids: string[]; asset_ids: string[] }) {
-    await carriersApi.reactivate(id, body)
+  /** Reactivar una dada de baja, con motivo, eligiendo qué flota vuelve (D2, P3). */
+  async function handleReactivateCarrier(body: LifecycleBody) {
+    await lifecycleApi.reactivate('carrier', id, body)
     await afterChange({ entity: 'carrier', id, type: 'assignment' })
   }
   async function handleAddClient(shipperId: string) {
@@ -298,11 +299,11 @@ function EmpresaDetailPageInner() {
     </div>
   )
 
-  // ONBOARDING -> ACTIVE es un alta (directory.edit); cualquier otro cambio del
-  // estado de la empresa pide directory.delete.
+  // Activar una empresa nueva es un alta (directory.edit); dar de baja y reactivar
+  // piden directory.delete (backend: schemas/states.LIFECYCLE_TRANSITIONS).
   const life = lifecycleStyle('carrier', carrier.operational_status)
   const enabled = enablementStyle(carrier.compliance_summary, carrier.operational_status === 'ACTIVE')
-  const canChangeCarrierStatus = carrier.operational_status === 'ONBOARDING' ? canEdit : canAdmin
+  const status = carrier.operational_status
 
   // El panel lateral de la ficha (15/10): Detalles y Contactos, siempre a la vista.
   const aside = (<>
@@ -375,6 +376,7 @@ function EmpresaDetailPageInner() {
       <ProfileHeader
         title={carrier.business_name || '—'}
         chips={[life, enabled]}
+        statusReason={isCarrierDeactivated(status) ? carrier.status_reason : null}
         reason={carrierBlockingReason(carrier.compliance_summary, carrier.operational_status)}
         onSeeDocuments={() => setActiveTab('documentos')}
         // En Documentos la sección ya tiene su subida: no se repite arriba.
@@ -386,14 +388,14 @@ function EmpresaDetailPageInner() {
         ) : undefined}
         menuItems={[
           ...(canEdit && shippersQuery.data ? [{ id: 'clients', label: 'Editar clientes', onSelect: () => setClientsOpen(true) }] : []),
-          ...(canChangeCarrierStatus ? [carrier.operational_status === 'ACTIVE'
-            ? { id: 'baja', label: 'Dar de baja', destructive: true, onSelect: () => setBajaModalOpen(true) }
-            : carrier.operational_status === 'ONBOARDING'
-              ? { id: 'activate', label: 'Activar', onSelect: () => {
-                  setActivateError(null)
-                  handleActivateCarrier().catch(e => setActivateError(e instanceof Error ? e.message : 'No se pudo activar.'))
-                } }
-              : { id: 'reactivate', label: 'Reactivar', onSelect: () => setReactivateOpen(true) }] : []),
+          ...(status === 'ONBOARDING' && canEdit ? [{ id: 'activate', label: 'Activar', onSelect: () => {
+              setActivateError(null)
+              handleActivateCarrier().catch(e => setActivateError(e instanceof Error ? e.message : 'No se pudo activar.'))
+            } }] : []),
+          ...(isCarrierDeactivated(status) && canAdmin
+            ? [{ id: 'reactivate', label: 'Reactivar', onSelect: () => setReactivateOpen(true) }] : []),
+          ...(!isCarrierDeactivated(status) && canAdmin
+            ? [{ id: 'baja', label: 'Dar de baja', destructive: true, onSelect: () => setBajaModalOpen(true) }] : []),
           ...(canAdmin ? [{ id: 'delete', label: 'Eliminar', destructive: true, onSelect: () => setDeleteModalOpen(true) }] : []),
         ]}
       />
@@ -550,7 +552,8 @@ function EmpresaDetailPageInner() {
 
 
       {bajaModalOpen && (
-        <BajaReasonModal
+        <LifecycleDialog
+          action="deactivate" scope="carrier"
           label={carrier.business_name || 'esta empresa'}
           onClose={() => setBajaModalOpen(false)}
           onConfirm={handleDeactivateCarrier}
@@ -559,10 +562,13 @@ function EmpresaDetailPageInner() {
       )}
 
       {reactivateOpen && (
-        <ReactivateCarrierModal
+        <LifecycleDialog
+          action="reactivate" scope="carrier"
           label={carrier.business_name || 'esta empresa'}
-          drivers={drivers.map(d => ({ id: d.id, label: d.full_name }))}
-          assets={assets.map(a => ({ id: a.id, label: a.license_plate }))}
+          fleet={{
+            drivers: drivers.map(d => ({ id: d.id, label: d.full_name })),
+            assets: assets.map(a => ({ id: a.id, label: a.license_plate })),
+          }}
           onClose={() => setReactivateOpen(false)}
           onConfirm={handleReactivateCarrier}
         />

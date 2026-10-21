@@ -445,6 +445,8 @@ SELECT
   (SELECT count(*) FROM app.temperature_ranges)                                            AS rangos_temp,
   (SELECT count(*) FROM app.status_taxonomies WHERE domain='FLEET_SERVICE_TYPE' AND active) AS subtipos,
   (SELECT count(*) FROM app.status_taxonomies WHERE domain='WEBCARGA_OPERATION_TYPE' AND active) AS tipos_operacion,
+  (SELECT count(*) FROM app.status_taxonomies WHERE domain='DEACTIVATION_REASON' AND active) AS motivos_baja,
+  (SELECT count(*) FROM app.status_taxonomies WHERE domain='REACTIVATION_REASON' AND active) AS motivos_reactivacion,
   (SELECT count(*) FROM public.profiles WHERE active)                                      AS usuarios,
   -- profiles.role se borró con el contract de RBAC (10/10): los roles viven en app.user_roles.
   (SELECT count(DISTINCT ur.role_id) FROM app.user_roles ur
@@ -507,6 +509,11 @@ async def inventario_configuracion(pool=Depends(get_pool), usuario=Depends(requi
             f,
             ("subtipos", "subtipo", "subtipos"),
             ("tipos_operacion", "tipo de operación", "tipos de operación"),
+        ),
+        "directory": _pares(
+            f,
+            ("motivos_baja", "motivo de baja", "motivos de baja"),
+            ("motivos_reactivacion", "motivo de reactivación", "motivos de reactivación"),
         ),
         # Seguros (Parte 1): un umbral; su contenido es la sección misma.
         "insurance": [],

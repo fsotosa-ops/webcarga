@@ -3,12 +3,10 @@ tax_id/country_code — un vehículo/rampla no tributa, se identifica por
 patente (ver migración init_compliance_engine)."""
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ..authz.permissions import Permission
-from .states import FleetLifecycle
 
-OperationalStatus = FleetLifecycle  # glosario (D1)
 # El código de public.asset_types (Entrega C, 14/10). La lista vive en la base,
 # no acá: un tipo desconocido lo rechaza la FK y la API responde 422.
 AssetType = str
@@ -25,10 +23,13 @@ class AssetCreateBody(BaseModel):
 
     Hasta el Tramo 2 salían sólo de la ingesta de Mage, así que un vehículo
     creado en la app nacía sin clasificar. Declararlos acá es seguro porque la
-    ingesta respeta `is_manual_override` — verificado contra producción."""
+    ingesta respeta `is_manual_override` — verificado contra producción.
+
+    Un equipo nace activo; la baja es una acción con motivo (services/lifecycle.py)."""
+    model_config = ConfigDict(extra="forbid")
+
     license_plate: str
     asset_type: AssetType
-    operational_status: OperationalStatus = "ACTIVE"
     manufacture_year: Optional[int] = Field(default=None, ge=1950, le=2100)
     fleet_service_type_id: Optional[str] = None
     webcarga_operation_type_id: Optional[str] = None
@@ -46,19 +47,20 @@ class AssetCreateBody(BaseModel):
 
 
 class AssetPatchBody(BaseModel):
+    """Los datos del equipo. El estado cambia con deactivate / reactivate."""
+    model_config = ConfigDict(extra="forbid")
+
     asset_type: Optional[AssetType] = None
-    operational_status: Optional[OperationalStatus] = None
     manufacture_year: Optional[int] = Field(default=None, ge=1950, le=2100)
     fleet_service_type_id: Optional[str] = None
     webcarga_operation_type_id: Optional[str] = None
 
 
 # Permiso por campo del PATCH (mismo patrón que DRIVER_FIELD_PERMISSIONS):
-# dar de baja o reactivar un equipo es de Operaciones; el resto, editar.
+# dar de baja o reactivar va por acción (schemas/states.LIFECYCLE_TRANSITIONS).
 ASSET_FIELD_PERMISSIONS: dict[str, Permission] = {
     "asset_type": Permission.DIRECTORY_EDIT,
     "manufacture_year": Permission.DIRECTORY_EDIT,
     "fleet_service_type_id": Permission.DIRECTORY_EDIT,
     "webcarga_operation_type_id": Permission.DIRECTORY_EDIT,
-    "operational_status": Permission.DIRECTORY_FLEET_STATUS,
 }

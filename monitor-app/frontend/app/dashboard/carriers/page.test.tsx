@@ -68,17 +68,15 @@ describe('EmpresasTransportePage', () => {
     expect(screen.getByRole('button', { name: /^En onboarding/ })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  it('"Dadas de baja" pide los DOS estados de baja, no sólo el del padrón viejo', async () => {
-    // El resumen de esta misma pantalla cuenta LEGACY_INACTIVE + INACTIVE
-    // ("214 inactivas") y la pestaña filtraba sólo el primero (206): las 8 que
-    // faltaban eran las dadas de baja desde la app, y no aparecían en NINGUNA
-    // de las tres pestañas.
+  it('"Dadas de baja" pide el estado de baja, venga de la app o del padrón viejo', async () => {
+    // Desde el 21/10 la baja es un estado (INACTIVE); su origen es el motivo. Antes
+    // eran dos valores y la pestaña llegó a pedir uno solo (Pablo, 04/09).
     renderPage()
     await waitFor(() => expect(carriersApi.list).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('button', { name: /^Dadas de baja/ }))
 
     await waitFor(() => expect(carriersApi.list).toHaveBeenCalledWith(
-      expect.objectContaining({ operational_status: ['LEGACY_INACTIVE', 'INACTIVE'] }),
+      expect.objectContaining({ operational_status: ['INACTIVE'] }),
     ))
   })
 

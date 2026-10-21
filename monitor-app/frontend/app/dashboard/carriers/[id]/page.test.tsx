@@ -7,6 +7,7 @@ import { carriersApi } from '@/lib/api/carriers'
 import { driversApi } from '@/lib/api/drivers'
 import { assetsApi } from '@/lib/api/assets'
 import { contactsApi } from '@/lib/api/contacts'
+import { lifecycleApi } from '@/lib/api/lifecycle'
 import { createClient } from '@/lib/supabase/client'
 import type { Carrier, CarrierDriverRosterItem, CarrierAssetRosterItem } from '@/lib/types'
 import { complianceSummary, recordStateFields } from '@/lib/states.fixtures'
@@ -26,6 +27,11 @@ function renderPage() {
 async function elegirDelMenu(name: string) {
   fireEvent.click(await screen.findByRole('button', { name: 'Más acciones' }))
   fireEvent.click(screen.getByRole('menuitem', { name }))
+}
+/** Elige un motivo de la ventana de baja o reactivación (espera a que lleguen). */
+async function elegirMotivo(label: string) {
+  await screen.findByRole('option', { name: label })
+  fireEvent.change(screen.getByRole('combobox', { name: 'Motivo' }), { target: { value: (MOTIVOS.DEACTIVATION_REASON.concat(MOTIVOS.REACTIVATION_REASON) as { id: string; label: string }[]).find(m => m.label === label)!.id } })
 }
 async function clickTab(name: RegExp) {
   const matches = await screen.findAllByRole('button', { name })
@@ -52,6 +58,18 @@ vi.mock('@/lib/api/carriers', () => ({
     listShippers: vi.fn(), exportDocuments: vi.fn(),
     list: vi.fn().mockResolvedValue({ data: [{ id: 'c2', business_name: 'Otra Empresa', tax_id: '2-2' }] }),
   },
+}))
+// Los catálogos de motivos (Configuración › Directorio) y las acciones de estado.
+const MOTIVOS = vi.hoisted((): Record<string, object[]> => ({
+  DEACTIVATION_REASON: [{ id: 'r-fin', label: 'Término de la relación comercial', group: 'all', code: 'RELATIONSHIP_ENDED' }],
+  REACTIVATION_REASON: [{ id: 'r-vuelve', label: 'Retoma la relación comercial', group: 'all', code: 'RELATIONSHIP_RESUMED' }],
+}))
+vi.mock('@/lib/api/config', async orig => {
+  const real = await orig<typeof import('@/lib/api/config')>()
+  return { ...real, taxonomiesApi: { ...real.taxonomiesApi, list: vi.fn((d: string) => Promise.resolve(MOTIVOS[d] ?? [])) } }
+})
+vi.mock('@/lib/api/lifecycle', () => ({
+  lifecycleApi: { activateCarrier: vi.fn(), deactivate: vi.fn(), reactivate: vi.fn() },
 }))
 vi.mock('@/lib/api/drivers', () => ({
   driversApi: {
@@ -85,6 +103,7 @@ const CARRIER: Carrier = {
   operational_status: 'ACTIVE', legacy_admin_id: null, erp_id: null, is_manual_override: false,
   overridden_by: null, overridden_at: null, created_at: null, updated_at: null,
   management_types: null,
+  status_reason: null, status_note: null, status_changed_at: null,
   compliance_summary: complianceSummary({ worst_state: 'MISSING', own: { overdue: 0, expiring: 0, missing: 1 }, fleet: { overdue: 2, expiring: 0, missing: 0 }, can_operate: false, blocking: { own: 1, fleet: 2 } }),
   contacts: [],
   compliance_records: [{
@@ -141,11 +160,38 @@ describe('EmpresaDetailPage', () => {
     expect(screen.getByText('No habilitada')).toHaveClass('text-status-incidente')
   })
 
-  it('una empresa dada de baja no se ve en rojo: "No habilitada" en gris', async () => {
-    vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'LEGACY_INACTIVE' as Carrier['operational_status'] })
+  it('una empresa dada de baja no se ve en rojo y dice por qué se dio de baja', async () => {
+    vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'INACTIVE', status_reason: 'Heredada del padrón anterior' })
     renderPage()
     expect(await screen.findByText('Dada de baja')).toBeInTheDocument()
     expect(screen.getByText('No habilitada')).toHaveClass('text-informativo')
+    expect(screen.getByText('Motivo: Heredada del padrón anterior')).toBeInTheDocument()
+  })
+
+  it('una heredada del padrón viejo se reactiva con motivo y la flota elegida', async () => {
+    vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'INACTIVE', status_reason: 'Heredada del padrón anterior' })
+    vi.mocked(lifecycleApi.reactivate).mockResolvedValue({})
+    renderPage()
+    await elegirDelMenu('Reactivar')
+    const confirmar = await screen.findByRole('button', { name: 'Reactivar' })
+    expect(confirmar).toBeDisabled()
+    await elegirMotivo('Retoma la relación comercial')
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Ana Rojas' }))
+    fireEvent.click(confirmar)
+    await waitFor(() => expect(lifecycleApi.reactivate).toHaveBeenCalled())
+    const [scope, id, body] = vi.mocked(lifecycleApi.reactivate).mock.calls[0]
+    expect([scope, id]).toEqual(['carrier', 't1'])
+    // Ana Rojas se desmarcó: no vuelve con la empresa.
+    expect(body).toMatchObject({ reason_id: 'r-vuelve', driver_ids: ['d1'] })
+  })
+
+  it('una empresa en onboarding se puede activar o dar de baja', async () => {
+    vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'ONBOARDING' })
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Más acciones' }))
+    expect(screen.getByRole('menuitem', { name: 'Activar' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Dar de baja' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Reactivar' })).not.toBeInTheDocument()
   })
 
   it('el encabezado dice lo que bloquea según la API, propio y de la flota activa', async () => {
@@ -165,11 +211,11 @@ describe('EmpresaDetailPage', () => {
   it('sin directory.delete pero con directory.edit, una empresa en ONBOARDING se activa desde el ⋯', async () => {
     permisos.darDeBaja = false
     vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'ONBOARDING' })
-    vi.mocked(carriersApi.patch).mockResolvedValue(CARRIER)
+    vi.mocked(lifecycleApi.activateCarrier).mockResolvedValue({ operational_status: 'ACTIVE' })
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: 'Más acciones' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Activar' }))
-    await waitFor(() => expect(carriersApi.patch).toHaveBeenCalledWith('t1', { operational_status: 'ACTIVE' }))
+    await waitFor(() => expect(lifecycleApi.activateCarrier).toHaveBeenCalledWith('t1'))
   })
 
 
@@ -190,8 +236,9 @@ describe('EmpresaDetailPage', () => {
       operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
       total_requirements: 5, last_document_update: null,
       home_location_id: null, home_location_name: null, home_location_shipper: null, suggested_home_location: null,
+      status_reason: null, status_note: null, status_changed_at: null,
     })
-    vi.mocked(driversApi.patch).mockResolvedValue({} as never)
+    vi.mocked(lifecycleApi.deactivate).mockResolvedValue({})
     renderPage()
     await clickTab(/Conductores/)
     fireEvent.click(await screen.findByText('Juan Pérez'))
@@ -199,6 +246,7 @@ describe('EmpresaDetailPage', () => {
     const dialogo = await screen.findByRole('dialog')
     fireEvent.click(await within(dialogo).findByRole('button', { name: 'Más acciones' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Dar de baja' }))
+    await elegirMotivo('Término de la relación comercial')
     fireEvent.click(await screen.findByRole('button', { name: 'Confirmar baja' }))
     expect(await screen.findByText(/El Cierre se actualizará en alrededor de un minuto\./)).toBeInTheDocument()
   })
@@ -212,6 +260,7 @@ describe('EmpresaDetailPage', () => {
       operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
       total_requirements: 5, last_document_update: null,
       home_location_id: null, home_location_name: null, home_location_shipper: null, suggested_home_location: null,
+      status_reason: null, status_note: null, status_changed_at: null,
     })
     renderPage()
     await clickTab(/Conductores/)
@@ -282,8 +331,9 @@ describe('EmpresaDetailPage', () => {
       id: 'd1', tax_id: '22222222-2', country_code: 'CL', full_name: 'Juan Pérez',
       operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
       total_requirements: 5, last_document_update: null,
-  home_location_id: null, home_location_name: null,
-  home_location_shipper: null, suggested_home_location: null,
+      home_location_id: null, home_location_name: null,
+      home_location_shipper: null, suggested_home_location: null,
+      status_reason: null, status_note: null, status_changed_at: null,
     })
     renderPage()
     await clickTab(/Conductores/)
@@ -537,6 +587,7 @@ describe('EmpresaDetailPage', () => {
       operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
       total_requirements: 5, last_document_update: null,
       home_location_id: null, home_location_name: null, home_location_shipper: null, suggested_home_location: null,
+      status_reason: null, status_note: null, status_changed_at: null,
     })
     renderPage()
     await clickTab(/Conductores/)
@@ -554,6 +605,7 @@ describe('EmpresaDetailPage', () => {
       operational_status: 'ACTIVE', is_manual_override: false, created_at: null,
       total_requirements: 5, last_document_update: null,
       home_location_id: null, home_location_name: null, home_location_shipper: null, suggested_home_location: null,
+      status_reason: null, status_note: null, status_changed_at: null,
     })
     renderPage()
     await clickTab(/Conductores/)
@@ -652,7 +704,7 @@ describe('ficha de empresa liviana', () => {
   // error; si fallaba, no pasaba nada visible y parecía hecho.
   it('si Activar falla, la ficha lo dice', async () => {
     vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'ONBOARDING' })
-    vi.mocked(carriersApi.patch).mockRejectedValue(new Error('Para activarla falta su RUT.'))
+    vi.mocked(lifecycleApi.activateCarrier).mockRejectedValue(new Error('Para activarla falta su RUT.'))
     renderPage()
     await elegirDelMenu('Activar')
     // Abre en Documentos (15/10), que puede tener sus propios avisos: se busca el de Activar.

@@ -9,8 +9,17 @@ vi.mock('@/lib/api/dailyClosures', () => ({
   dailyClosuresApi: { get: vi.fn() },
 }))
 vi.mock('@/lib/api/carriers', () => ({
-  carriersApi: { create: vi.fn(), patch: vi.fn(), assignDriver: vi.fn(), fleetDriverGap: vi.fn().mockResolvedValue({ rows: [] }) },
+  carriersApi: {
+    create: vi.fn(), patch: vi.fn(), assignDriver: vi.fn(), fleetDriverGap: vi.fn().mockResolvedValue({ rows: [] }),
+    listDrivers: vi.fn().mockResolvedValue([{ id: 'd1', full_name: 'Juan Pérez' }]), listAssets: vi.fn().mockResolvedValue([]),
+  },
 }))
+vi.mock('@/lib/api/lifecycle', () => ({ lifecycleApi: { activateCarrier: vi.fn(), reactivate: vi.fn() } }))
+vi.mock('@/lib/api/config', async orig => {
+  const real = await orig<typeof import('@/lib/api/config')>()
+  return { ...real, taxonomiesApi: { ...real.taxonomiesApi, list: vi.fn().mockResolvedValue([
+    { id: 'r-vuelve', label: 'Retoma la relación comercial', group: 'all', code: 'RELATIONSHIP_RESUMED' }]) } }
+})
 
 vi.mock('@/lib/api/drivers', () => ({ driversApi: { create: vi.fn() } }))
 vi.mock('@/lib/api/locations', () => ({ locationsApi: { list: vi.fn().mockResolvedValue({ data: [] }) } }))
@@ -157,9 +166,9 @@ describe('PreCierrePendingSection', () => {
     expect(screen.getByDisplayValue('TRANSPORTE VICENTE BUGARIN SPA')).toBeInTheDocument()
   })
 
-  it('EMPRESA_ONBOARDING: "Activar empresa" llama a carriersApi.patch con operational_status ACTIVE', async () => {
+  it('EMPRESA_ONBOARDING: "Activar empresa" usa la acción de activar', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
-    const { carriersApi } = await import('@/lib/api/carriers')
+    const { lifecycleApi } = await import('@/lib/api/lifecycle')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
       escalations: {
         PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
@@ -167,18 +176,43 @@ describe('PreCierrePendingSection', () => {
         SIN_TIPO_OPERACION: [],
       },
     }))
-    vi.mocked(carriersApi.patch).mockResolvedValue({} as never)
+    vi.mocked(lifecycleApi.activateCarrier).mockResolvedValue({ operational_status: 'ACTIVE' })
     renderSection()
     await screen.findAllByText(/Transportes Nueva/)
 
     fireEvent.click(screen.getByRole('button', { name: 'Activar empresa' }))
 
-    await waitFor(() => expect(carriersApi.patch).toHaveBeenCalledWith('c9', { operational_status: 'ACTIVE' }))
+    await waitFor(() => expect(lifecycleApi.activateCarrier).toHaveBeenCalledWith('c9', {}))
+  })
+
+  it('EMPRESA_ONBOARDING de una dada de baja: reactiva con motivo y su flota, no con un atajo', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const { lifecycleApi } = await import('@/lib/api/lifecycle')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
+        EMPRESA_ONBOARDING: [{ carrier_id: 'c8', carrier_name: 'Transportes Baja', operational_status: 'INACTIVE' }],
+        SIN_TIPO_OPERACION: [],
+      },
+    }))
+    vi.mocked(lifecycleApi.reactivate).mockResolvedValue({})
+    renderSection()
+    await screen.findAllByText(/Transportes Baja/)
+    expect(screen.queryByRole('button', { name: 'Activar empresa' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reactivar empresa' }))
+    await screen.findByRole('option', { name: 'Retoma la relación comercial' })
+    expect(screen.getByRole('checkbox', { name: 'Juan Pérez' })).toBeChecked()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Motivo' }), { target: { value: 'r-vuelve' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Reactivar' }))
+
+    await waitFor(() => expect(lifecycleApi.reactivate).toHaveBeenCalledWith(
+      'carrier', 'c8', { reason_id: 'r-vuelve', note: undefined, driver_ids: ['d1'], asset_ids: [] }))
   })
 
   it('EMPRESA_ONBOARDING: si falla (sin RUT), ofrece completar el RUT inline', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
-    const { carriersApi } = await import('@/lib/api/carriers')
+    const { lifecycleApi } = await import('@/lib/api/lifecycle')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
       escalations: {
         PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
@@ -186,18 +220,18 @@ describe('PreCierrePendingSection', () => {
         SIN_TIPO_OPERACION: [],
       },
     }))
-    vi.mocked(carriersApi.patch).mockRejectedValueOnce(new Error('No se puede activar una empresa sin RUT/tax_id'))
+    vi.mocked(lifecycleApi.activateCarrier).mockRejectedValueOnce(new Error('No se puede activar una empresa sin RUT/tax_id'))
     renderSection()
     await screen.findAllByText(/Transportes Nueva/)
     fireEvent.click(screen.getByRole('button', { name: 'Activar empresa' }))
     await screen.findByText('No se puede activar una empresa sin RUT/tax_id')
 
     fireEvent.change(screen.getByLabelText('RUT de Transportes Nueva'), { target: { value: '11.111.111-1' } })
-    vi.mocked(carriersApi.patch).mockResolvedValueOnce({} as never)
+    vi.mocked(lifecycleApi.activateCarrier).mockResolvedValueOnce({ operational_status: 'ACTIVE' })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar RUT y activar' }))
 
-    await waitFor(() => expect(carriersApi.patch).toHaveBeenLastCalledWith(
-      'c9', { tax_id: '11.111.111-1', operational_status: 'ACTIVE' },
+    await waitFor(() => expect(lifecycleApi.activateCarrier).toHaveBeenLastCalledWith(
+      'c9', { tax_id: '11.111.111-1' },
     ))
   })
 

@@ -78,6 +78,18 @@ export const tripStatusSource: SettingsSource<TripStatusRow> = {
   emptyText: 'No hay estados del TMS todavía.',
 }
 
+/** A quién se le ofrece un motivo de baja o de reactivación (backend:
+ *  GRUPOS_POR_DOMINIO; services/lifecycle.py filtra por esto). */
+const APLICA_A = {
+  label: 'Aplica a', porDefecto: 'all',
+  help: 'A quién se le ofrece este motivo al dar de baja o reactivar.',
+  options: [
+    // "A todos" y no "Todos": el filtro de la lista ya tiene un "Todos" (el total).
+    { id: 'all', label: 'A todos' }, { id: 'carrier', label: 'Empresas' },
+    { id: 'driver', label: 'Conductores' }, { id: 'asset', label: 'Equipos' },
+  ],
+}
+
 /** Los vocabularios de `app.status_taxonomies`: un registro, una fuente. */
 const VOCABULARIOS: Record<TaxonomyDomain, {
   area: string; section: string; noun: string; columna: string
@@ -108,6 +120,14 @@ const VOCABULARIOS: Record<TaxonomyDomain, {
   },
   WEBCARGA_OPERATION_TYPE: {
     area: 'fleet', section: 'operation-types', noun: 'tipo de operación', columna: 'Tipo de operación',
+  },
+  DEACTIVATION_REASON: {
+    area: 'directory', section: 'deactivation-reasons', noun: 'motivo', columna: 'Motivo',
+    grupo: APLICA_A,
+  },
+  REACTIVATION_REASON: {
+    area: 'directory', section: 'reactivation-reasons', noun: 'motivo', columna: 'Motivo',
+    grupo: APLICA_A,
   },
 }
 

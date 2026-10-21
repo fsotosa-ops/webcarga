@@ -130,7 +130,7 @@ async def test_el_universo_acotado_de_vehiculos_solo_trae_asignaciones_activas(c
 # ── Universo global: solo empresas activas para la bandeja global ──────────
 
 async def test_el_universo_global_excluye_empresas_de_baja(conexion_revertida):
-    """207 de 248 empresas reales son LEGACY_INACTIVE. Proponerle un archivo
+    """Unas 210 de 248 empresas reales están dadas de baja. Proponerle un archivo
     a una empresa historica al 0,95 es peor que no proponer nada — filtramos
     con la MISMA definicion que usa el embudo (FUNNEL_ACTIVE_STATUSES), no
     una lista de estados escrita a mano por segunda vez."""
@@ -138,7 +138,7 @@ async def test_el_universo_global_excluye_empresas_de_baja(conexion_revertida):
     suf = uuid4().hex[:10]
     baja = await conn.fetchval(
         "INSERT INTO public.carriers (business_name, tax_id, operational_status) "
-        "VALUES ($1, $2, 'LEGACY_INACTIVE') RETURNING id::text",
+        "VALUES ($1, $2, 'INACTIVE') RETURNING id::text",
         f"{PREFIJO} baja {suf}", f"{PREFIJO}-baja-{suf}",
     )
     activa = await conn.fetchval(
@@ -151,7 +151,7 @@ async def test_el_universo_global_excluye_empresas_de_baja(conexion_revertida):
     ids = {c[0] for c in universo.carriers}
 
     assert activa in ids, "una empresa ACTIVE debe seguir en el universo global"
-    assert baja not in ids, "una empresa LEGACY_INACTIVE no debe proponerse en la bandeja global"
+    assert baja not in ids, "una empresa dada de baja no debe proponerse en la bandeja global"
 
 
 async def test_el_universo_acotado_a_una_empresa_de_baja_igual_la_incluye(conexion_revertida):
@@ -162,7 +162,7 @@ async def test_el_universo_acotado_a_una_empresa_de_baja_igual_la_incluye(conexi
     suf = uuid4().hex[:10]
     baja = await conn.fetchval(
         "INSERT INTO public.carriers (business_name, tax_id, operational_status) "
-        "VALUES ($1, $2, 'LEGACY_INACTIVE') RETURNING id::text",
+        "VALUES ($1, $2, 'INACTIVE') RETURNING id::text",
         f"{PREFIJO} acotada {suf}", f"{PREFIJO}-acotada-{suf}",
     )
 

@@ -625,8 +625,17 @@ export type LocationPatchPayload = Partial<Omit<LocationCreatePayload, 'entity_t
 
 /** Conductor y equipo: el CHECK de la base admite solo estos dos (D1, §4.4). */
 export type OperationalStatus = 'ACTIVE' | 'INACTIVE'
-/** Empresa: los cuatro de `carriers_operational_status_check`. */
-export type CarrierOperationalStatus = 'ACTIVE' | 'INACTIVE' | 'LEGACY_INACTIVE' | 'ONBOARDING'
+/** Empresa: los tres de `carriers_operational_status_check`. La baja es UN estado;
+ *  de dónde vino (la app, el padrón viejo) es su motivo (`status_reason`). */
+export type CarrierOperationalStatus = 'ACTIVE' | 'INACTIVE' | 'ONBOARDING'
+
+/** El motivo de la última baja o reactivación (Configuración › Directorio), con su
+ *  comentario y cuándo cambió el estado. Lo devuelve la ficha de cada entidad. */
+export type StatusReasonFields = {
+  status_reason:     string | null
+  status_note:       string | null
+  status_changed_at: string | null
+}
 export type EntityType = 'CARRIER' | 'DRIVER' | 'ASSET'
 export type RequirementLevel = 'LEGAL_MANDATORY' | 'SHIPPER_REQUIRED' | 'CONDITIONAL_OPTIONAL'
 
@@ -988,7 +997,7 @@ export type CarrierListResponse = {
 }
 
 /** GET /carriers/{id} — payload anidado (context_carriers.md §5 Paso 1) */
-export type Carrier = {
+export type Carrier = StatusReasonFields & {
   id:                  string
   tax_id:              string
   country_code:        string
@@ -1072,7 +1081,7 @@ export type CarrierDeactivationImpact = {
 
 /** Conductor/vehículo como master data — independiente de a qué carrier
  *  esté asignado (GET/POST/PATCH /drivers, /assets). */
-export type Driver = {
+export type Driver = StatusReasonFields & {
   id:                    string
   tax_id:                string
   country_code:          string
@@ -1104,7 +1113,7 @@ export type SugerenciaDeCd = {
   pct:    number
 }
 
-export type Asset = {
+export type Asset = StatusReasonFields & {
   id:                          string
   license_plate:               string
   asset_type:                  string
