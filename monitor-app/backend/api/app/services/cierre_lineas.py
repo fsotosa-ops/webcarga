@@ -42,17 +42,11 @@ GRUPO_TRABAJANDO_SIN_ASIGNACION = "trabajando_sin_asignacion"
 GRUPO_NO_TRABAJANDO = "no_trabajando"
 GRUPOS_DE_MOTIVO = (GRUPO_NO_TRABAJANDO, GRUPO_TRABAJANDO_SIN_ASIGNACION)
 
-# La categoría de una línea, calculada en UN solo lugar. La pantalla, el
-# reporte y el bloqueo del cierre la leen; ninguno la deriva por su cuenta.
-_CATEGORIA = f"""
-    CASE
-        WHEN l.status = 'ASSIGNED' THEN 'ASIGNADO'
-        WHEN l.status = 'MISMATCH' THEN 'POR_REGULARIZAR'
-        WHEN l.reason_id IS NULL THEN 'SIN_RESOLVER'
-        WHEN lr.group_id = '{GRUPO_TRABAJANDO_SIN_ASIGNACION}' THEN 'TRABAJANDO_SIN_ASIGNACION'
-        ELSE 'NO_TRABAJANDO'
-    END
-"""
+# La categoría de una línea, calculada en UN solo lugar: la función de la base
+# app.closure_line_category (migración 20261102090000), que también usa la
+# analítica. La pantalla, el reporte y el bloqueo del cierre la leen; ninguno la
+# deriva por su cuenta.
+_CATEGORIA = "app.closure_line_category(l.status, l.reason_id)"
 
 # Las líneas con los nombres de columna que ya usaban los SQL de lectura
 # (driver_id / asset_id, unassigned_reason_id, requires_motivo): cambiar de
@@ -64,7 +58,6 @@ LINEAS_CONDUCTORES = f"""(
            l.home_location_id,
            {_CATEGORIA} AS category
     FROM app.closure_lines l
-    LEFT JOIN app.status_taxonomies lr ON lr.id = l.reason_id
     WHERE l.subject_type = 'DRIVER'
 )"""
 
@@ -76,7 +69,6 @@ LINEAS_TRACTOS = f"""(
            l.home_location_id, l.reason_from_driver_id,
            {_CATEGORIA} AS category
     FROM app.closure_lines l
-    LEFT JOIN app.status_taxonomies lr ON lr.id = l.reason_id
     WHERE l.subject_type = 'ASSET'
 )"""
 

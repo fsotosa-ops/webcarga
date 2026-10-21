@@ -95,8 +95,30 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
      - Tests: `test_trip_location_rules_integration.py` (18 casos a mano; mutación detectada). Área del backend
        723 + 36 en verde.
      - Rendimiento medido en la real: página del Monitor unos 10 ms netos, 300 zonas unos 130 ms.
-   - SIGUIENTE: humo en dev (Monitor: tipo por parada; Cierre: zona) y el paso 2 del diseño (dimensiones en dbt,
-     `models/gold/`).
+   - PASOS 2-3 ESCRITOS Y PROBADOS (21/10), SIN SINCRONIZAR A MAGE NI CORRER EN PRODUCCIÓN:
+     - Archivos en `.mage-agent/local_sync/dbt/tms/` (fuera de git):
+       - `models/gold/`: dim_date, dim_client, dim_carrier (SCD2), dim_driver, dim_asset, dim_location,
+         dim_reason, dim_trip_status, bridge_fleet_membership, fct_trips (incremental), fct_trip_stops
+         (incremental; las versiones viejas quedan con is_current = false) y fct_fleet_daily_status.
+       - `snapshots/snapshot_carriers.sql`.
+       - `tests/assert_fct_trips_same_trips_as_app.sql` y `tests/assert_fleet_daily_status_matches_signed_totals.sql`.
+       - `dbt_project.yml` con la carpeta `gold`.
+     - Probado con dbt 1.8 local (venv en el scratchpad, perfil a la copia local): 64/64.
+     - Ensayo con ROLLBACK en la real, todo revertido:
+       - fct_trips: 3.757 = app.trips, en unos 2 s; 95 % con empresa.
+       - fct_trip_stops: 10.314 vigentes y 1.474 de historia.
+       - fct_fleet_daily_status: 9.090 filas; 0 días firmados que no cuadran.
+     - Nueva migración `20261102090000_closure_line_category`, SIN APLICAR: la categoría de una línea del Cierre
+       pasa a `app.closure_line_category`, y `cierre_lineas._CATEGORIA` la llama. Tests del Cierre 336 verdes;
+       la mutación se detecta (2 rojos).
+     - Hallazgo: 4 catálogos viejos (DRIVER_REASON, EQUIPMENT_STATE, FLEET_SERVICE_TYPE, OPERATIONAL_STATE) tienen
+       valores sin `code`.
+   - SIGUIENTE (pide autorización):
+     1. Aplicar `20261102090000` y subir el backend.
+     2. Sincronizar gold a Mage, crear el pipeline `analytics_gold` (`dbt snapshot` + `dbt build --select gold`,
+        cada hora) y correrlo.
+     3. Después: `fct_trip_status_events` (desde `bronze.tms_trips_snapshot`), la migración de `analytics` (vistas,
+        roles, sacar `gold` de PostgREST) y el humo del paso 1.
    - (hecho) Leído el proyecto dbt de Mage (`.mage-agent/local_sync/dbt/tms`, y `monitor-app/docs`
      contra la base real), la convención de dbt del proyecto y cómo se programa su ejecución.
    - Antes: llevar la zona de destino a una función SQL que `destination_zone.py` reutilice.
