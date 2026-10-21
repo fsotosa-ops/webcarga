@@ -126,7 +126,12 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
         no ahí.
    - SIGUIENTE:
      - Confirmar la corrida programada de las 00:20 UTC.
-     - Humo del paso 1 en dev: Monitor (tipo por parada), Cierre y Reporte (zona).
+     - HECHO (21/10): humo del paso 1 en dev (API `c4271800`).
+       - Responden con 200: Reporte del 16/10 (Tractoreo: 20 RM, 9 Z0, 3 sin clasificar = 32), Flota del día de
+         conductores y de equipos, y Monitor (25 en curso, paradas con tipo: 38 RM, 12 Z0, 1 Región Sur, 5 sin
+         resolver).
+       - El listado del Monitor tarda entre 1,8 y 2,3 s; `trips/meta` tarda 0,9 s. Las reglas nuevas suman unos
+         10 ms en la base. No hay medición de antes del cambio: comparar si alguien lo nota lento.
      - `fct_trip_status_events` (desde `bronze.tms_trips_snapshot`: hitos publicado y asignado).
      - Migración de `analytics`: vistas `bdot` y `bdot_people`, roles, y sacar `gold` de PostgREST.
      - Fase 2: el módulo Analítica.
