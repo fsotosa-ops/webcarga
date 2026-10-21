@@ -19,6 +19,30 @@
 > (**Ciclo de vida del Directorio con motivo (21/10)** cerrado y archivado: estado de baja único, acciones con motivo,
 > ambas migraciones aplicadas en la real. El test de sincronía de etapas del viaje (rojo desde el 17/10) quedó arreglado el mismo día.)
 
+### CHECKPOINT VIGENTE — Tipo de operación del viaje (21/10, `c08c7992` en dev)
+
+**Por qué:** levantamiento con Operaciones (planilla "Tipo de operación: preguntas para Operaciones", 21/10).
+El tipo de un viaje salía solo del tracto; Sodimac nunca trae patente → 114/144 viajes (90 d) sin tipo, en los dos
+alcances del Cierre. Respuestas: Sodimac/Iansa/Colun solo Equipo Completo, Walmart los dos, Spot se indica al crear;
+conflicto tracto vs cliente = avisar y que Operaciones decida (usuario: gestión por excepción, estándar TMS).
+
+**Hecho:** `shippers.operation_types` + `app.trip_operation_types` + 3 columnas en `app.v_trip_fleet_resolution`
+(declarado > cliente de un solo tipo > tracto; `operation_type_source`, `operation_type_conflict`). Migración
+`20261029090000` APLICADA en la real (ensayo con ROLLBACK + autorización): Sodimac 114 → 0 sin tipo, 0 conflictos.
+Cierre y avisos usan el tipo del viaje (`closure_scope.operation_type_join`); el tracto sigue en roster, líneas ASSET
+y Reporte de estatus (cuenta EQUIPOS, no viajes: no se tocó). Aviso `OPERATION_TYPE_CONFLICT` (no bloquea),
+`PUT/DELETE /trips/{id}/operation-type` (trips.edit_sensitive), ficha del cliente "Tipos de operación"
+(operations.configure), Nuevo viaje pide el tipo si el cliente tiene dos o ninguno, detalle del viaje dice el origen.
+Tests: 15 de la regla (mutación detectada), backend del área 653+86, vitest 2044 + tsc.
+
+**Siguiente paso:**
+1. Humo en dev cuando Actions termine (el usuario avisa): Cierre de un día con Sodimac solo en Equipo Completo;
+   ficha de Sodimac; Nuevo viaje de Webcarga Spot pide el tipo.
+2. Responder a Operaciones (sin desarrollo): FRTC42 en Iansa = 2 viajes de prueba anulados el 11/10;
+   dar de baja GPRZ30 con motivo; Reclutamiento completa TK1912, BKSL42, DPRP69 y la rampla KDKP93.
+3. Pendiente aparte (no tocado): un Sodimac sin tracto sigue en "Asignación incompleta" del Cierre (bloquea si es del
+   día); Operaciones dijo que vinculan el camión por viaje (P4). Confirmar con el usuario si se mantiene.
+
 ### CHECKPOINT VIGENTE — Cierre con un solo patrón (16/10, desplegado en dev)
 
 **Qué hicimos** (plan `docs/superpowers/plans/2026-10-17-cierre-un-solo-patron.md`, spec
