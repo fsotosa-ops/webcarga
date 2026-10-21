@@ -5,7 +5,7 @@ import {
 import {
   EstadosDelViajePanel, EstadosOperacionalesPanel, EstadosDeEquipoPanel, MotivosDeConductorPanel,
   MotivosDeNoAsignacionPanel, MotivosDeAnulacionPanel, SubtiposPanel, TiposDeOperacionPanel,
-  MotivosDeBajaPanel, MotivosDeReactivacionPanel,
+  MotivosDeBajaPanel, MotivosDeReactivacionPanel, MotivosDeActivacionExcepcionalPanel,
   SECCIONES_CON_LISTA, AlertasDeDocumentosPanel, AlertasDePolizasPanel, RangosDeTemperaturaPanel,
   UmbralesDelMonitorPanel,
 } from './paneles'
@@ -101,12 +101,14 @@ export const DOMINIOS: Dominio[] = [
     clave: 'directory',
     icono: BookUser,
     titulo: 'Directorio',
-    proposito: 'Por qué se da de baja o se reactiva una empresa, un conductor o un equipo',
+    proposito: 'Por qué se da de baja, se reactiva o se activa como excepción una empresa, un conductor o un equipo',
     secciones: [
       { clave: 'deactivation-reasons', titulo: 'Motivos de baja',
         proposito: 'Por qué deja de operar', Panel: MotivosDeBajaPanel },
       { clave: 'reactivation-reasons', titulo: 'Motivos de reactivación',
         proposito: 'Por qué vuelve a operar', Panel: MotivosDeReactivacionPanel },
+      { clave: 'activation-exception-reasons', titulo: 'Motivos de activación excepcional',
+        proposito: 'Por qué se activó una empresa sin la carpeta completa', Panel: MotivosDeActivacionExcepcionalPanel },
     ],
   },
   {

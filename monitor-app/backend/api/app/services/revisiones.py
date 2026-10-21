@@ -115,6 +115,8 @@ REVISABLES: tuple[Revisable, ...] = (
     # Por qué se da de baja o se reactiva una empresa, un conductor o un equipo.
     _taxonomia("directory", "deactivation-reasons", "DEACTIVATION_REASON"),
     _taxonomia("directory", "reactivation-reasons", "REACTIVATION_REASON"),
+    # Por qué se activó una empresa sin la carpeta completa (onboarding, 21/10).
+    _taxonomia("directory", "activation-exception-reasons", "ACTIVATION_EXCEPTION_REASON"),
 )
 
 POR_SECCION = {(r.dominio, r.seccion): r for r in REVISABLES}

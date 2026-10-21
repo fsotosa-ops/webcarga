@@ -8,7 +8,7 @@ from app.services.fleet_compliance import (
 
 _SIN_NADA_EMPRESA = {"worst_state": None, "own_overdue": None, "own_expiring": None, "own_missing": None,
                      "fleet_overdue": None, "fleet_expiring": None, "fleet_missing": None, "can_operate": True,
-                     "blocking_own": None, "blocking_fleet": None}
+                     "blocking_own": None, "blocking_fleet": None, "requirements_met": True}
 
 
 def test_pendientes_lee_la_base_desde_fleet_compliance():
@@ -29,7 +29,8 @@ def test_una_empresa_sin_pendientes_es_up_to_date_con_ceros():
     assert resumen.model_dump() == {"worst_state": "UP_TO_DATE",
                                     "own": {"overdue": 0, "expiring": 0, "missing": 0},
                                     "fleet": {"overdue": 0, "expiring": 0, "missing": 0},
-                                    "can_operate": True, "blocking": {"own": 0, "fleet": 0}}
+                                    "can_operate": True, "blocking": {"own": 0, "fleet": 0},
+                                    "requirements_met": True}
 
 
 def test_una_entidad_sin_fila_de_resumen_esta_al_dia_si_esta_activa():

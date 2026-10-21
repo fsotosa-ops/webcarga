@@ -15,7 +15,8 @@ def test_carrier_create_normalizes_name_and_tax_id():
     assert body.tax_id == "77123456-9"
     assert body.business_name == "Transportes Acme Spa"
     assert body.country_code == "CL"
-    assert body.initial_status == "ACTIVE"
+    # Toda empresa nueva nace en onboarding, con o sin RUT (21/10).
+    assert body.initial_status == "ONBOARDING"
 
 
 def test_carrier_create_without_tax_id_starts_in_onboarding():

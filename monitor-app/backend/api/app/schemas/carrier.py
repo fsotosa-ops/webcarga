@@ -10,10 +10,11 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from ..authz.permissions import Permission
 
 from .common import ManagementType, normalize_management_types
-from .states import CarrierLifecycle, ComplianceSummary
+from .states import CARRIER_STATUSES_IN_CERTIFICATION, CarrierLifecycle, ComplianceSummary
 
 # Los valores viven en el glosario (D1, app/schemas/states.py). 'ONBOARDING' es la
-# empresa recién creada sin RUT (no operativa, no entra en cierres); 'INACTIVE', la
+# etapa del alta: toda empresa nueva nace ahí y se le arma la carpeta (no recibe
+# viajes, no entra en cierres; se activa al cumplir los obligatorios, 21/10); 'INACTIVE', la
 # dada de baja, venga de donde venga: las ~200 heredadas del padrón viejo eran un
 # cuarto valor (LEGACY_INACTIVE) y desde el 21/10 son INACTIVE con el motivo
 # LEGACY_IMPORT (migración 20261028090000).
@@ -24,12 +25,12 @@ OperationalStatus = CarrierLifecycle
 # el literal 'ACTIVE' como texto SQL en múltiples routers.
 ACTIVE_OPERATIONAL_STATUS: OperationalStatus = "ACTIVE"
 
-# Los estados que el embudo considera "en juego". ONBOARDING es una empresa
-# recién creada sin RUT todavía: pertenece a "Recién creadas · sin documentos",
-# no al catálogo del fondo. Vive aquí y no en el router: el reconocedor de
+# Los estados que el embudo considera "en juego": las empresas en certificación
+# (glosario). ONBOARDING es la que está entrando: pertenece a su pestaña, no al
+# catálogo del fondo. Vive aquí y no en el router: el reconocedor de
 # documentos (services/matcher_io.py) también la usa, y un servicio no importa de
 # un router (era un ciclo latente que la Entrega D destapó).
-FUNNEL_ACTIVE_STATUSES = (ACTIVE_OPERATIONAL_STATUS, "ONBOARDING")
+FUNNEL_ACTIVE_STATUSES = CARRIER_STATUSES_IN_CERTIFICATION
 
 # ManagementType, su orden canónico y su normalización viven en
 # app/schemas/common.py — public.compliance_requirements comparte el mismo
@@ -52,9 +53,9 @@ class CarrierCreateBody(BaseModel):
     endpoint debe además sembrar compliance_records MISSING en la misma
     transacción (H2.2).
 
-    El estado inicial no se elige: sale del RUT (ACTIVE con RUT, ONBOARDING sin él).
-    Una empresa no nace dada de baja; la baja es una acción con motivo
-    (services/lifecycle.py)."""
+    Toda empresa nueva nace En onboarding, tenga o no RUT (21/10): se le arma la
+    carpeta y se activa con "Activar" cuando cumple lo mismo que la habilitación
+    (services/lifecycle.py). El estado no se elige al crear."""
     model_config = ConfigDict(extra="forbid")
 
     tax_id: Optional[str] = None
@@ -84,7 +85,7 @@ class CarrierCreateBody(BaseModel):
 
     @property
     def initial_status(self) -> OperationalStatus:
-        return "ACTIVE" if self.tax_id is not None else "ONBOARDING"
+        return "ONBOARDING"
 
 
 class CarrierPatchBody(BaseModel):

@@ -3,7 +3,7 @@
 import { EntityCell } from '@/components/dashboard/EntityCell'
 import { useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Ban, Building2, ChevronDown, ChevronRight, Truck, User } from 'lucide-react'
+import { Ban, Building2, ChevronDown, ChevronRight, Truck, User, Hourglass } from 'lucide-react'
 import { complianceApi } from '@/lib/api/compliance'
 import { tripsApi } from '@/lib/api/trips'
 import { carriersApi } from '@/lib/api/carriers'
@@ -19,7 +19,7 @@ import { FiltroDeEstado } from '@/components/compliance/FiltroDeEstado'
 import { TransferModal } from '@/components/dashboard/TransferModal'
 import { AltaDeFlota } from '@/components/dashboard/AltaDeFlota'
 import { Estado } from '@/components/ui/Estado'
-import { isCarrierDeactivated } from '@/lib/states'
+import { isCarrierDeactivated, isCarrierInCertification } from '@/lib/states'
 import { clavesCertificacion, invalidarCertificacion } from '@/lib/queries/certificacion'
 import { invalidateDirectory } from '@/lib/queries/directorio'
 import { claveDeSujeto, tituloDeSujeto } from '@/lib/utils/agruparPorSujeto'
@@ -420,15 +420,18 @@ export function CarrierDocumentsWorkspace({ carrierId, carrier }: {
    *  como empiezan a decir cosas distintas. Es el mismo criterio que usa
    *  Empresas (`operational_status !== 'ACTIVE'` para ofrecer reactivar). */
   const empresaActiva = carrier.operational_status === 'ACTIVE'
+  /** Si su carpeta se trabaja: activa o en onboarding (21/10). En onboarding es justo
+   *  cuando se arma la carpeta, así que se carga y se revisa como en una activa. */
+  const enCertificacion = isCarrierInCertification(carrier.operational_status)
   /** Si esta pantalla puede ESCRIBIR. No es sólo el rol: una empresa dada de
    *  baja no recibe documentación, tenga uno el permiso que tenga. Se deriva
    *  una vez y se pasa como `canEdit` a todo el árbol, porque el banner del
    *  encabezado promete exactamente esto — y con el permiso a secas prometía
    *  algo que la pantalla no cumplía: medido en dev, 6 controles de carga
    *  seguían habilitados bajo el cartel que decía que no se podía cargar. */
-  const canEdit = puedeCargarRol && empresaActiva
-  const puedeRevisar = puedeRevisarRol && empresaActiva
-  const puedeGestionarFlota = puedeGestionarFlotaRol && empresaActiva
+  const canEdit = puedeCargarRol && enCertificacion
+  const puedeRevisar = puedeRevisarRol && enCertificacion
+  const puedeGestionarFlota = puedeGestionarFlotaRol && enCertificacion
 
   const resumen = resumenQuery.data
   const todosLosSujetos = resumen?.sujetos ?? []
@@ -541,7 +544,9 @@ export function CarrierDocumentsWorkspace({ carrierId, carrier }: {
           antes de intentarlas, no explicada después del error. */}
       {!empresaActiva && (
         <div className="border border-border rounded-xl bg-accent/5 px-4 py-3 flex items-start gap-3">
-          <Ban size={16} className="shrink-0 mt-0.5 text-informativo" aria-hidden="true" />
+          {isCarrierDeactivated(carrier.operational_status)
+            ? <Ban size={16} className="shrink-0 mt-0.5 text-informativo" aria-hidden="true" />
+            : <Hourglass size={16} className="shrink-0 mt-0.5 text-informativo" aria-hidden="true" />}
           <div className="min-w-0">
             {/* Dada de baja y en onboarding cierran la carga por motivos distintos:
                 cada una dice el suyo (antes una empresa en onboarding leía "dada de baja"). */}
@@ -553,9 +558,10 @@ export function CarrierDocumentsWorkspace({ carrierId, carrier }: {
                 módulo. Al reactivarla vas a ver qué se venció mientras estuvo de baja.
               </p>
             </>) : (<>
-              <p className="text-dato font-semibold text-text-primary">Esta empresa todavía no está activa</p>
+              <p className="text-dato font-semibold text-text-primary">Esta empresa está en onboarding</p>
               <p className="text-etiqueta text-informativo mt-0.5">
-                Su documentación se puede consultar; la carga se habilita al activarla.
+                Aquí se arma su carpeta: carga y revisa sus documentos. No recibe viajes hasta
+                que se active, y se puede activar cuando cumpla los obligatorios.
               </p>
             </>)}
           </div>

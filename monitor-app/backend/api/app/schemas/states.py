@@ -22,6 +22,13 @@ from ..authz.permissions import Permission
 CarrierLifecycle = Literal["ACTIVE", "ONBOARDING", "INACTIVE"]
 FleetLifecycle = Literal["ACTIVE", "INACTIVE"]
 
+# Las empresas cuya carpeta trabaja Certificación (21/10): las que operan y las que
+# están entrando. Toda empresa nueva nace en onboarding y se le arma la carpeta; las
+# dos pasan por el mismo cálculo de documentos (services/fleet_compliance.py) y la
+# misma cola de Pendientes (services/vencimientos.in_scope_sql). Una dada de baja es
+# historial: sus cifras se ven, pero no bloquean ni entran a la cola.
+CARRIER_STATUSES_IN_CERTIFICATION: tuple[str, ...] = ("ACTIVE", "ONBOARDING")
+
 # ── Transiciones del ciclo de vida (plan 2026-10-21) ──────────────────────────
 # El estado no se edita como un campo: cambia con una acción, y cada acción dice
 # desde qué estados vale, quién puede hacerla y qué motivo pide. La regla vive
@@ -31,6 +38,7 @@ LifecycleEntity = Literal["CARRIER", "DRIVER", "ASSET"]
 LifecycleAction = Literal["activate", "deactivate", "reactivate"]
 DEACTIVATION_REASON = "DEACTIVATION_REASON"
 REACTIVATION_REASON = "REACTIVATION_REASON"
+ACTIVATION_EXCEPTION_REASON = "ACTIVATION_EXCEPTION_REASON"
 
 
 @dataclass(frozen=True)
@@ -43,6 +51,14 @@ class LifecycleTransition:
     reason_domain: str | None
     #: Una empresa activa necesita RUT (se puede mandar al activarla).
     requires_tax_id: bool = False
+    #: Salir del onboarding exige lo mismo que la habilitación: ningún obligatorio
+    #: exigible vencido o faltante, propio o de su flota activa (`requirements_met`
+    #: del resumen de documentos, el mismo cálculo).
+    requires_requirements_met: bool = False
+    #: Sin cumplirlo se puede igual, como excepción: con este permiso y un motivo de
+    #: este vocabulario. None = no hay excepción.
+    exception_permission: Permission | None = None
+    exception_reason_domain: str | None = None
 
 
 LIFECYCLE_TRANSITIONS: dict[tuple[str, str], LifecycleTransition] = {
@@ -50,7 +66,10 @@ LIFECYCLE_TRANSITIONS: dict[tuple[str, str], LifecycleTransition] = {
     # pre-cierre (R5): directory.edit. Dar de baja o reactivar una empresa es de
     # Certificación (D-e, 12/10): directory.delete.
     ("CARRIER", "activate"): LifecycleTransition(
-        frozenset({"ONBOARDING"}), "ACTIVE", Permission.DIRECTORY_EDIT, None, requires_tax_id=True),
+        frozenset({"ONBOARDING"}), "ACTIVE", Permission.DIRECTORY_EDIT, None, requires_tax_id=True,
+        requires_requirements_met=True,
+        # Activar sin la carpeta completa lo decide Certificación, dueña de la documentación.
+        exception_permission=Permission.DIRECTORY_DELETE, exception_reason_domain=ACTIVATION_EXCEPTION_REASON),
     ("CARRIER", "deactivate"): LifecycleTransition(
         frozenset({"ACTIVE", "ONBOARDING"}), "INACTIVE", Permission.DIRECTORY_DELETE, DEACTIVATION_REASON),
     ("CARRIER", "reactivate"): LifecycleTransition(
@@ -97,3 +116,7 @@ class ComplianceSummary(BaseModel):
     fleet: StateCounts | None = None    # solo empresas: lo de su flota activa
     can_operate: bool                   # §5 de la spec; regla en services/fleet_compliance.py
     blocking: BlockingCounts            # lo que hace falso a can_operate
+    # Ningún obligatorio que bloquee, sin mirar el ciclo de vida: es can_operate antes de
+    # pedir que esté activa. Para una empresa en onboarding es el criterio para activarla
+    # (21/10); para una dada de baja es siempre False (su carpeta es historial).
+    requirements_met: bool

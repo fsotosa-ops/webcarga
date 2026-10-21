@@ -63,6 +63,7 @@ vi.mock('@/lib/api/carriers', () => ({
 const MOTIVOS = vi.hoisted((): Record<string, object[]> => ({
   DEACTIVATION_REASON: [{ id: 'r-fin', label: 'Término de la relación comercial', group: 'all', code: 'RELATIONSHIP_ENDED' }],
   REACTIVATION_REASON: [{ id: 'r-vuelve', label: 'Retoma la relación comercial', group: 'all', code: 'RELATIONSHIP_RESUMED' }],
+  ACTIVATION_EXCEPTION_REASON: [{ id: 'r-cliente', label: 'Lo necesita un cliente ya', group: null, code: 'CLIENT_NEEDS_IT_NOW' }],
 }))
 vi.mock('@/lib/api/config', async orig => {
   const real = await orig<typeof import('@/lib/api/config')>()
@@ -192,6 +193,40 @@ describe('EmpresaDetailPage', () => {
     expect(screen.getByRole('menuitem', { name: 'Activar' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Dar de baja' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Reactivar' })).not.toBeInTheDocument()
+  })
+
+  it('en onboarding la pantalla de documentos invita a armar la carpeta (no la cierra)', async () => {
+    vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'ONBOARDING' })
+    renderPage()
+    expect(await screen.findByText('Esta empresa está en onboarding')).toBeInTheDocument()
+    expect(screen.getByText(/carga y revisa sus documentos/)).toBeInTheDocument()
+    expect(screen.queryByText(/la carga se habilita al activarla/)).not.toBeInTheDocument()
+  })
+
+  it('onboarding sin la carpeta completa: Certificación la activa como excepción, con motivo', async () => {
+    vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'ONBOARDING',
+      compliance_summary: { ...CARRIER.compliance_summary, requirements_met: false, blocking: { own: 2, fleet: 0 } } })
+    vi.mocked(lifecycleApi.activateCarrier).mockResolvedValue({ operational_status: 'ACTIVE' })
+    renderPage()
+    expect(await screen.findByText(/Faltan 2 obligatorios de la empresa para activarla/)).toBeInTheDocument()
+    await elegirDelMenu('Activar')
+    expect(await screen.findByText(/No cumple los obligatorios para activarla: faltan 2 obligatorios de la empresa/)).toBeInTheDocument()
+    await screen.findByRole('option', { name: 'Lo necesita un cliente ya' })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Motivo' }), { target: { value: 'r-cliente' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Activar' }))
+    await waitFor(() => expect(lifecycleApi.activateCarrier).toHaveBeenCalledWith('t1', { reason_id: 'r-cliente', note: undefined }))
+  })
+
+  it('onboarding sin la carpeta completa y sin permiso de Certificación: dice qué falta y no activa', async () => {
+    permisos.darDeBaja = false
+    vi.mocked(lifecycleApi.activateCarrier).mockClear()
+    vi.mocked(carriersApi.get).mockResolvedValue({ ...CARRIER, operational_status: 'ONBOARDING',
+      compliance_summary: { ...CARRIER.compliance_summary, requirements_met: false, blocking: { own: 2, fleet: 0 } } })
+    renderPage()
+    await elegirDelMenu('Activar')
+    // La ficha abre en Documentos, que puede tener sus propios avisos: se busca el de Activar.
+    await waitFor(() => expect(screen.getAllByRole('alert').some(a => a.textContent?.includes('Lo puede activar Certificación como excepción'))).toBe(true))
+    expect(lifecycleApi.activateCarrier).not.toHaveBeenCalled()
   })
 
   it('el encabezado dice lo que bloquea según la API, propio y de la flota activa', async () => {

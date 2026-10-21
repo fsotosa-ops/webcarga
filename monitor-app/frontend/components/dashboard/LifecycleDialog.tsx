@@ -12,7 +12,9 @@ import type { CarrierDeactivationImpact } from '@/lib/types'
 export type FleetItem = { id: string; label: string }
 
 interface Props {
-  action:    Exclude<LifecycleAction, 'activate'>
+  /** `activate` es activar como excepción: una empresa en onboarding que no cumple los
+   *  obligatorios (21/10). Activarla cumpliendo no pide ventana. */
+  action:    LifecycleAction
   /** A quién se le cambia el estado: filtra los motivos que le aplican. */
   scope:     LifecycleScope
   /** Cómo se nombra en el título: "conductor Juan Pérez", "esta empresa". */
@@ -25,6 +27,8 @@ interface Props {
   /** Reactivar una empresa (D2, P3): qué flota vuelve con ella. Todo viene marcado;
    *  lo que se desmarca sale de su roster hoy y queda en el historial. */
   fleet?:    { drivers: FleetItem[]; assets: FleetItem[] }
+  /** Activar como excepción: lo que le falta ("2 obligatorios de la empresa"). */
+  pending?:  string
 }
 
 const TEXTO = {
@@ -35,6 +39,11 @@ const TEXTO = {
   reactivate: {
     title: 'Reactivar', confirm: 'Reactivar', error: 'Error al reactivar',
     domain: 'REACTIVATION_REASON', sinMotivos: 'No hay motivos de reactivación activos: agrégalos en Configuración › Directorio.',
+  },
+  activate: {
+    title: 'Activar como excepción', confirm: 'Activar', error: 'Error al activar',
+    domain: 'ACTIVATION_EXCEPTION_REASON',
+    sinMotivos: 'No hay motivos de activación excepcional activos: agrégalos en Configuración › Directorio.',
   },
 } as const
 
@@ -48,7 +57,7 @@ function plural(n: number, uno: string, varios: string) {
  *  sale del catálogo de Configuración y queda en la ficha y en la auditoría. Dar de
  *  baja una empresa muestra antes lo que toca; reactivarla deja elegir qué flota
  *  vuelve. Una variante es una prop, no un componente hermano. */
-export function LifecycleDialog({ action, scope, label, onClose, onConfirm, impact, fleet }: Props) {
+export function LifecycleDialog({ action, scope, label, onClose, onConfirm, impact, fleet, pending }: Props) {
   const t = TEXTO[action]
   const { motivos, cargando } = useReasons(t.domain, { noteCode: 'OTHER', scope })
   const [eleccion, setEleccion] = useState<EleccionDeMotivo>({ motivoId: '', nota: '' })
@@ -98,7 +107,9 @@ export function LifecycleDialog({ action, scope, label, onClose, onConfirm, impa
       <p className="text-informativo">
         {action === 'deactivate'
           ? 'Deja de operar y de contar en los pendientes. Se puede reactivar en cualquier momento.'
-          : 'Vuelve a operar. La habilitación se recalcula: con documentos vencidos no puede tomar viajes hasta regularizarlos.'}
+          : action === 'activate'
+            ? `No cumple los obligatorios para activarla${pending ? `: faltan ${pending}` : ''}. Queda activa como excepción, con el motivo registrado, y No habilitada hasta que los regularice.`
+            : 'Vuelve a operar. La habilitación se recalcula: con documentos vencidos no puede tomar viajes hasta regularizarlos.'}
       </p>
 
       <div className="space-y-3">

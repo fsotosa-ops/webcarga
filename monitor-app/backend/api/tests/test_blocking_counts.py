@@ -17,7 +17,7 @@ from app.services.fleet_compliance import (
 def test_la_empresa_separa_lo_que_bloquea_entre_lo_suyo_y_su_flota():
     fila = {"worst_state": "MISSING", "own_overdue": 0, "own_expiring": 0, "own_missing": 4,
             "fleet_overdue": 1, "fleet_expiring": 0, "fleet_missing": 6, "can_operate": False,
-            "blocking_own": 3, "blocking_fleet": 5}
+            "blocking_own": 3, "blocking_fleet": 5, "requirements_met": False}
     assert take_summary(fila, with_fleet=True)["blocking"] == {"own": 3, "fleet": 5}
 
 

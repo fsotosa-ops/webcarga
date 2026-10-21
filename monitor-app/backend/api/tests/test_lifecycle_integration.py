@@ -47,6 +47,11 @@ async def _subject(conn, entity: str, status: str) -> str:
     return await {"CARRIER": _carrier, "DRIVER": _driver, "ASSET": _asset}[entity](conn, status)
 
 
+async def _without_documents(conn, entity_id: str) -> None:
+    """Sin la carpeta sembrada al crear: nada que la bloquee (cumple para activarse)."""
+    await conn.execute("DELETE FROM public.compliance_records WHERE entity_id = $1::uuid", entity_id)
+
+
 async def _reason(conn, domain: str, code: str) -> str:
     return str(await conn.fetchval(
         "SELECT id FROM app.status_taxonomies WHERE domain = $1 AND code = $2", domain, code))
@@ -99,6 +104,8 @@ async def test_la_matriz_de_transiciones(conexion_revertida, entity, start, acti
     conn = conexion_revertida
     actor = (await _usuario_real(conn))["sub"]
     subject = await _subject(conn, entity, start)
+    if action == "activate":
+        await _without_documents(conn, subject)   # la regla de la carpeta tiene sus propios tests
     reason = _reason_for(action)
     reason_id = await _reason(conn, *reason) if reason else None
 
@@ -182,6 +189,7 @@ async def test_activar_una_empresa_sin_rut_pide_el_rut(conexion_revertida):
     conn = conexion_revertida
     actor = (await _usuario_real(conn))["sub"]
     carrier = await _carrier(conn, "ONBOARDING", tax_id=None)
+    await _without_documents(conn, carrier)
 
     with pytest.raises(HTTPException) as exc:
         await lifecycle.transition(conn, entity="CARRIER", entity_id=carrier, action="activate", actor=actor)
@@ -261,3 +269,76 @@ async def test_toda_empresa_traspasada_por_la_migracion_tiene_su_motivo(conexion
           AND r.code IS DISTINCT FROM 'LEGACY_IMPORT'
         """)
     assert sin_motivo == 0
+
+
+
+# ── Onboarding (21/10): salir exige lo mismo que la habilitación ────────────────
+
+async def _missing_mandatory(conn, carrier_id: str) -> None:
+    """Un obligatorio legal que le falta a la empresa (lo que bloquea la habilitación),
+    con los helpers de siempre (tests/d1_subjects.py)."""
+    from . import d1_subjects as s
+    await s.record(conn, await s.requirement(conn, entity="CARRIER"), "CARRIER", carrier_id)
+
+
+async def test_una_empresa_en_onboarding_con_pendientes_no_se_activa(conexion_revertida):
+    conn = conexion_revertida
+    actor = (await _usuario_real(conn))["sub"]
+    carrier = await _carrier(conn, "ONBOARDING")
+    await _without_documents(conn, carrier)
+    await _missing_mandatory(conn, carrier)
+
+    with pytest.raises(HTTPException) as exc:
+        await lifecycle.transition(conn, entity="CARRIER", entity_id=carrier, action="activate", actor=actor)
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail["code"] == "ONBOARDING_INCOMPLETE"
+    assert (exc.value.detail["own"], exc.value.detail["fleet"]) == (1, 0)
+    assert (await _status(conn, "CARRIER", carrier))["operational_status"] == "ONBOARDING"
+
+
+async def test_lo_que_le_falta_es_lo_mismo_que_la_habilitacion(conexion_revertida):
+    """Una sola regla: requirements_pending lee requirements_met del resumen de documentos."""
+    conn = conexion_revertida
+    carrier = await _carrier(conn, "ONBOARDING")
+    await _without_documents(conn, carrier)
+    assert await lifecycle.requirements_pending(conn, carrier) is None
+    await _missing_mandatory(conn, carrier)
+    assert await lifecycle.requirements_pending(conn, carrier) == (1, 0)
+
+
+async def test_activar_como_excepcion_pide_un_motivo_de_su_vocabulario(conexion_revertida):
+    conn = conexion_revertida
+    actor = (await _usuario_real(conn))["sub"]
+    carrier = await _carrier(conn, "ONBOARDING")
+    await _without_documents(conn, carrier)
+    await _missing_mandatory(conn, carrier)
+
+    with pytest.raises(HTTPException) as exc:   # un motivo de otro vocabulario no sirve
+        await lifecycle.transition(conn, entity="CARRIER", entity_id=carrier, action="activate", actor=actor,
+                                   reason_id=await _reason(conn, "REACTIVATION_REASON", "RELATIONSHIP_RESUMED"))
+    assert exc.value.status_code == 422
+
+    motivo = await _reason(conn, "ACTIVATION_EXCEPTION_REASON", "CLIENT_NEEDS_IT_NOW")
+    await lifecycle.transition(conn, entity="CARRIER", entity_id=carrier, action="activate", actor=actor,
+                               reason_id=motivo)
+    row = await _status(conn, "CARRIER", carrier)
+    assert (row["operational_status"], row["reason_id"]) == ("ACTIVE", motivo)
+    audit = await conn.fetchval(
+        "SELECT new_value FROM public.audit_log WHERE entity_type = 'CARRIER' AND entity_id = $1::uuid "
+        "AND action = 'activate'", carrier)
+    assert '"exception": true' in audit
+
+
+async def test_la_carpeta_de_una_empresa_en_onboarding_entra_a_pendientes(conexion_revertida):
+    from app.services.vencimientos import in_scope_sql
+    conn = conexion_revertida
+    entra = await _carrier(conn, "ONBOARDING")
+    no_entra = await _carrier(conn, "INACTIVE")
+    for carrier in (entra, no_entra):
+        await _without_documents(conn, carrier)
+        await _missing_mandatory(conn, carrier)
+    alcance = {str(r["entity_id"]): r["in_scope"] for r in await conn.fetch(
+        f"SELECT cr.entity_id, {in_scope_sql('cr')} AS in_scope FROM public.compliance_records cr "
+        "WHERE cr.entity_id = ANY($1::uuid[])", [entra, no_entra])}
+    assert alcance == {entra: True, no_entra: False}

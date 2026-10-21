@@ -66,7 +66,7 @@ async def test_la_vista_rapida_del_conductor_trae_su_resumen_y_su_empresa(conexi
     assert resumen["carrier"]["id"] == f["carrier"]
     assert resumen["compliance_summary"] == {
         "worst_state": "MISSING", "own": {"overdue": 0, "expiring": 0, "missing": 1},
-        "fleet": None, "can_operate": False, "blocking": {"own": 1, "fleet": None},
+        "fleet": None, "can_operate": False, "blocking": {"own": 1, "fleet": None}, "requirements_met": False,
     }
 
 
@@ -101,10 +101,10 @@ async def test_los_baldes_del_embudo_salen_del_resumen(conexion_revertida):
     assert (await _embudo(conn, recien_creada))["funnel_bucket"] is None
 
 
-async def test_el_total_del_embudo_cuenta_solo_las_activas(conexion_revertida):
-    """Ruling T16-F: el total del encabezado es el de Pendientes, que solo
-    muestra empresas ACTIVE. La empresa en onboarding sigue en la lista (su
-    pestaña del ciclo de vida la cuenta) pero no suma al total."""
+async def test_el_total_del_embudo_es_el_de_pendientes(conexion_revertida):
+    """Ruling T16-F: el total del encabezado es el de Pendientes. Desde el 21/10
+    Pendientes trae la carpeta de las empresas en onboarding (se trabaja ahí), así
+    que suman las dos; una dada de baja no."""
     conn = conexion_revertida
     activa = await s.carrier(conn)
     recien_creada = await s.carrier(conn, status="ONBOARDING")
@@ -122,7 +122,7 @@ async def test_el_total_del_embudo_cuenta_solo_las_activas(conexion_revertida):
 
     assert set(por_id) == {activa, recien_creada}
     assert (por_id[activa]["pending_count"], por_id[recien_creada]["pending_count"]) == (1, 2)
-    assert res["total_pending"] == 1, "el total sumó a la empresa en onboarding"
+    assert res["total_pending"] == 3, "el total no es el de Pendientes"
     pendientes = await pending_summary(group_by="carrier", pool=pool, _=None)
     assert sum(f["overdue"] + f["expiring"] + f["missing"]
                for f in pendientes["rows"] if f["key"] in por_id) == res["total_pending"]

@@ -39,6 +39,10 @@ export interface ComplianceSummary {
   /** Los obligatorios vencidos o faltantes: lo que hace falso a `can_operate`.
    *  Las cifras de arriba cuentan también los opcionales (fichas, 15/10). */
   blocking: BlockingCounts
+  /** Ningún obligatorio que bloquee, sin mirar el ciclo de vida (21/10): para una
+   *  empresa en onboarding es lo que pide "Activar". Opcional: backend y frontend se
+   *  despliegan por separado. */
+  requirements_met?: boolean
 }
 /** Lo que se debe en total: lo propio más, en una empresa, lo de su flota activa. */
 export function totalCounts(summary: ComplianceSummary): StateCounts {
@@ -95,6 +99,14 @@ export function lifecycleStyle(kind: EntityKind | CatalogKind, status: string): 
  *  como historial (P1) y se marca (bloque 0, 0.9). */
 export function isCarrierDeactivated(status: string | null | undefined): boolean {
   return status === 'INACTIVE'
+}
+
+/** Las empresas cuya carpeta trabaja Certificación (21/10): las que operan y las que
+ *  están entrando (onboarding). Se les cargan y revisan documentos; una dada de baja
+ *  es historial. Espejo de `CARRIER_STATUSES_IN_CERTIFICATION` (schemas/states.py). */
+export const CARRIER_STATUSES_IN_CERTIFICATION: readonly string[] = ['ACTIVE', 'ONBOARDING']
+export function isCarrierInCertification(status: string | null | undefined): boolean {
+  return !!status && CARRIER_STATUSES_IN_CERTIFICATION.includes(status)
 }
 export const CARRIER_DEACTIVATED_LABEL = 'Empresa dada de baja'
 
@@ -197,18 +209,29 @@ export function blockingReason(
   return parts.charAt(0).toUpperCase() + parts.slice(1)
 }
 
-/** La razón del "No habilitada" de una empresa (Entrega 1 de fichas, 15/10):
- *  cuántos obligatorios la bloquean, suyos y de su flota activa (`blocking`, la
- *  misma regla que `can_operate`). Si no está activa, eso es lo que la frena. */
-export function carrierBlockingReason(summary: ComplianceSummary, operationalStatus: string): string | null {
-  if (operationalStatus !== 'ACTIVE') return 'La empresa no está activa'
-  if (summary.can_operate) return null
+/** "3 obligatorios de la empresa y 2 de su flota": lo que la bloquea (`blocking`). */
+export function blockingCountsLine(summary: ComplianceSummary): string {
   const own = summary.blocking.own
   const fleet = summary.blocking.fleet ?? 0
   const word = (n: number) => (n === 1 ? 'obligatorio' : 'obligatorios')
   if (own > 0 && fleet > 0) return `${own} ${word(own)} de la empresa y ${fleet} de su flota`
   if (own > 0) return `${own} ${word(own)} de la empresa`
   return `${fleet} ${word(fleet)} de su flota`
+}
+
+/** La razón del "No habilitada" de una empresa (Entrega 1 de fichas, 15/10):
+ *  cuántos obligatorios la bloquean, suyos y de su flota activa (`blocking`, la
+ *  misma regla que `can_operate`). En onboarding dice lo que le falta para activarla
+ *  (21/10); dada de baja, eso es lo que la frena. */
+export function carrierBlockingReason(summary: ComplianceSummary, operationalStatus: string): string | null {
+  if (operationalStatus === 'ONBOARDING' && summary.requirements_met !== undefined) {
+    return summary.requirements_met
+      ? 'Cumple los obligatorios: lista para activarla'
+      : `Faltan ${blockingCountsLine(summary)} para activarla`
+  }
+  if (operationalStatus !== 'ACTIVE') return 'La empresa no está activa'
+  if (summary.can_operate) return null
+  return blockingCountsLine(summary)
 }
 
 // ── Resumen y habilitación (fleet_compliance.py) ──────────────────────────────

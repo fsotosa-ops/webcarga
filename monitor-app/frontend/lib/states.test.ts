@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   alertSeverityStyle, documentEvidenceStyle, documentStateCount, documentStateCounts, documentStateStyle,
   enablementStyle, enablementStyleFromFlag, FUNNEL_BUCKET_ORDER, funnelBucketStyle, fleetMemberStyle, isBlocking, lifecycleStyle, stateCountsLine, summaryStyle,
-  blockingReason, carrierBlockingReason, isCarrierDeactivated,
+  blockingReason, carrierBlockingReason, isCarrierDeactivated, isCarrierInCertification,
   type ComplianceSummary,
 } from './states'
 
@@ -134,9 +134,22 @@ describe('carrierBlockingReason (la razón del "No habilitada" de una empresa)',
     expect(carrierBlockingReason(summary({ can_operate: false, blocking: { own: 0, fleet: 2 } }), 'ACTIVE')).toBe('2 obligatorios de su flota')
   })
 
-  it('RF2: si no está activa lo dice, en vez de hablar de documentos; habilitada no dice nada', () => {
-    expect(carrierBlockingReason(summary({ can_operate: false, blocking: { own: 4, fleet: 0 } }), 'ONBOARDING')).toBe('La empresa no está activa')
+  it('RF2: dada de baja lo dice, en vez de hablar de documentos; habilitada no dice nada', () => {
+    expect(carrierBlockingReason(summary({ can_operate: false, blocking: { own: 4, fleet: 0 } }), 'INACTIVE')).toBe('La empresa no está activa')
     expect(carrierBlockingReason(summary(), 'ACTIVE')).toBeNull()
+  })
+
+  it('onboarding (21/10): su carpeta se trabaja como la de una activa; la de una dada de baja no', () => {
+    expect(['ACTIVE', 'ONBOARDING', 'INACTIVE'].map(isCarrierInCertification)).toEqual([true, true, false])
+  })
+
+  it('onboarding (21/10): dice lo que le falta para activarla, o que está lista', () => {
+    expect(carrierBlockingReason(summary({ can_operate: false, blocking: { own: 2, fleet: 1 }, requirements_met: false }), 'ONBOARDING'))
+      .toBe('Faltan 2 obligatorios de la empresa y 1 de su flota para activarla')
+    expect(carrierBlockingReason(summary({ can_operate: false, requirements_met: true }), 'ONBOARDING'))
+      .toBe('Cumple los obligatorios: lista para activarla')
+    // Sin el dato (backend anterior), no se inventa un "faltan 0".
+    expect(carrierBlockingReason(summary({ can_operate: false }), 'ONBOARDING')).toBe('La empresa no está activa')
   })
 })
 

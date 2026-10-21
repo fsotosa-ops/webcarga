@@ -213,3 +213,16 @@ def test_quitar_es_editar(ruta):
     conn.execute.return_value = "UPDATE 1"
     assert cliente(SUP_OPS, pool).delete(ruta).status_code == 200
     assert cliente(OPERADOR, pool).delete(ruta).status_code == 403
+
+
+# ── Onboarding (21/10): activar sin la carpeta completa es de Certificación ─────
+
+def test_activar_como_excepcion_es_de_certificacion(monkeypatch, transicion):
+    """Con motivo es una excepción: la decide quien es dueño de la documentación
+    (directory.delete). El Supervisor de Operaciones activa solo si la empresa cumple."""
+    pool, _ = pool_de_empresa(monkeypatch, "ONBOARDING")
+    excepcion = {"reason_id": "00000000-0000-0000-0000-0000000000bb"}
+    assert cliente(SUP_OPS, pool).post("/api/v1/carriers/c1/activate", json=excepcion).status_code == 403
+    assert not transicion.called
+    assert cliente(SUP_CERT, pool).post("/api/v1/carriers/c1/activate", json=excepcion).status_code == 200
+    assert transicion.await_args.kwargs["reason_id"] == excepcion["reason_id"]

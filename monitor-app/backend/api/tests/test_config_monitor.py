@@ -519,7 +519,7 @@ _FILA_INVENTARIO = {
     "motivos_no_asignacion": 4,
     "motivos_anulacion": 4,
     "rangos_temp": 2, "subtipos": 10, "tipos_operacion": 2,
-    "motivos_baja": 7, "motivos_reactivacion": 1,
+    "motivos_baja": 7, "motivos_reactivacion": 1, "motivos_activacion": 3,
     "usuarios": 10, "roles": 5,
 }
 
@@ -541,6 +541,7 @@ def test_inventario_devuelve_pares_por_dominio():
     assert cuerpo["directory"]["pares"] == [
         {"n": 7, "etiqueta": "motivos de baja"},
         {"n": 1, "etiqueta": "motivo de reactivación"},
+        {"n": 3, "etiqueta": "motivos de activación excepcional"},
     ]
 
 

@@ -25,6 +25,7 @@ from fastapi import HTTPException
 
 from ..schemas.states import LIFECYCLE_TRANSITIONS, LifecycleAction, LifecycleEntity, LifecycleTransition
 from . import fleet_assignments
+from .fleet_compliance import carrier_compliance_cte
 from ..utils.identity import same_rut_sql
 from .audit import log_change, record_manual_edit
 
@@ -53,6 +54,27 @@ _ACTION_WORDS = {"activate": "activar", "deactivate": "dar de baja", "reactivate
 
 def transition_for(entity: LifecycleEntity, action: LifecycleAction) -> LifecycleTransition:
     return LIFECYCLE_TRANSITIONS[(entity, action)]
+
+
+def _pending_phrase(own: int, fleet: int) -> str:
+    """"3 obligatorios de la empresa y 2 de su flota", con las palabras de la ficha."""
+    word = lambda n: "obligatorio" if n == 1 else "obligatorios"  # noqa: E731
+    if own and fleet:
+        return f"{own} {word(own)} de la empresa y {fleet} de su flota"
+    return f"{own} {word(own)} de la empresa" if own else f"{fleet} {word(fleet)} de su flota"
+
+
+async def requirements_pending(conn, carrier_id: str) -> tuple[int, int] | None:
+    """Lo que le falta a una empresa para activarla: (propios, de su flota) que la
+    bloquean, o None si cumple. Es `requirements_met` del resumen de documentos, el
+    mismo cálculo de la habilitación (services/fleet_compliance.py): no hay otra regla."""
+    row = await conn.fetchrow(
+        f"WITH {carrier_compliance_cte()} "
+        "SELECT requirements_met, blocking_own, blocking_fleet FROM carrier_compliance WHERE carrier_id = $1::uuid",
+        carrier_id)
+    if row is None or row["requirements_met"]:
+        return None
+    return int(row["blocking_own"] or 0), int(row["blocking_fleet"] or 0)
 
 
 def status_reason_columns_sql(alias: str) -> str:
@@ -133,7 +155,7 @@ async def transition(
     reason_label = None
     if rule.reason_domain:
         reason_id, reason_label, note = await _reason(conn, rule.reason_domain, entity, reason_id, note)
-    else:
+    elif not rule.exception_reason_domain:
         reason_id, note = None, None
 
     if tax_id and action != "activate":
@@ -149,6 +171,25 @@ async def transition(
             )
         else:
             raise HTTPException(422, "No se puede activar una empresa sin RUT/tax_id")
+
+    # Salir del onboarding exige lo mismo que la habilitación (21/10). Sin cumplirlo,
+    # solo como excepción: con motivo (el permiso de la excepción lo exige la ruta).
+    exception = False
+    if rule.requires_requirements_met:
+        pending = await requirements_pending(conn, entity_id)
+        if pending is None:
+            reason_id, note = None, None
+        elif not reason_id:
+            raise HTTPException(409, {
+                "code": "ONBOARDING_INCOMPLETE",
+                "message": (f"Faltan {_pending_phrase(*pending)} para activarla. "
+                            "Certificación puede activarla como excepción, con motivo."),
+                "own": pending[0], "fleet": pending[1],
+            })
+        else:
+            reason_id, reason_label, note = await _reason(
+                conn, rule.exception_reason_domain, entity, reason_id, note)
+            exception = True
 
     touch_updated_at = ", updated_at = NOW()" if entity == "CARRIER" else ""
     await conn.execute(
@@ -174,6 +215,7 @@ async def transition(
         conn, actor=actor, entity_type=entity, entity_id=entity_id, action=action,
         new_value={
             "reason_id": reason_id, "reason": reason_label, "note": note,
+            **({"exception": True} if exception else {}),
             **({"drivers": sorted(driver_ids or []), "assets": sorted(asset_ids or [])}
                if entity == "CARRIER" and action == "reactivate" else {}),
         },

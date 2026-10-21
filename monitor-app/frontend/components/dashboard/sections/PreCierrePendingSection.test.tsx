@@ -210,6 +210,26 @@ describe('PreCierrePendingSection', () => {
       'carrier', 'c8', { reason_id: 'r-vuelve', note: undefined, driver_ids: ['d1'], asset_ids: [] }))
   })
 
+  it('EMPRESA_ONBOARDING: si no cumple los obligatorios, lo dice y no pide el RUT', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    const { lifecycleApi } = await import('@/lib/api/lifecycle')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
+        EMPRESA_ONBOARDING: [{ carrier_id: 'c9', carrier_name: 'Transportes Nueva' }],
+        SIN_TIPO_OPERACION: [],
+      },
+    }))
+    vi.mocked(lifecycleApi.activateCarrier).mockRejectedValueOnce(new ApiError(
+      'Faltan 2 obligatorios de la empresa para activarla. Certificación puede activarla como excepción, con motivo.',
+      409, { code: 'ONBOARDING_INCOMPLETE', own: 2, fleet: 0 }))
+    renderSection()
+    await screen.findAllByText(/Transportes Nueva/)
+    fireEvent.click(screen.getByRole('button', { name: 'Activar empresa' }))
+    expect(await screen.findByText(/Faltan 2 obligatorios de la empresa/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('RUT de Transportes Nueva')).not.toBeInTheDocument()
+  })
+
   it('EMPRESA_ONBOARDING: si falla (sin RUT), ofrece completar el RUT inline', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     const { lifecycleApi } = await import('@/lib/api/lifecycle')
@@ -220,7 +240,7 @@ describe('PreCierrePendingSection', () => {
         SIN_TIPO_OPERACION: [],
       },
     }))
-    vi.mocked(lifecycleApi.activateCarrier).mockRejectedValueOnce(new Error('No se puede activar una empresa sin RUT/tax_id'))
+    vi.mocked(lifecycleApi.activateCarrier).mockRejectedValueOnce(new ApiError('No se puede activar una empresa sin RUT/tax_id', 422, null))
     renderSection()
     await screen.findAllByText(/Transportes Nueva/)
     fireEvent.click(screen.getByRole('button', { name: 'Activar empresa' }))

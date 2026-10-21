@@ -31,6 +31,7 @@ export const SubtiposPanel = porFuente(vocabularySource('FLEET_SERVICE_TYPE'), '
 export const TiposDeOperacionPanel = porFuente(vocabularySource('WEBCARGA_OPERATION_TYPE'), 'TiposDeOperacionPanel')
 export const MotivosDeBajaPanel = porFuente(vocabularySource('DEACTIVATION_REASON'), 'MotivosDeBajaPanel')
 export const MotivosDeReactivacionPanel = porFuente(vocabularySource('REACTIVATION_REASON'), 'MotivosDeReactivacionPanel')
+export const MotivosDeActivacionExcepcionalPanel = porFuente(vocabularySource('ACTIVATION_EXCEPTION_REASON'), 'MotivosDeActivacionExcepcionalPanel')
 export const AlertasDeDocumentosPanel = porFuente(thresholdSource('documento_por_vencer'), 'AlertasDeDocumentosPanel')
 export const AlertasDePolizasPanel = porFuente(thresholdSource('poliza_por_vencer'), 'AlertasDePolizasPanel')
 export const RangosDeTemperaturaPanel = porFuente(temperatureRangeSource, 'RangosDeTemperaturaPanel')

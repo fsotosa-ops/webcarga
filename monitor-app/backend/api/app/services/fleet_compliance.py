@@ -19,7 +19,10 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from ..schemas.states import BLOCKING_STATES, SEVERITY_ORDER, BlockingCounts, ComplianceSummary, FunnelBucket, StateCounts
+from ..schemas.states import (
+    BLOCKING_STATES, CARRIER_STATUSES_IN_CERTIFICATION, SEVERITY_ORDER, BlockingCounts, ComplianceSummary,
+    FunnelBucket, StateCounts,
+)
 from .vencimientos import (
     PENDING_STATES,
     cubierto_predicate,
@@ -187,21 +190,29 @@ def entity_compliance_cte() -> str:
 )"""
 
 
+# Las empresas cuya carpeta se trabaja (activas y en onboarding), como lista SQL: la
+# definición vive en el glosario (schemas/states.py).
+_EN_CERTIFICACION = ", ".join(f"'{s}'" for s in CARRIER_STATUSES_IN_CERTIFICATION)
+
+
 def carrier_compliance_cte() -> str:
     """CTE `carrier_compliance`: una fila por CADA empresa (también las que no
     deben nada), con lo propio, lo de su flota y la habilitación.
 
-    Alcance de las cifras:
-      - empresa ACTIVE: el de Pendientes (in_scope, empresa atribuida =
-        resolved_carrier_id). Por eso sus cifras son las de su fila en
-        /pending/summary?group_by=carrier;
-      - empresa no activa (ruling D1-R1): sus registros más los de su
-        app.active_fleet, sin exigir empresa activa (in_scope la exige y daría 0).
+    Alcance de las cifras (21/10: un camino por grupo, no por estado):
+      - empresa en certificación (activa o en onboarding,
+        CARRIER_STATUSES_IN_CERTIFICATION): el de Pendientes (in_scope, empresa
+        atribuida = resolved_carrier_id), con lo que bloquea marcado. Por eso sus
+        cifras son las de su fila en /pending/summary?group_by=carrier, y una en
+        onboarding se mide con la misma regla que una que opera;
+      - empresa dada de baja (ruling D1-R1): sus registros más los de su
+        app.active_fleet, como historial: nada bloquea.
 
     worst_state: el peor de los obligatorios (A-R5); las cifras cuentan todo.
 
-    Habilitación: ACTIVE y sin ningún LEGAL_MANDATORY vencido o faltante, propio
-    o de app.active_fleet. Por vencer no bloquea; los opcionales no bloquean pero
+    `requirements_met`: sin ningún LEGAL_MANDATORY vencido o faltante, propio o de
+    app.active_fleet, en una empresa en certificación. Habilitación (`can_operate`):
+    eso y además ACTIVE. Para activar una en onboarding se pide `requirements_met`. Por vencer no bloquea; los opcionales no bloquean pero
     cuentan en las cifras. Un documento al término de quien ya se fue cuenta en
     la flota (Pendientes lo muestra) pero no bloquea: no es flota activa."""
     return f"""carrier_compliance AS (
@@ -211,7 +222,7 @@ def carrier_compliance_cte() -> str:
                (r.requirement_level = 'LEGAL_MANDATORY' AND r.document_state IN ({_BLOQUEAN})
                 AND (r.entity_type = 'CARRIER' OR af.entity_id IS NOT NULL)) AS blocks
         FROM resolved r
-        JOIN public.carriers c ON c.id = r.resolved_carrier_id AND c.operational_status = 'ACTIVE'
+        JOIN public.carriers c ON c.id = r.resolved_carrier_id AND c.operational_status IN ({_EN_CERTIFICACION})
         LEFT JOIN app.active_fleet af
                ON af.carrier_id = r.resolved_carrier_id AND af.entity_type = r.entity_type
               AND af.entity_id = r.entity_id
@@ -220,13 +231,13 @@ def carrier_compliance_cte() -> str:
         SELECT c.id, r.entity_type, r.document_state, r.requirement_level, false
         FROM resolved r
         JOIN public.carriers c
-          ON r.entity_type = 'CARRIER' AND c.id = r.entity_id AND c.operational_status <> 'ACTIVE'
+          ON r.entity_type = 'CARRIER' AND c.id = r.entity_id AND c.operational_status NOT IN ({_EN_CERTIFICACION})
         WHERE r.document_state IN ({_PENDIENTES})
         UNION ALL
         SELECT af.carrier_id, r.entity_type, r.document_state, r.requirement_level, false
         FROM resolved r
         JOIN app.active_fleet af ON af.entity_type = r.entity_type AND af.entity_id = r.entity_id
-        JOIN public.carriers c ON c.id = af.carrier_id AND c.operational_status <> 'ACTIVE'
+        JOIN public.carriers c ON c.id = af.carrier_id AND c.operational_status NOT IN ({_EN_CERTIFICACION})
         WHERE r.document_state IN ({_PENDIENTES})
     )
     SELECT c.id AS carrier_id,
@@ -238,6 +249,8 @@ def carrier_compliance_cte() -> str:
            {_cifra('EXPIRING', "o.entity_type <> 'CARRIER'")} AS fleet_expiring,
            {_cifra('MISSING', "o.entity_type <> 'CARRIER'")} AS fleet_missing,
            (c.operational_status = 'ACTIVE' AND NOT COALESCE(bool_or(o.blocks), false)) AS can_operate,
+           (c.operational_status IN ({_EN_CERTIFICACION}) AND NOT COALESCE(bool_or(o.blocks), false))
+               AS requirements_met,
            count(*) FILTER (WHERE o.blocks AND o.entity_type = 'CARRIER') AS blocking_own,
            count(*) FILTER (WHERE o.blocks AND o.entity_type <> 'CARRIER') AS blocking_fleet
     FROM public.carriers c
@@ -270,6 +283,7 @@ def summary_from_row(row: Mapping[str, Any], *, with_fleet: bool) -> ComplianceS
                               missing=_n(row, "fleet_missing")),
             can_operate=bool(row["can_operate"]),
             blocking=BlockingCounts(own=_n(row, "blocking_own"), fleet=_n(row, "blocking_fleet")),
+            requirements_met=bool(row["requirements_met"]),
         )
     return ComplianceSummary(
         worst_state=worst,
@@ -277,6 +291,8 @@ def summary_from_row(row: Mapping[str, Any], *, with_fleet: bool) -> ComplianceS
         fleet=None,
         can_operate=row["operational_status"] == "ACTIVE" and _n(row, "blocking_mandatory") == 0,
         blocking=BlockingCounts(own=_n(row, "blocking_mandatory")),
+        # Conductores y equipos no tienen onboarding: es lo mismo que la habilitación.
+        requirements_met=row["operational_status"] == "ACTIVE" and _n(row, "blocking_mandatory") == 0,
     )
 
 
@@ -326,7 +342,7 @@ def alert_severity_sql(alias: str = "cr") -> str:
 CARRIER_SUMMARY_COLUMNS: tuple[str, ...] = (
     "worst_state", "own_overdue", "own_expiring", "own_missing",
     "fleet_overdue", "fleet_expiring", "fleet_missing", "can_operate",
-    "blocking_own", "blocking_fleet",
+    "blocking_own", "blocking_fleet", "requirements_met",
 )
 # Una fila de conductor o equipo no trae la habilitación hecha: la arma
 # `summary_from_row` con `blocking_mandatory` y el `operational_status` que el

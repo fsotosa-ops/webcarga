@@ -30,7 +30,7 @@ def _carrier_facets_row(**overrides):
 # Las columnas que lee take_summary (D1, Task 5): una empresa sin pendientes.
 RESUMEN_VACIO = {"worst_state": None, "own_overdue": 0, "own_expiring": 0, "own_missing": 0,
                  "fleet_overdue": 0, "fleet_expiring": 0, "fleet_missing": 0, "can_operate": True,
-                 "blocking_own": 0, "blocking_fleet": 0}
+                 "blocking_own": 0, "blocking_fleet": 0, "requirements_met": True}
 # Conductor o equipo (ruling F1): cifras propias y lo que decide la habilitación.
 RESUMEN_VACIO_ENTIDAD = {"worst_state": None, "overdue": 0, "expiring": 0, "missing": 0,
                          "blocking_mandatory": 0}
@@ -236,23 +236,25 @@ def test_create_carrier_does_not_take_a_status():
     assert not pool.acquire.called
 
 
-def test_create_carrier_with_tax_id_defaults_active():
+def test_create_carrier_with_tax_id_starts_in_onboarding():
+    """Toda empresa nueva nace en onboarding, con o sin RUT (21/10): se activa al
+    cumplir los obligatorios."""
     pool = AsyncMock()
     conn = AsyncMock()
     wire_transactional_conn(pool, conn)
     conn.fetchval.return_value = None
     conn.fetchrow.return_value = {
         "id": "c1", "tax_id": "1-9", "country_code": "CL",
-        "business_name": "Acme", "operational_status": "ACTIVE", "created_at": None,
+        "business_name": "Acme", "operational_status": "ONBOARDING", "created_at": None,
     }
     client = make_client(pool)
 
     res = client.post("/api/v1/carriers", json={"tax_id": "1-9", "business_name": "Acme"})
 
     assert res.status_code == 201
-    assert res.json()["operational_status"] == "ACTIVE"
+    assert res.json()["operational_status"] == "ONBOARDING"
     insert_params = conn.fetchrow.call_args.args
-    assert insert_params[4] == "ACTIVE"  # operational_status
+    assert insert_params[4] == "ONBOARDING"  # operational_status
 
 
 def test_patch_carrier_404_when_missing():

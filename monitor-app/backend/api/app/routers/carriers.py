@@ -10,7 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from ..auth import get_current_user, get_supabase
-from ..authz import Permission, require, require_fields
+from ..authz import Permission, exigir, require, require_fields
 from ..db import get_pool
 from ..schemas.assignment import AssetAssignmentCreateBody, CarrierShipperLinkBody, DriverAssignmentCreateBody
 from ..schemas.carrier import CARRIER_FIELD_PERMISSIONS, CarrierCreateBody, CarrierListResponse, CarrierPatchBody
@@ -877,12 +877,17 @@ async def activate_carrier(
     carrier_id: str, body: CarrierActivateBody, pool=Depends(get_pool),
     user=Depends(require(lifecycle.transition_for("CARRIER", "activate").permission)),
 ):
-    """Completa el alta de una empresa nueva (ONBOARDING → ACTIVE)."""
+    """Saca a una empresa del onboarding (→ ACTIVE) cuando cumple los obligatorios. Con
+    motivo es una activación como excepción, y la decide quien tiene el permiso de la
+    excepción (Certificación): depende del cuerpo, por eso se exige aquí."""
+    rule = lifecycle.transition_for("CARRIER", "activate")
+    if body.reason_id:
+        exigir(user, rule.exception_permission)
     async with pool.acquire() as conn:
         async with conn.transaction():
             return await lifecycle.transition(
                 conn, entity="CARRIER", entity_id=carrier_id, action="activate", actor=user["sub"],
-                tax_id=body.tax_id)
+                tax_id=body.tax_id, reason_id=body.reason_id, note=body.note)
 
 
 @router.post("/{carrier_id}/deactivate")

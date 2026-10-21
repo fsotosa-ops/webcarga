@@ -37,15 +37,11 @@ describe('NewCarrierPanel', () => {
     expect(screen.getByRole('button', { name: /Crear empresa/ })).toBeEnabled()
   })
 
-  it('shows the Onboarding hint when tax_id is empty', () => {
+  it('dice que toda empresa nueva nace en onboarding, con o sin RUT', () => {
     render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
-    expect(screen.getByText('Se creará en estado Onboarding, pendiente de RUT.')).toBeInTheDocument()
-  })
-
-  it('hides the Onboarding hint once tax_id has content', () => {
-    render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
-    fireEvent.change(screen.getByLabelText('Tax ID'), { target: { value: '76217085-K' } })
-    expect(screen.queryByText('Se creará en estado Onboarding, pendiente de RUT.')).not.toBeInTheDocument()
+    expect(screen.getByText(/Se creará En onboarding/)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Tax ID'), { target: { value: '76.123.456-7' } })
+    expect(screen.getByText(/Se creará En onboarding/)).toBeInTheDocument()
   })
 
   it('creates the carrier and calls onCreated with the result', async () => {

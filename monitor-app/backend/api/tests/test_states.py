@@ -31,16 +31,19 @@ def test_por_vencer_no_bloquea_y_pendientes_sigue_igual():
 
 def test_los_schemas_usan_el_ciclo_de_vida_del_glosario():
     assert carrier.OperationalStatus is CarrierLifecycle
-    assert driver.OperationalStatus is FleetLifecycle
-    assert asset.OperationalStatus is FleetLifecycle
+    # Conductor y equipo ya no declaran el estado: no se crea ni se edita, cambia por
+    # acción (services/lifecycle.py, 21/10). El glosario lo usa la transición.
+    assert not hasattr(driver, "OperationalStatus") and not hasattr(asset, "OperationalStatus")
 
 
 def test_el_resumen_rechaza_un_estado_fuera_del_glosario():
     with pytest.raises(ValidationError):
-        ComplianceSummary(worst_state="CRITICAL", own=StateCounts(), can_operate=True, blocking=BlockingCounts())
+        ComplianceSummary(worst_state="CRITICAL", own=StateCounts(), can_operate=True, blocking=BlockingCounts(),
+                          requirements_met=True)
 
 
 def test_el_resumen_sin_flota_es_de_conductor_o_equipo():
-    resumen = ComplianceSummary(worst_state="UP_TO_DATE", own=StateCounts(), can_operate=True, blocking=BlockingCounts())
+    resumen = ComplianceSummary(worst_state="UP_TO_DATE", own=StateCounts(), can_operate=True, blocking=BlockingCounts(),
+                                requirements_met=True)
     assert resumen.fleet is None
     assert resumen.own.model_dump() == {"overdue": 0, "expiring": 0, "missing": 0}

@@ -20,6 +20,7 @@ vi.mock('../../paneles', () => ({
   MotivosDeNoAsignacionPanel: () => null, MotivosDeAnulacionPanel: () => null,
   SubtiposPanel: () => null, TiposDeOperacionPanel: () => null,
   MotivosDeBajaPanel: () => null, MotivosDeReactivacionPanel: () => null,
+  MotivosDeActivacionExcepcionalPanel: () => null,
   AlertasDeDocumentosPanel: () => null, AlertasDePolizasPanel: () => null,
   RangosDeTemperaturaPanel: () => null, UmbralesDelMonitorPanel: () => null,
 }))

@@ -37,6 +37,7 @@ from datetime import date
 from typing import Literal, Optional
 
 from ..authz.permissions import Permission
+from ..schemas.states import CARRIER_STATUSES_IN_CERTIFICATION
 
 
 
@@ -456,14 +457,17 @@ def ultima_empresa_sql(alias: str, entity_type: str) -> str:
 
 
 def in_scope_sql(alias: str = "cr") -> str:
-    """Si el registro entra en la cola de Pendientes: una empresa activa, o un
-    conductor o equipo activo con asignación vigente a una empresa activa.
+    """Si el registro entra en la cola de Pendientes: una empresa en certificación
+    (activa o en onboarding, CARRIER_STATUSES_IN_CERTIFICATION: la carpeta de quien
+    está entrando también se trabaja, 21/10), o un conductor o equipo activo con
+    asignación vigente a una de ellas.
 
     La siembra NO se acota (crea registros para todos, también inactivos, para
     que quien se reactiva vuelva con sus pendientes): el alcance se aplica al
     leer. Autocontenido sobre `entity_type`/`entity_id`, para que cualquier
     consulta lo pueda usar sin depender de sus JOINs."""
-    activa = "vg_sc.operational_status = 'ACTIVE'"
+    en_certificacion = ", ".join(f"'{s}'" for s in CARRIER_STATUSES_IN_CERTIFICATION)
+    activa = f"vg_sc.operational_status IN ({en_certificacion})"
     corriente = (
         f"(CASE {alias}.entity_type "
         f"WHEN 'CARRIER' THEN EXISTS (SELECT 1 FROM public.carriers vg_sc "
@@ -484,7 +488,7 @@ def in_scope_sql(alias: str = "cr") -> str:
     # entidad y de esa asignación no cuentan (la empresa aún debe el documento).
     def _ultima(entity_type: str) -> str:
         return (
-            f"EXISTS (SELECT 1 FROM public.carriers vg_ec WHERE vg_ec.operational_status = 'ACTIVE' "
+            f"EXISTS (SELECT 1 FROM public.carriers vg_ec WHERE vg_ec.operational_status IN ({en_certificacion}) "
             f"AND vg_ec.id = {ultima_empresa_sql(alias, entity_type)})"
         )
     return (

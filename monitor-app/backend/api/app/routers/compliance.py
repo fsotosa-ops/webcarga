@@ -210,8 +210,8 @@ async def get_certification_status(
             params.append(list(FUNNEL_ACTIVE_STATUSES))
             # El complemento se escribe negando la MISMA expresión, no
             # repitiendo el criterio invertido a mano: así no pueden divergir.
-            # ONBOARDING entra en el alcance activo. Una empresa creada sin RUT
-            # queda en ese estado —lo fija el validador de CarrierCreateBody— y
+            # ONBOARDING entra en el alcance activo. Toda empresa nueva nace en ese
+            # estado —lo fija CarrierCreateBody.initial_status (21/10)— y
             # dejarla fuera la mandaba al catálogo: plegado, al fondo, detrás de
             # 209 empresas. Es el flujo exacto que el embudo vino a servir:
             # crear una empresa y verla arriba, en su pestaña En onboarding.
@@ -432,11 +432,12 @@ async def get_certification_status(
             fila["compliance_summary"] = summary
             fila["funnel_bucket"] = funnel_bucket_for(summary, fila["operational_status"])
         result.append(fila)
-    # El total del encabezado es el de Pendientes (Ruling T16-F): solo las
-    # empresas ACTIVE. Una en onboarding o dada de baja con archivos esperando
-    # entra a la lista (su pestaña del ciclo de vida la cuenta) pero no suma al
-    # total: Pendientes no la muestra, y las dos cifras tienen que coincidir.
-    en_el_total = (lambda r: r["operational_status"] == ACTIVE_OPERATIONAL_STATUS) if group == "carrier" \
+    # El total del encabezado es el de Pendientes (Ruling T16-F): las empresas en
+    # certificación, activas y en onboarding (su carpeta se trabaja ahí desde el
+    # 21/10). Una dada de baja con archivos esperando entra a la lista (su pestaña
+    # la cuenta) pero no suma: Pendientes no la muestra, y las dos cifras tienen
+    # que coincidir.
+    en_el_total = (lambda r: r["operational_status"] in FUNNEL_ACTIVE_STATUSES) if group == "carrier" \
         else (lambda r: True)
     return {
         "total_pending": sum(r["pending_count"] for r in result if en_el_total(r)),

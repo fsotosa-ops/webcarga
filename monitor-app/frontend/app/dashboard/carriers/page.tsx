@@ -38,7 +38,7 @@ const VIEW_LABELS = { tablero: 'Tarjetas', tabla: 'Tabla' }
  *  viejo: de dónde vino es su motivo (21/10). Antes eran dos valores y la pestaña
  *  llegó a filtrar uno solo (Pablo, 04/09: *"yo di de baja esa empresa y no aparece"*).
  *
- *  ONBOARDING (empresa creada sin tax_id) es la tercera tab. */
+ *  ONBOARDING (la etapa del alta: toda empresa nueva nace ahí) es la tercera tab. */
 const TABS: { id: TransporterTab; label: string; status: CarrierOperationalStatus[] }[] = [
   { id: 'active',     label: CARRIER_LIFECYCLE_GROUP_LABELS.active,     status: ['ACTIVE'] },
   { id: 'legacy',     label: CARRIER_LIFECYCLE_GROUP_LABELS.inactive,   status: ['INACTIVE'] },

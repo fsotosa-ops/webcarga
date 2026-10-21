@@ -353,7 +353,7 @@ def _carrier_status_row(**over):
         # Las columnas que lee take_summary (D1, Task 6): una empresa sin pendientes.
         "worst_state": None, "own_overdue": 0, "own_expiring": 0, "own_missing": 0,
         "fleet_overdue": 0, "fleet_expiring": 0, "fleet_missing": 0, "can_operate": True,
-        "blocking_own": 0, "blocking_fleet": 0,
+        "blocking_own": 0, "blocking_fleet": 0, "requirements_met": True,
     }
     row.update(over)
     return row
@@ -1184,20 +1184,22 @@ def test_status_binds_the_parameters_also_scoped_to_one_carrier():
         assert {int(n) for n in re.findall(r"\$(\d+)", sql)} == set(range(1, len(args) + 1)), query
 
 
-def test_status_total_counts_only_active_carriers():
-    """Ruling T16-F: el total del encabezado es el de Pendientes (solo ACTIVE).
-    La empresa en onboarding sigue en la lista, con su cifra, pero no suma."""
+def test_status_total_counts_carriers_in_certification():
+    """Ruling T16-F: el total del encabezado es el de Pendientes: activas y en
+    onboarding (21/10). Una dada de baja sigue en la lista, con su cifra, pero no suma."""
     pool = AsyncMock()
     pool.fetch.return_value = [
         _carrier_status_row(pending_count=7, own_missing=7, can_operate=False),
         _carrier_status_row(entity_id="c2", carrier_id="c2", operational_status="ONBOARDING",
                             pending_count=4, own_missing=4, can_operate=False),
+        _carrier_status_row(entity_id="c3", carrier_id="c3", operational_status="INACTIVE",
+                            pending_count=5, own_missing=5, can_operate=False),
     ]
 
     body = make_client(pool).get("/api/v1/compliance-records/status").json()
 
-    assert [r["pending_count"] for r in body["rows"]] == [7, 4]
-    assert body["total_pending"] == 7
+    assert [r["pending_count"] for r in body["rows"]] == [7, 4, 5]
+    assert body["total_pending"] == 11
 
 
 def test_status_management_types_prefers_the_fleet_over_the_declared():

@@ -94,6 +94,8 @@ export type TaxonomyDomain =
   // Por qué se da de baja o se reactiva una empresa, un conductor o un equipo
   // (plan 2026-10-21). `group` dice a quién aplica: all, carrier, driver o asset.
   | 'DEACTIVATION_REASON' | 'REACTIVATION_REASON'
+  // Por qué se activó una empresa sin la carpeta completa (onboarding, 21/10).
+  | 'ACTIVATION_EXCEPTION_REASON'
 /** `code` es el identificador ESTABLE de un valor del catálogo, separado del
  *  nombre visible. Lo tienen sólo los vocabularios a los que otras tablas
  *  apuntan por texto —hoy WEBCARGA_OPERATION_TYPE— y por eso es opcional. Es

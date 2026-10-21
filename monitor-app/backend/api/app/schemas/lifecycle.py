@@ -21,11 +21,15 @@ class CarrierReactivateBody(LifecycleReasonBody):
 
 
 class CarrierActivateBody(BaseModel):
-    """Activar una empresa nueva (ONBOARDING): completa su alta, no pide motivo. Si
-    todavía no tiene RUT, se manda aquí."""
+    """Activar una empresa en onboarding: sale cuando cumple lo mismo que la
+    habilitación, sin motivo. Si todavía no tiene RUT, se manda aquí. Sin cumplirlo,
+    solo como excepción: `reason_id` (ACTIVATION_EXCEPTION_REASON) y el permiso de
+    Certificación (schemas/states.LIFECYCLE_TRANSITIONS)."""
     model_config = ConfigDict(extra="forbid")
 
     tax_id: Optional[str] = None
+    reason_id: Optional[str] = None
+    note: Optional[str] = Field(default=None, max_length=500)
 
     @field_validator("tax_id", mode="before")
     @classmethod

@@ -22,9 +22,11 @@ function post<T>(scope: LifecycleScope, id: string, action: LifecycleAction, bod
 }
 
 export const lifecycleApi = {
-  /** Completa el alta de una empresa nueva (En onboarding → Activa). Sin motivo; si
-   *  todavía no tiene RUT, va aquí. */
-  activateCarrier: (id: string, body: { tax_id?: string } = {}) =>
+  /** Saca a una empresa del onboarding (→ Activa) cuando cumple los obligatorios. Si
+   *  todavía no tiene RUT, va aquí. Con `reason_id` es una activación como excepción
+   *  (no cumple): la hace Certificación. Sin cumplir y sin motivo, 409
+   *  ONBOARDING_INCOMPLETE con lo que falta. */
+  activateCarrier: (id: string, body: { tax_id?: string; reason_id?: string; note?: string } = {}) =>
     post<{ operational_status: string }>('carrier', id, 'activate', body),
 
   deactivate: (scope: LifecycleScope, id: string, body: LifecycleBody) =>

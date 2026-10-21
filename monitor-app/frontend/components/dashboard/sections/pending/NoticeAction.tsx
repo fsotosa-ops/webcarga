@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
 import { lifecycleApi } from '@/lib/api/lifecycle'
+import { ApiError } from '@/lib/api/client'
 import { directoryKeys } from '@/lib/queries/directorio'
 import { LifecycleDialog } from '@/components/dashboard/LifecycleDialog'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
@@ -115,6 +116,10 @@ function ActivarEmpresa({ carrierId, carrierName, onChanged }: {
 }) {
   const [activando, setActivando] = useState(false)
   const [error, setError] = useState('')
+  // Dos razones distintas para no activar (21/10): le falta el RUT (422, se completa
+  // aquí) o no cumple los obligatorios (409 ONBOARDING_INCOMPLETE: la carpeta se
+  // completa en Certificación, o Certificación la activa como excepción).
+  const [pideRut, setPideRut] = useState(false)
   const [rut, setRut] = useState('')
 
   async function activar(cambios: { tax_id?: string } = {}) {
@@ -124,8 +129,7 @@ function ActivarEmpresa({ carrierId, carrierName, onChanged }: {
       await lifecycleApi.activateCarrier(carrierId, cambios)
       await onChanged({ entity: 'carrier', id: carrierId, type: 'update' })
     } catch (e) {
-      // El 422 de "falta RUT" llega en dos formas según el endpoint: en vez de parsearla,
-      // siempre se ofrece completar el RUT, la única causa realista de un error aquí.
+      setPideRut(e instanceof ApiError && e.status === 422)
       setError(e instanceof Error ? e.message : 'No se pudo activar la empresa')
     } finally {
       setActivando(false)
@@ -134,8 +138,8 @@ function ActivarEmpresa({ carrierId, carrierName, onChanged }: {
 
   return (
     <span className="flex flex-col items-start gap-1.5">
-      {error && (<>
-        <span className="text-etiqueta text-status-incidente">{error}</span>
+      {error && <span className="text-etiqueta text-status-incidente">{error}</span>}
+      {error && pideRut && (<>
         <span className="flex items-center gap-1.5">
           <input value={rut} onChange={e => setRut(e.target.value)} placeholder="RUT / Tax ID" aria-label={`RUT de ${carrierName}`}
             className="rounded-lg border border-border bg-white px-2 py-1 text-etiqueta" />

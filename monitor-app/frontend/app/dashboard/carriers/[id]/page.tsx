@@ -12,7 +12,7 @@ import { Tabs } from '@/components/ui/Tabs'
 import { ProfileHeader } from '@/components/directory/ProfileHeader'
 import { DetailsBlock } from '@/components/directory/DetailsBlock'
 import { CarrierEditForm, InsuranceLine } from '@/components/directory/CarrierDetails'
-import { SEVERITY_ORDER, enablementStyle, lifecycleStyle, carrierBlockingReason, isCarrierDeactivated, type ComplianceSummary, type DocumentState } from '@/lib/states'
+import { SEVERITY_ORDER, enablementStyle, lifecycleStyle, carrierBlockingReason, blockingCountsLine, isCarrierDeactivated, type ComplianceSummary, type DocumentState } from '@/lib/states'
 import { canonicalPlate, canonicalRut, plateSearchKey, rutDigits, rutSearchKey } from '@/lib/identity'
 import { ContactCard, AddContactForm } from '@/components/dashboard/ContactCard'
 import { CarrierDocumentsTab } from '@/components/dashboard/carriers/CarrierDocumentsTab'
@@ -112,6 +112,8 @@ function EmpresaDetailPageInner() {
 
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
   const [reactivateOpen, setReactivateOpen] = useState(false)
+  // Activar una empresa en onboarding que no cumple los obligatorios (21/10).
+  const [activateExceptionOpen, setActivateExceptionOpen] = useState(false)
   const [clientsOpen, setClientsOpen] = useState(false)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
 
@@ -170,6 +172,11 @@ function EmpresaDetailPageInner() {
   /** Activar una empresa en onboarding: completa el alta, sin motivo ni flota que elegir. */
   async function handleActivateCarrier() {
     await lifecycleApi.activateCarrier(id)
+    await afterChange({ entity: 'carrier', id, type: 'update' })
+  }
+  /** Activar como excepción: no cumple los obligatorios; lo decide Certificación, con motivo. */
+  async function handleActivateException(body: LifecycleBody) {
+    await lifecycleApi.activateCarrier(id, { reason_id: body.reason_id, note: body.note })
     await afterChange({ entity: 'carrier', id, type: 'update' })
   }
   /** Reactivar una dada de baja, con motivo, eligiendo qué flota vuelve (D2, P3). */
@@ -388,8 +395,17 @@ function EmpresaDetailPageInner() {
         ) : undefined}
         menuItems={[
           ...(canEdit && shippersQuery.data ? [{ id: 'clients', label: 'Editar clientes', onSelect: () => setClientsOpen(true) }] : []),
+          // Onboarding (21/10): sale cuando cumple lo mismo que la habilitación. Si no
+          // cumple, solo Certificación la activa como excepción, con motivo; a los demás
+          // se les dice qué falta. La API aplica la misma regla.
+          // Activar siempre exige editar el Directorio (la ruta lo pide), también la excepción.
           ...(status === 'ONBOARDING' && canEdit ? [{ id: 'activate', label: 'Activar', onSelect: () => {
               setActivateError(null)
+              if (carrier.compliance_summary.requirements_met === false) {
+                if (canAdmin) setActivateExceptionOpen(true)
+                else setActivateError(`Faltan ${blockingCountsLine(carrier.compliance_summary)} para activarla. Lo puede activar Certificación como excepción.`)
+                return
+              }
               handleActivateCarrier().catch(e => setActivateError(e instanceof Error ? e.message : 'No se pudo activar.'))
             } }] : []),
           ...(isCarrierDeactivated(status) && canAdmin
@@ -558,6 +574,16 @@ function EmpresaDetailPageInner() {
           onClose={() => setBajaModalOpen(false)}
           onConfirm={handleDeactivateCarrier}
           impact={impactQuery.data ?? null}
+        />
+      )}
+
+      {activateExceptionOpen && (
+        <LifecycleDialog
+          action="activate" scope="carrier"
+          label={carrier.business_name || 'esta empresa'}
+          pending={blockingCountsLine(carrier.compliance_summary)}
+          onClose={() => setActivateExceptionOpen(false)}
+          onConfirm={handleActivateException}
         />
       )}
 

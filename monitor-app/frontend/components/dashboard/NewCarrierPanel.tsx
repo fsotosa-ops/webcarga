@@ -82,9 +82,10 @@ export function NewCarrierPanel({ open, initialBusinessName = '', onClose, onCre
         onChange={e => setForm(v => ({ ...v, tax_id: e.target.value }))}
         className={`${inputClass({ size: 'sm' })} w-full`}
       />
-      {form.tax_id.trim() === '' && (
-        <p className="text-[11px] text-informativo">Se creará en estado Onboarding, pendiente de RUT.</p>
-      )}
+      {/* Toda empresa nueva nace en onboarding (21/10), con o sin RUT. */}
+      <p className="text-[11px] text-informativo">
+        Se creará En onboarding: carga su documentación y actívala cuando cumpla los obligatorios.
+      </p>
       <input
         placeholder="Razón social"
         aria-label="Razón social"
