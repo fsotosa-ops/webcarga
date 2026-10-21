@@ -117,3 +117,38 @@ async def test_renombrar_un_cliente_no_corta_el_alta_de_sus_lugares(conexion_rev
     assert await conexion_revertida.fetchval(
         "SELECT count(*) FROM public.locations WHERE entity_type = 'SHIPPER' AND entity_id = $1::uuid AND name = 'ZZ-LOCAL-NUEVO'",
         sid) == 1
+
+
+# ── Tipos de operación del cliente (plan 2026-10-21) ────────────────────────────
+
+async def test_operaciones_declara_los_tipos_del_cliente_y_queda_auditado(conexion_revertida):
+    from tests.conftest import con_roles
+    sid = await _cliente_con_todo(conexion_revertida)
+    usuario = con_roles(await _usuario_real(conexion_revertida), "operations_supervisor")
+    pool = PoolDeUnaConexion(conexion_revertida)
+
+    fila = await patch_shipper(uuid.UUID(sid), ShipperPatchBody(operation_types=["EQUIPO_COMPLETO", "TRACTOREO"]),
+                               pool=pool, user=usuario)
+    assert fila["operation_types"] == ["TRACTOREO", "EQUIPO_COMPLETO"]   # orden canónico
+    fila = await patch_shipper(uuid.UUID(sid), ShipperPatchBody(operation_types=None), pool=pool, user=usuario)
+    assert fila["operation_types"] is None                              # null explícito = sin definir
+    campos = await conexion_revertida.fetch(
+        "SELECT field FROM public.audit_log WHERE entity_type = 'SHIPPER' AND entity_id = $1::uuid", sid)
+    assert [c["field"] for c in campos] == ["operation_types", "operation_types"]
+
+
+async def test_comercial_no_cambia_los_tipos_y_operaciones_no_renombra(conexion_revertida):
+    """Los tipos deciden el alcance en el Cierre: son de Operaciones (operations.configure);
+    el nombre y el estado siguen siendo de Comercial (commercial.edit)."""
+    from tests.conftest import con_roles
+    sid = await _cliente_con_todo(conexion_revertida)
+    base = await _usuario_real(conexion_revertida)
+    pool = PoolDeUnaConexion(conexion_revertida)
+    with pytest.raises(HTTPException) as exc:
+        await patch_shipper(uuid.UUID(sid), ShipperPatchBody(operation_types=["EQUIPO_COMPLETO"]),
+                            pool=pool, user=con_roles(base, "commercial_supervisor"))
+    assert exc.value.status_code == 403
+    with pytest.raises(HTTPException) as exc:
+        await patch_shipper(uuid.UUID(sid), ShipperPatchBody(name="Otro"),
+                            pool=pool, user=con_roles(base, "operations_supervisor"))
+    assert exc.value.status_code == 403

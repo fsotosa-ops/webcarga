@@ -15,9 +15,14 @@ vi.mock('@/lib/api/drivers', () => ({
   driversApi: { search: vi.fn() },
 }))
 vi.mock('@/lib/api/locations', () => ({
-  shippersApi: { list: vi.fn(), create: vi.fn() },
+  shippersApi: { list: vi.fn(), create: vi.fn(), get: vi.fn() },
   locationsApi: { list: vi.fn() },
 }))
+// El catálogo de tipos de operación (plan 2026-10-21).
+vi.mock('@/lib/api/config', () => ({ taxonomiesApi: { list: vi.fn().mockResolvedValue([
+  { id: 't-tr', label: 'Tractoreo', code: 'TRACTOREO' },
+  { id: 't-ec', label: 'Equipo Completo', code: 'EQUIPO_COMPLETO' },
+]) } }))
 
 const meta: TripsMeta = {
   statuses: [{ id: 'ASIGNADO', label: 'ASIGNADO',   group: 'otro' }],
@@ -54,6 +59,8 @@ async function pickDriver() {
 async function pickCliente(nombre = 'Walmart') {
   fireEvent.focus(screen.getByLabelText('Cliente'))
   fireEvent.click(await screen.findByText(nombre))
+  // El formulario lee el tipo de operación del cliente antes de dejar crear (plan 2026-10-21).
+  await screen.findByText(/según el cliente|Este cliente trabaja con los dos tipos/)
 }
 
 beforeEach(() => {
@@ -64,10 +71,39 @@ beforeEach(() => {
     { id: 's1', name: 'Walmart', status: 'ACTIVE' },
   ] as never)
   vi.mocked(shippersApi.create).mockReset()
+  // Por defecto, un cliente que trabaja con un solo tipo: el formulario no lo pregunta.
+  vi.mocked(shippersApi.get).mockReset().mockResolvedValue({ id: 's1', name: 'Walmart', status: 'ACTIVE', operation_types: ['EQUIPO_COMPLETO'] } as never)
   vi.mocked(locationsApi.list).mockReset().mockResolvedValue({ data: [], count: 0, page: 1, limit: 8 })
 })
 
 describe('TripAssignDialog', () => {
+  it('cliente de un solo tipo: lo dice y no lo pregunta ni lo declara', async () => {
+    vi.mocked(tripsApi.create).mockResolvedValue({ id: 't1' } as never)
+    renderCreate()
+    await pickCliente()
+    expect(await screen.findByText('Equipo Completo')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Tipo de operación/)).not.toBeInTheDocument()
+    await pickDriver()
+    fireEvent.click(screen.getByRole('button', { name: /Crear viaje/ }))
+    await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
+    expect(vi.mocked(tripsApi.create).mock.calls[0][0].operation_type_id).toBeUndefined()
+  })
+
+  it('cliente sin tipo (Spot): pide el tipo antes de crear y lo declara', async () => {
+    vi.mocked(shippersApi.get).mockResolvedValue({ id: 's1', name: 'Walmart', status: 'ACTIVE', operation_types: null } as never)
+    vi.mocked(tripsApi.create).mockResolvedValue({ id: 't1' } as never)
+    renderCreate()
+    await pickCliente()
+    await pickDriver()
+    const tipo = await screen.findByLabelText(/Tipo de operación/)
+    expect(screen.getByRole('button', { name: /Crear viaje/ })).toBeDisabled()
+    await screen.findByRole('option', { name: 'Tractoreo' })
+    fireEvent.change(tipo, { target: { value: 't-tr' } })
+    fireEvent.click(screen.getByRole('button', { name: /Crear viaje/ }))
+    await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
+    expect(vi.mocked(tripsApi.create).mock.calls[0][0].operation_type_id).toBe('t-tr')
+  })
+
   it('si la API rechaza la asignación (409) muestra su mensaje y no cierra', async () => {
     const onClose = vi.fn()
     vi.mocked(tripsApi.create).mockRejectedValue(new ApiError(
@@ -211,11 +247,16 @@ describe('TripAssignDialog', () => {
   it('un cliente nuevo se crea en el directorio al vuelo y el viaje lleva su id', async () => {
     vi.mocked(tripsApi.create).mockResolvedValue({ id: 't-new' } as never)
     vi.mocked(shippersApi.create).mockResolvedValue({ id: 's2', name: 'Agrosuper', status: 'ACTIVE' } as never)
+    // Un cliente recién creado no tiene tipo de operación: el formulario lo pide.
+    vi.mocked(shippersApi.get).mockResolvedValue({ id: 's2', name: 'Agrosuper', status: 'ACTIVE', operation_types: null } as never)
     renderCreate()
     await pickDriver()
     fireEvent.change(screen.getByLabelText('Cliente'), { target: { value: 'Agrosuper' } })
     fireEvent.click(await screen.findByText('Crear cliente “Agrosuper”'))
     await waitFor(() => expect(shippersApi.create).toHaveBeenCalledWith({ name: 'Agrosuper' }))
+    const tipo = await screen.findByLabelText(/Tipo de operación/)
+    await screen.findByRole('option', { name: 'Equipo Completo' })
+    fireEvent.change(tipo, { target: { value: 't-ec' } })
     fireEvent.click(screen.getByText('Crear viaje'))
     await waitFor(() => expect(tripsApi.create).toHaveBeenCalled())
     expect(vi.mocked(tripsApi.create).mock.calls[0][0].shipper_id).toBe('s2')

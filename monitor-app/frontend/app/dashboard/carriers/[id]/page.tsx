@@ -317,7 +317,7 @@ function EmpresaDetailPageInner() {
               ? <span>{derivedOperation ?? 'Sin determinar'} <span className="text-informativo">(según su flota)</span></span>
               : <span className="text-informativo">Cargando…</span>}
             <GestionDeclarada
-              carrierId={id}
+              guardar={tipos => carriersApi.patch(id, { management_types: tipos ?? [] })}
               declarado={carrier.management_types}
               derivado={derivedOperation}
               canEdit={canEdit && carrier.operational_status === 'ACTIVE'}

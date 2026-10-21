@@ -1,4 +1,4 @@
-import type { Location, LocationCreatePayload, LocationPatchPayload, LocationRate, LocationRateCreatePayload, LocationRatePatchPayload } from '@/lib/types'
+import type { ManagementType, Location, LocationCreatePayload, LocationPatchPayload, LocationRate, LocationRateCreatePayload, LocationRatePatchPayload } from '@/lib/types'
 import { apiFetch } from './client'
 
 export type LocationListParams = {
@@ -42,6 +42,9 @@ export type Shipper = {
 /** Un cliente con lo que muestran Directorio › Clientes y su ficha. Viajes:
  *  los planificados en los últimos 30 días. */
 export type ShipperRow = Shipper & {
+  /** Con qué tipos de operación trabaja (plan 2026-10-21). Con uno solo, es el tipo de
+   *  sus viajes en el Cierre. `null` = sin definir. */
+  operation_types: ManagementType[] | null
   tms_names: number
   locations: number
   origins:   number
@@ -49,7 +52,9 @@ export type ShipperRow = Shipper & {
   trips_30d: number
 }
 
-export type ShipperPatch = { name?: string; status?: 'ACTIVE' | 'INACTIVE' }
+/** `operation_types: null` = sin definir. Los edita Operaciones (operations.configure);
+ *  el nombre y el estado, Comercial (commercial.edit). */
+export type ShipperPatch = { name?: string; status?: 'ACTIVE' | 'INACTIVE'; operation_types?: ManagementType[] | null }
 
 export const locationsApi = {
   list: (params?: LocationListParams) => {

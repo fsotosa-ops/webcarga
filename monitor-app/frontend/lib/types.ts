@@ -321,6 +321,9 @@ export type TripCreatePayload = {
   driver_id?:             string | null
   tractor_asset_id?:      string | null
   trailer_asset_id?:      string | null
+  /** El tipo de operación declarado (plan 2026-10-21): se manda cuando el cliente
+   *  trabaja con los dos tipos o no tiene tipo (Spot); con uno solo, sale del cliente. */
+  operation_type_id?:     string | null
 }
 
 // ── Trips (app.trips via FastAPI) ──────────────────────────────────
@@ -486,6 +489,13 @@ export type Trip = {
   driver_id:              string | null
   tractor_asset_id:       string | null
   trailer_asset_id:       string | null
+  /** El tipo de operación del viaje y de dónde sale (plan 2026-10-21): declarado por
+   *  Operaciones, del cliente de un solo tipo o del tracto. Opcionales: backend y
+   *  frontend se despliegan por separado. */
+  operation_type_id?:       string | null
+  operation_type_label?:    string | null
+  operation_type_source?:   OperationTypeSource | null
+  operation_type_conflict?: boolean
   manually_edited_fields: string[]
   edited_at:              string | null
   edited_by:              string | null  // nombre/email ya resueltos por el backend, nunca un uuid
@@ -1307,6 +1317,14 @@ export type PreCierreEscalations = {
     carrier_id: string; carrier_name: string; viajes: number
     trips?: TripRef[]
   } & ScopedNotice)[]
+  /** El tracto del viaje tiene otro tipo que el único con que trabaja el cliente (plan
+   *  2026-10-21, P5 de Operaciones). El viaje ya cuenta con el tipo del cliente; se
+   *  avisa para que Operaciones confirme o corrija. No bloquea. Opcional: backend y
+   *  frontend se despliegan por separado. */
+  OPERATION_TYPE_CONFLICT?: ({
+    tractor_plate: string; asset_id: string; client_name: string; carrier_id: string | null; carrier_name: string | null
+    tractor_type: string; client_type: string; trips: TripRef[]
+  } & ScopedNotice)[]
 }
 /** El tipo de un aviso de Pendientes: una escalación del pre-cierre o el desbalance de
  *  dotación de una empresa (`GET /carriers/fleet-driver-gap`). */
@@ -1579,10 +1597,19 @@ export type ViajeDelCierre = {
   carrier_id?:             string | null
   driver_id?:              string | null
   tractor_asset_id?:       string | null
-  /** El alcance del Cierre (D6): el del tracto resuelto; `null` sin tracto (se ve en
-   *  los dos). Opcional: backend y frontend se despliegan por separado. */
+  /** El alcance del Cierre: el tipo de operación del viaje (declarado, del cliente de
+   *  un solo tipo o del tracto, plan 2026-10-21); `null` sin tipo (se ve en los dos).
+   *  Opcional: backend y frontend se despliegan por separado. */
   scope?:                  ClosureScope | null
+  /** De dónde sale el tipo del viaje. */
+  operation_type_source?:  OperationTypeSource | null
+  /** El tracto tiene otro tipo que el único con que trabaja el cliente: cuenta el del
+   *  cliente y Pendientes lo avisa (OPERATION_TYPE_CONFLICT). */
+  operation_type_conflict?: boolean
 }
+
+/** De dónde sale el tipo de operación de un viaje (app.v_trip_fleet_resolution). */
+export type OperationTypeSource = 'declared' | 'client' | 'tractor'
 
 /** Una pieza de la flota del viaje que no está resuelta contra el directorio. */
 export type FleetGap = 'tractor' | 'driver'

@@ -11,10 +11,11 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
-from ..authz import Permission, require
+from ..authz import Permission, require, require_fields
 from ..db import get_pool
+from ..schemas.common import ManagementType, normalize_management_types
 from ..services.audit import log_change
 
 router = APIRouter(prefix="/shippers", tags=["shippers"])
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/shippers", tags=["shippers"])
 # Una fila por cliente con lo que la lista y la ficha muestran. Los viajes son
 # los planificados en los últimos 30 días, en fecha de Chile.
 _SQL_CLIENTES = """
-SELECT sh.id, sh.name, sh.status,
+SELECT sh.id, sh.name, sh.status, sh.operation_types,
        (SELECT count(*) FROM app.tms_client_shippers m WHERE m.shipper_id = sh.id) AS tms_names,
        lug.locations, lug.origins,
        (SELECT count(*) FROM public.carrier_shippers cs
@@ -47,13 +48,37 @@ class ShipperPatchBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = None
     status: Literal["ACTIVE", "INACTIVE"] | None = None
+    # Con qué tipos de operación trabaja (plan 2026-10-21). Con uno solo, es el tipo de
+    # sus viajes (app.v_trip_fleet_resolution). `null` explícito = sin definir.
+    operation_types: list[ManagementType] | None = None
 
+    @field_validator("operation_types", mode="after")
+    @classmethod
+    def _normalize_operation_types(cls, v):
+        return normalize_management_types(v)
+
+    def sent(self) -> dict:
+        """Lo que se mandó, incluido un `operation_types: null` (quitarlo)."""
+        datos = self.model_dump(exclude_none=True)
+        if "operation_types" in self.model_fields_set:
+            datos["operation_types"] = self.operation_types
+        return datos
+
+
+# Permiso por campo: el nombre y el estado son de Comercial; los tipos de operación
+# deciden el alcance de sus viajes en el Cierre, así que son de Operaciones.
+SHIPPER_FIELD_PERMISSIONS: dict[str, Permission] = {
+    "name": Permission.COMMERCIAL_EDIT,
+    "status": Permission.COMMERCIAL_EDIT,
+    "operation_types": Permission.OPERATIONS_CONFIGURE,
+}
 
 # Una sentencia por campo editable, escrita entera: ningún nombre de columna
 # se arma con texto que venga del pedido.
 _SQL_ACTUALIZAR = {
     "name":   "UPDATE public.shippers SET name = $2 WHERE id = $1::uuid",
     "status": "UPDATE public.shippers SET status = $2 WHERE id = $1::uuid",
+    "operation_types": "UPDATE public.shippers SET operation_types = $2 WHERE id = $1::uuid",
 }
 
 
@@ -97,18 +122,22 @@ async def patch_shipper(
     shipper_id: UUID,
     body: ShipperPatchBody,
     pool=Depends(get_pool),
-    user=Depends(require(Permission.COMMERCIAL_EDIT)),
+    # El permiso real es por campo (SHIPPER_FIELD_PERMISSIONS), como en conductores.
+    user=Depends(require(Permission.COMMERCIAL_READ)),
 ):
     """Desactivar no borra lugares ni vínculos: el cliente deja de ofrecerse
     para vincular (tms_clients exige status ACTIVE) y su ficha sigue abriendo."""
     sid = str(shipper_id)
-    cambios = {k: v for k, v in body.model_dump(exclude_none=True).items()}
+    cambios = body.sent()
+    if not cambios:
+        raise HTTPException(422, "Ningún campo enviado")
+    require_fields(user, cambios, SHIPPER_FIELD_PERMISSIONS)
     if "name" in cambios:
         cambios["name"] = _nombre_limpio(cambios["name"])
     async with pool.acquire() as conn:
         async with conn.transaction():
             actual = await conn.fetchrow(
-                "SELECT name, status FROM public.shippers WHERE id = $1::uuid FOR UPDATE", sid)
+                "SELECT name, status, operation_types FROM public.shippers WHERE id = $1::uuid FOR UPDATE", sid)
             if not actual:
                 raise HTTPException(404, "Cliente no encontrado")
             for campo, valor in cambios.items():

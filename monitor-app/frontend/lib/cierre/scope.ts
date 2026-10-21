@@ -1,7 +1,8 @@
 import type { ClosureScope } from '@/lib/types'
 
-/** Si algo del Cierre (un viaje, un aviso) se ve en el alcance elegido (D6): el de
- *  su tracto; sin alcance (un viaje sin tracto, un aviso de empresa) se ve en los dos,
+/** Si algo del Cierre (un viaje, un aviso) se ve en el alcance elegido (D6): el tipo de
+ *  operación del viaje (declarado, del cliente de un solo tipo o del tracto, plan
+ *  2026-10-21); sin alcance (un viaje sin tipo, un aviso de empresa) se ve en los dos,
  *  porque es justo lo que hay que resolver. `undefined`: el backend todavía no lo manda. */
 export function inScope(scope: ClosureScope | null | undefined, alcance: ClosureScope): boolean {
   return !scope || scope === alcance

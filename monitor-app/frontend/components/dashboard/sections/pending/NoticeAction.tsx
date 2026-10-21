@@ -12,6 +12,7 @@ import { AltaDeFlota } from '@/components/dashboard/AltaDeFlota'
 import { VincularConductorPropuesto } from '../VincularConductorPropuesto'
 import type { Notice } from '@/lib/cierre/closureNotices'
 import { invalidateDirectory, type DirectoryChange } from '@/lib/queries/directorio'
+import { assetHref } from '@/lib/navegacion/directory'
 
 const ENLACE = 'text-etiqueta font-semibold text-accion hover:underline'
 
@@ -55,6 +56,15 @@ export function NoticeAction({ notice, fecha }: { notice: Notice; fecha: string 
     }
     case 'SIN_TIPO_OPERACION':
       return <a href={`/dashboard/carriers/${notice.source.carrier_id}?tab=equipos`} target="_blank" className={ENLACE}>Ir a la ficha de la empresa</a>
+    case 'OPERATION_TYPE_CONFLICT':
+      // Lo más común es un tracto mal clasificado (P5 de Operaciones): se corrige en su
+      // ficha. Si el viaje fue la excepción, su tipo se cambia desde el viaje (sus
+      // números están en la fila).
+      return (
+        <a href={assetHref(notice.source.asset_id)} target="_blank" className={ENLACE}>
+          Revisar el tipo de {notice.source.tractor_plate}
+        </a>
+      )
     case 'EMPRESA_NO_RECONOCIDA':
       // Derecho a la ficha que el directorio tiene para esa patente, pestaña Equipos:
       // es donde se corrige (el buscador de empresas no busca por patente).

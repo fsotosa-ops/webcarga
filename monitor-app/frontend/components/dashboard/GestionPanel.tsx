@@ -20,6 +20,7 @@ import { InsuranceAlertBadge } from '@/components/ui/InsuranceAlertBadge'
 import { PendingDocsBadge } from '@/components/ui/PendingDocsBadge'
 import { StatusChip } from '@/components/ui/StatusChip'
 import { alertSeverityStyle, tripStageStyle, enablementStyleFromFlag, lifecycleStyle } from '@/lib/states'
+import { TripOperationType } from './TripOperationType'
 import { EntityCell } from './EntityCell'
 import { Section } from '@/components/ui/Section'
 import { KeyValueList } from '@/components/ui/KeyValueList'
@@ -224,6 +225,7 @@ export function GestionPanel({ trip, meta, onSaved }: Props) {
             </button>
           </div>
           <KeyValueList items={[{ label: 'TMS reporta', value: <StatusBadge status={trip.current_status} meta={meta} /> }]} />
+          <TripOperationType trip={trip} onSaved={onSaved} />
 
           <div className="mt-2">
           {trip.manual_status ? (

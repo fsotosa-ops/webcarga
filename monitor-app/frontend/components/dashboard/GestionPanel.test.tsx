@@ -7,6 +7,8 @@ import { driversApi } from '@/lib/api/drivers'
 import { ApiError } from '@/lib/api/client'
 import type { Trip } from '@/lib/types'
 
+// El tipo de operación del viaje se cambia con trips.edit_sensitive (TripOperationType).
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
 vi.mock('@/lib/api/trips', () => ({
   tripsApi: { assignFleetLink: vi.fn(), patch: vi.fn(), resetField: vi.fn(), removeFleetLink: vi.fn() },
 }))

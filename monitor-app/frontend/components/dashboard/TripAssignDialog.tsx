@@ -12,6 +12,10 @@ import { PanelLateral } from '@/components/ui/PanelLateral'
 import { Field, inputClass } from '@/components/ui/Field'
 import { Button } from '@/components/ui/Button'
 import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { shippersApi } from '@/lib/api/locations'
+import { taxonomiesApi } from '@/lib/api/config'
+import { clientKeys } from '@/lib/queries/clientes'
+import { taxonomyKey } from '@/lib/queries/taxonomies'
 
 interface Props {
   open:      boolean
@@ -64,6 +68,9 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
   const [form, setForm]             = useState<Partial<TripCreatePayload>>({})
   // El cliente del directorio (spec 2026-10-11): el viaje guarda su id.
   const [cliente, setCliente] = useState<ClienteElegido | null>(null)
+  // El tipo de operación (plan 2026-10-21): si el cliente trabaja con uno solo, sale de
+  // él y no se pregunta; con los dos o ninguno (Spot), se declara aquí.
+  const [operationTypeId, setOperationTypeId] = useState('')
   const [originMode, setOriginMode] = useState<OriginMode>('none')
   const [originTms, setOriginTms]   = useState('')
   const [stops, setStops]           = useState<TripStopCreatePayload[]>([])
@@ -73,6 +80,24 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
   const [err, setErr]               = useState<string | null>(null)
   const formId                      = useId()
   const firstFieldRef               = useRef<HTMLInputElement>(null)
+
+  const clienteQuery = useQuery({
+    queryKey: clientKeys.detail(cliente?.id ?? ''),
+    queryFn: () => shippersApi.get(cliente!.id),
+    enabled: open && !!cliente,
+  })
+  const operationTypesQuery = useQuery({
+    queryKey: taxonomyKey('WEBCARGA_OPERATION_TYPE'),
+    queryFn: () => taxonomiesApi.list('WEBCARGA_OPERATION_TYPE'),
+    staleTime: 5 * 60_000,
+    enabled: open,
+  })
+  const clientTypes = clienteQuery.data?.operation_types ?? null
+  const clientSingleType = clientTypes?.length === 1
+    ? (operationTypesQuery.data ?? []).find(t => t.code === clientTypes[0]) ?? null
+    : null
+  // Hay que preguntarlo solo cuando el cliente ya cargó y no tiene un tipo único.
+  const asksOperationType = !!cliente && clienteQuery.isSuccess && !clientSingleType
 
   const availableQuery = useQuery({
     queryKey: ['available-drivers', fecha],
@@ -84,6 +109,7 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
     if (open) {
       setForm({ planning_date: todayISO() })
       setCliente(null)
+      setOperationTypeId('')
       setOriginMode('none')
       setOriginTms('')
       setStops([])
@@ -116,6 +142,7 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
   async function handleCreate() {
     if (!form.planning_date) { setErr('La fecha de planificación es requerida'); return }
     if (!cliente) { setErr('Elige el cliente del viaje'); return }
+    if (asksOperationType && !operationTypeId) { setErr('Elige el tipo de operación del viaje'); return }
     if (!fleet.driver_id) { setErr('Elige un conductor del directorio de Empresas antes de crear el viaje'); return }
     if (stops.some(s => s.stop_type !== 'ORIGIN' && !s.local.trim())) { setErr('Cada destino debe tener un nombre'); return }
     setSaving(true); setErr(null)
@@ -137,6 +164,7 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
         carrier_id:               fleet.carrier_id ?? undefined,
         driver_id:                fleet.driver_id ?? undefined,
         tractor_asset_id:        fleet.tractor_asset_id ?? undefined,
+        operation_type_id:       asksOperationType ? operationTypeId : undefined,
       }
       const created = await tripsApi.create(payload)
       // Se asignó, pero la empresa no está habilitada: decirlo ANTES de seguir,
@@ -154,7 +182,9 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
 
   if (!open) return null
 
+  // Mientras carga el cliente no se sabe si hay que declarar el tipo: no se crea.
   const ready = !!form.planning_date && !!cliente && !!fleet.driver_id
+    && clienteQuery.isSuccess && (!asksOperationType || !!operationTypeId)
 
   return (
     <PanelLateral
@@ -195,9 +225,24 @@ export function TripAssignDialog({ open, onClose, onCreated, meta, fecha, initia
                   {id => <input id={id} ref={firstFieldRef} type="date" value={form.planning_date ?? ''} onChange={e => set('planning_date', e.target.value)} className={INPUT} />}
                 </Field>
                 <Field label="Cliente" required>
-                  {id => <ClientPicker id={id} value={cliente} onChange={setCliente} placeholder="Buscar o crear cliente…" />}
+                  {id => <ClientPicker id={id} value={cliente}
+                    onChange={c => { setCliente(c); setOperationTypeId('') }} placeholder="Buscar o crear cliente…" />}
                 </Field>
               </div>
+              {clientSingleType && (
+                <p className="text-dato text-informativo">
+                  Tipo de operación: <span className="font-semibold text-text-primary">{clientSingleType.label}</span> (según el cliente)
+                </p>
+              )}
+              {asksOperationType && (
+                <Field label="Tipo de operación" required
+                  hint="Este cliente trabaja con los dos tipos o no tiene uno definido: indica cuál es este viaje.">
+                  {id => <select id={id} value={operationTypeId} onChange={e => setOperationTypeId(e.target.value)} className={INPUT}>
+                    <option value="">Elige…</option>
+                    {(operationTypesQuery.data ?? []).map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                  </select>}
+                </Field>
+              )}
               <Field label="Tipo de carga">
                 {id => <select id={id}
                   value={form.cargo_type ?? ''}

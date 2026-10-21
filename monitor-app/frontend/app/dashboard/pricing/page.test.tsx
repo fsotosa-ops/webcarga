@@ -15,7 +15,7 @@ vi.mock('@/hooks/useTripsMeta', () => ({ useTripsMeta: () => ({ data: { operatio
 let canEdit = true
 vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => canEdit }))
 
-const SHIPPER: ShipperRow = { id: 'shipper-1', name: 'Walmart', status: 'ACTIVE', tms_names: 1, locations: 2, origins: 0, carriers: 1, trips_30d: 10 }
+const SHIPPER: ShipperRow = { id: 'shipper-1', name: 'Walmart', status: 'ACTIVE', operation_types: null, tms_names: 1, locations: 2, origins: 0, carriers: 1, trips_30d: 10 }
 const PENDING: Location = {
   id: 'loc-9', entity_type: 'SHIPPER', entity_id: 'shipper-1', site_number: null,
   name: 'Empresas Carozzi S.A.', country_code: 'CL', format: null, address: null,

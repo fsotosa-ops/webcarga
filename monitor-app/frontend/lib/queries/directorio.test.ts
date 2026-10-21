@@ -265,10 +265,11 @@ describe('cobertura', () => {
   })
 
   // Escriben y avisan por un callback; quien los monta llama a invalidateDirectory (R12).
+  // GestionDeclarada salió el 21/10: ya no escribe, recibe `guardar` de quien la monta
+  // (la ficha de empresa, donde la regla de arriba ve el carriersApi.patch).
   const DELEGAN: Record<string, string> = {
     'components/dashboard/NewCarrierPanel.tsx': 'onCreated',
     'components/dashboard/AltaDeFlota.tsx': 'onCreado',
-    'components/compliance/GestionDeclarada.tsx': 'onGuardado',
     'components/dashboard/sections/VincularConductorPropuesto.tsx': 'onVinculado',
   }
   const MUTACION = /(carriersApi\.(patch|create|delete|assignDriver|assignAsset|unassignDriver|unassignAsset|createContact)|driversApi\.(create|patch|createContact)|assetsApi\.(create|patch|assignDriver|unassignDriver)|contactsApi\.(patch|delete))\(/

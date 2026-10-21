@@ -15,7 +15,8 @@ import json
 from dataclasses import dataclass, field
 from datetime import date as _date
 
-from .closure_scope import scope_sql, tractor_scope_join
+from .cliente_del_viaje import join_cliente, nombre_del_cliente
+from .closure_scope import operation_type_join, scope_sql, tractor_scope_join
 from .destination_zone import trip_zones
 
 
@@ -35,6 +36,7 @@ def _single_value(values: list[str]) -> str | None:
 ESCALACIONES = (
     "PATENTE_NO_REGISTRADA", "EMPRESA_NO_RECONOCIDA", "CONDUCTOR_NO_REGISTRADO",
     "EMPRESA_ONBOARDING", "SIN_TIPO_OPERACION", "CONDUCTOR_SIN_EMPRESA",
+    "OPERATION_TYPE_CONFLICT",
 )
 
 
@@ -174,19 +176,42 @@ JOIN public.carriers c ON c.id = aa.carrier_id AND c.operational_status = 'ACTIV
 WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND a.webcarga_operation_type_id IS NULL
 """
 
+# El tracto del viaje tiene un tipo distinto del único con que trabaja el cliente
+# (plan 2026-10-21, P5 de Operaciones). El viaje ya cuenta con el tipo del cliente;
+# el aviso es para que Operaciones confirme o corrija (el camión en el Directorio, o
+# el tipo del viaje). Uno por tracto y cliente, con sus viajes. No bloquea.
+_SQL_TIPO_DISTINTO = f"""
+SELECT ta.license_plate AS tractor_plate, {nombre_del_cliente('t', 'sh')} AS client_name, ta.id::text AS asset_id,
+       c.id::text AS carrier_id, c.business_name AS carrier_name,
+       tt.label AS tractor_type, sc.label AS client_type,
+       {scope_sql('sc')} AS scope,
+       json_agg(json_build_object('id', t.id::text, 'code', t.source_system_trip_id)
+                ORDER BY t.source_system_trip_id)::text AS trips
+FROM app.trips t
+JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id AND vfr.operation_type_conflict
+JOIN public.assets ta ON ta.id = vfr.resolved_tractor_asset_id
+JOIN app.status_taxonomies tt ON tt.id = ta.webcarga_operation_type_id
+{operation_type_join('vfr.resolved_operation_type_id', 'sc')}
+{join_cliente('t', 'sh')}
+LEFT JOIN public.carriers c ON c.id = vfr.resolved_carrier_id
+WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
+-- Por posición: `client_name` es también una columna de app.trips, y por nombre agruparía por esa.
+GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
+"""
+
 # PROPONE, no escribe (minuta 25/08): solo con el padrón en silencio y una sola
 # empresa en todos sus viajes. El vínculo lo escribe una persona desde el panel.
 _SQL_SIN_EMPRESA = f"""
 SELECT vfr.resolved_driver_id::text AS driver_id, d.full_name AS driver_name,
        min(vfr.resolved_carrier_id::text) AS carrier_id, min(c.business_name) AS carrier_name,
        count(*) AS viajes,
-       -- Sus viajes con su Nº (D8) y el alcance de sus tractos, si es uno solo (D6).
+       -- Sus viajes con su Nº (D8) y el alcance de esos viajes, si es uno solo (D6).
        json_agg(json_build_object('id', t.id::text, 'code', t.source_system_trip_id)
                 ORDER BY t.source_system_trip_id)::text AS trips,
        CASE WHEN count(DISTINCT sc.code) = 1 THEN min({scope_sql('sc')}) END AS scope
 FROM app.trips t
 JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id
-{tractor_scope_join('vfr.resolved_tractor_asset_id', 'sc')}
+{operation_type_join('vfr.resolved_operation_type_id', 'sc')}
 JOIN public.drivers d ON d.id = vfr.resolved_driver_id AND d.operational_status = 'ACTIVE'
 JOIN public.carriers c ON c.id = vfr.resolved_carrier_id AND c.operational_status = 'ACTIVE'
 WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
@@ -244,5 +269,7 @@ async def avisos_del_dia(conn, fecha: _date) -> dict:
     for aviso in sin_empresa:
         aviso["trips"] = [{**t, "zone": zonas.get(t["id"], "Sin clasificar")} for t in aviso["trips"]]
     escalations["CONDUCTOR_SIN_EMPRESA"] = sin_empresa
+    escalations["OPERATION_TYPE_CONFLICT"] = [
+        {**dict(r), "trips": json.loads(r["trips"])} for r in await conn.fetch(_SQL_TIPO_DISTINTO, fecha)]
     auto_resolved = [_resuelta(r) for r in await conn.fetch(_SQL_RESUELTAS, fecha)]
     return {"auto_resolved": auto_resolved, "escalations": escalations}

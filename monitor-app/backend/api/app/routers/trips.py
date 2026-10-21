@@ -8,11 +8,12 @@ from typing import Annotated, Any, Optional
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require, require_fields
 from ..db import get_pool
-from ..services.closure_scope import scope_sql, tractor_scope_join
+from ..services.closure_scope import operation_type_join, scope_sql
+from ..services import trip_operation_type
 from ..services.cliente_del_viaje import (
     SIN_VINCULAR, join_cliente, leer_filtro_de_cliente, nombre_del_cliente, resolver_cliente, texto_del_cliente_en_el_tms,
 )
@@ -511,6 +512,12 @@ _TRIP_SELECT = """
     vfr.resolved_carrier_id                        AS carrier_id,
     vfr.resolved_driver_id                         AS driver_id,
     vfr.resolved_tractor_asset_id                  AS tractor_asset_id,
+    -- El tipo de operación del viaje y de dónde sale (plan 2026-10-21): declarado,
+    -- del cliente de un solo tipo o del tracto. La regla está en la vista.
+    vfr.resolved_operation_type_id::text           AS operation_type_id,
+    (SELECT label FROM app.status_taxonomies WHERE id = vfr.resolved_operation_type_id) AS operation_type_label,
+    vfr.operation_type_source,
+    COALESCE(vfr.operation_type_conflict, false)   AS operation_type_conflict,
     fl.trailer_asset_id,
     t.edited_at,
     t.updated_at,
@@ -1432,6 +1439,9 @@ class TripCreateBody(BaseModel):
     driver_id:              Optional[str] = None
     tractor_asset_id:       Optional[str] = None
     trailer_asset_id:       Optional[str] = None
+    # El tipo de operación declarado (plan 2026-10-21): el formulario lo precarga si el
+    # cliente trabaja con un solo tipo y lo exige si trabaja con dos o ninguno (Spot).
+    operation_type_id:      Optional[str] = None
 
 
 MAPPED_TMS_IDS = {t["id"] for t in _TMS_META if t["id"] != "manual"}
@@ -1754,6 +1764,9 @@ async def _insert_trip(conn, body: TripCreateBody, user: dict, valid_statuses: s
             "UPDATE app.trips_manual SET fleet_link_id = $1 WHERE id = $2",
             link_id, trip_id,
         )
+
+    if body.operation_type_id:
+        await trip_operation_type.declare(conn, trip_id, body.operation_type_id, note=None, actor=user["sub"])
 
     return trip_id
 
@@ -2159,7 +2172,7 @@ async def cierre_viajes(
         SELECT g.*, ur.label AS unassigned_reason_label, {scope_sql('sc')} AS scope
         FROM g
         LEFT JOIN app.status_taxonomies ur ON ur.id = g.unassigned_reason_id
-        {tractor_scope_join('g.tractor_asset_id', 'sc')}
+        {operation_type_join('g.operation_type_id', 'sc')}
         ORDER BY g.grupo, g.planning_date DESC
         """,
         day,
@@ -2198,8 +2211,11 @@ async def cierre_viajes(
             "carrier_id": r["carrier_id"],
             "driver_id": r["driver_id"],
             "tractor_asset_id": r["tractor_asset_id"],
-            # El alcance del Cierre (D6): el del tracto resuelto; sin tracto, None (los dos).
+            # El alcance del Cierre: el tipo del viaje (declarado, del cliente de un solo
+            # tipo o del tracto, plan 2026-10-21); sin tipo, None (los dos).
             "scope": r["scope"],
+            "operation_type_source": r["operation_type_source"],
+            "operation_type_conflict": r["operation_type_conflict"],
         })
 
     # Una asignación incompleta bloquea solo si es del día (decisión del 11/10).
@@ -2842,6 +2858,47 @@ async def remove_fleet_link(
     if link_id:
         await _log_system_note(pool, trip_id, user, "Desvinculó la empresa transportista")
     return {"ok": True}
+
+
+class TripOperationTypeBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation_type_id: str
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+@router.put("/{trip_id}/operation-type")
+async def declare_trip_operation_type(
+    trip_id: str, body: TripOperationTypeBody, pool=Depends(get_pool),
+    user=Depends(require(Permission.TRIPS_EDIT_SENSITIVE)),
+):
+    """Operaciones declara el tipo de operación del viaje (plan 2026-10-21): gana sobre
+    el del cliente y el del tracto. Mismo permiso que el vínculo manual de flota."""
+    await exigir_vigentes(pool, [trip_id])
+    if not await pool.fetchval("SELECT 1 FROM app.trips WHERE id = $1", trip_id):
+        raise HTTPException(404, "Viaje no encontrado")
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await _lock_trip_for_update(conn, trip_id)
+            label = await trip_operation_type.declare(
+                conn, trip_id, body.operation_type_id, note=body.note, actor=user["sub"])
+    await _log_system_note(pool, trip_id, user, f"Declaró el tipo de operación: {label}")
+    return await get_trip(trip_id, pool, user)
+
+
+@router.delete("/{trip_id}/operation-type")
+async def clear_trip_operation_type(
+    trip_id: str, pool=Depends(get_pool), user=Depends(require(Permission.TRIPS_EDIT_SENSITIVE)),
+):
+    """Quita lo declarado: el viaje vuelve al tipo del cliente o del tracto."""
+    await exigir_vigentes(pool, [trip_id])
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await _lock_trip_for_update(conn, trip_id)
+            cleared = await trip_operation_type.clear(conn, trip_id, actor=user["sub"])
+    if cleared:
+        await _log_system_note(pool, trip_id, user, "Quitó el tipo de operación declarado")
+    return await get_trip(trip_id, pool, user)
 
 
 @router.delete("/{trip_id}/overrides/{field}")

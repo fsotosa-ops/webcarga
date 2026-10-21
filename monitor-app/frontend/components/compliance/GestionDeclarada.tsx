@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { Check, PenLine, X } from 'lucide-react'
-import { carriersApi } from '@/lib/api/carriers'
 import { ApiError } from '@/lib/api/client'
 import type { ManagementType } from '@/lib/types'
 
@@ -12,11 +11,17 @@ const GESTIONES: { codigo: ManagementType; label: string }[] = [
 ]
 
 interface Props {
-  carrierId: string
   /** Lo declarado hoy. Null o vacío = nadie lo eligió nunca. */
   declarado: ManagementType[] | null
   canEdit: boolean
+  /** Cómo se guarda: la gestión de una empresa (`management_types`) o los tipos con que
+   *  trabaja un cliente (`operation_types`). Es el mismo par Tractoreo / Equipo Completo;
+   *  la variante es una prop, no un componente hermano. Vacío se guarda como `null`. */
+  guardar: (tipos: ManagementType[] | null) => Promise<unknown>
   onGuardado: () => Promise<void> | void
+  /** Qué dice cuando no hay nada declarado, y cómo se nombra en los botones. */
+  vacio?: string
+  nombre?: string
   /** El tipo derivado de la flota, como lo muestra el chip vecino ("Tractoreo",
    *  "Tractoreo + Equipo Completo"). Si lo declarado dice lo mismo, no se repite:
    *  queda solo el lápiz. Si difiere, se marca como "Declarado: …" (regla del 12/10:
@@ -47,7 +52,10 @@ interface Props {
  * Dos marcas independientes y no un desplegable de tres: marcar las dos **es**
  * el caso mixto.
  */
-export function GestionDeclarada({ carrierId, declarado, canEdit, onGuardado, derivado }: Props) {
+export function GestionDeclarada({
+  declarado, canEdit, guardar: guardarTipos, onGuardado, derivado,
+  vacio = 'Gestión sin declarar', nombre = 'el tipo de gestión',
+}: Props) {
   const [editando, setEditando] = useState(false)
   const [borrador, setBorrador] = useState<ManagementType[]>(declarado ?? [])
   const [guardando, setGuardando] = useState(false)
@@ -71,11 +79,11 @@ export function GestionDeclarada({ carrierId, declarado, canEdit, onGuardado, de
     setGuardando(true)
     setError(null)
     try {
-      await carriersApi.patch(carrierId, { management_types: borrador })
+      await guardarTipos(borrador.length ? borrador : null)
       await onGuardado()
       setEditando(false)
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'No se pudo guardar el tipo de gestión')
+      setError(e instanceof ApiError ? e.message : `No se pudo guardar ${nombre}`)
     } finally {
       setGuardando(false)
     }
@@ -83,7 +91,7 @@ export function GestionDeclarada({ carrierId, declarado, canEdit, onGuardado, de
 
   if (!editando) {
     const etiquetas = (declarado ?? []).map(t => GESTIONES.find(g => g.codigo === t)?.label ?? t)
-    const etiqueta = etiquetas.length ? etiquetas.join(' + ') : 'Gestión sin declarar'
+    const etiqueta = etiquetas.length ? etiquetas.join(' + ') : vacio
     const mismaQueLaFlota = !!derivado && etiquetas.length > 0 &&
       [...etiquetas].sort().join('+') === derivado.split(' + ').sort().join('+')
     const difiere = !!derivado && etiquetas.length > 0 && !mismaQueLaFlota
@@ -96,7 +104,7 @@ export function GestionDeclarada({ carrierId, declarado, canEdit, onGuardado, de
         </span>}
         {canEdit && (
           <button type="button" onClick={abrir}
-                  aria-label="Editar el tipo de gestión"
+                  aria-label={`Editar ${nombre}`}
                   className="text-informativo hover:text-accent">
             <PenLine size={11} />
           </button>
@@ -115,7 +123,7 @@ export function GestionDeclarada({ carrierId, declarado, canEdit, onGuardado, de
         </label>
       ))}
       <button type="button" onClick={guardar} disabled={guardando}
-              aria-label="Guardar el tipo de gestión"
+              aria-label={`Guardar ${nombre}`}
               className="text-accent hover:opacity-80 disabled:opacity-40">
         <Check size={12} />
       </button>

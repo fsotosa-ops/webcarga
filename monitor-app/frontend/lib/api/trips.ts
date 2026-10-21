@@ -218,6 +218,15 @@ export const tripsApi = {
       body: JSON.stringify({ driver_id: driverId, trip_ids: tripIds }),
     }),
 
+  /** Operaciones declara el tipo de operación del viaje: gana sobre el del cliente y el
+   *  del tracto (plan 2026-10-21). */
+  declareOperationType: (id: string, body: { operation_type_id: string; note?: string }) =>
+    apiFetch<Trip>(`/api/v1/trips/${id}/operation-type`, { method: 'PUT', body: JSON.stringify(body) }),
+
+  /** Quita lo declarado: el viaje vuelve al tipo del cliente o del tracto. */
+  clearOperationType: (id: string) =>
+    apiFetch<Trip>(`/api/v1/trips/${id}/operation-type`, { method: 'DELETE' }),
+
   removeFleetLink: (id: string) =>
     apiFetch<{ ok: boolean }>(`/api/v1/trips/${id}/fleet-link`, {
       method: 'DELETE',

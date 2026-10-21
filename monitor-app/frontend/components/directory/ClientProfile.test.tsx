@@ -52,6 +52,24 @@ beforeEach(() => {
 })
 
 describe('ClientProfile', () => {
+  it('los tipos de operación: un solo tipo manda sobre sus viajes, y Operaciones los cambia', async () => {
+    vi.mocked(shippersApi.get).mockResolvedValue({ ...COLUN, operation_types: ['EQUIPO_COMPLETO'] } as never)
+    renderProfile()
+    expect(await screen.findByText('Equipo Completo')).toBeInTheDocument()
+    expect(screen.getByText('Sus viajes cuentan con este tipo en el Cierre.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Editar los tipos de operación' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Tractoreo' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar los tipos de operación' }))
+    await waitFor(() => expect(shippersApi.patch).toHaveBeenCalledWith('s1', { operation_types: ['EQUIPO_COMPLETO', 'TRACTOREO'] }))
+  })
+
+  it('sin tipo definido lo dice; cada viaje toma el tipo de su tracto', async () => {
+    vi.mocked(shippersApi.get).mockResolvedValue({ ...COLUN, operation_types: null } as never)
+    renderProfile()
+    expect(await screen.findByText('Sin definir')).toBeInTheDocument()
+    expect(screen.getByText('Cada viaje toma el tipo de su tracto.')).toBeInTheDocument()
+  })
+
   it('encabezado con el estado y el Monitor filtrado por este cliente', async () => {
     renderProfile()
     expect(await screen.findByRole('heading', { name: 'Colun' })).toBeInTheDocument()

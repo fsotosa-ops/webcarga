@@ -4,7 +4,7 @@ import {
   OctagonAlert, ShieldAlert, ShieldCheck, ShieldOff, TriangleAlert, Truck, Undo2, User,
 } from 'lucide-react'
 import type { StatusTone } from '@/components/ui/StatusChip'
-import type { ClosureScope, DirectoryEntity, FunnelBucket, NoticeType } from './types'
+import type { ClosureScope, DirectoryEntity, FunnelBucket, NoticeType, OperationTypeSource } from './types'
 import { hoyEnChile } from './utils/datetime'
 import type { ScopeGap } from './cierre/scope'
 import type { FleetStatus, ReasonType } from './cierre/dayFleet'
@@ -488,6 +488,15 @@ export const SCOPE_GAP_LABEL: Record<ScopeGap, string> = {
   NO_OPERATION_TYPE: 'Sin tipo de operación',
 }
 
+/** De dónde sale el tipo de operación de un viaje (plan 2026-10-21), como lo dice la
+ *  pantalla. Y la marca cuando el tracto contradice al cliente. */
+export const OPERATION_TYPE_SOURCE_LABEL: Record<OperationTypeSource, string> = {
+  declared: 'Declarado por Operaciones',
+  client: 'Según el cliente',
+  tractor: 'Según el tracto',
+}
+export const OPERATION_TYPE_CONFLICT_LABEL = 'Tipo distinto al del cliente'
+
 /** El tipo de un aviso de Pendientes: la columna "Tipo de aviso" y su filtro. Las
  *  claves son las del pre-cierre (`services/pre_cierre.py`) más el desbalance de
  *  dotación, que es un aviso más (spec §4.6). */
@@ -499,4 +508,5 @@ export const NOTICE_TYPE_LABEL: Record<NoticeType, string> = {
   EMPRESA_NO_RECONOCIDA: 'Empresa no reconocida',
   CONDUCTOR_NO_REGISTRADO: 'Conductor no registrado',
   FLEET_DRIVER_GAP: 'Desbalance de dotación',
+  OPERATION_TYPE_CONFLICT: OPERATION_TYPE_CONFLICT_LABEL,
 }

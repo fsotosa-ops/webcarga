@@ -36,6 +36,22 @@ describe('buildNotices', () => {
     expect(dotacion.detail).toBe('2 conductores de más · 4 tractos / 6 conductores')
   })
 
+  it('el tracto que contradice al cliente se avisa con sus viajes y el alcance del cliente', () => {
+    const [aviso] = buildNotices({
+      ...VACIAS,
+      OPERATION_TYPE_CONFLICT: [{
+        tractor_plate: 'FRTC42', asset_id: 'a1', client_name: 'Iansa', carrier_id: 'c1', carrier_name: 'Tomvic',
+        tractor_type: 'Tractoreo', client_type: 'Equipo Completo', trips: [{ id: 't1', code: '901' }],
+        scope: 'equipo_completo',
+      }],
+    }, [])
+    expect([aviso.type, aviso.subject, aviso.carrier, aviso.scope]).toEqual(
+      ['OPERATION_TYPE_CONFLICT', 'FRTC42', 'Tomvic', 'equipo_completo'])
+    expect(aviso.trips.map(t => t.code)).toEqual(['901'])
+    expect(aviso.detail).toMatch(/registrado como Tractoreo y Iansa trabaja solo con Equipo Completo/)
+    expect(aviso.detail).toMatch(/No bloquea/)
+  })
+
   it('una clave que el backend todavía no manda no rompe la lista', () => {
     const { CONDUCTOR_NO_REGISTRADO: _, ...sinLaClave } = VACIAS
     expect(buildNotices(sinLaClave as PreCierreEscalations, undefined)).toEqual([])

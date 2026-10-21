@@ -62,6 +62,12 @@ export function buildNotices(esc: PreCierreEscalations, gap: FleetDriverGapRow[]
       subject: s.tractor_plate ?? s.carrier_name, carrier: s.carrier_name, scope: s.scope ?? null,
       detail: 'Sin tipo de operación. Cuenta como Tractoreo y exige motivo, así que bloquea el cierre del día hasta resolverlo.',
     })),
+    ...(esc.OPERATION_TYPE_CONFLICT ?? []).map((s): Notice => ({
+      ...base, type: 'OPERATION_TYPE_CONFLICT', source: s, key: `OPERATION_TYPE_CONFLICT:${s.tractor_plate}:${s.client_name}`,
+      subject: s.tractor_plate, carrier: s.carrier_name, trips: s.trips ?? [], scope: s.scope ?? null,
+      detail: `El tracto está registrado como ${s.tractor_type} y ${s.client_name} trabaja solo con ${s.client_type}. `
+        + `El viaje cuenta como ${s.client_type}. No bloquea: corrige el tracto si está mal, o el tipo del viaje si fue la excepción.`,
+    })),
     ...(esc.EMPRESA_NO_RECONOCIDA ?? []).map((s, i): Notice => ({
       ...base, type: 'EMPRESA_NO_RECONOCIDA', source: s, key: `EMPRESA_NO_RECONOCIDA:${s.tractor_plate}:${i}`,
       subject: s.tractor_plate, carrier: s.directory_carrier_name, scope: s.scope ?? null,

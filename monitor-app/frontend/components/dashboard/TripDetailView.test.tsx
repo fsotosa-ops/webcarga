@@ -8,6 +8,8 @@ import type { Trip, TripNote } from '@/lib/types'
 import { fmtDT } from '@/lib/utils/datetime'
 import { QuickViewContext } from './QuickViewProvider'
 
+// El tipo de operación del viaje se cambia con trips.edit_sensitive (TripOperationType).
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
 vi.mock('@/lib/api/trips', () => ({
   tripsApi: {
     patch: vi.fn(),

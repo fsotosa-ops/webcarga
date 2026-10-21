@@ -27,6 +27,7 @@ import { TmsClientLinks } from '@/components/directory/TmsClientLinks'
 import { ClientNamePanel } from '@/components/directory/ClientNamePanel'
 import { LocationsBrowser, NO_LOCATION_FILTERS, type LocationFilters } from '@/components/dashboard/LocationsBrowser'
 import { PageContainer } from '@/components/ui/PageContainer'
+import { GestionDeclarada } from '@/components/compliance/GestionDeclarada'
 
 type Section = 'lugares' | 'empresas'
 
@@ -41,6 +42,8 @@ export function ClientProfile({ id }: { id: string }) {
   const searchParams = useSearchParams()
   const qc = useQueryClient()
   const canEdit = usePermiso('commercial.edit')
+  // Los tipos de operación deciden el alcance de sus viajes en el Cierre: son de Operaciones.
+  const canEditOperationTypes = usePermiso('operations.configure')
   const [panel, setPanel] = useState<'name' | 'deactivate' | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [locationFilters, setLocationFilters] = useState<LocationFilters>({ ...NO_LOCATION_FILTERS, shipperId: id })
@@ -117,6 +120,20 @@ export function ClientProfile({ id }: { id: string }) {
       <ProfileLayout aside={<>
         <DetailsBlock canEdit={false} rows={[
           { label: 'Estado', value: lifecycleStyle('shipper', c.status).label },
+          { label: 'Tipos de operación', value: (
+            <span className="flex flex-col gap-0.5">
+              <GestionDeclarada
+                declarado={c.operation_types} canEdit={canEditOperationTypes}
+                guardar={tipos => shippersApi.patch(id, { operation_types: tipos })}
+                onGuardado={() => invalidateClients(qc)}
+                vacio="Sin definir" nombre="los tipos de operación" />
+              <span className="text-etiqueta text-informativo">
+                {c.operation_types?.length === 1
+                  ? 'Sus viajes cuentan con este tipo en el Cierre.'
+                  : 'Cada viaje toma el tipo de su tracto.'}
+              </span>
+            </span>
+          ) },
           { label: 'Lugares', value: placesLabel(c) },
           { label: 'Empresas', value: cifra(c.carriers) },
           { label: 'Viajes (30 días)', value: cifra(c.trips_30d) },
