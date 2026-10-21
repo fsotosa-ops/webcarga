@@ -5,6 +5,7 @@ import { CarrierDocumentsWorkspace } from '@/components/compliance/CarrierDocume
 import { BulkUploadReview } from '@/components/compliance/pending/BulkUploadReview'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import type { Carrier } from '@/lib/types'
+import { isCarrierInCertification } from '@/lib/states'
 
 interface Props {
   carrierId:    string
@@ -20,8 +21,9 @@ interface Props {
  *  "Subir documentos", la misma revisión de lote de todas partes, con la empresa ya
  *  puesta (Entrega D); lo que no se resuelve queda en Por asignar. */
 export function CarrierDocumentsTab({ carrierId, carrier, onExport, exporting, exportError }: Props) {
-  // Una empresa dada de baja o en alta no recibe documentos (misma regla que el espacio de trabajo).
-  const canUpload = usePermiso('documents.upload') && carrier.operational_status === 'ACTIVE'
+  // Misma regla que el espacio de trabajo: activa o en onboarding (la carpeta de quien
+  // está entrando también se carga, 21/10); una dada de baja no recibe documentos.
+  const canUpload = usePermiso('documents.upload') && isCarrierInCertification(carrier.operational_status)
   return (
     <div className="bg-white rounded-xl border border-border p-4 md:p-5 space-y-3">
       <div className="flex items-center justify-end gap-3">

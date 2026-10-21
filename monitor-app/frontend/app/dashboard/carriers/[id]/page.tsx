@@ -12,7 +12,7 @@ import { Tabs } from '@/components/ui/Tabs'
 import { ProfileHeader } from '@/components/directory/ProfileHeader'
 import { DetailsBlock } from '@/components/directory/DetailsBlock'
 import { CarrierEditForm, InsuranceLine } from '@/components/directory/CarrierDetails'
-import { SEVERITY_ORDER, enablementStyle, lifecycleStyle, carrierBlockingReason, blockingCountsLine, isCarrierDeactivated, type ComplianceSummary, type DocumentState } from '@/lib/states'
+import { SEVERITY_ORDER, enablementStyle, lifecycleStyle, carrierBlockingReason, blockingCountsLine, isCarrierDeactivated, isCarrierInCertification, type ComplianceSummary, type DocumentState } from '@/lib/states'
 import { canonicalPlate, canonicalRut, plateSearchKey, rutDigits, rutSearchKey } from '@/lib/identity'
 import { ContactCard, AddContactForm } from '@/components/dashboard/ContactCard'
 import { CarrierDocumentsTab } from '@/components/dashboard/carriers/CarrierDocumentsTab'
@@ -327,7 +327,8 @@ function EmpresaDetailPageInner() {
               guardar={tipos => carriersApi.patch(id, { management_types: tipos ?? [] })}
               declarado={carrier.management_types}
               derivado={derivedOperation}
-              canEdit={canEdit && carrier.operational_status === 'ACTIVE'}
+              // Declarar la gestión es parte de armar la carpeta: también en onboarding.
+              canEdit={canEdit && isCarrierInCertification(carrier.operational_status)}
               onGuardado={() => afterChange({ entity: 'carrier', id, type: 'update' })}
             />
           </span>

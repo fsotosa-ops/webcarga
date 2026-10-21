@@ -201,6 +201,8 @@ describe('EmpresaDetailPage', () => {
     expect(await screen.findByText('Esta empresa está en onboarding')).toBeInTheDocument()
     expect(screen.getByText(/carga y revisa sus documentos/)).toBeInTheDocument()
     expect(screen.queryByText(/la carga se habilita al activarla/)).not.toBeInTheDocument()
+    // La carga en lote también (humo en dev del 21/10: solo aparecía en una activa).
+    expect(screen.getAllByRole('button', { name: /Subir documentos/ }).length).toBeGreaterThan(0)
   })
 
   it('onboarding sin la carpeta completa: Certificación la activa como excepción, con motivo', async () => {
