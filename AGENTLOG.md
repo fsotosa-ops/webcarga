@@ -50,6 +50,9 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
    sumaban del día + en ruta (Walmart 32 contra 31). Decisión del usuario: separar en dos columnas, "Del día" y
    "En ruta". Hecho en la pantalla, la versión imprimible y el Excel (`by_client`/`by_home_origin` traen
    `assigned_today` e `in_route`). El encabezado del Cierre ("34 asignados") es otra cuenta y no se tocó.
+   Humo de `7e396fd5` en dev (16/10, Tractoreo): Walmart 31 del día + 1 en ruta; por origen 15/4/11/1 = 31 y 1
+   en ruta; Excel con totales 46/31/1. Revisado a 1440 y 390. (En Playwright, "Descargar Excel" abre un menú y la
+   descarga sale con su botón "Descargar".)
 2. Fase 1: schema `analytics` con las vistas `trips`, `trip_stops` y `trip_people` (datos personales aparte).
    - Antes: llevar la zona de destino a una función SQL que `destination_zone.py` reutilice.
    - Verificar de dónde sale la hora de asignación (TMS o `audit_log`).
