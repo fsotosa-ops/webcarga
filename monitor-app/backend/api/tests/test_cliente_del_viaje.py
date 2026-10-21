@@ -63,7 +63,9 @@ def test_el_filtro_de_cliente_es_por_id_y_acepta_los_sin_vincular():
 
 
 def test_los_tipos_de_operacion_se_indexan_por_id():
-    fuente = inspect.getsource(trips._load_operation_type_buckets)
+    # Vive en services/destination_zone.py desde e2b45aeb (la zona del destino, una vez).
+    from app.services.destination_zone import load_operation_type_buckets
+    fuente = inspect.getsource(load_operation_type_buckets)
     assert "s.id = ANY($1::uuid[])" in fuente and "lower(" not in fuente
 
 
