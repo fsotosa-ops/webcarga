@@ -1,0 +1,8 @@
+triggers:
+- name: analytics_gold_hourly
+  schedule_type: time
+  schedule_interval: '20 * * * *'
+  start_time: 2026-10-22 00:00:00
+  status: active
+  settings:
+    skip_if_previous_running: true

@@ -1,0 +1,180 @@
+version: 2
+
+# Capa gold del modelo dimensional de Analítica (diseño docs/superpowers/specs/2026-10-21-analitica-modelo-dimensional-design.md,
+# en el repo webcarga). Corre en el pipeline analytics_gold con `dbt build --select gold`: un test rojo detiene la
+# analítica, no la ingesta.
+
+models:
+  - name: dim_date
+    description: Calendario de Chile, un día por fila.
+    columns:
+      - name: date_key
+        tests: [not_null, unique]
+      - name: date_day
+        tests: [not_null, unique]
+
+  - name: dim_client
+    description: Clientes del Directorio (SCD1).
+    columns:
+      - name: client_id
+        tests: [not_null, unique]
+      - name: client_name
+        tests: [not_null]
+
+  - name: dim_carrier
+    description: Empresas transportistas, una fila por versión (SCD2 desde snapshot_carriers).
+    columns:
+      - name: carrier_version_key
+        tests: [not_null, unique]
+      - name: carrier_id
+        tests: [not_null]
+      - name: lifecycle_status
+        tests:
+          - accepted_values:
+              values: ['ACTIVE', 'ONBOARDING', 'INACTIVE']
+    tests:
+      # Una sola versión vigente por empresa, y versiones sin solaparse.
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [carrier_id, valid_from]
+    
+  - name: dim_driver
+    description: Conductores (SCD1). Única dimensión con datos personales (nombre y RUT).
+    columns:
+      - name: driver_id
+        tests: [not_null, unique]
+
+  - name: dim_asset
+    description: Equipos, tractos y ramplas (SCD1).
+    columns:
+      - name: asset_id
+        tests: [not_null, unique]
+      - name: license_plate
+        tests: [not_null, unique]
+
+  - name: dim_location
+    description: Locales y CD de los clientes (SCD1), con su zona.
+    columns:
+      - name: location_id
+        tests: [not_null, unique]
+      - name: client_id
+        tests:
+          - relationships:
+              to: ref('dim_client')
+              field: client_id
+      - name: zone
+        tests:
+          - accepted_values:
+              values: ['RM', 'Z0', 'Región', 'Sin clasificar']
+
+  - name: dim_reason
+    description: Valores de los catálogos de motivos y tipos (app.status_taxonomies).
+    columns:
+      - name: reason_id
+        tests: [not_null, unique]
+    tests:
+      # Los códigos son únicos dentro de su catálogo. Cuatro catálogos viejos (DRIVER_REASON, EQUIPMENT_STATE,
+      # FLEET_SERVICE_TYPE, OPERATIONAL_STATE) tienen valores sin código (21/10): no se pueden identificar por
+      # código hasta completarlo. Se exige unicidad solo donde hay código.
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [domain, code]
+          config:
+            where: "code IS NOT NULL"
+
+  - name: dim_trip_status
+    columns:
+      - name: trip_status_id
+        tests: [not_null, unique]
+
+  - name: bridge_fleet_membership
+    description: Períodos de pertenencia conductor/equipo → empresa y empresa → cliente.
+    columns:
+      - name: membership_id
+        tests: [not_null, unique]
+      - name: relation
+        tests:
+          - accepted_values:
+              values: ['ASSET_CARRIER', 'DRIVER_CARRIER', 'CARRIER_SHIPPER']
+
+  - name: fct_trips
+    description: >
+      Un viaje por fila (accumulating snapshot): fechas e hitos, lugares, flota en la fecha del viaje, tipo de
+      operación con su origen, estado, motivo, anulación y firma del Cierre.
+    columns:
+      - name: trip_id
+        tests: [not_null, unique]
+      - name: planning_date_key
+        tests:
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: client_id
+        tests:
+          - relationships:
+              to: ref('dim_client')
+              field: client_id
+      - name: carrier_id
+        tests:
+          - relationships:
+              to: ref('dim_carrier')
+              field: carrier_id
+      - name: driver_id
+        tests:
+          - relationships:
+              to: ref('dim_driver')
+              field: driver_id
+      - name: tractor_asset_id
+        tests:
+          - relationships:
+              to: ref('dim_asset')
+              field: asset_id
+      - name: destination_zone
+        tests:
+          - accepted_values:
+              values: ['RM', 'Z0', 'Región', 'Sin clasificar']
+      - name: carrier_source
+        tests:
+          - accepted_values:
+              values: ['trip_link', 'tractor_membership', 'driver_membership']
+
+  - name: fct_trip_stops
+    description: >
+      Una parada por fila. is_current = false marca las versiones viejas de una parada (el TMS cambió de base):
+      se guardan como historia, pero la BDOT y los reportes usan solo las vigentes.
+    columns:
+      - name: stop_id
+        tests: [not_null, unique]
+      - name: trip_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('fct_trips')
+              field: trip_id
+      - name: stop_type
+        tests:
+          - accepted_values:
+              values: ['ORIGIN', 'DESTINATION']
+      - name: arrival_source
+        tests:
+          - accepted_values:
+              values: ['manual', 'gps', 'tms']
+
+  - name: fct_fleet_daily_status
+    description: >
+      Un conductor o equipo por día de negocio. Los días firmados salen de su firma (inmutable); los demás, de las
+      líneas vivas (is_provisional = true).
+    columns:
+      - name: fleet_day_key
+        tests: [not_null, unique]
+      - name: date_key
+        tests:
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: subject_type
+        tests:
+          - accepted_values:
+              values: ['DRIVER', 'ASSET']
+      - name: category
+        tests:
+          - accepted_values:
+              values: ['ASIGNADO', 'POR_REGULARIZAR', 'SIN_RESOLVER', 'TRABAJANDO_SIN_ASIGNACION', 'NO_TRABAJANDO']

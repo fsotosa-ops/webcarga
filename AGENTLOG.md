@@ -113,12 +113,23 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
        la mutación se detecta (2 rojos).
      - Hallazgo: 4 catálogos viejos (DRIVER_REASON, EQUIPMENT_STATE, FLEET_SERVICE_TYPE, OPERATIONAL_STATE) tienen
        valores sin `code`.
-   - SIGUIENTE (pide autorización):
-     1. Aplicar `20261102090000` y subir el backend.
-     2. Sincronizar gold a Mage, crear el pipeline `analytics_gold` (`dbt snapshot` + `dbt build --select gold`,
-        cada hora) y correrlo.
-     3. Después: `fct_trip_status_events` (desde `bronze.tms_trips_snapshot`), la migración de `analytics` (vistas,
-        roles, sacar `gold` de PostgREST) y el humo del paso 1.
+   - EN PRODUCCIÓN (21/10, autorizado por el usuario):
+     1. `20261102090000` APLICADA: misma categoría en las 9.090 líneas. Backend subido (`c4271800`).
+     2. Gold sincronizado a Mage.
+        - Pipeline `analytics_gold`: un bloque dbt con `build --select snapshot_carriers gold`; trigger
+          `triggers.yaml` a las :20 de cada hora, POR CONFIRMAR que Mage lo registró.
+        - Primera corrida, run 15780 (unos 60 s), en la real: fct_trips 3.757 = app.trips; fct_trip_stops 11.792
+          (10.317 vigentes); fct_fleet_daily_status 9.090; dim_carrier 251 (historia desde hoy).
+        - `tms_daily_tests` excluye `tag:analytics`. Con `--indirect-selection cautious` se perdía un test propio,
+          así que se descartó.
+     3. Copia versionada en `monitor-app/analytics/dbt` (`sync-gold-from-mage.sh`, README). Se edita en Mage,
+        no ahí.
+   - SIGUIENTE:
+     - Confirmar la corrida programada de las 00:20 UTC.
+     - Humo del paso 1 en dev: Monitor (tipo por parada), Cierre y Reporte (zona).
+     - `fct_trip_status_events` (desde `bronze.tms_trips_snapshot`: hitos publicado y asignado).
+     - Migración de `analytics`: vistas `bdot` y `bdot_people`, roles, y sacar `gold` de PostgREST.
+     - Fase 2: el módulo Analítica.
    - (hecho) Leído el proyecto dbt de Mage (`.mage-agent/local_sync/dbt/tms`, y `monitor-app/docs`
      contra la base real), la convención de dbt del proyecto y cómo se programa su ejecución.
    - Antes: llevar la zona de destino a una función SQL que `destination_zone.py` reutilice.

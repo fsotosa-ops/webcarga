@@ -106,6 +106,9 @@ dimensión que no existe, se crea compartida, no dentro del hecho.
 
 ### 4.2 `gold.fct_trip_stops`: hecho transaccional
 
+> Construido (21/10): guarda todas las filas de `trip_stops` con `is_current`. Las versiones viejas quedan como
+> historia marcada y la BDOT usa solo las vigentes.
+
 - **Grano:** una parada vigente de un viaje (`app.trip_stops` por `stop_id`).
 - **Paradas vigentes:** `trip_stops` nunca borra. Cuando el TMS renombra o reordena, la fila vieja queda. Hoy, el
   19 % de los destinos de QAnalytics ya no está en el `stops` vigente del viaje, y hay 1.375 grupos con el mismo
@@ -240,7 +243,9 @@ manuales 18. Las horas del TMS se leen como hora de Chile y se guardan en UTC.
   tests por columna.
 - **Cuándo corre:** un pipeline de Mage nuevo, `analytics_gold`, separado del ciclo de ingesta de 15 minutos.
   - Así un test rojo no corta la ingesta, que es la razón por la que `tms_daily_tests` está aparte (24/09).
-  - Frecuencia inicial: cada hora en horario operativo.
+  - Frecuencia: cada hora, en el minuto 20 (`triggers.yaml` del pipeline).
+  - El test singular de gold lleva `tags=['analytics']`, y `tms_daily_tests` lo excluye (`--exclude
+    tag:analytics`). Si no, la selección indirecta de dbt lo arrastraba al seleccionar `trips`.
   - Corre `dbt build --select gold`: modelos y tests juntos. El test que falla detiene solo la analítica.
 - **Tests mínimos:**
   - grano único por hecho;

@@ -1,0 +1,30 @@
+version: 2
+
+# Lo que escribe la app (Directorio, catálogos, historia de asignaciones). app.trips y app.trip_stops NO van aquí:
+# son modelos de este proyecto (models/app) y gold los lee con ref().
+sources:
+  - name: directory
+    schema: public
+    tables:
+      - name: shippers
+      - name: carriers
+      - name: drivers
+      - name: assets
+      - name: asset_types
+      - name: locations
+  - name: app_catalogs
+    schema: app
+    tables:
+      - name: status_taxonomies
+      - name: trip_statuses
+      - name: fleet_assignment_periods
+      - name: trip_fleet_links
+      - name: v_trip_fleet_resolution
+  - name: closures
+    schema: app
+    tables:
+      - name: closure_signatures
+      - name: closure_signature_trips
+      - name: closure_signature_lines
+      - name: closure_lines
+      - name: closure_periods
