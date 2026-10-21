@@ -69,9 +69,17 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
      como accumulating snapshot, parada y estado diario de la flota desde las firmas); dimensiones con SCD donde
      hay historia; `analytics` con roles propios; pipeline `analytics_gold` con `dbt build`; contrato para los
      módulos nuevos (sección 8).
-   - DEFECTO ENCONTRADO: `trip_planning_date` usa la fecha UTC. 208 de 3.554 viajes QAnalytics (20:00-23:59 Chile)
-     y 3 Wingsuite quedan con el día siguiente; el id no depende de la fecha. Decidir con Operaciones antes de
-     corregir (días firmados no se reabren).
+   - DISEÑO APROBADO por el usuario (21/10).
+   - DEFECTO CORREGIDO (21/10): `trip_planning_date` sacaba el día en UTC. Los viajes de las 20:00 o 21:00 en
+     adelante (Chile) quedaban con el día siguiente; el TMS sí manda hora de Chile.
+     - Decisión del usuario: día de Chile, también hacia atrás.
+     - Macro corregido en `.mage-agent/local_sync` y sincronizado (está en .gitignore: la fuente vive en Mage).
+       La corrida de las 23:11 UTC ya compila con él.
+     - Migración `20261031090000_planning_date_chile_day` APLICADA (ensayo con ROLLBACK + autorización):
+       212 viajes, auditados como `fix_planning_date_timezone`. Firmas intactas (1.237).
+     - Efecto (base real, 14-20/10): el 16/10 pasa de 37 a 39 con carga (34 del día, 5 en ruta). Los viajes de
+       la noche ahora cuentan en su día y, al día siguiente, como en ruta.
+     - Pendiente de la misma clase: `trips_del_dia` usa `status_reported_at::date` (marca sin huso en UTC).
    - (hecho) Leído el proyecto dbt de Mage (`.mage-agent/local_sync/dbt/tms`, y `monitor-app/docs`
      contra la base real), la convención de dbt del proyecto y cómo se programa su ejecución.
    - Antes: llevar la zona de destino a una función SQL que `destination_zone.py` reutilice.

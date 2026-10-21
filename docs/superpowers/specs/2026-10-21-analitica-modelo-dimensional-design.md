@@ -1,7 +1,7 @@
 # Analítica: la BDOT reconstruida desde la app (modelo dimensional)
 
 **Fecha:** 2026-10-21
-**Estado:** borrador para aprobación
+**Estado:** aprobado por el usuario (21/10)
 **Plan del que sale:** `~/.claude/plans/zany-wishing-cloud.md` (Fase 1, redefinida el 21/10)
 
 ## 1. Qué se construye y por qué
@@ -150,7 +150,15 @@ manuales 18. Las horas del TMS se leen como hora de Chile y se guardan en UTC.
 | Anulado | `voided_at` y motivo | 9 (manuales) | Entra |
 | Ausente del TMS | `tms_missing_since` y `tms_absence_kind` | QAnalytics 24, Sodimac 75 | Entra como marca |
 
-### 4.5 Defecto encontrado: la fecha de planificación se toma en UTC
+### 4.5 Defecto encontrado: la fecha de planificación se tomaba en UTC (CORREGIDO 21/10)
+
+> **Resuelto el 21/10.** El usuario decidió el día de Chile, también hacia atrás.
+> - Macro corregido y sincronizado a Mage; la corrida de las 23:11 UTC ya compila con él, también
+>   `stg_tms_presence`.
+> - Migración `20261031090000_planning_date_chile_day` aplicada: 212 viajes, un día atrás, auditados en
+>   `audit_log` (`fix_planning_date_timezone`). Las 1.237 firmas no cambiaron.
+> - Queda por revisar: `trips_del_dia` usa `status_reported_at::date`, que es una marca sin huso guardada en UTC.
+>   Es la misma clase de defecto.
 
 - **Qué pasa:** `macros/trip_planning_date.sql` hace `planned_departure_at::date` en una sesión UTC. Un viaje
   planificado entre las 20:00 y las 23:59 de Chile queda con la fecha del día siguiente.
@@ -271,7 +279,7 @@ Para que la BDOT crezca sin parches, todo módulo nuevo de la app cumple:
 
 ## 10. Orden de construcción
 
-0. Decidir con Operaciones la fecha de planificación (4.5) y corregir `trip_planning_date` antes de cargar gold.
+0. HECHO (21/10): fecha de planificación en día de Chile (4.5).
 1. Funciones SQL de zona del destino, cliente del viaje y origen del viaje en la base, con la regla de paradas
    vigentes (4.2). El Python las llama, y sus
    tests existentes deben seguir verdes.
