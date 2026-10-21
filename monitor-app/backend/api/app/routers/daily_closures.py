@@ -167,7 +167,9 @@ ORDER BY d.full_name
 # dataset — evita ida y vuelta al backend por cada cambio de la tabla dinámica.
 _REPORT_SQL = f"""
 WITH {tractoreo_roster_by_day_cte('$1', '$2')}
-SELECT dds.driver_id, dds.business_date, d.full_name, d.tax_id, c.business_name AS carrier_name,
+-- Sin RUT (plan Analítica, 21/10): la Reportería no lo usa y la lee todo el que tiene
+-- operations.read. Un dato personal sale solo donde se necesita.
+SELECT dds.driver_id, dds.business_date, d.full_name, c.business_name AS carrier_name,
        dds.status, dds.category, dds.unassigned_reason_id, ur.label AS unassigned_reason_label,
        COALESCE(clients.client_names, ARRAY[]::text[]) AS client_names,
        -- Origen habitual (HU-28): el pivot de Reportería puede cortar por CD sin

@@ -3,7 +3,7 @@
 import type { FleetDriverGapRow, StatusReport } from '@/lib/types'
 import { TIPOS_DE_OPERACION } from '@/lib/reporte/tiposDeOperacion'
 import { SCOPE_LABEL } from '@/lib/states'
-import { CuatroCifras, ViajesDeVariosDias } from './SeccionesDelReporte'
+import { CifrasDelTipo, ViajesDeVariosDias } from './SeccionesDelReporte'
 
 /** Resumen imprimible de una página: los dos tipos lado a lado (spec 2026-10-11 §4).
  *  El PDF queda como estaba (D7). */
@@ -26,7 +26,7 @@ export function ResumenImprimible({ fecha, porTipo, faltante, clientes }: {
           {TIPOS_DE_OPERACION.map(t => (
             <div key={t.clave} className="space-y-3">
               <p className="text-etiqueta font-bold text-informativo uppercase">{SCOPE_LABEL[t.clave]}</p>
-              <CuatroCifras reporte={porTipo[t.clave]} />
+              <CifrasDelTipo reporte={porTipo[t.clave]} />
               <ViajesDeVariosDias reporte={porTipo[t.clave]} />
               <table className="w-full text-xs border-collapse">
                 <tbody>

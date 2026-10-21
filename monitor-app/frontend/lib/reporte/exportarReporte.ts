@@ -29,9 +29,9 @@ function tablaDeMotivos(reasons: string[], rows: ReasonRow[]): Fila[] {
 function resumen(r: OperationTypeReport): Fila[] {
   const s = r.summary
   return [
-    ['Equipos activos', s.total], ['Asignados', s.assigned], ['No trabajaron', s.not_working],
+    ['Equipos activos', s.total], ['Asignados del día', s.assigned_today],
+    ['En ruta desde días anteriores', s.multi_day.total], ['No trabajaron', s.not_working],
     ['% utilización', s.utilization_pct], [],
-    ['Viajes de varios días', s.multi_day.total],
     ...Object.entries(s.multi_day.by_days_back).map(([dias, n]) => [`Hace ${dias} ${dias === '1' ? 'día' : 'días'}`, n]),
     [],
     negrita(['Cliente', 'Asignados']),

@@ -21,7 +21,7 @@ import { readView } from '@/lib/table/viewInUrl'
 import type { ReportSection } from '@/lib/reporte/secciones'
 
 const VACIO: OperationTypeReport = {
-  summary: { total: 0, assigned: 0, not_working: 0, utilization_pct: 0, by_client: [], by_home_origin: [],
+  summary: { total: 0, assigned: 0, assigned_today: 0, not_working: 0, utilization_pct: 0, by_client: [], by_home_origin: [],
              multi_day: { total: 0, by_days_back: {} } },
   assigned: { rows: [], other_origin: [] },
   worked_without_assignment: { reasons: [], rows: [] },
@@ -32,7 +32,7 @@ const VACIO: OperationTypeReport = {
 
 const TRACTOREO: OperationTypeReport = {
   summary: {
-    total: 81, assigned: 29, not_working: 40, utilization_pct: 35.8,
+    total: 81, assigned: 29, assigned_today: 24, not_working: 40, utilization_pct: 35.8,
     by_client: [{ client_name: 'Walmart', assigned: 29 }],
     by_home_origin: [{ origin: 'CD Lo Aguirre', enrolled: 50, assigned: 20 }],
     multi_day: { total: 5, by_days_back: { '1': 3, '2': 2 } },
@@ -145,18 +145,19 @@ beforeEach(() => {
 })
 
 describe('StatusReportSection', () => {
-  it('abre en Tractoreo › Resumen con las cuatro cifras', async () => {
+  it('abre en Tractoreo › Resumen con sus cifras: los asignados del día aparte de los en ruta', async () => {
     const body = renderSection()
     expect(await body.findByText('Equipos activos')).toBeInTheDocument()
     expect(cifra(body, 'Equipos activos')).toHaveTextContent('81')
-    expect(cifra(body, 'Asignados')).toHaveTextContent('29')
+    expect(cifra(body, 'Asignados del día')).toHaveTextContent('24')
+    expect(cifra(body, 'En ruta desde días anteriores')).toHaveTextContent('5')
     expect(cifra(body, 'No trabajaron')).toHaveTextContent('40')
     expect(cifra(body, 'Utilización')).toHaveTextContent('35.8%')
   })
 
-  it('el resumen muestra los viajes de varios días por días atrás', async () => {
+  it('el resumen muestra los en ruta desde días anteriores por días atrás', async () => {
     const body = renderSection()
-    expect(await body.findByText('Viajes de varios días (5)')).toBeInTheDocument()
+    expect(await body.findByText('En ruta desde días anteriores (5)')).toBeInTheDocument()
     expect(body.getByText('3 equipos — 1 día')).toBeInTheDocument()
     expect(body.getByText('2 equipos — 2 días')).toBeInTheDocument()
   })

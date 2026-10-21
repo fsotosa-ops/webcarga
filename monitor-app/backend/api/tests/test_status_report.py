@@ -557,7 +557,9 @@ def test_resumen_cuenta_los_viajes_de_varios_dias_por_dias_atras():
         # Sin carga no está en ningún viaje, aunque arrastre un número.
         _row(asset_id="a5", con_carga=False, dias_en_curso=None, category="NO_TRABAJANDO"),
     ]
-    assert _resumen_del_tipo(rows)["multi_day"] == {"total": 3, "by_days_back": {"1": 2, "3": 1}}
+    resumen = _resumen_del_tipo(rows)
+    assert resumen["multi_day"] == {"total": 3, "by_days_back": {"1": 2, "3": 1}}
+    assert (resumen["assigned"], resumen["assigned_today"]) == (4, 1)
 
 
 def test_los_viajes_del_dia_traen_el_cliente_del_directorio_por_id():

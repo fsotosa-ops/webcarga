@@ -4,7 +4,7 @@ import { hojaDeLaTabla, hojasDeLaSeccion, hojasDelReporte } from './exportarRepo
 
 function reporte(over: Partial<OperationTypeReport> = {}): OperationTypeReport {
   return {
-    summary: { total: 3, assigned: 2, not_working: 1, utilization_pct: 66.7,
+    summary: { total: 3, assigned: 2, assigned_today: 1, not_working: 1, utilization_pct: 66.7,
                by_client: [{ client_name: 'Walmart', assigned: 2 }],
                by_home_origin: [{ origin: 'CD Lo Aguirre', enrolled: 3, assigned: 2 }],
                multi_day: { total: 1, by_days_back: { '2': 1 } } },
@@ -69,10 +69,11 @@ describe('hojasDelReporte', () => {
     expect(encabezados('No trabajaron · Eq. Completo')).toContain('Equipo')
   })
 
-  it('el Resumen trae los viajes de varios días', () => {
+  it('el Resumen separa los asignados del día de los en ruta desde días anteriores', () => {
     const hoja = hojasDelReporte(POR_TIPO, []).find(h => h.sheet === 'Resumen · Tractoreo')!
     const filas = hoja.data.map(f => f.map(valor))
-    expect(filas).toContainEqual(['Viajes de varios días', 1])
+    expect(filas).toContainEqual(['Asignados del día', 1])
+    expect(filas).toContainEqual(['En ruta desde días anteriores', 1])
     expect(filas).toContainEqual(['Hace 2 días', 1])
   })
 

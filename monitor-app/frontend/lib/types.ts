@@ -1680,15 +1680,18 @@ export type ReasonRow = {
 export type OperationTypeReport = {
   summary: {
     total:           number
+    /** Con carga: asignados del día + en ruta desde días anteriores (multi_day.total). */
     assigned:        number
+    /** Con un viaje planificado el día del reporte: lo que cuenta Operaciones. */
+    assigned_today:  number
     /** Equipos del tipo que no trabajaron (o sin motivo todavía). */
     not_working:     number
     utilization_pct: number
     by_client:       { client_name: string; assigned: number }[]
     /** Enrolados vs asignados por origen habitual declarado (HU-28). */
     by_home_origin:  { origin: string; enrolled: number; assigned: number }[]
-    /** Equipos con carga que siguen en un viaje planificado días antes; la clave
-     *  de `by_days_back` es cuántos días atrás ("1", "2", …). */
+    /** En ruta desde días anteriores: con carga y sin viaje planificado ese día; la
+     *  clave de `by_days_back` son los días desde su viaje más reciente ("1", "2", …). */
     multi_day:       { total: number; by_days_back: Record<string, number> }
   }
   assigned: {

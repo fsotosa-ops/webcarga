@@ -36,13 +36,16 @@ function Cifra({ titulo, valor }: { titulo: string; valor: React.ReactNode }) {
   )
 }
 
-/** Las cuatro cifras del tipo, compartidas con el resumen imprimible. */
-export function CuatroCifras({ reporte }: { reporte: OperationTypeReport }) {
+/** Las cifras del tipo, compartidas con el resumen imprimible. "Asignados del día" es
+ *  lo que cuenta Operaciones (viaje planificado ese día); los que siguen en un viaje de
+ *  días anteriores van aparte. La utilización cuenta a los dos: los dos trabajan. */
+export function CifrasDelTipo({ reporte }: { reporte: OperationTypeReport }) {
   const s = reporte.summary
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
       <Cifra titulo="Equipos activos" valor={s.total} />
-      <Cifra titulo="Asignados" valor={s.assigned} />
+      <Cifra titulo="Asignados del día" valor={s.assigned_today} />
+      <Cifra titulo="En ruta desde días anteriores" valor={s.multi_day.total} />
       <Cifra titulo="No trabajaron" valor={s.not_working} />
       <Cifra titulo="Utilización" valor={<span className="text-accent">{s.utilization_pct}%</span>} />
     </div>
@@ -51,12 +54,12 @@ export function CuatroCifras({ reporte }: { reporte: OperationTypeReport }) {
 
 const plural = (n: number | string, uno: string, varios: string) => `${n} ${Number(n) === 1 ? uno : varios}`
 
-/** Los equipos que siguen en un viaje planificado días antes, por días atrás. */
+/** Los equipos en ruta desde días anteriores, por días desde su planificación. */
 export function ViajesDeVariosDias({ reporte }: { reporte: OperationTypeReport }) {
   const { total, by_days_back } = reporte.summary.multi_day
   return (
     <div>
-      <Titulo>Viajes de varios días ({total})</Titulo>
+      <Titulo>En ruta desde días anteriores ({total})</Titulo>
       <div className="flex gap-2 flex-wrap">
         {Object.entries(by_days_back).map(([dias, n]) => (
           <span key={dias} className="text-etiqueta bg-bg-main border border-border rounded-full px-2.5 py-1">
@@ -74,7 +77,7 @@ export function SeccionResumen({ reporte, tipo }: Props) {
   if (s.total === 0) return <Vacio>No hay equipos de {tipo.etiqueta} enrolados</Vacio>
   return (
     <div className="space-y-4">
-      <CuatroCifras reporte={reporte} />
+      <CifrasDelTipo reporte={reporte} />
       <ViajesDeVariosDias reporte={reporte} />
       <div className="grid sm:grid-cols-2 gap-4">
         <div>

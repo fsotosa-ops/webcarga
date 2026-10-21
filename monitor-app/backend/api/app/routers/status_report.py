@@ -205,12 +205,11 @@ async def _build_asset_rows(pool, business_date: _date) -> list[dict]:
         latest = max(asset_trips, key=lambda t: t["status_reported_at"] or _date.min) if asset_trips else None
         status_row = status_by_asset.get(asset_id)
 
-        destination_zone = None
-        dias_en_curso = None
-        if latest:
-            destination_zone = zonas[(latest["shipper_id"], latest["last_destination_local"])]
-            if latest["planning_date"]:
-                dias_en_curso = (business_date - latest["planning_date"]).days
+        destination_zone = zonas[(latest["shipper_id"], latest["last_destination_local"])] if latest else None
+        # Días desde su viaje planificado más reciente: 0 = asignado el día del reporte
+        # (lo que cuenta Operaciones); 1+ = sigue en ruta desde días anteriores.
+        planificados = [t["planning_date"] for t in asset_trips if t["planning_date"]]
+        dias_en_curso = (business_date - max(planificados)).days if planificados else None
 
         rows.append({
             "asset_id": asset_id,
@@ -408,14 +407,18 @@ def _resumen_del_tipo(rows: list[dict]) -> dict:
         b = por_origen.setdefault(origen, {"origin": origen, "enrolled": 0, "assigned": 0})
         b["enrolled"] += 1
         b["assigned"] += 1 if r["con_carga"] else 0
+    en_ruta = sum(varios_dias.values())
     return {
         "total": total,
+        # Con carga = asignados del día + en ruta desde días anteriores. Operaciones
+        # cuenta los del día (planificados ese día); los en ruta van aparte en multi_day.
         "assigned": assigned,
+        "assigned_today": assigned - en_ruta,
         "not_working": sum(1 for r in rows if not r["con_carga"] and r["category"] in _NO_TRABAJO),
         "utilization_pct": round(assigned / total * 100, 1) if total else 0.0,
         "by_client": [{"client_name": k, "assigned": v} for k, v in sorted(por_cliente.items())],
         "by_home_origin": [por_origen[k] for k in sorted(por_origen)],
-        "multi_day": {"total": sum(varios_dias.values()),
+        "multi_day": {"total": en_ruta,
                       "by_days_back": dict(sorted(varios_dias.items(), key=lambda kv: int(kv[0])))},
     }
 
