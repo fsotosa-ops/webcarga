@@ -1,144 +1,35 @@
-from unittest.mock import AsyncMock
+"""El tipo de operación del origen y de cada parada en el Monitor.
 
-import pytest
-
-from app.routers.trips import _apply_operation_types
-from app.services.destination_zone import (
-    load_operation_type_buckets,
-    normalize_location_name,
-    resolve_operation_type,
-    split_local,
-)
-
-# Casos reales verificados en vivo contra bronze.raw_shipper_locations /
-# app.trips.stops (plan maestro H2.6, fase "catálogo de locales"):
-# "SANTA ROSA - 87" → n__local 87 → "Santa Rosa"; 3 site_number repetidos
-# dentro de Walmart (171/463/50) con nombres distintos entre sí; origen de
-# CDs sin número ("CD LO AGUIRRE").
+La regla (número de local, nombre, sin cruzar clientes) vive en la base y la prueba
+test_trip_location_rules_integration.py. Aquí: qué pares se piden y cómo se reparte la respuesta."""
+from app.routers.trips import _apply_operation_types, _operation_type_pairs
 
 
-def test_split_local_extracts_name_and_number():
-    assert split_local("SANTA ROSA - 87") == ("SANTA ROSA", "87")
-    assert split_local("CURICÓ, CAMILO HENRÍQUEZ - 279") == ("CURICÓ, CAMILO HENRÍQUEZ", "279")
-
-
-def test_split_local_without_number_returns_whole_string_as_name():
-    # Los CDs de origen (Walmart) nunca traen número — mismo patrón que
-    # cualquier local sin site_number en la planilla (Iansa/Sodimac/Colun).
-    assert split_local("CD LO AGUIRRE") == ("CD LO AGUIRRE", None)
-
-
-def test_split_local_handles_empty():
-    assert split_local(None) == (None, None)
-    assert split_local("") == (None, None)
-
-
-def test_normalize_location_name_strips_accents_and_case():
-    assert normalize_location_name("Curicó") == "CURICO"
-    assert normalize_location_name("  El   Belloto ") == "EL BELLOTO"
-
-
-def _bucket_walmart():
+def _viaje(shipper="s-walmart"):
     return {
-        "by_number": {
-            "87": [("SANTA ROSA", "RM")],
-            # site_number repetido dentro del mismo shipper (caso real: 171)
-            "171": [("LINARES", "Z0"), ("SAN BERNARDO EUCALIPTUS", "RM")],
-        },
-        "by_name": {
-            "SANTA ROSA": "RM",
-            "LINARES": "Z0",
-            "SAN BERNARDO EUCALIPTUS": "RM",
-        },
-    }
-
-
-def test_resolve_operation_type_by_number_when_unambiguous():
-    assert resolve_operation_type(_bucket_walmart(), "SANTA ROSA - 87") == "RM"
-
-
-def test_resolve_operation_type_disambiguates_repeated_number_by_name():
-    bucket = _bucket_walmart()
-    assert resolve_operation_type(bucket, "LINARES - 171") == "Z0"
-    assert resolve_operation_type(bucket, "SAN BERNARDO EUCALIPTUS - 171") == "RM"
-
-
-def test_resolve_operation_type_disambiguates_by_containment_when_tms_adds_format_prefix():
-    # Caso real verificado en vivo (2026-07-17, trip 0dc02dfc-...): el TMS
-    # reporta "SBA San Bernardo Eucaliptus - 171" pero el nombre maestro en
-    # public.locations es "San Bernardo Eucaliptus" (el formato "SBA" vive
-    # en una columna aparte) — el match exacto normalizado falla, pero la
-    # contención desambigua igual sin arriesgar el otro candidato ("Linares").
-    bucket = _bucket_walmart()
-    assert resolve_operation_type(bucket, "SBA San Bernardo Eucaliptus - 171") == "RM"
-
-
-def test_resolve_operation_type_unresolved_when_number_ambiguous_and_name_unknown():
-    # Número repetido y el nombre del stop no matchea ninguno de los 2
-    # candidatos — no hay forma segura de elegir, debe quedar sin resolver.
-    bucket = _bucket_walmart()
-    assert resolve_operation_type(bucket, "OTRO NOMBRE - 171") is None
-
-
-def test_resolve_operation_type_falls_back_to_name_when_no_number():
-    bucket = _bucket_walmart()
-    assert resolve_operation_type(bucket, "Santa Rosa") == "RM"
-
-
-def test_resolve_operation_type_none_when_no_match():
-    bucket = _bucket_walmart()
-    assert resolve_operation_type(bucket, "CD LO AGUIRRE") is None
-
-
-def test_resolve_operation_type_none_without_bucket_or_local():
-    assert resolve_operation_type(None, "SANTA ROSA - 87") is None
-    assert resolve_operation_type(_bucket_walmart(), None) is None
-
-
-def test_apply_operation_types_sets_origin_and_per_stop():
-    # Indexado por el id del cliente del directorio (spec 2026-10-11).
-    buckets = {"s-walmart": _bucket_walmart()}
-    trip = {
-        "shipper_id": "s-walmart",
+        "shipper_id": shipper,
         "origin": "CD LO AGUIRRE",
-        "stops": [
-            {"stop_id": "a", "local": "SANTA ROSA - 87"},
-            {"stop_id": "b", "local": "LINARES - 171"},
-        ],
+        "stops": [{"stop_id": "a", "local": "SANTA ROSA - 87"}, {"stop_id": "b", "local": "LINARES - 171"},
+                  {"stop_id": "c", "local": None}],
     }
-    _apply_operation_types(trip, buckets)
-    assert trip["origin_operation_type"] is None
-    assert trip["stops"][0]["operation_type"] == "RM"
-    assert trip["stops"][1]["operation_type"] == "Z0"
 
 
-def test_apply_operation_types_no_bucket_for_unknown_client():
-    buckets = {"s-walmart": _bucket_walmart()}
-    trip = {"shipper_id": "s-sodimac", "origin": None, "stops": [{"local": "SANTA ROSA - 87"}]}
-    _apply_operation_types(trip, buckets)
-    assert trip["origin_operation_type"] is None
-    assert trip["stops"][0]["operation_type"] is None
+def test_se_piden_el_origen_y_cada_parada_del_cliente():
+    assert _operation_type_pairs([_viaje(), _viaje(shipper=None)]) == [
+        ("s-walmart", "CD LO AGUIRRE"), ("s-walmart", "SANTA ROSA - 87"), ("s-walmart", "LINARES - 171")]
 
 
-@pytest.mark.asyncio
-async def test_load_operation_type_buckets_scopes_by_shipper_and_skips_null_operation_type():
-    pool = AsyncMock()
-    pool.fetch.return_value = [
-        {"shipper_id": "s-walmart", "name": "Santa Rosa", "site_number": "87", "operation_type": "RM"},
-        {"shipper_id": "s-walmart", "name": "Linares", "site_number": "171", "operation_type": "Z0"},
-        {"shipper_id": "s-iansa", "name": "Iansa Chillan", "site_number": None, "operation_type": "Region Sur"},
-    ]
-    buckets = await load_operation_type_buckets(pool, {"s-walmart", "s-iansa"})
-    assert resolve_operation_type(buckets["s-walmart"], "SANTA ROSA - 87") == "RM"
-    assert resolve_operation_type(buckets["s-iansa"], "Iansa Chillan") == "Region Sur"
-    # Nunca cruza entre shippers: un local de Iansa no debe resolver contra el bucket de Walmart
-    assert resolve_operation_type(buckets["s-walmart"], "Iansa Chillan") is None
-    assert "s.id = ANY($1::uuid[])" in pool.fetch.call_args.args[0]
+def test_la_respuesta_se_reparte_al_origen_y_a_cada_parada():
+    tipos = {("s-walmart", "SANTA ROSA - 87"): "RM", ("s-walmart", "LINARES - 171"): "Z0",
+             ("s-walmart", "CD LO AGUIRRE"): None}
+    viaje = _viaje()
+    _apply_operation_types(viaje, tipos)
+    assert viaje["origin_operation_type"] is None
+    assert [s["operation_type"] for s in viaje["stops"]] == ["RM", "Z0", None]
 
 
-@pytest.mark.asyncio
-async def test_load_operation_type_buckets_empty_for_no_client_names():
-    pool = AsyncMock()
-    buckets = await load_operation_type_buckets(pool, set())
-    assert buckets == {}
-    pool.fetch.assert_not_called()
+def test_un_viaje_sin_cliente_no_tiene_tipos():
+    viaje = _viaje(shipper=None)
+    _apply_operation_types(viaje, {("s-walmart", "SANTA ROSA - 87"): "RM"})
+    assert viaje["origin_operation_type"] is None
+    assert all(s["operation_type"] is None for s in viaje["stops"])

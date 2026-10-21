@@ -14,9 +14,6 @@ Pasa a ser público, como TRACTOREO_ROSTER_CTE, porque lo importan varios router
 
 
 def origen_del_viaje(viaje: str) -> str:
-    """Expresión escalar con el local de origen del viaje cuyo alias es `viaje`."""
-    return (
-        "(SELECT ts.local FROM app.trip_stops ts "
-        f"WHERE ts.trip_id = {viaje}.id AND ts.stop_type = 'ORIGIN' "
-        "ORDER BY ts.stop_order ASC LIMIT 1)"
-    )
+    """Expresión escalar con el local de origen del viaje cuyo alias es `viaje`. La regla vive en la base,
+    app.trip_origin_local (migración 20261101090000): la analítica en dbt usa la misma."""
+    return f"app.trip_origin_local({viaje}.id)"

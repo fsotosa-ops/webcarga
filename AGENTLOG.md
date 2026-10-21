@@ -80,6 +80,23 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
      - Efecto (base real, 14-20/10): el 16/10 pasa de 37 a 39 con carga (34 del día, 5 en ruta). Los viajes de
        la noche ahora cuentan en su día y, al día siguiente, como en ruta.
      - Pendiente de la misma clase: `trips_del_dia` usa `status_reported_at::date` (marca sin huso en UTC).
+   - PASO 1 HECHO (21/10): las reglas de lugar del viaje viven en la base. Migración `20261101090000_trip_location_rules`
+     APLICADA (ensayo con ROLLBACK + autorización):
+     - Funciones: `app.location_operation_type`, `operation_type_zone`, `trip_origin_local`,
+       `trip_last_destination_local` y `trip_destination_zone`.
+     - Índices: dos sobre `public.locations`.
+     - La API las llama: `services/destination_zone.py` y `origen_del_viaje.py`. Se retiró la copia en Python
+       (`split_local`, `normalize_location_name`, `resolve_operation_type`, `zone_of`).
+     - Cambio a propósito: el último destino sale de la lista vigente (`trips.stops`), no de una versión vieja de
+       `trip_stops`. Cambian 85 destinos y 7 zonas desde julio, ninguna en un día cerrado. Un nombre de local
+       ambiguo (2 casos) queda sin resolver en vez de elegir al azar.
+     - El cliente del viaje NO pasó a función: es un cruce por `shipper_id`, no una regla. Gold lo hace con
+       `dim_client`.
+     - Tests: `test_trip_location_rules_integration.py` (18 casos a mano; mutación detectada). Área del backend
+       723 + 36 en verde.
+     - Rendimiento medido en la real: página del Monitor unos 10 ms netos, 300 zonas unos 130 ms.
+   - SIGUIENTE: humo en dev (Monitor: tipo por parada; Cierre: zona) y el paso 2 del diseño (dimensiones en dbt,
+     `models/gold/`).
    - (hecho) Leído el proyecto dbt de Mage (`.mage-agent/local_sync/dbt/tms`, y `monitor-app/docs`
      contra la base real), la convención de dbt del proyecto y cómo se programa su ejecución.
    - Antes: llevar la zona de destino a una función SQL que `destination_zone.py` reutilice.

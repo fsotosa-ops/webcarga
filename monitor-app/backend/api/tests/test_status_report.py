@@ -27,7 +27,6 @@ from app.routers.status_report import (
     _trabajaron_sin_asignacion,
     router,
 )
-from app.services.destination_zone import zone_of
 from tests.conftest import USER, wire_transactional_conn
 
 
@@ -73,13 +72,8 @@ def _driver_row(**overrides):
     return base
 
 
-def test_zone_bucket_maps_region_norte_y_sur_a_region():
-    assert zone_of("RM") == "RM"
-    assert zone_of("Z0") == "Z0"
-    assert zone_of("Region Norte") == "Región"
-    assert zone_of("Region Sur") == "Región"
-    assert zone_of(None) == "Sin clasificar"
-    assert zone_of("algo raro") == "Sin clasificar"
+# La agrupación de tipos en zonas vive en la base (app.operation_type_zone):
+# test_trip_location_rules_integration.py::test_la_zona_agrupa_los_tipos.
 
 
 # El cliente es un dato del viaje (decisión del usuario 11/10, "estás mezclando

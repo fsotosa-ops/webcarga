@@ -34,7 +34,7 @@ from ..services.anular_viajes import (
 from ..services.cierre_lineas import frescura_del_dia, ultima_firma
 from ..services.cierre_viajes import SQL_CON_MOTIVO, SQL_GRUPOS_CIERRE
 from ..services.origen_del_viaje import origen_del_viaje
-from ..services.destination_zone import load_operation_type_buckets, resolve_operation_type, trip_zones
+from ..services.destination_zone import operation_types_by_local, trip_zones
 from ..utils.identity import canonical_plate, plate_matches_sql, rut_matches_sql
 
 
@@ -380,13 +380,24 @@ def _attach_origin(d: dict) -> None:
     d["origin"] = origin_stop["local"] if origin_stop else None
 
 
-def _apply_operation_types(d: dict, buckets: dict) -> None:
-    bucket = buckets.get(str(d["shipper_id"])) if d.get("shipper_id") else None
-    d["origin_operation_type"] = resolve_operation_type(bucket, d.get("origin"))
-    stops = d.get("stops")
-    if stops:
-        for stop in stops:
-            stop["operation_type"] = resolve_operation_type(bucket, stop.get("local"))
+def _operation_type_pairs(data: list[dict]) -> list[tuple[str, str]]:
+    """Los (cliente, local) del origen y de cada parada, para resolver sus tipos en un solo pedido."""
+    pares = []
+    for d in data:
+        if not d.get("shipper_id"):
+            continue
+        shipper = str(d["shipper_id"])
+        pares += [(shipper, local) for local in [d.get("origin"), *(s.get("local") for s in d.get("stops") or [])]
+                  if local]
+    return pares
+
+
+def _apply_operation_types(d: dict, types: dict) -> None:
+    """El tipo de operación del origen y de cada parada, ya resuelto por la base (operation_types_by_local)."""
+    shipper = str(d["shipper_id"]) if d.get("shipper_id") else None
+    d["origin_operation_type"] = types.get((shipper, d.get("origin"))) if shipper else None
+    for stop in d.get("stops") or []:
+        stop["operation_type"] = types.get((shipper, stop.get("local"))) if shipper else None
 
 
 router = APIRouter(prefix="/trips", tags=["trips"])
@@ -921,27 +932,25 @@ async def list_trips(
         f"SELECT COUNT(*) {_TRIP_FROM} {where}", *params
     )
     data = []
-    shipper_ids = set()
     trip_ids = set()
     for r in rows:
         d = dict(r)
-        if d.get("shipper_id"):
-            shipper_ids.add(str(d["shipper_id"]))
         trip_ids.add(str(d["id"]))
         data.append(d)
 
     await _attach_carrier_can_operate(pool, data)
     stops_by_trip = await _load_trip_stops(pool, trip_ids)
-    op_type_buckets = await load_operation_type_buckets(pool, shipper_ids)
     temp_ranges = await _load_temperature_ranges(pool)
     dropped_ctx = await _load_tms_dropped_context(pool)
     for d in data:
         d["stops"] = stops_by_trip.get(str(d["id"]), [])
+        _attach_origin(d)
+    op_types = await operation_types_by_local(pool, _operation_type_pairs(data))
+    for d in data:
         d["cargo_delivered"] = _cargo_delivered(d["stops"])
         d["temp_status"] = _trip_temp_status(d["stops"], d.get("cargo_type"), d["cargo_delivered"], temp_ranges)
         _annotate_stop_temp_status(d["stops"], d.get("cargo_type"), temp_ranges)
-        _attach_origin(d)
-        _apply_operation_types(d, op_type_buckets)
+        _apply_operation_types(d, op_types)
         d["tms_dropped"] = _tms_dropped(d, dropped_ctx)
         anotar_anulable(d, user)
 
@@ -2250,9 +2259,7 @@ async def get_trip(
     d["temp_status"] = _trip_temp_status(d["stops"], d.get("cargo_type"), d["cargo_delivered"], temp_ranges)
     _annotate_stop_temp_status(d["stops"], d.get("cargo_type"), temp_ranges)
     _attach_origin(d)
-    shipper_ids = {str(d["shipper_id"])} if d.get("shipper_id") else set()
-    op_type_buckets = await load_operation_type_buckets(pool, shipper_ids)
-    _apply_operation_types(d, op_type_buckets)
+    _apply_operation_types(d, await operation_types_by_local(pool, _operation_type_pairs([d])))
     # Abrir un viaje no escribe nada: la Divergencia TMS la anota la base cuando
     # llega el dato del TMS (app.log_tms_divergence, migración 20261016090000).
     anotar_anulable(d, user)

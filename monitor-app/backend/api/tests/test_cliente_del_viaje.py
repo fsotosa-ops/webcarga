@@ -63,10 +63,11 @@ def test_el_filtro_de_cliente_es_por_id_y_acepta_los_sin_vincular():
 
 
 def test_los_tipos_de_operacion_se_indexan_por_id():
-    # Vive en services/destination_zone.py desde e2b45aeb (la zona del destino, una vez).
-    from app.services.destination_zone import load_operation_type_buckets
-    fuente = inspect.getsource(load_operation_type_buckets)
-    assert "s.id = ANY($1::uuid[])" in fuente and "lower(" not in fuente
+    # La regla vive en la base desde el 21/10 (app.location_operation_type, por entity_id = id del cliente;
+    # test_trip_location_rules_integration.py::test_nunca_cruza_clientes). La API le pasa el id, no el nombre.
+    from app.services import destination_zone
+    fuente = inspect.getsource(destination_zone)
+    assert "app.location_operation_type(u.s::uuid, u.l)" in fuente and "lower(" not in fuente
 
 
 import pathlib
