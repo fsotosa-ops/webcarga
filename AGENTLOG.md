@@ -36,8 +36,9 @@ y Reporte de estatus (cuenta EQUIPOS, no viajes: no se tocó). Aviso `OPERATION_
 Tests: 15 de la regla (mutación detectada), backend del área 653+86, vitest 2044 + tsc.
 
 **Siguiente paso:**
-1. Humo en dev cuando Actions termine (el usuario avisa): Cierre de un día con Sodimac solo en Equipo Completo;
-   ficha de Sodimac; Nuevo viaje de Webcarga Spot pide el tipo.
+1. HECHO (21/10, solo lectura): Cierre del 20/10 con los 3 Sodimac en Equipo Completo "según el cliente" (el único
+   sin alcance es un Walmart con patente fuera del Directorio, ZL7865); ficha de Sodimac con "Tipos de operación";
+   Nuevo viaje de Webcarga Spot exige el tipo; detalle del viaje 898217 dice "Equipo Completo · Según el cliente".
 2. Responder a Operaciones (sin desarrollo): FRTC42 en Iansa = 2 viajes de prueba anulados el 11/10;
    dar de baja GPRZ30 con motivo; Reclutamiento completa TK1912, BKSL42, DPRP69 y la rampla KDKP93.
 3. Pendiente aparte (no tocado): un Sodimac sin tracto sigue en "Asignación incompleta" del Cierre (bloquea si es del
