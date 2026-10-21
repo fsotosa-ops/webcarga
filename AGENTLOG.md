@@ -64,7 +64,15 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
    - **Presentación en el schema `analytics`** (recomendado, por confirmar con el usuario). Vistas delgadas `rpt_*`
      y la sábana BDOT, sin lógica propia. La API y la herramienta de BI leen solo esta capa, con un rol sin datos
      personales.
-   - Antes de diseñar: leer el proyecto dbt de Mage (`.mage-agent/local_sync/dbt/tms`, y `monitor-app/docs`
+   - DISEÑO ESCRITO (21/10): `docs/superpowers/specs/2026-10-21-analitica-modelo-dimensional-design.md`, por
+     aprobar. Bus matrix; 4 hechos de la primera etapa (eventos de estado desde `bronze.tms_trips_snapshot`, viaje
+     como accumulating snapshot, parada y estado diario de la flota desde las firmas); dimensiones con SCD donde
+     hay historia; `analytics` con roles propios; pipeline `analytics_gold` con `dbt build`; contrato para los
+     módulos nuevos (sección 8).
+   - DEFECTO ENCONTRADO: `trip_planning_date` usa la fecha UTC. 208 de 3.554 viajes QAnalytics (20:00-23:59 Chile)
+     y 3 Wingsuite quedan con el día siguiente; el id no depende de la fecha. Decidir con Operaciones antes de
+     corregir (días firmados no se reabren).
+   - (hecho) Leído el proyecto dbt de Mage (`.mage-agent/local_sync/dbt/tms`, y `monitor-app/docs`
      contra la base real), la convención de dbt del proyecto y cómo se programa su ejecución.
    - Antes: llevar la zona de destino a una función SQL que `destination_zone.py` reutilice.
    - Verificar de dónde sale la hora de asignación (TMS o `audit_log`).
