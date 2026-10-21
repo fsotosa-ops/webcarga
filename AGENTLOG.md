@@ -19,6 +19,47 @@
 > (**Ciclo de vida del Directorio con motivo (21/10)** cerrado y archivado: estado de baja único, acciones con motivo,
 > ambas migraciones aplicadas en la real. El test de sincronía de etapas del viaje (rojo desde el 17/10) quedó arreglado el mismo día.)
 
+### CHECKPOINT VIGENTE — Analítica (BDOT en la app) (21/10, Fase 0 `22ef3d5c` en dev)
+
+**Por qué:** la reunión del 16/10 (Granola 24f97159, Pablo/Fabián/Enrique) pidió un módulo Analítica que reemplace el
+Excel BD OT: una sábana por viaje, vistas guardadas (BDOT completo, F30-1, Operaciones Walmart), Excel con datos
+personales solo para administradores y reportes estándar. Plan aprobado: `~/.claude/plans/zany-wishing-cloud.md`.
+Decisiones del usuario: el reporte diario cuenta "Asignados del día" (planificados ese día, como el Excel) y "En ruta
+desde días anteriores" aparte. El grano es viajes + paradas, con todas las fechas. El módulo va primero en la app;
+la herramienta de BI es una fase posterior ("basta con la lógica de cómo se reporta hoy"). Las columnas financieras
+de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
+
+**Hecho (Fase 0):**
+- `status_report._build_asset_rows`: el día del equipo es su viaje planificado MÁS RECIENTE. Antes era el reportado
+  más tarde, y un tracto con un viaje de hoy y otro de anteayer activo contaba como en ruta.
+- El resumen trae `assigned_today`, y `multi_day.total` = en ruta. La pantalla, la versión imprimible y el Excel
+  muestran "Asignados del día" y "En ruta desde días anteriores" (`CuatroCifras` pasó a `CifrasDelTipo`).
+- `/daily-closures/report` ya no devuelve `tax_id`: la Reportería no lo usaba y lo leía todo el que tiene
+  `operations.read`.
+- Tests: `tests/test_status_report_dia_integracion.py`; la mutación se detecta (con la regla vieja da 2 ≠ 0).
+  Backend del área 64/64, vitest del reporte 163/163, tsc.
+- Base real (lectura), del 14 al 20/10: 1 a 4 equipos por día pasan de "Asignados" a "En ruta" (16/10: 37 con
+  carga, 33 del día y 4 en ruta).
+- Corrección al plan: la zona de destino NO se calcula en el frontend. Vive en `services/destination_zone.py`
+  (Python, una sola fuente). Llevarla a SQL es parte de la Fase 1: el Python debe llamar a la función SQL, no
+  copiarla.
+
+**Siguiente paso:**
+1. Humo en dev del Reporte de estatus (pestaña Reporte del Cierre): las cinco cifras y el Excel.
+2. Fase 1: schema `analytics` con las vistas `trips`, `trip_stops` y `trip_people` (datos personales aparte).
+   - Antes: llevar la zona de destino a una función SQL que `destination_zone.py` reutilice.
+   - Verificar de dónde sale la hora de asignación (TMS o `audit_log`).
+   - Migración con ensayo con ROLLBACK y autorización.
+3. Fase 2: módulo `/dashboard/analytics`.
+   - API paginada con un catálogo de columnas único.
+   - `app.saved_views`.
+   - Permisos `analytics.read`, `analytics.export` y `analytics.export_personal_data`.
+   - Exportación auditada.
+   - La Reportería se fusiona como vista del módulo.
+4. Fase 3: reportes estándar (no asignados por día de oferta, hora de asignación por CD, cuadratura contra el TMS,
+   F30-1).
+5. Marcha en paralelo de 2 semanas contra el Excel de Operaciones.
+
 ### CHECKPOINT VIGENTE — Onboarding de empresas como etapa del alta (21/10, `8087d893` en dev)
 
 **Por qué:** el usuario observó que "En onboarding" no calzaba con la industria: era "empresa creada sin RUT"
@@ -41,8 +82,7 @@ Arreglado de paso: `test_states` fallaba desde `7690b11a` (alias `OperationalSta
 1. HECHO (21/10): humo en dev con una empresa de prueba (RUT 61905889-5): nació En onboarding con 13 obligatorios,
    la ficha dijo "Faltan 13", la API dio 409 ONBOARDING_INCOMPLETE, se activó como excepción con motivo (auditado)
    y se eliminó. Hallazgo arreglado: la carga en lote y la gestión declarada solo se ofrecían a una activa.
-2. Retomar el plan del BDOT / analítica (exploración hecha: reunión 16/10 en Granola, mapa del BD OT, inventario de
-   reportes; riesgo detectado: `/daily-closures/report` devuelve RUT a todos los roles con lectura).
+2. HECHO: plan del BDOT retomado (checkpoint Analítica arriba; la fuga del RUT quedó cerrada en `22ef3d5c`).
 3. Propuesto, sin decidir: onboarding de conductores y equipos.
 
 ### CHECKPOINT VIGENTE — Tipo de operación del viaje (21/10, `c08c7992` en dev)
