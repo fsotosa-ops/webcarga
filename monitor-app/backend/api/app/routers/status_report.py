@@ -397,16 +397,26 @@ def _resumen_del_tipo(rows: list[dict]) -> dict:
     # Los que siguen en un viaje planificado días antes: cuántos, por días atrás.
     varios_dias: dict = {}
     for r in rows:
-        if r["con_carga"] and (r["dias_en_curso"] or 0) > 0:
+        # Con carga se reparte en dos: del día (lo que cuenta Operaciones) o en ruta
+        # desde días anteriores. Las tablas llevan las dos para cuadrar con las cifras.
+        en_ruta = r["con_carga"] and (r["dias_en_curso"] or 0) > 0
+        columna = "in_route" if en_ruta else "assigned_today"
+        if en_ruta:
             dias = str(r["dias_en_curso"])
             varios_dias[dias] = varios_dias.get(dias, 0) + 1
         if r["con_carga"]:
             cliente = r["client_name"] or "Sin cliente"
-            por_cliente[cliente] = por_cliente.get(cliente, 0) + 1
+            c = por_cliente.setdefault(cliente, {"client_name": cliente, "assigned": 0, "assigned_today": 0,
+                                                 "in_route": 0})
+            c["assigned"] += 1
+            c[columna] += 1
         origen = r["home_cd"] or "Sin origen"
-        b = por_origen.setdefault(origen, {"origin": origen, "enrolled": 0, "assigned": 0})
+        b = por_origen.setdefault(origen, {"origin": origen, "enrolled": 0, "assigned": 0, "assigned_today": 0,
+                                           "in_route": 0})
         b["enrolled"] += 1
-        b["assigned"] += 1 if r["con_carga"] else 0
+        if r["con_carga"]:
+            b["assigned"] += 1
+            b[columna] += 1
     en_ruta = sum(varios_dias.values())
     return {
         "total": total,
@@ -416,7 +426,7 @@ def _resumen_del_tipo(rows: list[dict]) -> dict:
         "assigned_today": assigned - en_ruta,
         "not_working": sum(1 for r in rows if not r["con_carga"] and r["category"] in _NO_TRABAJO),
         "utilization_pct": round(assigned / total * 100, 1) if total else 0.0,
-        "by_client": [{"client_name": k, "assigned": v} for k, v in sorted(por_cliente.items())],
+        "by_client": [por_cliente[k] for k in sorted(por_cliente)],
         "by_home_origin": [por_origen[k] for k in sorted(por_origen)],
         "multi_day": {"total": en_ruta,
                       "by_days_back": dict(sorted(varios_dias.items(), key=lambda kv: int(kv[0])))},

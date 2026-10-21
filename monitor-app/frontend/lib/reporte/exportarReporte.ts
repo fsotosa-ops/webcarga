@@ -34,12 +34,13 @@ function resumen(r: OperationTypeReport): Fila[] {
     ['% utilización', s.utilization_pct], [],
     ...Object.entries(s.multi_day.by_days_back).map(([dias, n]) => [`Hace ${dias} ${dias === '1' ? 'día' : 'días'}`, n]),
     [],
-    negrita(['Cliente', 'Asignados']),
-    ...s.by_client.map(c => [c.client_name, c.assigned]),
-    negrita(['Total', sumar(s.by_client, c => c.assigned)]), [],
-    negrita(['Origen habitual', 'Enrolados', 'Asignados']),
-    ...s.by_home_origin.map(o => [o.origin, o.enrolled, o.assigned]),
-    negrita(['Total', sumar(s.by_home_origin, o => o.enrolled), sumar(s.by_home_origin, o => o.assigned)]),
+    negrita(['Cliente', 'Del día', 'En ruta']),
+    ...s.by_client.map(c => [c.client_name, c.assigned_today, c.in_route]),
+    negrita(['Total', sumar(s.by_client, c => c.assigned_today), sumar(s.by_client, c => c.in_route)]), [],
+    negrita(['Origen habitual', 'Enrolados', 'Del día', 'En ruta']),
+    ...s.by_home_origin.map(o => [o.origin, o.enrolled, o.assigned_today, o.in_route]),
+    negrita(['Total', sumar(s.by_home_origin, o => o.enrolled), sumar(s.by_home_origin, o => o.assigned_today),
+      sumar(s.by_home_origin, o => o.in_route)]),
   ]
 }
 

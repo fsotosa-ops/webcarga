@@ -33,8 +33,8 @@ const VACIO: OperationTypeReport = {
 const TRACTOREO: OperationTypeReport = {
   summary: {
     total: 81, assigned: 29, assigned_today: 24, not_working: 40, utilization_pct: 35.8,
-    by_client: [{ client_name: 'Walmart', assigned: 29 }],
-    by_home_origin: [{ origin: 'CD Lo Aguirre', enrolled: 50, assigned: 20 }],
+    by_client: [{ client_name: 'Walmart', assigned: 29, assigned_today: 24, in_route: 5 }],
+    by_home_origin: [{ origin: 'CD Lo Aguirre', enrolled: 50, assigned: 20, assigned_today: 17, in_route: 3 }],
     multi_day: { total: 5, by_days_back: { '1': 3, '2': 2 } },
   },
   assigned: {
@@ -160,6 +160,9 @@ describe('StatusReportSection', () => {
     expect(await body.findByText('En ruta desde días anteriores (5)')).toBeInTheDocument()
     expect(body.getByText('3 equipos — 1 día')).toBeInTheDocument()
     expect(body.getByText('2 equipos — 2 días')).toBeInTheDocument()
+    // Las tablas separan lo mismo que las cifras: Walmart 24 del día + 5 en ruta.
+    const walmart = body.getAllByRole('row').find(r => r.textContent?.startsWith('Walmart'))!
+    expect(walmart).toHaveTextContent('Walmart245')
   })
 
   it('el alcance del Cierre manda en todas las secciones: el Reporte ya no tiene selector propio (D1)', async () => {

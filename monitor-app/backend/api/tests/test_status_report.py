@@ -293,7 +293,7 @@ def test_resumen_del_tipo_separa_asignados_de_los_que_no_trabajaron():
     assert {k: resumen[k] for k in ("total", "assigned", "not_working", "utilization_pct")} == {
         "total": 4, "assigned": 1, "not_working": 2, "utilization_pct": 25.0,
     }
-    assert resumen["by_client"] == [{"client_name": "Walmart", "assigned": 1}]
+    assert resumen["by_client"] == [{"client_name": "Walmart", "assigned": 1, "assigned_today": 1, "in_route": 0}]
 
 
 def test_resumen_agrupa_la_asistencia_por_el_origen_habitual_y_no_por_donde_cargo():
@@ -301,12 +301,22 @@ def test_resumen_agrupa_la_asistencia_por_el_origen_habitual_y_no_por_donde_carg
     rows = [
         _row(asset_id="a1", home_cd="CD El Peñón", origin_cd="CD Quilicura"),
         _row(asset_id="a2", home_cd="CD El Peñón", origin_cd=None, con_carga=False, category="NO_TRABAJANDO"),
-        _row(asset_id="a3", home_cd=None, origin_cd="CD El Peñón"),
+        _row(asset_id="a3", home_cd=None, origin_cd="CD El Peñón", dias_en_curso=2),
     ]
     assert _resumen_del_tipo(rows)["by_home_origin"] == [
-        {"origin": "CD El Peñón", "enrolled": 2, "assigned": 1},
-        {"origin": "Sin origen", "enrolled": 1, "assigned": 1},
+        {"origin": "CD El Peñón", "enrolled": 2, "assigned": 1, "assigned_today": 1, "in_route": 0},
+        {"origin": "Sin origen", "enrolled": 1, "assigned": 1, "assigned_today": 0, "in_route": 1},
     ]
+
+
+def test_las_tablas_del_resumen_cuadran_con_las_cifras_del_dia_y_en_ruta():
+    """Walmart 32 en la tabla contra 31 del día arriba (humo 21/10): la tabla separa."""
+    rows = [_row(asset_id="a1", dias_en_curso=0), _row(asset_id="a2", dias_en_curso=0),
+            _row(asset_id="a3", dias_en_curso=1)]
+    resumen = _resumen_del_tipo(rows)
+    assert sum(c["assigned_today"] for c in resumen["by_client"]) == resumen["assigned_today"] == 2
+    assert sum(c["in_route"] for c in resumen["by_client"]) == resumen["multi_day"]["total"] == 1
+    assert sum(o["assigned_today"] for o in resumen["by_home_origin"]) == 2
 
 
 def test_resumen_de_un_tipo_sin_equipos_no_divide_por_cero():

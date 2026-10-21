@@ -32,7 +32,7 @@ export function ResumenImprimible({ fecha, porTipo, faltante, clientes }: {
                 <tbody>
                   {porTipo[t.clave].summary.by_client.map(c => (
                     <tr key={c.client_name} className="border-b border-border">
-                      <td className="py-1">{c.client_name}</td><td className="py-1 text-right">{c.assigned}</td>
+                      <td className="py-1">{c.client_name}</td><td className="py-1 text-right">{c.assigned_today}</td><td className="py-1 text-right">{c.in_route > 0 ? `+ ${c.in_route} en ruta` : ''}</td>
                     </tr>
                   ))}
                 </tbody>

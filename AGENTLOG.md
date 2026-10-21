@@ -46,9 +46,10 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
 
 **Siguiente paso:**
 1. HECHO (21/10): humo en dev del Reporte de estatus del 16/10 en Tractoreo: 46 activos, 31 del día, 1 en ruta, 13 no
-   trabajaron, 69,6 %. Revisado a 1440 y 390, y el Excel trae las dos filas. HALLAZGO ABIERTO: las tablas "Asignados
-   por cliente" (Walmart 32) y "por origen habitual" siguen contando con carga (del día + en ruta). Decidir con el
-   usuario si se separan o se rotulan "Con carga". El encabezado del Cierre ("34 asignados") es otra cuenta.
+   trabajaron, 69,6 %. Revisado a 1440 y 390, y el Excel trae las dos filas. Hallazgo: las tablas por cliente y por origen habitual
+   sumaban del día + en ruta (Walmart 32 contra 31). Decisión del usuario: separar en dos columnas, "Del día" y
+   "En ruta". Hecho en la pantalla, la versión imprimible y el Excel (`by_client`/`by_home_origin` traen
+   `assigned_today` e `in_route`). El encabezado del Cierre ("34 asignados") es otra cuenta y no se tocó.
 2. Fase 1: schema `analytics` con las vistas `trips`, `trip_stops` y `trip_people` (datos personales aparte).
    - Antes: llevar la zona de destino a una función SQL que `destination_zone.py` reutilice.
    - Verificar de dónde sale la hora de asignación (TMS o `audit_log`).

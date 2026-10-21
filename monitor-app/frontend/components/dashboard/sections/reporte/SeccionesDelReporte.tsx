@@ -85,10 +85,12 @@ export function SeccionResumen({ reporte, tipo }: Props) {
           {s.by_client.length === 0 ? <Vacio>No hubo equipos de {tipo.etiqueta} asignados</Vacio> : (
             <div className="bg-white rounded-xl border border-border overflow-x-auto">
               <table className="w-full text-dato">
-                <thead><tr className={FILA_DE_CABECERA}><th className={TH}>Cliente</th><th className={`${TH} text-right`}>Asignados</th></tr></thead>
+                <thead><tr className={FILA_DE_CABECERA}><th className={TH}>Cliente</th><th className={`${TH} text-right`}>Del día</th><th className={`${TH} text-right`}>En ruta</th></tr></thead>
                 <tbody className="divide-y divide-border/60">
                   {s.by_client.map(c => (
-                    <tr key={c.client_name}><td className="px-3 py-2">{c.client_name}</td><td className="px-3 py-2 text-right">{c.assigned}</td></tr>
+                    <tr key={c.client_name}>
+                      <td className="px-3 py-2">{c.client_name}</td><td className="px-3 py-2 text-right">{c.assigned_today}</td><td className="px-3 py-2 text-right">{c.in_route}</td>
+                    </tr>
                   ))}
                 </tbody>
               </table>
@@ -101,13 +103,13 @@ export function SeccionResumen({ reporte, tipo }: Props) {
             <table className="w-full text-dato">
               <thead>
                 <tr className={FILA_DE_CABECERA}>
-                  <th className={TH}>Origen habitual</th><th className={`${TH} text-right`}>Enrolados</th><th className={`${TH} text-right`}>Asignados</th>
+                  <th className={TH}>Origen habitual</th><th className={`${TH} text-right`}>Enrolados</th><th className={`${TH} text-right`}>Del día</th><th className={`${TH} text-right`}>En ruta</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
                 {s.by_home_origin.map(o => (
                   <tr key={o.origin}>
-                    <td className="px-3 py-2">{o.origin}</td><td className="px-3 py-2 text-right">{o.enrolled}</td><td className="px-3 py-2 text-right">{o.assigned}</td>
+                    <td className="px-3 py-2">{o.origin}</td><td className="px-3 py-2 text-right">{o.enrolled}</td><td className="px-3 py-2 text-right">{o.assigned_today}</td><td className="px-3 py-2 text-right">{o.in_route}</td>
                   </tr>
                 ))}
               </tbody>

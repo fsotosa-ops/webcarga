@@ -5,8 +5,8 @@ import { hojaDeLaTabla, hojasDeLaSeccion, hojasDelReporte } from './exportarRepo
 function reporte(over: Partial<OperationTypeReport> = {}): OperationTypeReport {
   return {
     summary: { total: 3, assigned: 2, assigned_today: 1, not_working: 1, utilization_pct: 66.7,
-               by_client: [{ client_name: 'Walmart', assigned: 2 }],
-               by_home_origin: [{ origin: 'CD Lo Aguirre', enrolled: 3, assigned: 2 }],
+               by_client: [{ client_name: 'Walmart', assigned: 2, assigned_today: 1, in_route: 1 }],
+               by_home_origin: [{ origin: 'CD Lo Aguirre', enrolled: 3, assigned: 2, assigned_today: 1, in_route: 1 }],
                multi_day: { total: 1, by_days_back: { '2': 1 } } },
     assigned: {
       rows: [
@@ -74,6 +74,8 @@ describe('hojasDelReporte', () => {
     const filas = hoja.data.map(f => f.map(valor))
     expect(filas).toContainEqual(['Asignados del día', 1])
     expect(filas).toContainEqual(['En ruta desde días anteriores', 1])
+    expect(filas).toContainEqual(['Walmart', 1, 1])
+    expect(filas).toContainEqual(['CD Lo Aguirre', 3, 1, 1])
     expect(filas).toContainEqual(['Hace 2 días', 1])
   })
 

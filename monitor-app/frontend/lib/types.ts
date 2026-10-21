@@ -1687,9 +1687,10 @@ export type OperationTypeReport = {
     /** Equipos del tipo que no trabajaron (o sin motivo todavía). */
     not_working:     number
     utilization_pct: number
-    by_client:       { client_name: string; assigned: number }[]
+    /** `assigned` = `assigned_today` + `in_route`, como en las cifras de arriba. */
+    by_client:       { client_name: string; assigned: number; assigned_today: number; in_route: number }[]
     /** Enrolados vs asignados por origen habitual declarado (HU-28). */
-    by_home_origin:  { origin: string; enrolled: number; assigned: number }[]
+    by_home_origin:  { origin: string; enrolled: number; assigned: number; assigned_today: number; in_route: number }[]
     /** En ruta desde días anteriores: con carga y sin viaje planificado ese día; la
      *  clave de `by_days_back` son los días desde su viaje más reciente ("1", "2", …). */
     multi_day:       { total: number; by_days_back: Record<string, number> }
