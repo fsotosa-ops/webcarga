@@ -19,6 +19,31 @@
 > (**Ciclo de vida del Directorio con motivo (21/10)** cerrado y archivado: estado de baja único, acciones con motivo,
 > ambas migraciones aplicadas en la real. El test de sincronía de etapas del viaje (rojo desde el 17/10) quedó arreglado el mismo día.)
 
+### CHECKPOINT VIGENTE — Onboarding de empresas como etapa del alta (21/10, `8087d893` en dev)
+
+**Por qué:** el usuario observó que "En onboarding" no calzaba con la industria: era "empresa creada sin RUT"
+(con RUT nacía activa sin documentos, salía solo con el RUT, no podía recibir documentos y su carpeta no entraba a
+Pendientes). Decisiones: criterio de salida = el de la habilitación; activar sin cumplirlo = Certificación con motivo.
+El usuario pidió la versión robusta (no el parche de marcar bloqueos en la rama "no activa").
+
+**Hecho:** `CARRIER_STATUSES_IN_CERTIFICATION` (ACTIVE+ONBOARDING) en el glosario, espejo en `lib/states.ts`.
+`carrier_compliance_cte`: un solo camino para las empresas en certificación (mismo alcance de Pendientes y mismos
+bloqueos); dadas de baja como historial. `ComplianceSummary.requirements_met` (sin bloqueos, sin mirar el ciclo de
+vida); `can_operate` = eso + ACTIVE. `in_scope_sql` incluye onboarding. `initial_status` siempre ONBOARDING.
+`activate`: `requires_requirements_met` → 409 `ONBOARDING_INCOMPLETE`; excepción con `directory.delete` + motivo
+`ACTIVATION_EXCEPTION_REASON` (migración `20261030090000` APLICADA en la real, ensayo con ROLLBACK + autorización).
+Total del embudo = Pendientes (ahora con onboarding). Frontend: carga en onboarding, aviso de la pantalla, encabezado
+"Faltan N obligatorios para activarla", `LifecycleDialog` con `action="activate"` (excepción), pre-cierre pide RUT
+solo con 422. Tests: backend del área 1302/1302 (mutaciones detectadas), vitest 2049/2049, tsc.
+Arreglado de paso: `test_states` fallaba desde `7690b11a` (alias `OperationalStatus` retirado de driver/asset).
+
+**Siguiente paso:**
+1. Humo en dev cuando Actions termine (el usuario avisa): crear una empresa de prueba con RUT → nace En onboarding;
+   cargarle un documento; "Activar" dice lo que falta; activar como excepción con motivo; darla de baja o borrarla.
+2. Retomar el plan del BDOT / analítica (exploración hecha: reunión 16/10 en Granola, mapa del BD OT, inventario de
+   reportes; riesgo detectado: `/daily-closures/report` devuelve RUT a todos los roles con lectura).
+3. Propuesto, sin decidir: onboarding de conductores y equipos.
+
 ### CHECKPOINT VIGENTE — Tipo de operación del viaje (21/10, `c08c7992` en dev)
 
 **Por qué:** levantamiento con Operaciones (planilla "Tipo de operación: preguntas para Operaciones", 21/10).
