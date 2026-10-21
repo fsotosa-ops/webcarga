@@ -38,8 +38,9 @@ solo con 422. Tests: backend del área 1302/1302 (mutaciones detectadas), vitest
 Arreglado de paso: `test_states` fallaba desde `7690b11a` (alias `OperationalStatus` retirado de driver/asset).
 
 **Siguiente paso:**
-1. Humo en dev cuando Actions termine (el usuario avisa): crear una empresa de prueba con RUT → nace En onboarding;
-   cargarle un documento; "Activar" dice lo que falta; activar como excepción con motivo; darla de baja o borrarla.
+1. HECHO (21/10): humo en dev con una empresa de prueba (RUT 61905889-5): nació En onboarding con 13 obligatorios,
+   la ficha dijo "Faltan 13", la API dio 409 ONBOARDING_INCOMPLETE, se activó como excepción con motivo (auditado)
+   y se eliminó. Hallazgo arreglado: la carga en lote y la gestión declarada solo se ofrecían a una activa.
 2. Retomar el plan del BDOT / analítica (exploración hecha: reunión 16/10 en Granola, mapa del BD OT, inventario de
    reportes; riesgo detectado: `/daily-closures/report` devuelve RUT a todos los roles con lectura).
 3. Propuesto, sin decidir: onboarding de conductores y equipos.
