@@ -53,7 +53,19 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
    Humo de `7e396fd5` en dev (16/10, Tractoreo): Walmart 31 del día + 1 en ruta; por origen 15/4/11/1 = 31 y 1
    en ruta; Excel con totales 46/31/1. Revisado a 1440 y 390. (En Playwright, "Descargar Excel" abre un menú y la
    descarga sale con su botón "Descargar".)
-2. Fase 1: schema `analytics` con las vistas `trips`, `trip_stops` y `trip_people` (datos personales aparte).
+2. Fase 1 REDEFINIDA (21/10). Las vistas anchas sobre `app` se descartan por no ser estándar: reescriben la historia
+   y no tienen grano declarado. Va un modelo dimensional (Kimball) en dos capas:
+   - **Gold, en dbt** (decisión del usuario). La fuente es `app`, no `silver`.
+     - Hechos: `fct_trips` (accumulating snapshot, una columna por hito), `fct_trip_stops` y el estado diario de la
+       flota (periodic snapshot, desde `closure_lines`).
+     - Dimensiones compartidas con SCD2 donde hay historia (`fleet_assignment_periods`).
+     - Datos personales solo en la dimensión conductor.
+     - Tests de dbt que corran en el pipeline (hoy Mage no corre ninguno).
+   - **Presentación en el schema `analytics`** (recomendado, por confirmar con el usuario). Vistas delgadas `rpt_*`
+     y la sábana BDOT, sin lógica propia. La API y la herramienta de BI leen solo esta capa, con un rol sin datos
+     personales.
+   - Antes de diseñar: leer el proyecto dbt de Mage (`.mage-agent/local_sync/dbt/tms`, y `monitor-app/docs`
+     contra la base real), la convención de dbt del proyecto y cómo se programa su ejecución.
    - Antes: llevar la zona de destino a una función SQL que `destination_zone.py` reutilice.
    - Verificar de dónde sale la hora de asignación (TMS o `audit_log`).
    - Migración con ensayo con ROLLBACK y autorización.
