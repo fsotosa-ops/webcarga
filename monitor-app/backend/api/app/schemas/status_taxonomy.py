@@ -18,14 +18,15 @@ from pydantic import BaseModel, ConfigDict, field_validator
 # La validacion vive en app/routers/status_taxonomies.py, que si puede consultar.
 # Los grupos validos dependen del vocabulario, asi que se validan en el router
 # (que conoce el `domain` de la fila), no en el schema.
-# Las columnas del tablero: un conjunto cerrado, declarado una sola vez. Lo usan
-# los estados del TMS (routers/config.py) y los operacionales (abajo); el frontend
-# les da su tono en lib/states.ts (boardColumnStyle).
-BOARD_COLUMNS = frozenset({"en_ruta", "en_local", "retornando", "pendiente_cierre_tms", "cerrado", "problema", "otro"})
+# Las etapas del viaje (antes "columnas del tablero"; el tablero se retiró el 17/10):
+# un conjunto cerrado, declarado una sola vez. Lo usan los estados del TMS
+# (routers/config.py) y los operacionales (abajo); el frontend les da su tono en
+# lib/states.ts (TRIP_STAGE_STYLE / tripStageStyle).
+TRIP_STAGES = frozenset({"en_ruta", "en_local", "retornando", "pendiente_cierre_tms", "cerrado", "problema", "otro"})
 
 GRUPOS_POR_DOMINIO = {
-    # En que columna del tablero aparece un viaje con este estado.
-    "OPERATIONAL_STATE": BOARD_COLUMNS,
+    # En que etapa del viaje cae un viaje con este estado.
+    "OPERATIONAL_STATE": TRIP_STAGES,
     # Si el conductor trabajo sin asignacion o no trabajo (migracion 20260917000000).
     "DRIVER_REASON": {"no_trabajando", "trabajando_sin_asignacion"},
     # A quien aplica un motivo de baja o de reactivacion (services/lifecycle.py):

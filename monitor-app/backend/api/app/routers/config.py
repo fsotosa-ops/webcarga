@@ -7,7 +7,7 @@ from ..auth import get_current_user
 from ..authz import Permission, require
 from ..authz.deps import exigir
 from ..db import get_pool
-from ..schemas.status_taxonomy import BOARD_COLUMNS
+from ..schemas.status_taxonomy import TRIP_STAGES
 from ..services.reordenamiento import (
     ESTADOS_DEL_TABLERO, MovimientoBody, mover_una_posicion,
 )
@@ -18,10 +18,10 @@ from ..services.revisiones import SQL_PENDIENTES_POR_SECCION, registrar_revision
 # Cada ruta declara su permiso (RBAC): ver tests/test_toda_ruta_declara_permiso.py.
 router = APIRouter(prefix="/config", tags=["config"])
 
-# Taxonomía de grupos del tablero — compartida entre estados TMS y operacionales
-# `pendiente_cierre_tms` (minuta 09/10, ítem 6): asignado y terminado para Operaciones, pero el
-# TMS del cliente todavía no lo cierra (Sodimac en "Control de salida"). Lo sigue Facturación.
-VALID_GROUP_IDS = BOARD_COLUMNS
+# El `group_id` de un estado del TMS es su etapa del viaje (schemas/status_taxonomy.TRIP_STAGES),
+# la misma lista que la de los estados operacionales. `pendiente_cierre_tms` (minuta 09/10,
+# ítem 6): asignado y terminado para Operaciones, pero el TMS del cliente todavía no lo cierra
+# (Sodimac en "Control de salida"). Lo sigue Facturación.
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
@@ -38,8 +38,8 @@ class TripStatusPatch(BaseModel):
     @field_validator("group_id")
     @classmethod
     def group_valid(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in VALID_GROUP_IDS:
-            raise ValueError(f"group_id debe ser uno de {', '.join(sorted(VALID_GROUP_IDS))}")
+        if v is not None and v not in TRIP_STAGES:
+            raise ValueError(f"group_id debe ser uno de {', '.join(sorted(TRIP_STAGES))}")
         return v
 
 

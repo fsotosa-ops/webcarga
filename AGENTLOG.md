@@ -17,7 +17,7 @@
 > consolidado en el checklist de abajo antes de mover nada.)
 
 > (**Ciclo de vida del Directorio con motivo (21/10)** cerrado y archivado: estado de baja único, acciones con motivo,
-> ambas migraciones aplicadas en la real. Pendiente ajeno: `test_columnas_del_tablero` falla desde el 17/10.)
+> ambas migraciones aplicadas en la real. El test de sincronía de etapas del viaje (rojo desde el 17/10) quedó arreglado el mismo día.)
 
 ### CHECKPOINT VIGENTE — Cierre con un solo patrón (16/10, desplegado en dev)
 
