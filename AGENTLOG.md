@@ -19,9 +19,10 @@
 > (**Ciclo de vida del Directorio con motivo (21/10)** cerrado y archivado: estado de baja único, acciones con motivo,
 > ambas migraciones aplicadas en la real. El test de sincronía de etapas del viaje (rojo desde el 17/10) quedó arreglado el mismo día.)
 
-### PARA LA PRÓXIMA SESIÓN (cierre del 22/10)
+### PARA LA PRÓXIMA SESIÓN (cierre del 22/10, actualizado al final del día)
 
-Todo lo de hoy está comiteado y en `dev`. Pendientes, en orden:
+Todo lo de hoy está comiteado y en `dev` (último `27d46eb8`). El punto 0 (Configuración) quedó CERRADO y probado en
+dev; solo quedan sus 6 menores diferidos, para decidir si se hacen. Pendientes, en orden:
 0. **Configuración ordenada (22/10, `febe1d8a..96c098d8` en dev, falta humo):** spec
    `docs/superpowers/specs/2026-10-22-configuracion-orden-visual-design.md`, plan `docs/superpowers/plans/2026-10-22-configuracion-orden-visual.md`
    (inline, 9 tareas + revisión final opus). Cierra el pendiente del 11/10 (pasada visual) y la deuda que seguía.
