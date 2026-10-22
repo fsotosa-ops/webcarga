@@ -155,6 +155,8 @@ const NO_DEPENDEN_DEL_DIRECTORIO = new Set([
   'planilla-vencimientos', 'config-inventario', 'config-busqueda', 'solicitables',
   'config-revisiones',                                                 // configuración (revision.tsx, clave en variable)
   'config',                                                            // parámetros de Configuración (settings-sources: umbrales, rangos, reglas del Monitor)
+  'config-changes',                                                    // historial de Configuración (LastChange): lo invalida quien guarda un ajuste
+  'users', 'access-roles', 'access-permissions',                       // Personas y Roles: cuentas de la app, no el maestro de empresas/conductores/equipos
   'compliance-record-file', // el archivo de un documento abierto
   'compliance-pending-drawer',                                         // invalidada en CondicionPanel, ninguna consulta la lee
   'driver-contacts',                                                   // la invalida su propio panel
