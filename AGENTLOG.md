@@ -22,21 +22,23 @@
 ### PARA LA PRÓXIMA SESIÓN (cierre del 22/10)
 
 Todo lo de hoy está comiteado y en `dev`. Pendientes, en orden:
-0. **Configuración (`/dashboard/admin/settings`), pedido del usuario al cierre del 22/10:** está saturada, no está
-   alineada al layout de la app y no termina de cumplir el estándar de la industria. Hoy: 7 áreas (Certificación,
-   Operaciones, Flota, Directorio, Seguros, Personas y accesos, Facturación) y ~20 secciones, con índice lateral,
-   buscador y portada para teléfono (`dominios.ts`, `SettingsIndex`, `layout.tsx`). Cómo abordarlo:
-   (a) auditoría visual de todas las secciones a 1440 y 390 contra el resto de la app (encabezado, contenedor,
-   tablas del kit); (b) benchmark nombrado (Linear, Stripe, Vercel, HubSpot: navegación agrupada, una página por
-   sección, encabezado y acciones iguales en todas, búsqueda); (c) brainstorming + maqueta en la HU antes de tocar
-   código; (d) recién ahí el plan. No reescribir sin leer lo que ya existe (Configuración en tres partes, 16/10).
-   **Es el mismo pendiente de sesiones pasadas, no uno nuevo:** 11/10 "el rediseño de Configuración y de Certificación
-   va junto… brainstorming → maqueta → spec → plan" y "después Configuración (incluye su pasada visual), su propio
-   ciclo" (marcado "Configuración sigue pendiente"). El 16/10 se hizo la ESTRUCTURA (tres partes: índice único, rutas,
-   Documentos exigidos, Clientes) pero nunca la pasada visual. De la deuda técnica del 11/10, revisado el 22/10: ya
-   resueltas la clave de caché `taxonomies`/`taxonomias` y `useConfigList`; sigue `CondicionPanel` (526 líneas); por
-   verificar `UsersTable` copiando la lista sin resincronizar, `FormularioDeRol` sin `key` y la tabla editable
-   escrita tres veces. Entran en el mismo ciclo.
+0. **Configuración ordenada (22/10, `febe1d8a..96c098d8` en dev, falta humo):** spec
+   `docs/superpowers/specs/2026-10-22-configuracion-orden-visual-design.md`, plan `docs/superpowers/plans/2026-10-22-configuracion-orden-visual.md`
+   (inline, 9 tareas + revisión final opus). Cierra el pendiente del 11/10 (pasada visual) y la deuda que seguía.
+   - Decisiones del usuario: retirar "Sin revisar" de Configuración y registrar quién cambió qué (incluye Personas y Roles).
+   - Listas con la tabla del kit (`SettingsList` sobre `DataTable`/`TableToolbar`, "+ Nuevo" en la barra, `Card`);
+     Umbrales y las dos Alertas de vencimiento en `SettingsForm` (Guardar cambios/Descartar, aviso al salir con cambios,
+     guardado parcial dice qué se guardó). Índice sin números. Personas: tabla del kit, datos de React Query (sin copia),
+     menú del kit. Roles: botón del kit y cabecera en la tarjeta.
+   - Registro de cambios: `services/config_changes.py` escribe en `public.audit_log` (`config:<area>/<section>`, id md5
+     del elemento); Personas/Roles reusan ROLE/USER_ROLE y se agrega PERSON. Lectura: `GET /config/changes` (reference.read)
+     y `GET /config/changes/people` (users.manage). "Última modificación" en panel, formulario, Personas y roles propios.
+   - `app.config_reviews` y `revision.tsx` se quedan (Documentos exigidos los usa); el backend sigue escribiendo revisiones.
+   - Verificación: backend 1.966 passed (copia local), frontend 2.131 + build + tsc; revisión final: 3 importantes
+     arreglados con test rojo→verde; 6 menores diferidos (ledger: bandera única de cambios sin guardar, aviso solo en el
+     índice, audit fuera de transacción, nombres de acción, Decimal vs float, doble clic en Personas).
+   - **Siguiente:** cuando el usuario avise el despliegue, humo con Playwright: 17 secciones a 1440 y 390, guardar un
+     umbral y ver "Última modificación", confirmar la fila en `audit_log` (lectura).
 1. **Operaciones:** avisar que la Flota del día se baja y se copia ("Descargar Excel" / "Copiar"): la vista se arma una
    vez (columnas y filtros, p. ej. por Origen habitual) y se manda al CD desde ahí. Ver la sección de abajo.
 2. **Certificación:** que quien grabó el video del arrastre lo pruebe con un arrastre de verdad (`da1ecd26`).
