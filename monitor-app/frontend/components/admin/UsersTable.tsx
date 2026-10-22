@@ -146,7 +146,7 @@ export default function UsersTable({ users, currentUserId, roles, catalogo, onCh
       )}
       {editando && (
         <EditarRolesPanel persona={editando} roles={roles} catalogo={catalogo}
-          lastChange={<LastChange change={cambios.of(editando.id)} pending={cambios.isPending} />}
+          lastChange={<LastChange change={cambios.of(editando.id)} pending={cambios.isPending} error={cambios.isError} />}
           onClose={() => setEditandoId(null)}
           onSaved={() => { setEditandoId(null); onChanged(); cambios.invalidate() }} />
       )}

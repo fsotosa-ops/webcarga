@@ -112,6 +112,7 @@ export function SettingsList<Row extends { id: string }>({ source }: { source: S
           puedeEditar={puedeEditar}
           ultimo={fila ? cambios.of(fila.id) : undefined}
           cargandoUltimo={cambios.isPending}
+          errorUltimo={cambios.isError}
           onCambio={refrescar}
           onDesactivado={n => setAviso(n > 0
             ? `Se desactivó, y ${n === 1 ? 'una regla de documento seguía usándolo' : `${n} reglas de documento seguían usándolo`}. Revísalas en Certificación.`
@@ -124,7 +125,7 @@ export function SettingsList<Row extends { id: string }>({ source }: { source: S
 }
 
 function PanelElemento<Row extends { id: string }>({
-  source, fila, hermanos, puedeEditar, ultimo, cargandoUltimo, onCambio, onDesactivado, onCerrar,
+  source, fila, hermanos, puedeEditar, ultimo, cargandoUltimo, errorUltimo, onCambio, onDesactivado, onCerrar,
 }: {
   source: SettingsSource<Row>
   fila: Row | undefined
@@ -132,6 +133,7 @@ function PanelElemento<Row extends { id: string }>({
   puedeEditar: boolean
   ultimo: LastChangeInfo | undefined
   cargandoUltimo: boolean
+  errorUltimo: boolean
   onCambio: () => void
   onDesactivado: (enUsoPor: number) => void
   onCerrar: () => void
@@ -189,7 +191,7 @@ function PanelElemento<Row extends { id: string }>({
   return (
     <PanelLateral titulo={fila ? source.title(fila) : `Nuevo ${source.create!.noun}`} onCerrar={onCerrar} pie={pie}>
       <div className="space-y-4">
-        {fila && <LastChange change={ultimo} pending={cargandoUltimo} />}
+        {fila && <LastChange change={ultimo} pending={cargandoUltimo} error={errorUltimo} />}
         {source.note && <p className="text-dato text-informativo">{source.note}</p>}
         {source.fields(fila).map(f => (
           <Campo key={f.key} campo={f} valor={valores[f.key]} disabled={!puedeEditar}

@@ -26,6 +26,9 @@ export function SettingsForm<Row extends { id: string }>({ source }: { source: S
   const [errores, setErrores] = useState<Record<string, string>>({})
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)
+  // Las filas que se guardaron en el último intento, para decirlo en cada una.
+  const [guardadas, setGuardadas] = useState<string[]>([])
+  const [resumen, setResumen] = useState<string | null>(null)
 
   const filas = useMemo(() => q.data ?? [], [q.data])
   const originales = useMemo(() => Object.fromEntries(filas.map(r => [r.id, source.values(r)])), [filas, source])
@@ -42,6 +45,7 @@ export function SettingsForm<Row extends { id: string }>({ source }: { source: S
   async function guardar() {
     setGuardando(true)
     setGuardado(false)
+    setResumen(null)
     const fallas: Record<string, string> = {}
     const listas: string[] = []
     for (const r of sucias) {
@@ -52,14 +56,24 @@ export function SettingsForm<Row extends { id: string }>({ source }: { source: S
         fallas[r.id] = e instanceof Error && e.message ? e.message : 'No se pudo guardar'
       }
     }
-    setEditados(prev => Object.fromEntries(Object.entries(prev).filter(([id]) => !listas.includes(id))))
     setErrores(fallas)
+    setGuardadas(listas)
+    // Lo guardado deja de ser un cambio pendiente recién cuando los datos nuevos llegan:
+    // si se soltara antes, el campo mostraría un momento (o para siempre, si la
+    // consulta falla) el valor viejo.
     await qc.invalidateQueries({ queryKey: source.queryKey })
+    if (!qc.getQueryState(source.queryKey)?.error) {
+      setEditados(prev => Object.fromEntries(Object.entries(prev).filter(([id]) => !listas.includes(id))))
+    }
     cambios.invalidate()
     setGuardando(false)
-    if (Object.keys(fallas).length === 0) {
+    const fallidas = Object.keys(fallas).length
+    if (fallidas === 0) {
       setGuardado(true)
       setTimeout(() => setGuardado(false), 2000)
+    } else if (listas.length > 0) {
+      const total = listas.length + fallidas
+      setResumen(`Se guardó ${listas.length} de ${total} cambios; revisa ${fallidas === 1 ? 'el que falló' : 'los que fallaron'}.`)
     }
   }
 
@@ -74,8 +88,13 @@ export function SettingsForm<Row extends { id: string }>({ source }: { source: S
           const valores = valoresDe(r)
           const invalido = Object.keys(cambiosDe(r)).length > 0 ? source.validate?.(valores, r) : null
           return (
-            <fieldset key={r.id} className="space-y-3 py-4 first:pt-0">
-              <legend className="text-dato font-semibold text-text-primary">{source.title(r)}</legend>
+            <fieldset key={r.id} aria-label={source.title(r)} className="space-y-3 py-4 first:pt-0">
+              <legend className="flex items-center gap-2 text-dato font-semibold text-text-primary">
+                {source.title(r)}
+                {guardadas.includes(r.id) && !errores[r.id] && resumen && (
+                  <span className="text-etiqueta font-normal text-resuelto">Guardado</span>
+                )}
+              </legend>
               <div className="grid gap-3 md:grid-cols-2">
                 {source.fields(r).map(f => (
                   <Campo key={f.key} campo={f} valor={valores[f.key]} disabled={!puedeEditar || guardando}
@@ -88,9 +107,10 @@ export function SettingsForm<Row extends { id: string }>({ source }: { source: S
           )
         })}
         <div className="flex flex-wrap items-center gap-3 pt-4">
-          <LastChange change={ultimo} pending={cambios.isPending} />
+          <LastChange change={ultimo} pending={cambios.isPending} error={cambios.isError} />
           <span className="flex-1" />
           {guardado && <span role="status" className="text-etiqueta text-resuelto">Guardado</span>}
+          {resumen && <span role="status" className="text-etiqueta text-warning">{resumen}</span>}
           {puedeEditar && (
             <>
               <Button disabled={sucias.length === 0 || guardando} onClick={() => { setEditados({}); setErrores({}) }}>

@@ -24,11 +24,15 @@ export function useLastChanges(area: string, section: string) {
     [q.data])
   const of = useCallback((elementId: string): LastChangeInfo | undefined => porElemento.get(elementId), [porElemento])
   const invalidate = useCallback(() => { void qc.invalidateQueries({ queryKey: key }) }, [qc, key])
-  return { of, isPending: q.isPending, invalidate }
+  return { of, isPending: q.isPending, isError: q.isError, invalidate }
 }
 
-/** "Última modificación: persona, fecha". Mientras carga no afirma nada. */
-export function LastChange({ change, pending }: { change: LastChangeInfo | undefined; pending: boolean }) {
+/** "Última modificación: persona, fecha". Mientras carga no afirma nada, y si el
+ *  historial no se pudo pedir lo dice: no es lo mismo que no tener cambios. */
+export function LastChange({ change, pending, error = false }: {
+  change: LastChangeInfo | undefined; pending: boolean; error?: boolean
+}) {
+  if (error) return <p className="text-etiqueta text-informativo">No se pudo cargar el historial de cambios</p>
   if (pending) return null
   return (
     <p className="text-etiqueta text-informativo">

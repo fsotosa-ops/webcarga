@@ -21,7 +21,7 @@ router = APIRouter(prefix="/config", tags=["config"])
 
 # Personas y Roles ya se auditaban con sus propios tipos (USER_ROLE, ROLE) y el id
 # real de la entidad; se leen esos, no se escriben dos veces.
-_SECCIONES_CON_CAMBIOS_DE_ACCESO = {("people", "users"): ["PERSON", "USER_ROLE"], ("people", "roles"): ["ROLE"]}
+_TIPOS_DE_ACCESO = {"users": ["PERSON", "USER_ROLE"], "roles": ["ROLE"]}
 _SQL_ULTIMOS_CAMBIOS_DE_ACCESO = """
 SELECT DISTINCT ON (a.entity_id) a.entity_id::text AS element_id,
        COALESCE(p.full_name, p.email) AS actor_name, a.occurred_at AS changed_at
@@ -32,23 +32,35 @@ SELECT DISTINCT ON (a.entity_id) a.entity_id::text AS element_id,
 """
 
 
+def _como_respuesta(filas) -> list[dict]:
+    return [{**dict(f), "changed_at": f["changed_at"].isoformat()} for f in filas]
+
+
+@router.get("/changes/people")
+async def list_people_changes(
+    section: str, pool=Depends(get_pool),
+    _usuario=Depends(require(Permission.USERS_MANAGE)),
+):
+    """El último cambio de cada persona o rol. Exige lo mismo que leer Personas y
+    Roles (users.manage), nada más: si pidiera además reference.read, quien gestiona
+    usuarios sin ese permiso vería "Sin cambios registrados" en todo."""
+    tipos = _TIPOS_DE_ACCESO.get(section)
+    if tipos is None:
+        raise HTTPException(422, f"people/{section} no es una sección de accesos")
+    return _como_respuesta(await pool.fetch(_SQL_ULTIMOS_CAMBIOS_DE_ACCESO, tipos))
+
+
 @router.get("/changes")
 async def list_config_changes(
     area: str, section: str, pool=Depends(get_pool),
     usuario=Depends(require(Permission.REFERENCE_READ)),
 ):
-    """El último cambio de cada elemento de una sección: quién y cuándo (spec
-    2026-10-22-configuracion-orden-visual §3.3). Personas y Roles exigen además
-    gestionar usuarios, como su propia lista."""
-    tipos_de_acceso = _SECCIONES_CON_CAMBIOS_DE_ACCESO.get((area, section))
-    if tipos_de_acceso:
-        exigir(usuario, Permission.USERS_MANAGE)
-        filas = await pool.fetch(_SQL_ULTIMOS_CAMBIOS_DE_ACCESO, tipos_de_acceso)
-    elif (area, section) not in POR_SECCION:
+    """El último cambio de cada elemento de una sección de Configuración: quién y
+    cuándo (spec 2026-10-22-configuracion-orden-visual §3.3). Personas y Roles van
+    por /changes/people."""
+    if (area, section) not in POR_SECCION:
         raise HTTPException(422, f"{area}/{section} no es una sección de Configuración")
-    else:
-        filas = await pool.fetch(SQL_ULTIMOS_CAMBIOS, entity_type(area, section))
-    return [{**dict(f), "changed_at": f["changed_at"].isoformat()} for f in filas]
+    return _como_respuesta(await pool.fetch(SQL_ULTIMOS_CAMBIOS, entity_type(area, section)))
 
 # El `group_id` de un estado del TMS es su etapa del viaje (schemas/status_taxonomy.TRIP_STAGES),
 # la misma lista que la de los estados operacionales. `pendiente_cierre_tms` (minuta 09/10,

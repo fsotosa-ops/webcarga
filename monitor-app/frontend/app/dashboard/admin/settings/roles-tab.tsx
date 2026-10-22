@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Lock, Check, Minus, Plus, ShieldCheck } from 'lucide-react'
 import { accessApi, type PermisoInfo, type RoleInfo } from '@/lib/api/access'
 import { useAcceso, usePermiso } from '@/lib/authz/PermisosProvider'
@@ -61,6 +62,9 @@ type Modo = { tipo: 'ver' } | { tipo: 'crear' } | { tipo: 'editar'; rol: RoleInf
  *  marcando permisos del catálogo, solo los que tiene quien edita. */
 export function RolesTab() {
   const puedeGestionar = usePermiso('roles.manage')
+  const qc = useQueryClient()
+  // Revisión final (I2): tras guardar o eliminar, el historial se vuelve a pedir.
+  const refrescarCambios = () => { void qc.invalidateQueries({ queryKey: ['config-changes', 'people', 'roles'] }) }
   const [roles, setRoles] = useState<RoleInfo[]>([])
   const [catalogo, setCatalogo] = useState<PermisoInfo[]>([])
   const [elegido, setElegido] = useState<string | null>(null)
@@ -122,11 +126,11 @@ export function RolesTab() {
         <div className="p-5 min-w-0">
           {modo.tipo === 'crear' && (
             <FormularioDeRol catalogo={catalogo} onCancel={() => setModo({ tipo: 'ver' })}
-              onSaved={r => { setModo({ tipo: 'ver' }); load(r.id) }} />
+              onSaved={r => { setModo({ tipo: 'ver' }); load(r.id); refrescarCambios() }} />
           )}
           {modo.tipo === 'editar' && (
             <FormularioDeRol catalogo={catalogo} rol={modo.rol} onCancel={() => setModo({ tipo: 'ver' })}
-              onSaved={r => { setModo({ tipo: 'ver' }); load(r.id) }} />
+              onSaved={r => { setModo({ tipo: 'ver' }); load(r.id); refrescarCambios() }} />
           )}
           {modo.tipo === 'ver' && rol && (
             <DetalleDeRol
@@ -134,7 +138,7 @@ export function RolesTab() {
               catalogo={catalogo}
               puedeGestionar={puedeGestionar}
               onEditar={() => setModo({ tipo: 'editar', rol })}
-              onEliminado={() => { setElegido(null); load() }}
+              onEliminado={() => { setElegido(null); load(); refrescarCambios() }}
             />
           )}
         </div>
@@ -171,7 +175,7 @@ function DetalleDeRol({ rol, catalogo, puedeGestionar, onEditar, onEliminado }: 
           <p className="text-dato text-informativo">
             {rol.description}{rol.description ? ' · ' : ''}{rol.assigned} {rol.assigned === 1 ? 'persona' : 'personas'}
           </p>
-          {!rol.is_system && <LastChange change={cambios.of(rol.id)} pending={cambios.isPending} />}
+          {!rol.is_system && <LastChange change={cambios.of(rol.id)} pending={cambios.isPending} error={cambios.isError} />}
         </div>
         {!rol.is_system && puedeGestionar && (
           <div className="flex gap-2">

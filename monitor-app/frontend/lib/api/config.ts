@@ -211,7 +211,9 @@ export const revisionesApi = {
 export interface ConfigChange { element_id: string; actor_name: string | null; changed_at: string }
 
 export const changesApi = {
+  // Personas y Roles tienen su ruta: se leen con users.manage, sin reference.read.
   list: (area: string, section: string) =>
-    apiFetch<ConfigChange[]>(
-      `/api/v1/config/changes?area=${encodeURIComponent(area)}&section=${encodeURIComponent(section)}`),
+    apiFetch<ConfigChange[]>(area === 'people'
+      ? `/api/v1/config/changes/people?section=${encodeURIComponent(section)}`
+      : `/api/v1/config/changes?area=${encodeURIComponent(area)}&section=${encodeURIComponent(section)}`),
 }

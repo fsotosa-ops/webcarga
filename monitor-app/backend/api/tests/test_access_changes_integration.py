@@ -20,15 +20,15 @@ async def _dos_perfiles(conn):
 
 
 async def test_cambiar_roles_de_una_persona_queda_registrado(conexion_revertida):
-    from app.routers.config import list_config_changes
+    from app.routers.config import list_people_changes
     conn = conexion_revertida
     await sync_catalog(conn)
     a, b = await _dos_perfiles(conn)
     duenio = usuario("owner", sub=a)
 
     await set_user_roles(conn, duenio, b, ["reader"])
-    cambios = await list_config_changes(area="people", section="users", pool=PoolDeUnaConexion(conn),
-                                        usuario=usuario("admin", sub=a))
+    cambios = await list_people_changes(section="users", pool=PoolDeUnaConexion(conn),
+                                        _usuario=usuario("admin", sub=a))
 
     assert b in {c["element_id"] for c in cambios}
 
@@ -63,3 +63,16 @@ async def test_desactivar_una_persona_queda_registrado(conexion_revertida):
         "ORDER BY id DESC LIMIT 1", b)
     assert json.loads(fila["old_value"]) == {"active": True}
     assert json.loads(fila["new_value"]) == {"active": False}
+
+
+def test_el_historial_de_accesos_exige_solo_gestionar_usuarios():
+    """Revisión final (I1): Personas y Roles se leen con users.manage solo; si el
+    historial pidiera además reference.read, un rol con users.manage y sin
+    reference.read vería "Sin cambios registrados" en todo."""
+    from fastapi.routing import APIRoute
+    from app.authz import Permission
+    from app.main import app
+    from tests.test_toda_ruta_declara_permiso import _permisos
+
+    ruta = next(r for r in app.routes if isinstance(r, APIRoute) and r.path == "/api/v1/config/changes/people")
+    assert tuple(_permisos(ruta.dependant)) == (Permission.USERS_MANAGE,)

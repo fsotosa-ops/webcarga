@@ -45,13 +45,14 @@ async def test_registrar_y_leer_el_ultimo_cambio(conexion_revertida):
     assert nuestras[0]["changed_at"]
 
 
-async def test_cambios_exige_permiso_de_la_seccion(conexion_revertida):
+async def test_cambios_de_configuracion_no_incluye_accesos(conexion_revertida):
     from app.routers.config import list_config_changes
     sin_accesos = usuario("operations_operator")
+    # Personas y Roles tienen su propia ruta (exige users.manage); aquí no son una sección.
     with pytest.raises(HTTPException) as e:
         await list_config_changes(area="people", section="users", pool=PoolDeUnaConexion(conexion_revertida),
                                   usuario=sin_accesos)
-    assert e.value.status_code == 403
+    assert e.value.status_code == 422
 
 
 async def test_cambios_rechaza_una_seccion_desconocida(conexion_revertida):

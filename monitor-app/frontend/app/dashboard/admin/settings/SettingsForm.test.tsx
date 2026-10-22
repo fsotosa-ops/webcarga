@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 let puede = true
@@ -82,11 +82,15 @@ describe('SettingsForm: valores sueltos en un formulario (spec 2026-10-22 §3.1)
     expect(screen.getByRole('button', { name: 'Guardar cambios' })).toBeDisabled()
   })
 
-  it('guarda fila por fila y conserva lo que falló', async () => {
+  // Revisión final (I3): lo guardado se dice guardado, y no vuelve a mostrar el valor viejo.
+  it('guarda fila por fila: dice qué se guardó y conserva lo que falló', async () => {
     const save = vi.fn()
       .mockResolvedValueOnce({})
       .mockRejectedValueOnce(new Error('Valor fuera de rango'))
-    renderForm(fuente({ save }))
+    const list = vi.fn()
+      .mockResolvedValueOnce(REGLAS)
+      .mockResolvedValue([{ ...REGLAS[0], value: 3 }, REGLAS[1]])
+    renderForm(fuente({ save, list }))
     await screen.findByText('Sin actualización del TMS')
     fireEvent.change(campo('Sin actualización del TMS'), { target: { value: '3' } })
     fireEvent.change(campo('Semáforo del local: rojo'), { target: { value: '999' } })
@@ -96,8 +100,10 @@ describe('SettingsForm: valores sueltos en un formulario (spec 2026-10-22 §3.1)
     expect(save).toHaveBeenNthCalledWith(1, REGLAS[0], { value: 3 })
     expect(save).toHaveBeenNthCalledWith(2, REGLAS[1], { value: 999 })
     expect(await screen.findByText('Valor fuera de rango')).toBeInTheDocument()
+    expect(screen.getByText('Se guardó 1 de 2 cambios; revisa el que falló.')).toBeInTheDocument()
+    expect(within(screen.getByRole('group', { name: 'Sin actualización del TMS' })).getByText('Guardado')).toBeInTheDocument()
+    expect(campo('Sin actualización del TMS')).toHaveValue(3)
     expect(campo('Semáforo del local: rojo')).toHaveValue(999)
-    expect(screen.queryByText('Guardado')).toBeNull()
   })
 
   it('al guardar todo bien lo dice', async () => {

@@ -23,4 +23,11 @@ describe('LastChange', () => {
     const { container } = render(<LastChange change={undefined} pending />)
     expect(container.textContent).toBe('')
   })
+
+  // Revisión final (I1): un error al pedir el historial no puede leerse como "no hay cambios".
+  it('si el historial no se pudo cargar, lo dice en vez de afirmar que no hay cambios', () => {
+    render(<LastChange change={undefined} pending={false} error />)
+    expect(screen.getByText('No se pudo cargar el historial de cambios')).toBeInTheDocument()
+    expect(screen.queryByText(/Sin cambios registrados/)).toBeNull()
+  })
 })

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RolesTab, codigoDeRol } from './roles-tab'
 import { PermisosProvider } from '@/lib/authz/PermisosProvider'
 import { accessApi } from '@/lib/api/access'
+import { changesApi } from '@/lib/api/config'
 import { ApiError } from '@/lib/api/client'
 import type { Acceso } from '@/lib/authz/acceso'
 import { ADMIN, CATALOGO, ROLES } from '@/components/admin/rolesDePrueba'
@@ -133,5 +134,21 @@ describe('RolesTab: spec 2026-10-22', () => {
     mostrar()
     fireEvent.click(await screen.findByRole('button', { name: /Auditor de cierres/ }))
     expect(await screen.findByText('Última modificación: Ana, 15/10/2026')).toBeInTheDocument()
+  })
+
+  // Revisión final (I2): con la caché de la app (60 s), el detalle mostraba el autor viejo.
+  it('tras editar un rol, su Última modificación se vuelve a pedir', async () => {
+    vi.mocked(accessApi.updateRole).mockResolvedValue({ ...ROLES.find(r => r.code === 'auditor')!, name: 'Auditor' })
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 60_000 } } })}>
+        <PermisosProvider acceso={GESTOR}><RolesTab /></PermisosProvider>
+      </QueryClientProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: /Auditor de cierres/ }))
+    await screen.findByText('Última modificación: Ana, 15/10/2026')
+    const antes = vi.mocked(changesApi.list).mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Auditor' } })
+    fireEvent.click(screen.getByRole('button', { name: /Guardar/ }))
+    await waitFor(() => expect(vi.mocked(changesApi.list).mock.calls.length).toBeGreaterThan(antes))
   })
 })
