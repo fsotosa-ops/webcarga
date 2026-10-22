@@ -261,8 +261,13 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
 - La Flota del día lo enciende en `TableToolbar actions`. No hay RUT en la tabla: no expone datos personales.
 - Tests RED→GREEN: `viewExport.test.tsx` (2), `ViewExportActions.test.tsx` (4), `FlotaDelDiaSection.test.tsx` (1).
   tsc y 288 tests del kit y el Cierre verdes.
-- **Siguiente:** cuando termine el despliegue, mirarlo en dev a 1440 y 390 y probar copiar con un filtro de Origen
-  habitual; avisar a Operaciones que la vista se arma una vez (columnas y filtros) y se manda desde ahí.
+- HUMO EN DEV (`550a8a0e`, 21/10 Tractoreo): Copiar con "No asignados" copió las 21 filas (la página muestra 20),
+  encabezado "Flota del día 21/10 · Tractoreo · Estado: No asignado · 21 filas" y tabla html. 390 sin desplazamiento
+  horizontal. **Descargar Excel FALLABA**: Excel no acepta "/" en el nombre de hoja y el título lleva "21/10"; los
+  tests simulaban la descarga. Arreglo `ee4fbc68`: `nombreDeHoja` limpia []/\:*? en un solo lugar (tabla y secciones
+  del Reporte), test con write-excel-file real (RED→GREEN); botones al tamaño de "Columnas"; el error va a consola.
+- **Siguiente:** cuando se despliegue `ee4fbc68`, bajar el Excel en dev y abrirlo; avisar a Operaciones que la vista se
+  arma una vez (columnas y filtros) y se manda desde ahí.
 
 ### 2026-10-22 — Certificación: el blanco de arrastre titilaba (`da1ecd26` en dev)
 
