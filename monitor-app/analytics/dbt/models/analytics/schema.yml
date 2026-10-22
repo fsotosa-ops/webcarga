@@ -9,10 +9,10 @@ models:
     columns:
       - name: trip_id
         tests: [not_null, unique]
-  - name: bdot_people
-    description: Nombre y RUT del conductor de cada viaje. Solo con permiso de datos personales.
+  - name: driver_identity
+    description: Nombre y RUT de cada conductor. Solo con permiso de datos personales.
     columns:
-      - name: trip_id
+      - name: driver_id
         tests: [not_null, unique]
   - name: fleet_daily
     description: Conductor o equipo por día de negocio, como lo dice el Cierre.

@@ -26,6 +26,8 @@ SELECT
     r.label                              AS reason,
     r.group_id                           AS reason_group,
     hl.location_name                     AS home_origin,
+    COALESCE((SELECT array_agg(c.client_name ORDER BY c.client_name)
+              FROM {{ ref('dim_client') }} c WHERE c.client_id = ANY(s.client_ids)), '{}') AS client_names,
     s.is_provisional,
     s.signed_at
 FROM {{ ref('fct_fleet_daily_status') }} s

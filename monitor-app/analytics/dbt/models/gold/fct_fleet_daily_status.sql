@@ -5,6 +5,7 @@
                  las líneas vivas (app.closure_lines). Empresa del día: bridge_fleet_membership.
   Granularidad : un sujeto (conductor o equipo) en un día de negocio. Periodic snapshot.
   Consumidor   : reporte de estatus histórico, asistencia y utilización, F30-1 (empresa × conductores × mes).
+  client_ids   : clientes de los viajes planificados ese día del conductor o del tracto (fct_trips), como la Reportería.
 
   Un día firmado sale de la ÚLTIMA versión de su firma, que es inmutable: no cambia en la analítica aunque el día
   se reabra (mismo criterio que "no reabrir un día firmado para corregir"). Un día nunca firmado sale de las líneas
@@ -55,6 +56,14 @@ SELECT
     l.reason_from_driver_id,
     l.home_location_id,
     l.is_provisional,
+    -- Los clientes de sus viajes de ese día (los planificados ese día), como la Reportería.
+    COALESCE((
+        SELECT array_agg(DISTINCT f.client_id ORDER BY f.client_id)
+        FROM {{ ref('fct_trips') }} f
+        WHERE f.planning_date = l.business_date AND f.client_id IS NOT NULL
+          AND ((l.subject_type = 'DRIVER' AND f.driver_id = l.subject_id)
+            OR (l.subject_type = 'ASSET' AND f.tractor_asset_id = l.subject_id))
+    ), '{}')                                                  AS client_ids,
     l.signature_id,
     l.signature_version,
     l.signed_at

@@ -8,9 +8,10 @@ El modelo dimensional de la BDOT reconstruida desde la app. Diseño:
   (`dbt build --select snapshot_carriers gold analytics`), separado de la ingesta.
 - **Qué lee la app:** solo `analytics`.
   - `analytics.bdot`: la sábana, un viaje por fila, sin datos personales.
-  - `analytics.bdot_people`: nombre y RUT del conductor; con el rol `analytics_personal_reader` o el permiso de
-    datos personales de la app.
-  - `analytics.fleet_daily`: conductor o equipo por día, como lo dice el Cierre.
+  - `analytics.driver_identity`: nombre y RUT de cada conductor (se une por `driver_id`); con el rol
+    `analytics_personal_reader` o el permiso `analytics.personal_data` de la app.
+  - `analytics.fleet_daily`: conductor o equipo por día, como lo dice el Cierre, con los clientes de sus viajes de
+    ese día (`client_names`).
 - **Ojo:** `analytics` son TABLAS, no vistas. dbt reconstruye gold con `DROP ... CASCADE`, que borraría una vista
   encima. No correr `dbt run --select gold` sin `analytics`: el pipeline los corre juntos.
 - **Qué hay en `dbt/`:** una copia versionada de lo que corre en Mage. No se edita aquí: se edita en
