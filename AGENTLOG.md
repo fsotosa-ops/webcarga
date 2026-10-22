@@ -117,7 +117,7 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
      1. `20261102090000` APLICADA: misma categoría en las 9.090 líneas. Backend subido (`c4271800`).
      2. Gold sincronizado a Mage.
         - Pipeline `analytics_gold`: un bloque dbt con `build --select snapshot_carriers gold`; trigger
-          `triggers.yaml` a las :20 de cada hora, POR CONFIRMAR que Mage lo registró.
+          `triggers.yaml` a las :20 de cada hora, CONFIRMADO: corrió solo a las 00:20 UTC del 22/10.
         - Primera corrida, run 15780 (unos 60 s), en la real: fct_trips 3.757 = app.trips; fct_trip_stops 11.792
           (10.317 vigentes); fct_fleet_daily_status 9.090; dim_carrier 251 (historia desde hoy).
         - `tms_daily_tests` excluye `tag:analytics`. Con `--indirect-selection cautious` se perdía un test propio,
@@ -125,7 +125,8 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
      3. Copia versionada en `monitor-app/analytics/dbt` (`sync-gold-from-mage.sh`, README). Se edita en Mage,
         no ahí.
    - SIGUIENTE:
-     - Confirmar la corrida programada de las 00:20 UTC.
+     - HECHO: la corrida programada de las 00:20 UTC entró sola. Segunda corrida manual (run 15785): incremental
+       correcto (1.999 recargados, 1.758 intactos), 3.757 = app.trips y 251 versiones de empresa sin duplicar.
      - HECHO (21/10): humo del paso 1 en dev (API `c4271800`).
        - Responden con 200: Reporte del 16/10 (Tractoreo: 20 RM, 9 Z0, 3 sin clasificar = 32), Flota del día de
          conductores y de equipos, y Monitor (25 en curso, paradas con tipo: 38 RM, 12 Z0, 1 Región Sur, 5 sin
