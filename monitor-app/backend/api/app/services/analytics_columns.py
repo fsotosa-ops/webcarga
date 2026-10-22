@@ -44,9 +44,10 @@ def _c(id: str, label: str, group: str, type: ColumnType = "text", *, filter: bo
                            visible)
 
 
+# Ocultas de entrada aun con el permiso: un dato personal se elige a propósito en Columnas (humo en dev, 22/10).
 _PERSONALES = (
-    _c("driver_name", "Conductor", "Datos personales", sql="p.driver_name", personal=True),
-    _c("driver_tax_id", "RUT del conductor", "Datos personales", sql="p.driver_tax_id", personal=True),
+    _c("driver_name", "Conductor", "Datos personales", sql="p.driver_name", personal=True, visible=False),
+    _c("driver_tax_id", "RUT del conductor", "Datos personales", sql="p.driver_tax_id", personal=True, visible=False),
 )
 
 COLUMNS: dict[str, tuple[AnalyticsColumn, ...]] = {

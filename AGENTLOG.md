@@ -177,8 +177,21 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
          - La Reportería vuelve a su pantalla (`fa50eafd`) y además está en Analítica como Tabla dinámica.
          - El Reporte de estatus del día está en el Cierre y en Analítica ("Reporte del día", mismo componente).
          - Por eso `/daily-closures/report` vuelve a tener uso.
-       - SIGUIENTE: humo en dev del rediseño, cuando termine el despliegue (vistas, Excel con su fila en
-         `audit_log`, tabla dinámica contra la Reportería, Reporte del día, 1440 y 390).
+       - HUMO EN DEV del rediseño (22/10, `5ae00dbd`, despliegues lanzados a mano porque Actions venía con más de
+         40 min de atraso):
+         - Pestañas con las vistas fijadas: Todos, BDOT completo y Operación por cliente.
+         - Abrir "Operación por cliente" y cambiar el período: la vista se mantiene y aparece "Cambios sin guardar ·
+           Guardar". El caso raro de la 1ª pasada no se repitió.
+         - "Guardar como nueva": la vista "Prueba humo" quedó fijada y se borró al terminar.
+         - Excel: 944 viajes de septiembre, con la línea de período y datos y 8 columnas; `audit_log`
+           ANALYTICS_EXPORT con `rows=944` y `personal=false`.
+         - Tabla dinámica contra la Reportería, septiembre, conductores: 1.085 contra 1.077. La única diferencia es
+           el 02/09 (49 contra 41): antes de la primera firma (03/09) la Reportería cuenta solo a los conductores que
+           estaban en el roster de Tractoreo ese día. DECIDIR con el usuario si Analítica aplica la misma regla.
+         - Reporte del día del 16/10: 30 del día y 2 en ruta (la fecha de Chile movió 1).
+         - 390 sin desplazamiento horizontal.
+         - Arreglado: con el permiso, Conductor y RUT aparecían como columnas de entrada; ahora se eligen en Columnas
+           (test RED→GREEN).
      - PLAN ESCRITO (22/10): `docs/superpowers/plans/2026-10-22-modulo-analitica.md`, 13 tasks.
        - dbt: `driver_identity` y los clientes del día en `fleet_daily`.
        - Permisos.

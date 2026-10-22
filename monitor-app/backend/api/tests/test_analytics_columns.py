@@ -52,3 +52,10 @@ async def test_el_catalogo_dice_cuales_son_personales():
     """Fix pass: "BDOT completo" es todas las columnas que NO son personales (HU, criterio 10)."""
     con = {c["id"]: c for c in await list_columns(dataset="trips", user=usuario("admin"))}
     assert con["driver_name"]["personal"] is True and con["trip_code"]["personal"] is False
+
+
+async def test_lo_personal_no_se_muestra_por_defecto():
+    """Humo en dev (22/10): el Propietario veía Conductor y RUT entre las columnas de entrada. Se eligen a
+    propósito en Columnas."""
+    con = {c["id"]: c for c in await list_columns(dataset="trips", user=usuario("admin"))}
+    assert con["driver_name"]["default_visible"] is False and con["driver_tax_id"]["default_visible"] is False
