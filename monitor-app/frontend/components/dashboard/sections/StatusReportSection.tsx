@@ -155,7 +155,9 @@ export function StatusReportSection({ fecha, alcance, section, onSectionChange, 
           className={ACCION} title="Copia la sección a la vista, lista para pegar en un correo o un chat">
           {copiado ? <><Check size={12} aria-hidden="true" /> Copiado</> : <><Copy size={12} aria-hidden="true" /> Copiar estatus</>}
         </button>
-        <Link href="/dashboard/analytics?dataset=fleet&mode=pivot&f.subject_type=DRIVER&period=this_month" target="_blank" className={ACCION}>
+        {/* La Reportería convive en el Cierre y en Analítica (Flota por día › Tabla dinámica) mientras el equipo de
+            WebCarga decide dónde queda (decisión del usuario 22/10). */}
+        <Link href="/dashboard/operations/closures/history" target="_blank" className={ACCION}>
           <History size={12} aria-hidden="true" /> Ver histórico
         </Link>
       </span>

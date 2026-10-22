@@ -163,7 +163,7 @@ const NO_DEPENDEN_DEL_DIRECTORIO = new Set([
   'carrier-shippers',                                                  // la escribe solo su modal de clientes, que la invalida (D2)
   'carrier-deactivation-impact',                                       // se pide fresca al abrir la baja (staleTime 0, D2)
   'tarifario-all', 'tarifario-pending',                                // Comercial
-  'closure-signatures',                                                // la firma es inmutable
+  'closure-signatures', 'daily-closures-report',                       // la firma es inmutable; el reporte se pide al abrir
   'analytics-columns', 'analytics-rows', 'analytics-views',           // Analítica: sale del modelo que se recarga cada hora (22/10)
   'ingest-preview',                                                    // la URL firmada de un archivo, no el maestro
   'entity-documents', 'certification-requests',                        // documentos y pedidos (Entrega B): no cambian con el maestro

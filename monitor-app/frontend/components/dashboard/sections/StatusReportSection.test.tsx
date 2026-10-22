@@ -398,10 +398,10 @@ describe('StatusReportSection', () => {
     expect(opcionesDeCliente(body)).toEqual([])
   })
 
-  it('el link "Ver histórico" apunta a la tabla dinámica de Analítica', async () => {
+  it('el link "Ver histórico" apunta a /dashboard/operations/closures/history', async () => {
     const body = renderSection()
     await body.findByText('Equipos activos')
-    expect(body.getByRole('link', { name: /Ver histórico/ })).toHaveAttribute('href', '/dashboard/analytics?dataset=fleet&mode=pivot&f.subject_type=DRIVER&period=this_month')
+    expect(body.getByRole('link', { name: /Ver histórico/ })).toHaveAttribute('href', '/dashboard/operations/closures/history')
   })
 
   it('"Descargar PDF" llama a window.print', async () => {
