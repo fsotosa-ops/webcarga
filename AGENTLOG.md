@@ -19,6 +19,17 @@
 > (**Ciclo de vida del Directorio con motivo (21/10)** cerrado y archivado: estado de baja único, acciones con motivo,
 > ambas migraciones aplicadas en la real. El test de sincronía de etapas del viaje (rojo desde el 17/10) quedó arreglado el mismo día.)
 
+### PARA LA PRÓXIMA SESIÓN (cierre del 22/10)
+
+Todo lo de hoy está comiteado y en `dev`. Pendientes, en orden:
+1. **Operaciones:** avisar que la Flota del día se baja y se copia ("Descargar Excel" / "Copiar"): la vista se arma una
+   vez (columnas y filtros, p. ej. por Origen habitual) y se manda al CD desde ahí. Ver la sección de abajo.
+2. **Certificación:** que quien grabó el video del arrastre lo pruebe con un arrastre de verdad (`da1ecd26`).
+3. **Analítica:** marcha en paralelo de 2 semanas contra el Excel de Operaciones; Fase 3 (reportes estándar);
+   `fct_trip_status_events`; quitar `bdot_people.sql` (deshabilitado) desde la UI de Mage; issue #14.
+4. Lección del día: un pedido de reunión (export de la Flota del día, 16/10) se perdió por no anotarse. Al revisar una
+   reunión, pasar cada pedido al AGENTLOG o a una HU el mismo día.
+
 ### CHECKPOINT VIGENTE — Analítica (BDOT en la app) (21/10, Fase 0 `22ef3d5c` en dev)
 
 **Por qué:** la reunión del 16/10 (Granola 24f97159, Pablo/Fabián/Enrique) pidió un módulo Analítica que reemplace el
