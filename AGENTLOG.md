@@ -255,8 +255,10 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
 - Arreglo: solo se apaga si `relatedTarget` está fuera de la zona. Sirve a `RenglonPendiente` y `DocumentChecklist`.
   Test RED→GREEN en `RenglonPendiente.test.tsx` (jsdom no tiene DragEvent: el evento se arma a mano). tsc y 335
   tests de Certificación verdes.
-- **Siguiente:** cuando termine el despliegue, humo en dev con Playwright (arrastre sobre un requisito) y que quien
-  grabó el video lo pruebe.
+- HUMO EN DEV (22/10): en Pendientes, eventos de arrastre nativos de Chrome recorriendo 3 veces todos los hijos de un
+  renglón (57 pasos): el blanco no se apagó ninguna vez y sí al salir. Sin soltar (no se subió nada). El panel por
+  empresa del video usa el mismo renglón (`SubjectDocumentRows` → `RenglonPendiente`).
+- **Siguiente:** que quien grabó el video lo pruebe con un arrastre de verdad.
 
 ### CHECKPOINT VIGENTE — Onboarding de empresas como etapa del alta (21/10, `8087d893` en dev)
 
