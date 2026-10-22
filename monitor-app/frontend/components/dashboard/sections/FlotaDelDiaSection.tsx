@@ -22,6 +22,7 @@ import { useUrlView } from '@/components/ui/tabla/data/useUrlView'
 import { useTablePreferences } from '@/components/ui/tabla/data/useTablePreferences'
 import { DataTable } from '@/components/ui/tabla/data/DataTable'
 import { TableToolbar } from '@/components/ui/tabla/data/TableToolbar'
+import { ViewExportActions } from '@/components/ui/tabla/data/ViewExportActions'
 import { ShortcutTiles, type ShortcutTileGroup } from '@/components/ui/tabla/data/ShortcutTiles'
 import { RowAction } from './fleet/RowAction'
 import { RowComment } from './fleet/RowComment'
@@ -235,7 +236,9 @@ export function FlotaDelDiaSection({
         </p>
       )}
 
-      <TableToolbar model={model} searchPlaceholder="Buscar patente, conductor o empresa…" preferences={preferencias} />
+      <TableToolbar model={model} searchPlaceholder="Buscar patente, conductor o empresa…" preferences={preferencias}
+        actions={<ViewExportActions model={model} fileName={`flota_del_dia_${fecha}_${alcance}.xlsx`}
+          title={`Flota del día ${fecha.slice(8, 10)}/${fecha.slice(5, 7)} · ${SCOPE_LABEL[alcance]}`} />} />
 
       {quitados && <p role="status" className="text-etiqueta text-informativo">{quitados}</p>}
       {errorAlGuardar && (

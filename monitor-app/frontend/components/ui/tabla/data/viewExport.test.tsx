@@ -3,7 +3,7 @@ import { renderHook } from '@testing-library/react'
 import { EMPTY_VIEW, type TableView } from '@/lib/table/viewInUrl'
 import type { DataColumn } from './columns'
 import { useDataTable } from './useDataTable'
-import { activeFilterTexts, visibleTable } from './viewExport'
+import { activeFilterTexts, visibleTable, viewForPasting } from './viewExport'
 
 type Fila = { id: string; patente: string; empresa: string; vueltas: number; nota: string | null }
 const FILAS: Fila[] = [
@@ -34,5 +34,27 @@ describe('viewExport', () => {
       columns: [{ header: 'Vueltas', numeric: true }, { header: 'Patente', numeric: false }, { header: 'Comentario', numeric: false }],
       rows: [['3', 'EFGH34', 'ojo']],
     })
+  })
+
+  it('para pegar: encabezado con el recorte, una línea por fila en texto y una tabla en html', () => {
+    const m = modelo({ ...EMPTY_VIEW, filters: { empresa: ['Huemul'] } },
+      [{ id: 'patente', hidden: false }, { id: 'empresa', hidden: false }, { id: 'vueltas', hidden: false }, { id: 'nota', hidden: false }])
+    const p = viewForPasting(m, 'Flota del día 04/08 · Tractoreo')
+
+    expect(p.heading).toBe('Flota del día 04/08 · Tractoreo · Empresa: Huemul · 1 fila')
+    expect(p.text).toBe('Flota del día 04/08 · Tractoreo · Empresa: Huemul · 1 fila\n\nEFGH34 · Huemul · 3 · ojo')
+    expect(p.html).toContain('<th>Patente</th><th>Empresa</th><th>Vueltas</th><th>Comentario</th>')
+    expect(p.html).toContain('<td>EFGH34</td><td>Huemul</td><td>3</td><td>ojo</td>')
+  })
+
+  it('en el texto se omiten las celdas vacías; en el html se escapan los caracteres', () => {
+    const filas = [{ id: '1', patente: 'AB<CD', empresa: 'Hasa & Cía', vueltas: 2, nota: null }]
+    const m = renderHook(() => useDataTable({ rows: filas, columns: COLUMNAS.slice(0, 4), getRowId: r => r.id,
+      view: EMPTY_VIEW, onViewChange: () => {} })).result.current
+    const p = viewForPasting(m, 'Flota')
+
+    expect(p.text.split('\n').at(-1)).toBe('AB<CD · Hasa & Cía · 2')
+    expect(p.html).toContain('<td>AB&lt;CD</td><td>Hasa &amp; Cía</td><td>2</td><td></td>')
+    expect(p.heading).toBe('Flota · 1 fila')
   })
 })

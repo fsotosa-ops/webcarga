@@ -246,6 +246,24 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
    F30-1).
 5. Marcha en paralelo de 2 semanas contra el Excel de Operaciones.
 
+### 2026-10-22 — Flota del día: bajar y copiar la vista (pedido de la reunión del 16/10)
+
+- Feedback: las vistas por persona de la Flota del día se hicieron, pero no se podían bajar ni copiar para mandarlas al
+  CD; "Copiar estatus" estaba solo en el Reporte. Contrastado con la transcripción (Granola 24f97159): 29:34 "que aquí
+  hubiera un exportar", 37:12 copian y pegan del Excel al WhatsApp del CD, 65:01 "un export y un Excel". El pedido no
+  estaba anotado en ningún lado: se había perdido.
+- Decisión del usuario (estándar, sin parche): capacidad del kit de tablas, no de la pantalla.
+  `components/ui/tabla/data/ViewExportActions.tsx` ("Descargar Excel" y "Copiar") sobre `visibleTable` y la nueva
+  `viewForPasting` (`viewExport.ts`): columnas de la persona en su orden, todas las filas que pasan los filtros (no solo
+  la página), encabezado con día, alcance y filtros. La copia lleva html (tabla, para correo) y texto (una línea por
+  fila, para WhatsApp), como Google Sheets. Sale de los datos, no del DOM. Sin imagen (no es estándar en tablas).
+  "Copiar estatus" del Reporte no se tocó.
+- La Flota del día lo enciende en `TableToolbar actions`. No hay RUT en la tabla: no expone datos personales.
+- Tests RED→GREEN: `viewExport.test.tsx` (2), `ViewExportActions.test.tsx` (4), `FlotaDelDiaSection.test.tsx` (1).
+  tsc y 288 tests del kit y el Cierre verdes.
+- **Siguiente:** cuando termine el despliegue, mirarlo en dev a 1440 y 390 y probar copiar con un filtro de Origen
+  habitual; avisar a Operaciones que la vista se arma una vez (columnas y filtros) y se manda desde ahí.
+
 ### 2026-10-22 — Certificación: el blanco de arrastre titilaba (`da1ecd26` en dev)
 
 - Reporte en video (`monitor-app/bugs/20261022/bug-upload-documents-compliance.mp4`, narrado): al arrastrar un PDF

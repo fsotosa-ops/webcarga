@@ -80,6 +80,26 @@ async function soloConductores() {
 }
 
 describe('FlotaDelDiaSection', () => {
+  // Reunión con WebCarga, 16/10: la vista de cada persona se baja o se copia para mandarla al CD.
+  it('la barra copia lo que se ve, con el día, el alcance y el filtro del recuadro', async () => {
+    await soloConductores()
+    const write = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { write } })
+    vi.stubGlobal('ClipboardItem', class { constructor(public items: Record<string, Blob>) {} })
+    renderSection()
+    await screen.findByText('Ana Soto')
+    expect(screen.getByRole('button', { name: 'Descargar Excel' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /^No asignados/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar' }))
+
+    await waitFor(() => expect(write).toHaveBeenCalled())
+    const texto = await (write.mock.calls[0][0][0] as { items: Record<string, Blob> }).items['text/plain'].text()
+    expect(texto.split('\n')[0]).toMatch(/^Flota del día 04\/08 · Tractoreo · Estado: /)
+    expect(texto).toContain('Ana Soto')
+    expect(texto).not.toContain('Juan Pérez')
+  })
+
   it('la columna 2 siempre se llama "Conductor" y la 4 "Patente", en los dos ejes', async () => {
     // Desde la fusión (HU-D1, 06/10) la unidad de la fila es la patente en las
     // dos vistas; un conductor sin tracto dice que no lo tiene.

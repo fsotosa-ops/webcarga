@@ -28,3 +28,20 @@ export function visibleTable<T>(model: DataTableModel<T>): {
     rows: model.rows.map(r => columnas.map(c => c.value(r))),
   }
 }
+
+const escapar = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+/** Lo que se ve de una tabla del kit, para pegar en un correo o un chat (como copia
+ *  Google Sheets: dos formatos a la vez). El encabezado dice qué es y con qué recorte;
+ *  el html es una tabla para el correo y el texto, una línea por fila para WhatsApp,
+ *  que no muestra tablas. Sale de los datos de la vista, no de lo dibujado. */
+export function viewForPasting<T>(model: DataTableModel<T>, title: string): {
+  heading: string; text: string; html: string
+} {
+  const { columns, rows } = visibleTable(model)
+  const heading = [title, ...activeFilterTexts(model), `${rows.length} ${rows.length === 1 ? 'fila' : 'filas'}`].join(' · ')
+  const lineas = rows.map(r => r.filter(v => v !== null && v !== '').join(' · '))
+  const html = `<p><b>${escapar(heading)}</b></p><table><thead><tr>${columns.map(c => `<th>${escapar(c.header)}</th>`).join('')}</tr></thead>`
+    + `<tbody>${rows.map(r => `<tr>${r.map(v => `<td>${escapar(v ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table>`
+  return { heading, text: [heading, '', ...lineas].join('\n'), html }
+}
