@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within, waitFor } from '@testing-library/react'
+import { render, screen, within, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 let ruta = '/dashboard/admin/settings/operations/driver-reasons'
@@ -7,6 +7,9 @@ vi.mock('next/navigation', () => ({ usePathname: () => ruta }))
 let permisos: string[] = []
 vi.mock('@/lib/authz/PermisosProvider', () => ({ useAcceso: () => ({ permissions: permisos }) }))
 vi.mock('@/lib/api/config', () => ({ inventarioApi: { get: vi.fn() } }))
+
+let salir = true
+vi.mock('./unsavedChanges', () => ({ confirmLeave: () => salir }))
 
 import { inventarioApi } from '@/lib/api/config'
 import { SettingsIndex } from './SettingsIndex'
@@ -28,6 +31,24 @@ beforeEach(() => {
 })
 
 describe('SettingsIndex (P1.1)', () => {
+  // Spec 2026-10-22 §3.2: sin "Sin revisar", el índice queda limpio.
+  it('el índice no muestra números ni la frase de revisión', async () => {
+    montar()
+    await new Promise(r => setTimeout(r, 0))
+    expect(screen.getByRole('link', { name: 'Motivos de conductor' })).not.toHaveTextContent(/\d/)
+    expect(screen.queryByText(/falta revisar/)).toBeNull()
+    expect(inventarioApi.get).not.toHaveBeenCalled()
+  })
+
+  it('con cambios sin guardar, cambiar de sección pide confirmación', () => {
+    salir = false
+    montar()
+    const seguido = fireEvent.click(screen.getByRole('link', { name: 'Estados del viaje' }))
+    expect(seguido).toBe(false)
+    salir = true
+    expect(fireEvent.click(screen.getByRole('link', { name: 'Estados del viaje' }))).toBe(true)
+  })
+
   it('con permisos de Operaciones se ven Operaciones y Flota; ni Certificación, ni Seguros, ni Personas', () => {
     montar()
     const indice = screen.getByRole('navigation', { name: 'Configuración' })
@@ -56,16 +77,6 @@ describe('SettingsIndex (P1.1)', () => {
     expect(screen.getByRole('link', { name: /Estados del viaje/ })).not.toHaveAttribute('aria-current')
   })
 
-  it('muestra cuánto falta revisar por sección, sin cifra mientras carga ni cuando es cero', async () => {
-    vi.mocked(inventarioApi.get).mockReturnValueOnce(new Promise(() => {}))
-    const { unmount } = montar()
-    expect(screen.getByRole('link', { name: /Motivos de conductor/ })).not.toHaveTextContent(/\d/)
-    unmount()
-    montar()
-    await waitFor(() => expect(screen.getByRole('link', { name: /Motivos de conductor/ })).toHaveTextContent('21'))
-    expect(screen.getByRole('link', { name: /Estados del viaje/ })).not.toHaveTextContent(/\d/)
-  })
-
   it('roles.manage sin users.manage no ve Personas y accesos: la API no le deja listar ni personas ni roles', () => {
     permisos = ['roles.manage', 'operations.configure']
     montar()
@@ -74,21 +85,6 @@ describe('SettingsIndex (P1.1)', () => {
 
   // 16/10: "se ve muy tosca… no se entiende lo que hace". El índice dice dónde
   // se está, qué hace cada ajuste y qué es el número.
-  it('el número dice qué es: lo que falta revisar', async () => {
-    montar()
-    await waitFor(() => expect(screen.getByRole('link', { name: 'Motivos de conductor, 21 sin revisar' })).toBeInTheDocument())
-    expect(screen.getByText('El número es lo que falta revisar.')).toBeInTheDocument()
-  })
-
-  it('sin nada por revisar no explica un número que no está', async () => {
-    vi.mocked(inventarioApi.get).mockResolvedValue({
-      operations: { pares: [], revision: { total: 60, sin_revisar: 0 }, secciones: {} },
-    } as never)
-    montar()
-    await waitFor(() => expect(inventarioApi.get).toHaveBeenCalled())
-    expect(screen.queryByText('El número es lo que falta revisar.')).toBeNull()
-  })
-
   it('en el menú: se titula Configuración y cada ajuste dice qué hace al pasar el mouse', () => {
     montar()
     expect(screen.getByRole('heading', { name: 'Configuración' })).toBeInTheDocument()
