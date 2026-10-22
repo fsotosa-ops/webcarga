@@ -246,6 +246,18 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
    F30-1).
 5. Marcha en paralelo de 2 semanas contra el Excel de Operaciones.
 
+### 2026-10-22 — Certificación: el blanco de arrastre titilaba (`da1ecd26` en dev)
+
+- Reporte en video (`monitor-app/bugs/20261022/bug-upload-documents-compliance.mp4`, narrado): al arrastrar un PDF
+  sobre un requisito, el resaltado parpadea y cuesta soltar.
+- Causa: `useGestoDeCarga.onDragLeave` apagaba el blanco con cualquier dragleave, y el navegador lo lanza al pasar a
+  cada hijo del renglón. Además, al recibir, el renglón oculta estado y acciones y cambia el elemento bajo el puntero.
+- Arreglo: solo se apaga si `relatedTarget` está fuera de la zona. Sirve a `RenglonPendiente` y `DocumentChecklist`.
+  Test RED→GREEN en `RenglonPendiente.test.tsx` (jsdom no tiene DragEvent: el evento se arma a mano). tsc y 335
+  tests de Certificación verdes.
+- **Siguiente:** cuando termine el despliegue, humo en dev con Playwright (arrastre sobre un requisito) y que quien
+  grabó el video lo pruebe.
+
 ### CHECKPOINT VIGENTE — Onboarding de empresas como etapa del alta (21/10, `8087d893` en dev)
 
 **Por qué:** el usuario observó que "En onboarding" no calzaba con la industria: era "empresa creada sin RUT"
