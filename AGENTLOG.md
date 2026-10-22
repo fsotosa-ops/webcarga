@@ -266,8 +266,9 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
   horizontal. **Descargar Excel FALLABA**: Excel no acepta "/" en el nombre de hoja y el título lleva "21/10"; los
   tests simulaban la descarga. Arreglo `ee4fbc68`: `nombreDeHoja` limpia []/\:*? en un solo lugar (tabla y secciones
   del Reporte), test con write-excel-file real (RED→GREEN); botones al tamaño de "Columnas"; el error va a consola.
-- **Siguiente:** cuando se despliegue `ee4fbc68`, bajar el Excel en dev y abrirlo; avisar a Operaciones que la vista se
-  arma una vez (columnas y filtros) y se manda desde ahí.
+- HUMO de `ee4fbc68` en dev: el Excel baja (`flota_del_dia_2026-10-21_tractoreo.xlsx`), hoja "Flota del día 21-10 ·
+  Tractoreo", recorte arriba, 12 columnas en el orden de la persona, 21 filas, todas "No asignado". Cerrado.
+- **Siguiente:** avisar a Operaciones que la vista se arma una vez (columnas y filtros) y se manda desde ahí.
 
 ### 2026-10-22 — Certificación: el blanco de arrastre titilaba (`da1ecd26` en dev)
 
