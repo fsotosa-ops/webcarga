@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within, fireEvent } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 let ruta = '/dashboard/admin/settings/operations/driver-reasons'
@@ -7,9 +7,6 @@ vi.mock('next/navigation', () => ({ usePathname: () => ruta }))
 let permisos: string[] = []
 vi.mock('@/lib/authz/PermisosProvider', () => ({ useAcceso: () => ({ permissions: permisos }) }))
 vi.mock('@/lib/api/config', () => ({ inventarioApi: { get: vi.fn() } }))
-
-let salir = true
-vi.mock('./unsavedChanges', () => ({ confirmLeave: () => salir }))
 
 import { inventarioApi } from '@/lib/api/config'
 import { SettingsIndex } from './SettingsIndex'
@@ -38,15 +35,6 @@ describe('SettingsIndex (P1.1)', () => {
     expect(screen.getByRole('link', { name: 'Motivos de conductor' })).not.toHaveTextContent(/\d/)
     expect(screen.queryByText(/falta revisar/)).toBeNull()
     expect(inventarioApi.get).not.toHaveBeenCalled()
-  })
-
-  it('con cambios sin guardar, cambiar de sección pide confirmación', () => {
-    salir = false
-    montar()
-    const seguido = fireEvent.click(screen.getByRole('link', { name: 'Estados del viaje' }))
-    expect(seguido).toBe(false)
-    salir = true
-    expect(fireEvent.click(screen.getByRole('link', { name: 'Estados del viaje' }))).toBe(true)
   })
 
   it('con permisos de Operaciones se ven Operaciones y Flota; ni Certificación, ni Seguros, ni Personas', () => {

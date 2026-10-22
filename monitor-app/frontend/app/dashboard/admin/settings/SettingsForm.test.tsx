@@ -8,7 +8,6 @@ vi.mock('@/lib/api/config', () => ({ changesApi: { list: vi.fn() } }))
 
 import { changesApi } from '@/lib/api/config'
 import { SettingsForm } from './SettingsForm'
-import { confirmLeave } from './unsavedChanges'
 import type { SettingsSource } from './settings-sources'
 
 type Row = { id: string; label: string; help: string; value: number | null; warning?: number; error?: number }
@@ -122,20 +121,23 @@ describe('SettingsForm: valores sueltos en un formulario (spec 2026-10-22 §3.1)
     expect(campo('Sin actualización del TMS')).toHaveValue(2)
   })
 
-  it('con cambios, salir pide confirmación; sin cambios, no', async () => {
+  it('con cambios, salir por un enlace de la app pide confirmación; sin cambios, no', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     renderForm(fuente())
+    const salida = document.createElement('a')
+    salida.href = '/dashboard/operations/monitor'
+    document.body.appendChild(salida)
     await screen.findByText('Sin actualización del TMS')
-    expect(confirmLeave()).toBe(true)
+    fireEvent.click(salida)
     expect(confirm).not.toHaveBeenCalled()
 
     fireEvent.change(campo('Sin actualización del TMS'), { target: { value: '9' } })
 
-    expect(confirmLeave()).toBe(false)
+    expect(fireEvent.click(salida)).toBe(false)
     expect(confirm).toHaveBeenCalledWith('Tienes cambios sin guardar. ¿Salir igual?')
     confirm.mockRestore()
+    salida.remove()
   })
-
   it('sin permiso de edición los campos van deshabilitados', async () => {
     puede = false
     renderForm(fuente())

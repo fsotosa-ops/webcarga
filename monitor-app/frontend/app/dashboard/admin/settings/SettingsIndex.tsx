@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useAcceso } from '@/lib/authz/PermisosProvider'
-import { confirmLeave } from './unsavedChanges'
 import { areasVisibles, rutaDeSeccion, seccionesVisibles } from './dominios'
 
 /** El índice de Configuración (Parte 1): un solo nivel bajo el menú de la app,
@@ -13,8 +12,8 @@ import { areasVisibles, rutaDeSeccion, seccionesVisibles } from './dominios'
  *
  *  Dos variantes del mismo índice (16/10, "no se entiende lo que hace"): en el
  *  `menu` de escritorio se titula y cada ajuste dice qué hace al pasar el mouse;
- *  en la `portada` del teléfono lo dice debajo de su nombre. Antes de cambiar de
- *  sección con cambios sin guardar, pregunta (`confirmLeave`). */
+ *  en la `portada` del teléfono lo dice debajo de su nombre. El aviso de cambios
+ *  sin guardar cubre sus enlaces como los de toda la app (unsavedChanges.ts). */
 export function SettingsIndex({ variante = 'menu' }: { variante?: 'menu' | 'portada' }) {
   const ruta = usePathname()
   const { permissions } = useAcceso()
@@ -41,7 +40,6 @@ export function SettingsIndex({ variante = 'menu' }: { variante?: 'menu' | 'port
                 <li key={s.clave}>
                   <Link href={href} prefetch={false} aria-current={activa ? 'page' : undefined}
                         title={portada ? undefined : s.proposito}
-                        onClick={e => { if (!confirmLeave()) e.preventDefault() }}
                         className={`flex items-center justify-between gap-2 rounded-md px-2.5 ${portada ? 'py-2' : 'py-1.5'} text-dato transition-colors ${
                           activa ? 'bg-accion/10 font-semibold text-accion' : 'text-text-primary hover:bg-bg-main'
                         }`}>
