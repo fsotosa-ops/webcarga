@@ -18,7 +18,8 @@ export const ROLES_GENERALES = ['reader', 'admin', 'support', 'owner'] as const
 
 export const TITULO_DE_AREA: Record<string, string> = {
   operations: 'Operaciones', directory: 'Directorio', certification: 'Certificación',
-  insurance: 'Seguros', commercial: 'Comercial', reference: 'Referencia', admin: 'Administración',
+  insurance: 'Seguros', commercial: 'Comercial', analytics: 'Analítica', reference: 'Referencia',
+  admin: 'Administración',
 }
 
 export const codigoDe = (area: Area, nivel: Exclude<Nivel, 'none'>) => `${area}_${nivel}`

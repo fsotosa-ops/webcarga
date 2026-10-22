@@ -21,7 +21,7 @@ export type RowSelection<T> = {
   label: (row: T) => string
 }
 
-export function DataTable<T>({ model, label, empty, selection, pageSizes, isRowActive }: {
+export function DataTable<T>({ model, label, empty, selection, pageSizes, isRowActive, stickyFirstColumn = false }: {
   model: DataTableModel<T>
   label: string
   /** Qué decir cuando ninguna fila pasa la vista. */
@@ -31,7 +31,10 @@ export function DataTable<T>({ model, label, empty, selection, pageSizes, isRowA
   pageSizes?: number[]
   /** La fila desde la que se abrió algo (la vista rápida): queda marcada. */
   isRowActive?: (row: T) => boolean
+  /** La primera columna queda fija al desplazar en horizontal (tablas anchas, en el teléfono). */
+  stickyFirstColumn?: boolean
 }) {
+  const fija = (i: number, fondo: string) => (stickyFirstColumn && i === 0 ? `sticky left-0 z-[1] ${fondo}` : '')
   const { table, view, visibleColumns, pageRows, rows, total } = model
   const pageCount = table.getPageCount()
   const { pageIndex } = table.getState().pagination
@@ -48,12 +51,12 @@ export function DataTable<T>({ model, label, empty, selection, pageSizes, isRowA
           <thead>
             <tr className="border-b border-border bg-bg-main">
               {selection && <th scope="col" className="w-8 px-3"><span className="sr-only">Selección</span></th>}
-              {visibleColumns.map(c => {
+              {visibleColumns.map((c, i) => {
                 const activo = view.sort?.column === c.id
                 const ariaSort = activo ? (view.sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'
                 return (
                   <th key={c.id} scope="col" aria-sort={c.sortable === false ? undefined : ariaSort}
-                    className={`${CABECERA} whitespace-nowrap ${c.align === 'right' ? 'text-right' : ''}`}>
+                    className={`${CABECERA} whitespace-nowrap ${c.align === 'right' ? 'text-right' : ''} ${fija(i, 'bg-bg-main')}`}>
                     <span className="inline-flex items-center gap-1">
                       {c.sortable === false ? c.header : (
                         <button type="button" onClick={() => ordenar(c.id)}
@@ -89,8 +92,8 @@ export function DataTable<T>({ model, label, empty, selection, pageSizes, isRowA
                     )}
                   </td>
                 )}
-                {visibleColumns.map(c => (
-                  <td key={c.id} className={`px-3 py-2.5 align-top ${c.align === 'right' ? 'text-right tabular-nums' : ''}`}>
+                {visibleColumns.map((c, ci) => (
+                  <td key={c.id} className={`px-3 py-2.5 align-top ${c.align === 'right' ? 'text-right tabular-nums' : ''} ${fija(ci, 'bg-white')}`}>
                     {c.render ? c.render(r) : (c.value(r) ?? <span className="text-informativo">—</span>)}
                   </td>
                 ))}

@@ -94,3 +94,13 @@ describe('una sola definición del menú (N1)', () => {
     expect(fuera).toEqual([])
   })
 })
+
+describe('Analítica en el menú', () => {
+  it('aparece solo con analytics.read, después de Seguros', () => {
+    const etiquetas = (p: string[]) => visibleNav(p as never).map(e => ('items' in e ? e.label : e.label))
+    expect(etiquetas(['analytics.read'])).toContain('Analítica')
+    expect(etiquetas([])).not.toContain('Analítica')
+    const orden = NAV.map(e => e.label)
+    expect(orden.indexOf('Analítica')).toBe(orden.indexOf('Seguros') + 1)
+  })
+})

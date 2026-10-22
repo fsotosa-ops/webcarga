@@ -1,6 +1,6 @@
 import {
   Truck, BookUser, Shield, Receipt, BadgeCheck, ClipboardCheck,
-  Building2, UserRound, Inbox, ListChecks, FileText, CalendarClock, Handshake,
+  Building2, UserRound, Inbox, ListChecks, FileText, CalendarClock, Handshake, BarChart3,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Acceso } from '@/lib/authz/acceso'
@@ -107,6 +107,8 @@ const NAV_GROUPS: NavGroup[] = [
 // como una capacidad que existe, y no existe.
 const NAV_ITEMS: NavTopLeaf[] = [
   { href: '/dashboard/pricing',   label: 'Tarifario',  icon: Receipt },
+  // Analítica (22/10): la BDOT reconstruida. Una sola pantalla con sus vistas; la Reportería vive adentro.
+  { href: '/dashboard/analytics', label: 'Analítica',  icon: BarChart3, permission: 'analytics.read' },
 ]
 
 // El orden del menu, con grupos y hojas mezclados. Antes se renderizaban en
@@ -119,6 +121,7 @@ export const NAV: readonly NavEntry[] = [
   NAV_GROUPS[1],                                              // Directorio
   NAV_GROUPS[2],                                              // Certificación
   NAV_GROUPS[3],                                              // Seguros
+  NAV_ITEMS[1],                                               // Analítica
   NAV_ITEMS[0],                                               // Tarifario
 ]
 
