@@ -37,8 +37,13 @@ Todo lo de hoy está comiteado y en `dev`. Pendientes, en orden:
    - Verificación: backend 1.966 passed (copia local), frontend 2.131 + build + tsc; revisión final: 3 importantes
      arreglados con test rojo→verde; 6 menores diferidos (ledger: bandera única de cambios sin guardar, aviso solo en el
      índice, audit fuera de transacción, nombres de acción, Decimal vs float, doble clic en Personas).
-   - **Siguiente:** cuando el usuario avise el despliegue, humo con Playwright: 17 secciones a 1440 y 390, guardar un
-     umbral y ver "Última modificación", confirmar la fila en `audit_log` (lectura).
+   - HUMO EN DEV (22/10): 17 secciones a 1440 y 390 sin desplazamiento horizontal, sin "Sin revisar" ni errores.
+     Umbrales: "Guardar cambios" deshabilitado sin cambios; Semáforo rojo 120→121→120 guardó, dijo "Guardado" y
+     "Última modificación: Felipe Sumadots, 22/10/2026"; `audit_log` tiene las dos filas con antes y después. Valor
+     restaurado. Con la sección quieta, 0 pedidos en 10 s (sin bucles).
+   - El usuario vio "Too Many Requests" durante el humo: lo causó el recorrido rápido de Playwright (34 páginas
+     seguidas) contra el límite de `proxy.ts` (60 pedidos/10 s por IP), compartido con su navegador. No es del código.
+   - Cerrado. Quedan solo los 6 menores diferidos (arriba).
 1. **Operaciones:** avisar que la Flota del día se baja y se copia ("Descargar Excel" / "Copiar"): la vista se arma una
    vez (columnas y filtros, p. ej. por Origen habitual) y se manda al CD desde ahí. Ver la sección de abajo.
 2. **Certificación:** que quien grabó el video del arrastre lo pruebe con un arrastre de verdad (`da1ecd26`).
