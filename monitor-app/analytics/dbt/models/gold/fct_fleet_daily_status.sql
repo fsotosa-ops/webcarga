@@ -11,6 +11,9 @@
   se reabra (mismo criterio que "no reabrir un día firmado para corregir"). Un día nunca firmado sale de las líneas
   vivas y queda con is_provisional = true.
   La categoría es la misma regla del Cierre: app.closure_line_category (migración 20261102090000).
+  in_report: si la línea cuenta en el reporte del Cierre, con la regla de la base app.closure_line_in_report
+  (migración 20261106090000): antes del primer día firmado solo cuenta el roster de Tractoreo de ese día. La fila
+  queda igual en el hecho; la capa analytics filtra, como la Reportería.
   Se reconstruye entera en cada corrida: son ~10.000 filas y así no hay desfase con una firma nueva.
 */
 WITH ultima_firma AS (
@@ -56,6 +59,7 @@ SELECT
     l.reason_from_driver_id,
     l.home_location_id,
     l.is_provisional,
+    app.closure_line_in_report(l.subject_type, l.subject_id, l.business_date) AS in_report,
     -- Los clientes de sus viajes de ese día (los planificados ese día), como la Reportería.
     COALESCE((
         SELECT array_agg(DISTINCT f.client_id ORDER BY f.client_id)

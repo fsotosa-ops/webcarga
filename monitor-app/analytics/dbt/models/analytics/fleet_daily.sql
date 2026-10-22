@@ -7,6 +7,7 @@
 
   SIN DATOS PERSONALES: identifica al conductor por su id; el nombre está en dim_driver, no aquí.
   Los días firmados salen de su firma (is_provisional = false); los demás, de las líneas vivas.
+  Solo las líneas que cuentan en el reporte del Cierre (in_report), las mismas que muestra la Reportería.
 */
 SELECT
     s.fleet_day_key,
@@ -38,3 +39,4 @@ LEFT JOIN {{ ref('dim_carrier') }} dc
       AND s.business_date::timestamptz >= dc.valid_from AND s.business_date::timestamptz < dc.valid_to
 LEFT JOIN {{ ref('dim_reason') }} r ON r.reason_id = s.reason_id
 LEFT JOIN {{ ref('dim_location') }} hl ON hl.location_id = s.home_location_id
+WHERE s.in_report

@@ -13,33 +13,14 @@ pasa a ser público (sin guion bajo) porque ahora lo importan 2 routers:
 daily_closures.py (cuadratura por conductor) y status_report.py (Sección
 4 del reporte, agrupada por conductor)."""
 
-from .closure_scope import is_scope_sql
-
 def tractoreo_roster_select(day: str = "public.hoy_chile()") -> str:
-    """El SELECT del roster de Tractoreo de un día (`day`: expresión SQL de tipo date)."""
-    return """
-        -- home_location_id (HU-28): el origen habitual viaja con el roster porque la
-        -- línea del cierre lo copia. DISTINCT no cambia de cardinalidad: es
-        -- una columna de la propia fila de `drivers`.
-        SELECT DISTINCT d.id AS driver_id, da.counterpart_id AS home_carrier_id,
-               d.home_location_id
-        FROM public.drivers d
-        -- FIX 2026-08-18: faltaba filtrar al CONDUCTOR por operational_status.
-        -- Se filtraba la empresa (c) y el activo (a), pero no a él, mientras
-        -- fleet_driver_gap.py:22 sí lo hace — o sea el mismo conductor de baja
-        -- contaba distinto en dos secciones del mismo reporte. Hoy no cambia
-        -- ningún número (los 87 de public.drivers están ACTIVE, roster 44 → 44);
-        -- es un defecto latente que aparece el día que operaciones dé una baja.
-        -- D2 (14/10): la empresa del conductor y la del tracto son las de ESE día
-        -- (app.fleet_assignment_periods), no las de hoy.
-        JOIN app.fleet_assignment_periods da ON da.relation = 'DRIVER_CARRIER' AND da.subject_id = d.id
-             AND da.valid_during @> {day} AND d.operational_status = 'ACTIVE'
-        JOIN public.carriers c ON c.id = da.counterpart_id AND c.operational_status = 'ACTIVE'
-        JOIN app.fleet_assignment_periods aa ON aa.relation = 'ASSET_CARRIER' AND aa.counterpart_id = c.id
-             AND aa.valid_during @> {day}
-        JOIN public.assets a ON a.id = aa.subject_id AND a.operational_status = 'ACTIVE' AND public.is_power_unit(a.asset_type)
-        JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id AND {es_tractoreo}
-""".format(day=day, es_tractoreo=is_scope_sql("wot", "tractoreo"))
+    """El SELECT del roster de Tractoreo de un día (`day`: expresión SQL de tipo date).
+    La regla vive en la base, `app.tractoreo_roster` (migración 20261106090000), porque la
+    analítica (dbt) también la lee: el origen habitual (HU-28) viaja con el roster porque la
+    línea del cierre lo copia, y la empresa y el tracto son los de ESE día (D2, 14/10)."""
+    return f"""
+        SELECT r.driver_id, r.home_carrier_id, r.home_location_id FROM app.tractoreo_roster(({day})::date) r
+"""
 
 
 def tractoreo_roster_cte(day: str = "public.hoy_chile()") -> str:

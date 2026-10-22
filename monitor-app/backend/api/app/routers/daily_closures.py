@@ -150,11 +150,10 @@ LEFT JOIN LATERAL (
 ) today_trip ON true
 -- Bloque 0 (0.4): la firma cuenta TODAS las líneas del día; quien salió del roster
 -- después de calcularse su línea sigue bloqueando y se muestra, marcado. Solo desde el
--- primer día firmado (Cierre en vivo): antes no había firma que contar. Con
--- closure_signatures vacía el min es NULL, la comparación da NULL y no se agrega nada.
+-- primer día firmado (Cierre en vivo): antes no había firma que contar. La regla vive en
+-- la base (app.closure_line_in_report, 20261106090000) y la analítica lee la misma.
 WHERE dds.business_date = $1
-  AND (ar.driver_id IS NOT NULL
-       OR dds.business_date >= (SELECT min(business_date) FROM app.closure_signatures))
+  AND app.closure_line_in_report('DRIVER', dds.driver_id, dds.business_date)
 ORDER BY d.full_name
 """
 
@@ -191,11 +190,10 @@ LEFT JOIN LATERAL (
 ) clients ON true
 -- Bloque 0 (0.4): la firma cuenta TODAS las líneas del día; quien salió del roster
 -- después de calcularse su línea sigue bloqueando y se muestra, marcado. Solo desde el
--- primer día firmado (Cierre en vivo): antes no había firma que contar. Con
--- closure_signatures vacía el min es NULL, la comparación da NULL y no se agrega nada.
+-- primer día firmado (Cierre en vivo): antes no había firma que contar. La regla vive en
+-- la base (app.closure_line_in_report, 20261106090000) y la analítica lee la misma.
 WHERE dds.business_date BETWEEN $1 AND $2
-  AND (ar.driver_id IS NOT NULL
-       OR dds.business_date >= (SELECT min(business_date) FROM app.closure_signatures))
+  AND app.closure_line_in_report('DRIVER', dds.driver_id, dds.business_date)
 ORDER BY dds.business_date, d.full_name
 """
 

@@ -104,30 +104,29 @@ def test_detail_sql_lee_los_viajes_del_dia_de_la_funcion():
 # tracto en equipment_closures.py). Las 3 queries deben compartir la MISMA
 # constante TRACTOREO_ROSTER_CTE, no una copia divergente. ──────────
 
-def test_tractoreo_roster_cte_filters_by_operation_type_code():
+def test_tractoreo_roster_cte_reads_the_db_rule():
+    # La regla vive en app.tractoreo_roster (20261106090000); su comportamiento (tipo de
+    # operación, bajas de conductor, empresa y tracto) lo prueba
+    # test_closure_report_population_integration.py contra Postgres.
     from app.services.driver_roster import TRACTOREO_ROSTER_CTE
-    assert "app.status_taxonomies" in TRACTOREO_ROSTER_CTE
-    assert "wot.code = 'TRACTOREO'" in TRACTOREO_ROSTER_CTE
-    assert "public.is_power_unit(a.asset_type)" in TRACTOREO_ROSTER_CTE
+    assert "app.tractoreo_roster(" in TRACTOREO_ROSTER_CTE
 
 
 def test_detail_sql_uses_shared_tractoreo_roster_cte():
     # D2: el roster del día que se mira, no el de hoy.
     from app.routers.daily_closures import _DETAIL_SQL, tractoreo_roster_cte
     assert tractoreo_roster_cte('$1::date') in _DETAIL_SQL
-    assert "wot.code = 'TRACTOREO'" in _DETAIL_SQL
     assert "LEFT JOIN active_roster ar ON ar.driver_id = dds.driver_id" in _DETAIL_SQL
-    assert "min(business_date) FROM app.closure_signatures" in _DETAIL_SQL
+    assert "app.closure_line_in_report('DRIVER', dds.driver_id, dds.business_date)" in _DETAIL_SQL
 
 
 def test_report_sql_uses_shared_tractoreo_roster_cte():
     # D2: el roster de cada día del rango.
     from app.routers.daily_closures import _REPORT_SQL, tractoreo_roster_by_day_cte
     assert tractoreo_roster_by_day_cte('$1', '$2') in _REPORT_SQL
-    assert "wot.code = 'TRACTOREO'" in _REPORT_SQL
     assert ("LEFT JOIN active_roster ar ON ar.driver_id = dds.driver_id "
             "AND ar.business_date = dds.business_date") in _REPORT_SQL
-    assert "min(business_date) FROM app.closure_signatures" in _REPORT_SQL
+    assert "app.closure_line_in_report('DRIVER', dds.driver_id, dds.business_date)" in _REPORT_SQL
 
 
 def test_detail_sql_keeps_the_carrier_as_left_join_of_that_day():
@@ -469,18 +468,6 @@ def test_set_batch_reason_422_cuando_driver_ids_vacio():
 # Las 3 pantallas del Cierre miran el mismo universo de viajes del día, para
 # todos los TMS: tests/test_viajes_del_dia_sin_exclusion_por_tms.py (10/10).
 
-
-# ── FIX 2026-08-18: el roster filtraba la empresa y el activo por
-# operational_status, pero no al CONDUCTOR, mientras fleet_driver_gap.py sí
-# lo hace — el mismo conductor de baja contaba distinto en dos secciones del
-# mismo reporte. ──────────
-
-def test_tractoreo_roster_cte_excluye_conductores_de_baja():
-    from app.services.driver_roster import TRACTOREO_ROSTER_CTE
-    assert "d.operational_status = 'ACTIVE'" in TRACTOREO_ROSTER_CTE
-    # los otros dos filtros ya estaban y no deben perderse
-    assert "c.operational_status = 'ACTIVE'" in TRACTOREO_ROSTER_CTE
-    assert "a.operational_status = 'ACTIVE'" in TRACTOREO_ROSTER_CTE
 
 # ── Permiso, comentario y las dos columnas nuevas (2026-09-07) ─────────────
 

@@ -178,3 +178,8 @@ models:
         tests:
           - accepted_values:
               values: ['ASIGNADO', 'POR_REGULARIZAR', 'SIN_RESOLVER', 'TRABAJANDO_SIN_ASIGNACION', 'NO_TRABAJANDO']
+      - name: in_report
+        description: >
+          Si la línea cuenta en el reporte del Cierre (app.closure_line_in_report): antes del primer día firmado,
+          solo el roster de Tractoreo de ese día. analytics.fleet_daily muestra solo estas.
+        tests: [not_null]
