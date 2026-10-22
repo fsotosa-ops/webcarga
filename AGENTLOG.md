@@ -22,6 +22,14 @@
 ### PARA LA PRÓXIMA SESIÓN (cierre del 22/10)
 
 Todo lo de hoy está comiteado y en `dev`. Pendientes, en orden:
+0. **Configuración (`/dashboard/admin/settings`), pedido del usuario al cierre del 22/10:** está saturada, no está
+   alineada al layout de la app y no termina de cumplir el estándar de la industria. Hoy: 7 áreas (Certificación,
+   Operaciones, Flota, Directorio, Seguros, Personas y accesos, Facturación) y ~20 secciones, con índice lateral,
+   buscador y portada para teléfono (`dominios.ts`, `SettingsIndex`, `layout.tsx`). Cómo abordarlo:
+   (a) auditoría visual de todas las secciones a 1440 y 390 contra el resto de la app (encabezado, contenedor,
+   tablas del kit); (b) benchmark nombrado (Linear, Stripe, Vercel, HubSpot: navegación agrupada, una página por
+   sección, encabezado y acciones iguales en todas, búsqueda); (c) brainstorming + maqueta en la HU antes de tocar
+   código; (d) recién ahí el plan. No reescribir sin leer lo que ya existe (Configuración en tres partes, 16/10).
 1. **Operaciones:** avisar que la Flota del día se baja y se copia ("Descargar Excel" / "Copiar"): la vista se arma una
    vez (columnas y filtros, p. ej. por Origen habitual) y se manda al CD desde ahí. Ver la sección de abajo.
 2. **Certificación:** que quien grabó el video del arrastre lo pruebe con un arrastre de verdad (`da1ecd26`).
