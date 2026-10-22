@@ -146,7 +146,15 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
          las tres; anon y authenticated, nada.
        - `gold` sigue en `pgrst.db_schemas` pero es inocuo (anon y authenticated sin USAGE). Retirarlo es en la
          configuración de API de Supabase.
-     - Fase 2: el módulo Analítica (siguiente, decisión del usuario 22/10).
+     - Fase 2: el módulo Analítica. HU ESCRITA (22/10), por aprobar: `monitor-app/docs/user-stories/20261022/01-hu-analitica.md`.
+       - 15 criterios, diseño contrastado con Samsara, Motive, Salesforce, Linear y Metabase, y sus cuatro estados.
+       - Permisos: `analytics.read` (READ_ALL), `analytics.export`, `analytics.manage_views` y
+         `analytics.personal_data` (privilegiado).
+       - Modo servidor nuevo en el kit de tabla y el período en `useUrlView`.
+       - Tabla nueva `app.saved_views`.
+       - Excel en el servidor y auditado.
+       - Reportería fusionada como "Tabla dinámica" de Flota por día.
+       - `bdot_people` pasa a `driver_identity`.
      - BACKLOG: identificación internacional, en el issue #14
        (https://github.com/fsotosa-ops/webcarga/issues/14).
        - Hoy `drivers` exige un RUT chileno canónico (CHECK) y `tax_id` es UNIQUE sin país en drivers y carriers.
