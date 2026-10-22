@@ -146,7 +146,12 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
          las tres; anon y authenticated, nada.
        - `gold` sigue en `pgrst.db_schemas` pero es inocuo (anon y authenticated sin USAGE). Retirarlo es en la
          configuración de API de Supabase.
-     - Fase 2: el módulo Analítica.
+     - Fase 2: el módulo Analítica (siguiente, decisión del usuario 22/10).
+     - BACKLOG: identificación internacional, en el issue #14
+       (https://github.com/fsotosa-ops/webcarga/issues/14).
+       - Hoy `drivers` exige un RUT chileno canónico (CHECK) y `tax_id` es UNIQUE sin país en drivers y carriers.
+       - Estándar: país + tipo de documento + número, con unicidad sobre los tres.
+       - El modelo analítico ya identifica por uuid; solo falta exponer país y tipo en `bdot_people`.
    - DECISIÓN DEL USUARIO (22/10): Analítica no depende de Operaciones. Se construye con lo resuelto; los puntos para
      Operaciones (FRTC42, GPRZ30, tipos de Reclutamiento, Sodimac sin tracto, onboarding de conductores, umbral
      `stale_trip_days`) son backlog aparte y no bloquean nada de Analítica.
