@@ -14,7 +14,7 @@ from ..services.reordenamiento import (
 from ..services.reglas_del_monitor import SQL_REGLAS_DEL_MONITOR
 from ..services.vencimientos import UMBRALES
 from ..services.revisiones import POR_SECCION, SQL_PENDIENTES_POR_SECCION, registrar_revision
-from ..services.config_changes import SQL_ULTIMOS_CAMBIOS, entity_type
+from ..services.config_changes import SQL_ULTIMOS_CAMBIOS, diferencia, entity_type, registrar_cambio
 
 # Cada ruta declara su permiso (RBAC): ver tests/test_toda_ruta_declara_permiso.py.
 router = APIRouter(prefix="/config", tags=["config"])
@@ -193,7 +193,7 @@ async def patch_status(
     usuario=Depends(require(Permission.OPERATIONS_CONFIGURE)),
 ):
     existing = await pool.fetchrow(
-        "SELECT id FROM app.trip_statuses WHERE id = $1", status_id
+        "SELECT * FROM app.trip_statuses WHERE id = $1", status_id
     )
     if not existing:
         raise HTTPException(404, "Estado no encontrado")
@@ -218,6 +218,10 @@ async def patch_status(
     # GUARDAR CUENTA COMO REVISAR: editar y guardar es tomar una decisión, y no
     # hace falta un segundo gesto para dejarla registrada.
     await registrar_revision(pool, "operations", "tms-statuses", status_id, usuario["sub"])
+    antes, despues = diferencia(existing, data)
+    if despues:
+        await registrar_cambio(pool, actor=usuario["sub"], area="operations", section="tms-statuses",
+                               element_id=status_id, action="update", before=antes, after=despues)
     return dict(row)
 
 
@@ -226,7 +230,7 @@ async def move_status(
     status_id: str,
     body: MovimientoBody,
     pool=Depends(get_pool),
-    _=Depends(require(Permission.OPERATIONS_CONFIGURE)),
+    usuario=Depends(require(Permission.OPERATIONS_CONFIGURE)),
 ):
     """Sube o baja un estado una posición, en una sola transacción.
 
@@ -236,6 +240,8 @@ async def move_status(
     async with pool.acquire() as conn:
         async with conn.transaction():
             await mover_una_posicion(conn, ESTADOS_DEL_TABLERO, status_id, body.direction)
+    await registrar_cambio(pool, actor=usuario["sub"], area="operations", section="tms-statuses",
+                           element_id=status_id, action="move", before=None, after={"direction": body.direction})
     return [dict(r) for r in await pool.fetch(_SQL_ESTADOS)]
 
 
@@ -300,6 +306,10 @@ async def patch_alert_threshold(
         doc_type,
     )
     await registrar_revision(pool, umbral.dominio, umbral.seccion, doc_type, usuario["sub"])
+    antes, despues = diferencia(existing, data)
+    if despues:
+        await registrar_cambio(pool, actor=usuario["sub"], area=umbral.dominio, section=umbral.seccion,
+                               element_id=doc_type, action="update", before=antes, after=despues)
     # Sin invalidar /trips/meta: la meta ya no lleva los umbrales (D1, R-E4).
     return dict(row)
 
@@ -340,6 +350,9 @@ async def create_temperature_range(
     # alguien lo mire, porque lo acaba de mirar quien lo creó.
     await registrar_revision(
         pool, "operations", "temperature-ranges", body.cargo_type, usuario["sub"])
+    await registrar_cambio(pool, actor=usuario["sub"], area="operations", section="temperature-ranges",
+                           element_id=body.cargo_type, action="create", before=None,
+                           after={k: row[k] for k in ("label", "min_c", "max_c")})
     return dict(row)
 
 
@@ -380,6 +393,10 @@ async def patch_temperature_range(
     )
     await registrar_revision(
         pool, "operations", "temperature-ranges", cargo_type, usuario["sub"])
+    antes, despues = diferencia(existing, data)
+    if despues:
+        await registrar_cambio(pool, actor=usuario["sub"], area="operations", section="temperature-ranges",
+                               element_id=cargo_type, action="update", before=antes, after=despues)
     return dict(row)
 
 
@@ -387,13 +404,15 @@ async def patch_temperature_range(
 async def delete_temperature_range(
     cargo_type: str,
     pool=Depends(get_pool),
-    _=Depends(require(Permission.OPERATIONS_CONFIGURE)),
+    usuario=Depends(require(Permission.OPERATIONS_CONFIGURE)),
 ):
-    result = await pool.execute(
-        "DELETE FROM app.temperature_ranges WHERE cargo_type = $1", cargo_type
+    borrado = await pool.fetchrow(
+        "DELETE FROM app.temperature_ranges WHERE cargo_type = $1 RETURNING label, min_c, max_c", cargo_type
     )
-    if result == "DELETE 0":
+    if borrado is None:
         raise HTTPException(404, "Rango de temperatura no encontrado")
+    await registrar_cambio(pool, actor=usuario["sub"], area="operations", section="temperature-ranges",
+                           element_id=cargo_type, action="delete", before=dict(borrado), after=None)
     return {"ok": True}
 
 
@@ -429,6 +448,7 @@ async def patch_monitor_alert_rules(
         sets.append(f"{field} = ${len(vals)}")
     sets.append("updated_at = NOW()")
 
+    previas = await pool.fetchrow("SELECT * FROM app.monitor_alert_rules WHERE id = 1")
     await pool.execute(
         f"UPDATE app.monitor_alert_rules SET {', '.join(sets)} WHERE id = 1", *vals
     )
@@ -437,6 +457,11 @@ async def patch_monitor_alert_rules(
     # formulario entero, y revisarlo es decir "estos siete números están bien".
     await registrar_revision(
         pool, "operations", "alert-thresholds", "reglas", usuario["sub"])
+    # El registro de cambios sí es por regla: "Última modificación" se ve en cada una.
+    antes, despues = diferencia(previas, data)
+    for regla, valor in despues.items():
+        await registrar_cambio(pool, actor=usuario["sub"], area="operations", section="alert-thresholds",
+                               element_id=regla, action="update", before={regla: antes[regla]}, after={regla: valor})
     return dict(row)
 
 

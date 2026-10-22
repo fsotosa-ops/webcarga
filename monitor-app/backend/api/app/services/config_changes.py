@@ -35,16 +35,12 @@ async def registrar_cambio(
     solo los campos que cambian; nunca secretos (contraseñas, tokens, enlaces)."""
     if action not in ACCIONES:
         raise ValueError(f"acción desconocida: {action}")
-    escribir = lambda conn: log_change(  # noqa: E731
-        conn, actor=actor, entity_type=entity_type(area, section),
+    # El pool de asyncpg y una conexión tienen `.execute`: log_change sirve a los dos.
+    await log_change(
+        pool_or_conn, actor=actor, entity_type=entity_type(area, section),
         entity_id=entity_uuid(area, section, element_id), action=action,
         old_value=before, new_value={**(after or {}), "element_id": element_id}, source="config",
     )
-    if hasattr(pool_or_conn, "acquire"):
-        async with pool_or_conn.acquire() as conn:
-            await escribir(conn)
-    else:
-        await escribir(pool_or_conn)
 
 
 # El último cambio de cada elemento de una sección.
@@ -58,3 +54,14 @@ SELECT DISTINCT ON (a.new_value->>'element_id')
  WHERE a.entity_type = $1
  ORDER BY a.new_value->>'element_id', a.occurred_at DESC, a.id DESC
 """
+
+
+def diferencia(antes, despues: dict) -> tuple[dict, dict]:
+    """Los campos de `despues` que cambian respecto de `antes`: (antes, después).
+    `antes` es la fila leída antes de guardar (un Record o un dict)."""
+    viejos, nuevos = {}, {}
+    for campo, valor in despues.items():
+        previo = antes[campo] if antes is not None and campo in antes.keys() else None
+        if previo != valor:
+            viejos[campo], nuevos[campo] = previo, valor
+    return viejos, nuevos

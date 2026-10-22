@@ -6,6 +6,7 @@ from ..db import get_pool
 from ..schemas.status_taxonomy import GRUPOS_POR_DOMINIO, StatusTaxonomyBody, StatusTaxonomyPatch
 from ..services.reordenamiento import TAXONOMIAS, MovimientoBody, mover_una_posicion
 from ..services.revisiones import SECCION_DE_TAXONOMIA, registrar_revision
+from ..services.config_changes import diferencia, registrar_cambio
 
 # Cada ruta declara su permiso (RBAC): ver tests/test_toda_ruta_declara_permiso.py.
 router = APIRouter(prefix="/config/taxonomies", tags=["config"])
@@ -76,6 +77,7 @@ async def create_taxonomy(body: StatusTaxonomyBody, pool=Depends(get_pool), usua
         body.domain, body.label, body.sort_order, body.group_id,
     )
     await _registrar(pool, body.domain, row["id"], usuario)
+    await _cambio(pool, body.domain, row["id"], usuario, "create", None, {"label": body.label, "group_id": body.group_id})
     return dict(row)
 
 
@@ -85,7 +87,7 @@ async def patch_taxonomy(
     usuario=Depends(require(Permission.OPERATIONS_CONFIGURE)),
 ):
     existing = await pool.fetchrow(
-        "SELECT id, domain FROM app.status_taxonomies WHERE id = $1", taxonomy_id)
+        "SELECT * FROM app.status_taxonomies WHERE id = $1", taxonomy_id)
     if not existing:
         raise HTTPException(404, "No encontrado")
 
@@ -103,7 +105,20 @@ async def patch_taxonomy(
     await pool.execute(f"UPDATE app.status_taxonomies SET {', '.join(sets)} WHERE id = $1", *vals)
     row = await pool.fetchrow(f"SELECT {_FIELDS} FROM app.status_taxonomies WHERE id = $1", taxonomy_id)
     await _registrar(pool, existing["domain"], taxonomy_id, usuario)
+    antes, despues = diferencia(existing, data)
+    if despues:
+        await _cambio(pool, existing["domain"], taxonomy_id, usuario, "update", antes, despues)
     return dict(row)
+
+
+async def _cambio(pool, vocabulario: str, taxonomy_id, usuario, action: str, before, after) -> None:
+    """El registro de cambios, en la sección de Configuración del vocabulario."""
+    destino = SECCION_DE_TAXONOMIA.get(vocabulario)
+    if not destino:
+        return
+    area, section = destino
+    await registrar_cambio(pool, actor=usuario["sub"], area=area, section=section,
+                           element_id=str(taxonomy_id), action=action, before=before, after=after)
 
 
 async def _registrar(pool, vocabulario: str, taxonomy_id, usuario) -> None:
@@ -125,7 +140,7 @@ async def move_taxonomy(
     taxonomy_id: str,
     body: MovimientoBody,
     pool=Depends(get_pool),
-    _=Depends(require(Permission.OPERATIONS_CONFIGURE)),
+    usuario=Depends(require(Permission.OPERATIONS_CONFIGURE)),
 ):
     """Sube o baja un valor una posicion dentro de SU dominio, en una sola
     transaccion. Devuelve el dominio completo ya ordenado."""
@@ -135,16 +150,20 @@ async def move_taxonomy(
     dominio = await pool.fetchval(
         "SELECT domain FROM app.status_taxonomies WHERE id = $1::uuid", taxonomy_id
     )
+    await _cambio(pool, dominio, taxonomy_id, usuario, "move", None, {"direction": body.direction})
     return [dict(r) for r in await pool.fetch(_SQL_LISTA, dominio)]
 
 
 @router.delete("/{taxonomy_id}")
-async def deactivate_taxonomy(taxonomy_id: str, pool=Depends(get_pool), _=Depends(require(Permission.OPERATIONS_CONFIGURE))):
-    result = await pool.execute(
-        "UPDATE app.status_taxonomies SET active = false, updated_at = NOW() WHERE id = $1", taxonomy_id,
+async def deactivate_taxonomy(taxonomy_id: str, pool=Depends(get_pool), usuario=Depends(require(Permission.OPERATIONS_CONFIGURE))):
+    desactivada = await pool.fetchrow(
+        "UPDATE app.status_taxonomies SET active = false, updated_at = NOW() WHERE id = $1 RETURNING domain, label",
+        taxonomy_id,
     )
-    if result == "UPDATE 0":
+    if desactivada is None:
         raise HTTPException(404, "No encontrado")
+    await _cambio(pool, desactivada["domain"], taxonomy_id, usuario, "delete", {"active": True, "label": desactivada["label"]},
+                  {"active": False})
     # Cuántas condiciones de documento siguen apuntando a este valor. El
     # borrado es lógico, así que la regla NO se rompe — pero la casilla
     # desaparece de la pantalla y la condición se ve como "0 marcas" sin serlo.
