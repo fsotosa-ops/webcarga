@@ -22,7 +22,7 @@
 ### PARA LA PRÓXIMA SESIÓN (cierre del 22/10, actualizado al final del día)
 
 Todo lo de hoy está comiteado y en `dev` (último `27d46eb8`). El punto 0 (Configuración) quedó CERRADO y probado en
-dev; sus 6 menores quedaron hechos el mismo día (falta el humo de los últimos cambios). Pendientes, en orden:
+dev; sus 6 menores quedaron hechos y probados en dev el mismo día. Pendientes, en orden:
 0. **Configuración ordenada (22/10, `febe1d8a..96c098d8` en dev, falta humo):** spec
    `docs/superpowers/specs/2026-10-22-configuracion-orden-visual-design.md`, plan `docs/superpowers/plans/2026-10-22-configuracion-orden-visual.md`
    (inline, 9 tareas + revisión final opus). Cierra el pendiente del 11/10 (pasada visual) y la deuda que seguía.
@@ -58,8 +58,11 @@ dev; sus 6 menores quedaron hechos el mismo día (falta el humo de los últimos 
          transacción (test: si el registro falla, el cambio no queda). Invitar persona queda fuera (Supabase está fuera
          de la base). Los arneses simulados usan conexión = pool (`wire_transactional_conn(pool, pool)`).
        - Los 6 menores están hechos. Verificación: 526 tests de Configuración y accesos en verde (copia local).
-     - **Siguiente:** humo en dev: editar un umbral y salir por el menú lateral (debe preguntar; cancelar se queda);
-       guardar un umbral y ver que sigue funcionando con la transacción.
+     - HUMO EN DEV (22/10, `85f026c1`): con un cambio sin guardar, ir a Analítica por el menú lateral abre "Tienes
+       cambios sin guardar. ¿Salir igual?"; al cancelar se queda en Umbrales con lo escrito (121). Guardar con la
+       transacción nueva: "Guardado" + "Última modificación: Felipe Sumadots, 22/10/2026"; vuelto a 120 (base: 120).
+       Sin cambios, el menú sale sin preguntar. El 404 de `table-preferences/analytics.trips` en consola es previo
+       (sin preferencias guardadas), no de esto. CERRADO.
 1. **Operaciones:** avisar que la Flota del día se baja y se copia ("Descargar Excel" / "Copiar"): la vista se arma una
    vez (columnas y filtros, p. ej. por Origen habitual) y se manda al CD desde ahí. Ver la sección de abajo.
 2. **Certificación:** que quien grabó el video del arrastre lo pruebe con un arrastre de verdad (`da1ecd26`).
