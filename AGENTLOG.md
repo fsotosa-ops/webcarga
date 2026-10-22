@@ -30,6 +30,13 @@ Todo lo de hoy está comiteado y en `dev`. Pendientes, en orden:
    tablas del kit); (b) benchmark nombrado (Linear, Stripe, Vercel, HubSpot: navegación agrupada, una página por
    sección, encabezado y acciones iguales en todas, búsqueda); (c) brainstorming + maqueta en la HU antes de tocar
    código; (d) recién ahí el plan. No reescribir sin leer lo que ya existe (Configuración en tres partes, 16/10).
+   **Es el mismo pendiente de sesiones pasadas, no uno nuevo:** 11/10 "el rediseño de Configuración y de Certificación
+   va junto… brainstorming → maqueta → spec → plan" y "después Configuración (incluye su pasada visual), su propio
+   ciclo" (marcado "Configuración sigue pendiente"). El 16/10 se hizo la ESTRUCTURA (tres partes: índice único, rutas,
+   Documentos exigidos, Clientes) pero nunca la pasada visual. De la deuda técnica del 11/10, revisado el 22/10: ya
+   resueltas la clave de caché `taxonomies`/`taxonomias` y `useConfigList`; sigue `CondicionPanel` (526 líneas); por
+   verificar `UsersTable` copiando la lista sin resincronizar, `FormularioDeRol` sin `key` y la tabla editable
+   escrita tres veces. Entran en el mismo ciclo.
 1. **Operaciones:** avisar que la Flota del día se baja y se copia ("Descargar Excel" / "Copiar"): la vista se arma una
    vez (columnas y filtros, p. ej. por Origen habitual) y se manda al CD desde ahí. Ver la sección de abajo.
 2. **Certificación:** que quien grabó el video del arrastre lo pruebe con un arrastre de verdad (`da1ecd26`).
