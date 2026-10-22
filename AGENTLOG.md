@@ -22,7 +22,7 @@
 ### PARA LA PRÓXIMA SESIÓN (cierre del 22/10, actualizado al final del día)
 
 Todo lo de hoy está comiteado y en `dev` (último `27d46eb8`). El punto 0 (Configuración) quedó CERRADO y probado en
-dev; solo quedan sus 6 menores diferidos, para decidir si se hacen. Pendientes, en orden:
+dev; de sus 6 menores se hicieron el 2 (con el 1) y el 6, falta su humo; el 3, 4 y 5 siguen diferidos. Pendientes, en orden:
 0. **Configuración ordenada (22/10, `febe1d8a..96c098d8` en dev, falta humo):** spec
    `docs/superpowers/specs/2026-10-22-configuracion-orden-visual-design.md`, plan `docs/superpowers/plans/2026-10-22-configuracion-orden-visual.md`
    (inline, 9 tareas + revisión final opus). Cierra el pendiente del 11/10 (pasada visual) y la deuda que seguía.
@@ -44,7 +44,14 @@ dev; solo quedan sus 6 menores diferidos, para decidir si se hacen. Pendientes, 
      restaurado. Con la sección quieta, 0 pedidos en 10 s (sin bucles).
    - El usuario vio "Too Many Requests" durante el humo: lo causó el recorrido rápido de Playwright (34 páginas
      seguidas) contra el límite de `proxy.ts` (60 pedidos/10 s por IP), compartido con su navegador. No es del código.
-   - Cerrado. Quedan solo los 6 menores diferidos (arriba).
+   - Cerrado. Menores diferidos: el usuario pidió el 2 y el 6 (22/10, en dev, falta humo):
+     - 6 (`99386c5f`): el menú de acciones de Personas se deshabilita mientras la fila guarda (`ActionsMenu` acepta
+       `disabled`).
+     - 2 (+1): `useUnsavedChanges` escucha clics en el documento (captura, antes que el `Link` de Next) y pregunta en
+       cualquier enlace interno —índice, menú lateral, migas—; cuenta formularios con cambios (arregla el 1). El botón
+       Atrás del navegador queda fuera: un `popstate` no se cancela y simularlo choca con el router de Next.
+     - Siguen diferidos: 3 (audit fuera de transacción), 4 (nombres de acción), 5 (Decimal vs float).
+     - **Siguiente:** humo en dev: editar un umbral y salir por el menú lateral (debe preguntar; cancelar se queda).
 1. **Operaciones:** avisar que la Flota del día se baja y se copia ("Descargar Excel" / "Copiar"): la vista se arma una
    vez (columnas y filtros, p. ej. por Origen habitual) y se manda al CD desde ahí. Ver la sección de abajo.
 2. **Certificación:** que quien grabó el video del arrastre lo pruebe con un arrastre de verdad (`da1ecd26`).
