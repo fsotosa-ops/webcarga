@@ -5,12 +5,15 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from ..authz import Permission, require
 from ..db import get_pool
 from ..services.analytics_columns import can_see_personal, columns_for
+from ..services.analytics_export import export_workbook, personal_requested
 from ..services.analytics_query import fetch_page, parse_request
+
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -35,3 +38,23 @@ async def list_rows(request: Request, pool=Depends(get_pool), user=Depends(requi
     req = parse_request(params, purpose=purpose)
     async with pool.acquire() as conn:
         return await fetch_page(conn, req, personal=can_see_personal(user))
+
+
+@router.get("/export")
+async def export_rows(request: Request, pool=Depends(get_pool),
+                      user=Depends(require(Permission.ANALYTICS_EXPORT))) -> Response:
+    """El Excel de lo que se ve: mismos parámetros que /rows más `columns` (las visibles, en orden). Una columna
+    personal sin su permiso es 403, no se omite en silencio. Más de 50.000 filas: 413 con el total."""
+    params = dict(request.query_params)
+    req = parse_request(params, purpose="export")
+    columnas = [c for c in params.get("columns", "").split(",") if c]
+    if not columnas:
+        raise HTTPException(422, "Elige al menos una columna")
+    personal = can_see_personal(user)
+    if personal_requested(req.dataset, columnas) and not personal:
+        raise HTTPException(403, "Descargar nombre o RUT del conductor requiere el permiso de datos personales")
+    async with pool.acquire() as conn:
+        contenido, nombre, _ = await export_workbook(conn, req, columns=columnas, personal=personal,
+                                                     actor=user["sub"])
+    return Response(content=contenido, media_type=XLSX,
+                    headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
