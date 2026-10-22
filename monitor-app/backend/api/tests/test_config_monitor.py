@@ -19,6 +19,12 @@ RULES_ROW = {
 
 
 def make_client(pool, router=config_router, user=None):
+    # Los guardados de Configuración van en una transacción (menor diferido 3): la
+    # conexión simulada es el mismo pool simulado, salvo que el test ya la haya armado.
+    from unittest.mock import AsyncMock as _AsyncMock
+    from tests.conftest import wire_transactional_conn as _wire
+    if isinstance(getattr(pool, 'acquire', None), _AsyncMock):
+        _wire(pool, pool)
     app = FastAPI()
     app.include_router(router, prefix="/api/v1")
     app.dependency_overrides[get_pool] = lambda: pool

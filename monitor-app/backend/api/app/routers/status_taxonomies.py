@@ -70,14 +70,17 @@ async def list_taxonomies(domain: str = Query(...), pool=Depends(get_pool),
 async def create_taxonomy(body: StatusTaxonomyBody, pool=Depends(get_pool), usuario=Depends(require(Permission.OPERATIONS_CONFIGURE))):
     await _exigir_dominio_conocido(body.domain, pool)
     _exigir_grupo_valido(body.domain, body.group_id)
-    row = await pool.fetchrow(
-        f"""INSERT INTO app.status_taxonomies (domain, label, sort_order, group_id)
-            VALUES ($1, $2, $3, $4)
-            RETURNING {_FIELDS}""",
-        body.domain, body.label, body.sort_order, body.group_id,
-    )
-    await _registrar(pool, body.domain, row["id"], usuario)
-    await _cambio(pool, body.domain, row["id"], usuario, "create", None, {"label": body.label, "group_id": body.group_id})
+    # El alta, su revisión y su registro van juntos (menor diferido 3, revisión final 22/10).
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                f"""INSERT INTO app.status_taxonomies (domain, label, sort_order, group_id)
+                    VALUES ($1, $2, $3, $4)
+                    RETURNING {_FIELDS}""",
+                body.domain, body.label, body.sort_order, body.group_id,
+            )
+            await _registrar(conn, body.domain, row["id"], usuario)
+            await _cambio(conn, body.domain, row["id"], usuario, "create", None, {"label": body.label, "group_id": body.group_id})
     return dict(row)
 
 
@@ -102,12 +105,14 @@ async def patch_taxonomy(
         sets.append(f"{field} = ${len(vals)}")
     sets.append("updated_at = NOW()")
 
-    await pool.execute(f"UPDATE app.status_taxonomies SET {', '.join(sets)} WHERE id = $1", *vals)
-    row = await pool.fetchrow(f"SELECT {_FIELDS} FROM app.status_taxonomies WHERE id = $1", taxonomy_id)
-    await _registrar(pool, existing["domain"], taxonomy_id, usuario)
-    antes, despues = diferencia(existing, data)
-    if despues:
-        await _cambio(pool, existing["domain"], taxonomy_id, usuario, "update", antes, despues)
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(f"UPDATE app.status_taxonomies SET {', '.join(sets)} WHERE id = $1", *vals)
+            row = await conn.fetchrow(f"SELECT {_FIELDS} FROM app.status_taxonomies WHERE id = $1", taxonomy_id)
+            await _registrar(conn, existing["domain"], taxonomy_id, usuario)
+            antes, despues = diferencia(existing, data)
+            if despues:
+                await _cambio(conn, existing["domain"], taxonomy_id, usuario, "update", antes, despues)
     return dict(row)
 
 
@@ -147,27 +152,29 @@ async def move_taxonomy(
     async with pool.acquire() as conn:
         async with conn.transaction():
             await mover_una_posicion(conn, TAXONOMIAS, taxonomy_id, body.direction)
-    dominio = await pool.fetchval(
-        "SELECT domain FROM app.status_taxonomies WHERE id = $1::uuid", taxonomy_id
-    )
-    await _cambio(pool, dominio, taxonomy_id, usuario, "move", None, {"direction": body.direction})
+            dominio = await conn.fetchval(
+                "SELECT domain FROM app.status_taxonomies WHERE id = $1::uuid", taxonomy_id
+            )
+            await _cambio(conn, dominio, taxonomy_id, usuario, "move", None, {"direction": body.direction})
     return [dict(r) for r in await pool.fetch(_SQL_LISTA, dominio)]
 
 
 @router.delete("/{taxonomy_id}")
 async def deactivate_taxonomy(taxonomy_id: str, pool=Depends(get_pool), usuario=Depends(require(Permission.OPERATIONS_CONFIGURE))):
     # Lo que estaba antes, en la misma sentencia: desactivar algo ya inactivo no es un cambio.
-    desactivada = await pool.fetchrow(
-        """WITH previo AS (SELECT active FROM app.status_taxonomies WHERE id = $1)
-           UPDATE app.status_taxonomies SET active = false, updated_at = NOW() WHERE id = $1
-           RETURNING domain, label, (SELECT active FROM previo) AS estaba_activa""",
-        taxonomy_id,
-    )
-    if desactivada is None:
-        raise HTTPException(404, "No encontrado")
-    if desactivada["estaba_activa"]:
-        await _cambio(pool, desactivada["domain"], taxonomy_id, usuario, "deactivate",
-                      {"active": True, "label": desactivada["label"]}, {"active": False})
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            desactivada = await conn.fetchrow(
+                """WITH previo AS (SELECT active FROM app.status_taxonomies WHERE id = $1)
+                   UPDATE app.status_taxonomies SET active = false, updated_at = NOW() WHERE id = $1
+                   RETURNING domain, label, (SELECT active FROM previo) AS estaba_activa""",
+                taxonomy_id,
+            )
+            if desactivada is None:
+                raise HTTPException(404, "No encontrado")
+            if desactivada["estaba_activa"]:
+                await _cambio(conn, desactivada["domain"], taxonomy_id, usuario, "deactivate",
+                              {"active": True, "label": desactivada["label"]}, {"active": False})
     # Cuántas condiciones de documento siguen apuntando a este valor. El
     # borrado es lógico, así que la regla NO se rompe — pero la casilla
     # desaparece de la pantalla y la condición se ve como "0 marcas" sin serlo.

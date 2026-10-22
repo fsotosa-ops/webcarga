@@ -28,6 +28,12 @@ USER = usuario("admin", "operations_supervisor", "certification_supervisor", "in
 
 
 def cliente(pool, user=None):
+    # Los guardados de Configuración van en una transacción (menor diferido 3): la
+    # conexión simulada es el mismo pool simulado, salvo que el test ya la haya armado.
+    from unittest.mock import AsyncMock as _AsyncMock
+    from tests.conftest import wire_transactional_conn as _wire
+    if isinstance(getattr(pool, 'acquire', None), _AsyncMock):
+        _wire(pool, pool)
     app = FastAPI()
     for r in (config_router, reviews_router, search_router, taxonomies_router):
         app.include_router(r, prefix="/api/v1")

@@ -20,6 +20,12 @@ SEG = usuario("insurance_supervisor", sub="33333333-3333-3333-3333-333333333333"
 
 
 def cliente(pool, quien):
+    # Los guardados de Configuración van en una transacción (menor diferido 3): la
+    # conexión simulada es el mismo pool simulado, salvo que el test ya la haya armado.
+    from unittest.mock import AsyncMock as _AsyncMock
+    from tests.conftest import wire_transactional_conn as _wire
+    if isinstance(getattr(pool, 'acquire', None), _AsyncMock):
+        _wire(pool, pool)
     app = FastAPI()
     app.include_router(config_router, prefix="/api/v1")
     app.dependency_overrides[get_pool] = lambda: pool

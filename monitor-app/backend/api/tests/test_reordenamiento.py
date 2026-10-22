@@ -243,7 +243,8 @@ def test_mover_taxonomia_devuelve_su_dominio_completo():
         {"sort_order": 2, "domain": "EQUIPMENT_STATE"},
     )
     pool = pool_con_conexion(conn)
-    pool.fetchval.return_value = "EQUIPMENT_STATE"
+    # El dominio se lee dentro de la transacción del movimiento (menor diferido 3).
+    conn.fetchval.return_value = "EQUIPMENT_STATE"
     pool.fetch.return_value = [{"id": "B", "domain": "EQUIPMENT_STATE", "label": "B", "group": None,
                                 "sort_order": 1, "active": True}]
     res = cliente(pool).post(

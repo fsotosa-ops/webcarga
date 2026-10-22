@@ -142,3 +142,57 @@ async def test_desactivar_dos_veces_registra_una_sola_desactivacion(conexion_rev
 
     acciones = [f["action"] for f in await _ultimas(conn, "operations", "driver-reasons", str(nueva["id"]))]
     assert acciones == ["create", "deactivate"]
+
+
+# ── Menor diferido 3 (revisión final 22/10): el cambio y su registro, juntos ──
+
+class _RegistroCaido(Exception):
+    pass
+
+
+async def _registro_que_falla(*_a, **_k):
+    raise _RegistroCaido("audit_log no disponible")
+
+
+async def test_si_el_registro_falla_el_estado_del_viaje_no_cambia(conexion_revertida, monkeypatch):
+    import app.routers.config as config
+    from app.routers.config import TripStatusPatch, patch_status
+    conn = conexion_revertida
+    actor = await _usuario_real(conn)
+    estado = await conn.fetchrow("SELECT id, label FROM app.trip_statuses LIMIT 1")
+    monkeypatch.setattr(config, "registrar_cambio", _registro_que_falla)
+
+    with pytest.raises(_RegistroCaido):
+        await patch_status(estado["id"], TripStatusPatch(label="ZZ no debe quedar"), pool=PoolDeUnaConexion(conn), usuario=actor)
+
+    assert await conn.fetchval("SELECT label FROM app.trip_statuses WHERE id = $1", estado["id"]) == estado["label"]
+
+
+async def test_si_el_registro_falla_la_regla_del_monitor_no_cambia(conexion_revertida, monkeypatch):
+    import app.routers.config as config
+    from app.routers.config import MonitorAlertRulesPatch, patch_monitor_alert_rules
+    conn = conexion_revertida
+    actor = await _usuario_real(conn)
+    antes = await conn.fetchval("SELECT dwell_red_min FROM app.monitor_alert_rules WHERE id = 1")
+    monkeypatch.setattr(config, "registrar_cambio", _registro_que_falla)
+
+    with pytest.raises(_RegistroCaido):
+        await patch_monitor_alert_rules(MonitorAlertRulesPatch(dwell_red_min=antes + 7), pool=PoolDeUnaConexion(conn), usuario=actor)
+
+    assert await conn.fetchval("SELECT dwell_red_min FROM app.monitor_alert_rules WHERE id = 1") == antes
+
+
+async def test_si_el_registro_falla_el_motivo_sigue_activo(conexion_revertida, monkeypatch):
+    import app.routers.status_taxonomies as taxonomias
+    from app.routers.status_taxonomies import StatusTaxonomyBody, create_taxonomy, deactivate_taxonomy
+    conn = conexion_revertida
+    actor = await _usuario_real(conn)
+    pool = PoolDeUnaConexion(conn)
+    nueva = await create_taxonomy(StatusTaxonomyBody(domain="DRIVER_REASON", label="ZZ motivo 3", sort_order=999,
+                                                     group_id="no_trabajando"), pool=pool, usuario=actor)
+    monkeypatch.setattr(taxonomias, "registrar_cambio", _registro_que_falla)
+
+    with pytest.raises(_RegistroCaido):
+        await deactivate_taxonomy(str(nueva["id"]), pool=pool, usuario=actor)
+
+    assert await conn.fetchval("SELECT active FROM app.status_taxonomies WHERE id = $1", nueva["id"]) is True
