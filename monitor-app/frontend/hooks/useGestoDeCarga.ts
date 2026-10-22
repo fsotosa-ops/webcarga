@@ -101,7 +101,12 @@ export function useGestoDeCarga({ politica, puedeEditar, onSubir, periodoCargado
       e.preventDefault()
       if (estado.tipo === 'reposo') setEstado({ tipo: 'recibiendo' })
     },
-    onDragLeave: () => {
+    // El navegador lanza dragleave en la zona cada vez que el puntero pasa a un hijo
+    // suyo (el nombre, el estado). Solo se apaga si el puntero salió de verdad: si no,
+    // el blanco titila y cuesta soltar (bug del video del 22/10).
+    onDragLeave: (e: DragEvent<HTMLElement>) => {
+      const hacia = e.relatedTarget
+      if (hacia instanceof Node && e.currentTarget.contains(hacia)) return
       if (estado.tipo === 'recibiendo') setEstado({ tipo: 'reposo' })
     },
   })

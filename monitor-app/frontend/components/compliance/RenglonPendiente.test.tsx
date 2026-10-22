@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, createEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { RenglonPendiente } from './RenglonPendiente'
 import type { PendingComplianceRow } from '@/lib/types'
@@ -126,6 +126,13 @@ describe('RenglonPendiente — lo que el requisito exige', () => {
   })
 })
 
+// jsdom no tiene DragEvent: fireEvent cae a un Event genérico y pierde relatedTarget.
+function salirHacia(zona: HTMLElement, hacia: Element) {
+  const ev = createEvent.dragLeave(zona)
+  Object.defineProperty(ev, 'relatedTarget', { value: hacia })
+  fireEvent(zona, ev)
+}
+
 describe('RenglonPendiente — el gesto', () => {
   it('soltar un archivo encima equivale a elegirlo', async () => {
     const onSubir = vi.fn().mockResolvedValue(undefined)
@@ -136,6 +143,29 @@ describe('RenglonPendiente — el gesto', () => {
     })
 
     await waitFor(() => expect(onSubir).toHaveBeenCalled())
+  })
+
+  // Bug del video del 22/10 (bugs/20261022): el blanco "titilaba" y costaba soltar. El navegador
+  // lanza dragleave en el renglón cada vez que el puntero pasa a un hijo (el nombre, el estado).
+  it('pasar por encima de un hijo del renglon no apaga el blanco', () => {
+    render(<RenglonPendiente fila={fila({ expiration_policy: 'NONE' })} puedeEditar onSubir={vi.fn()} />)
+    const renglon = screen.getByTestId('renglon-p1')
+    const hijo = screen.getByText(fila().document_name)
+
+    fireEvent.dragOver(renglon, { dataTransfer: { files: [], types: ['Files'] } })
+    salirHacia(renglon, hijo)
+
+    expect(screen.getByText('Suelta para cargar aquí')).toBeInTheDocument()
+  })
+
+  it('salir del renglon si apaga el blanco', () => {
+    render(<RenglonPendiente fila={fila({ expiration_policy: 'NONE' })} puedeEditar onSubir={vi.fn()} />)
+    const renglon = screen.getByTestId('renglon-p1')
+
+    fireEvent.dragOver(renglon, { dataTransfer: { files: [], types: ['Files'] } })
+    salirHacia(renglon, document.body)
+
+    expect(screen.queryByText('Suelta para cargar aquí')).not.toBeInTheDocument()
   })
 
   it('sin permiso de edicion no ofrece cargar', () => {
