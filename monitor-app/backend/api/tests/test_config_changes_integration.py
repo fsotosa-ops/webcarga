@@ -115,3 +115,13 @@ async def test_regla_del_monitor_registra_por_regla(conexion_revertida):
     assert len(filas) == 1
     assert json.loads(filas[0]["old_value"]) == {"dwell_red_min": antes}
     assert json.loads(filas[0]["new_value"])["dwell_red_min"] == antes + 5
+
+
+# ── Menor diferido 5 (revisión final 22/10) ──────────────────────────────────
+
+def test_diferencia_no_ve_cambio_entre_decimal_y_float_iguales():
+    from decimal import Decimal
+    from app.services.config_changes import diferencia
+    assert diferencia({"min_c": Decimal("2.5"), "max_c": Decimal("8.0")}, {"min_c": 2.5, "max_c": 8}) == ({}, {})
+    assert diferencia({"min_c": Decimal("0.1")}, {"min_c": 0.1}) == ({}, {})
+    assert diferencia({"min_c": Decimal("2.5")}, {"min_c": 3.0}) == ({"min_c": Decimal("2.5")}, {"min_c": 3.0})

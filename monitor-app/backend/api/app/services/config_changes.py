@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from decimal import Decimal
 
 from .audit import log_change
 
@@ -56,12 +57,21 @@ SELECT DISTINCT ON (a.new_value->>'element_id')
 """
 
 
+def _igual(a, b) -> bool:
+    """Igualdad que no confunde un Decimal de la base con el float del pedido:
+    Decimal('0.1') != 0.1 en Python, pero es el mismo número para quien lo escribió."""
+    numeros = (int, float, Decimal)
+    if isinstance(a, numeros) and isinstance(b, numeros) and not isinstance(a, bool) and not isinstance(b, bool):
+        return Decimal(str(a)) == Decimal(str(b))
+    return a == b
+
+
 def diferencia(antes, despues: dict) -> tuple[dict, dict]:
     """Los campos de `despues` que cambian respecto de `antes`: (antes, después).
     `antes` es la fila leída antes de guardar (un Record o un dict)."""
     viejos, nuevos = {}, {}
     for campo, valor in despues.items():
         previo = antes[campo] if antes is not None and campo in antes.keys() else None
-        if previo != valor:
+        if not _igual(previo, valor):
             viejos[campo], nuevos[campo] = previo, valor
     return viejos, nuevos
