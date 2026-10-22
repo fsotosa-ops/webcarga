@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RolesTab, codigoDeRol } from './roles-tab'
 import { PermisosProvider } from '@/lib/authz/PermisosProvider'
 import { accessApi } from '@/lib/api/access'
@@ -7,6 +8,9 @@ import { ApiError } from '@/lib/api/client'
 import type { Acceso } from '@/lib/authz/acceso'
 import { ADMIN, CATALOGO, ROLES } from '@/components/admin/rolesDePrueba'
 
+vi.mock('@/lib/api/config', () => ({ changesApi: { list: vi.fn().mockResolvedValue([
+  { element_id: 'id-auditor', actor_name: 'Ana', changed_at: '2026-10-15T15:00:00Z' },
+]) } }))
 vi.mock('@/lib/api/access', () => ({
   accessApi: { roles: vi.fn(), permissions: vi.fn(), createRole: vi.fn(), updateRole: vi.fn(), deleteRole: vi.fn() },
 }))
@@ -14,7 +18,10 @@ vi.mock('@/lib/api/access', () => ({
 const GESTOR: Acceso = { ...ADMIN, permissions: [...ADMIN.permissions, 'roles.manage'] }
 
 function mostrar(acceso: Acceso = GESTOR) {
-  render(<PermisosProvider acceso={acceso}><RolesTab /></PermisosProvider>)
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <PermisosProvider acceso={acceso}><RolesTab /></PermisosProvider>
+    </QueryClientProvider>)
 }
 
 describe('RolesTab', () => {
@@ -39,7 +46,7 @@ describe('RolesTab', () => {
   it('crea un rol personalizado solo con permisos que tiene quien lo crea', async () => {
     vi.mocked(accessApi.createRole).mockResolvedValue({ ...ROLES[2], id: 'nuevo', code: 'bodega', name: 'Bodega', is_system: false })
     mostrar()
-    fireEvent.click(await screen.findByRole('button', { name: '+ Crear rol' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Nuevo rol' }))
     fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Bodega CD Lo Aguirre' } })
     expect(screen.getByRole('checkbox', { name: /Firmar el cierre del día con pendientes/ })).toBeDisabled()
     fireEvent.click(screen.getByRole('checkbox', { name: /Ver viajes, el Monitor/ }))
@@ -54,7 +61,7 @@ describe('RolesTab', () => {
   it('sin roles.manage no ofrece crear', async () => {
     mostrar(ADMIN)
     await screen.findByRole('button', { name: /Operador de Operaciones/ })
-    expect(screen.queryByRole('button', { name: '+ Crear rol' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Nuevo rol' })).not.toBeInTheDocument()
   })
 
   it('eliminar un rol en uso muestra el 409 de la API', async () => {
@@ -104,5 +111,27 @@ describe('orden de los roles de sistema', () => {
   it('los títulos de grupo no van en mayúsculas', async () => {
     mostrar()
     expect(await screen.findByText('De sistema')).not.toHaveClass('uppercase')
+  })
+})
+
+describe('RolesTab: spec 2026-10-22', () => {
+  beforeEach(() => {
+    vi.mocked(accessApi.roles).mockReset().mockResolvedValue(ROLES)
+    vi.mocked(accessApi.permissions).mockReset().mockResolvedValue(CATALOGO)
+  })
+
+  it('pasar de crear un rol a editar otro no hereda el formulario', async () => {
+    mostrar()
+    fireEvent.click(await screen.findByRole('button', { name: 'Nuevo rol' }))
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Bodega' } })
+    fireEvent.click(screen.getByRole('button', { name: /Auditor de cierres/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }))
+    expect(screen.getByLabelText('Nombre')).toHaveValue('Auditor de cierres')
+  })
+
+  it('el detalle del rol muestra Última modificación', async () => {
+    mostrar()
+    fireEvent.click(await screen.findByRole('button', { name: /Auditor de cierres/ }))
+    expect(await screen.findByText('Última modificación: Ana, 15/10/2026')).toBeInTheDocument()
   })
 })

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import UsersTable from './UsersTable'
 import { PermisosProvider } from '@/lib/authz/PermisosProvider'
 import { accessApi } from '@/lib/api/access'
@@ -10,6 +11,9 @@ import { ADMIN, CATALOGO, ROLES } from './rolesDePrueba'
 
 vi.mock('@/lib/api/access', () => ({ accessApi: { setUserRoles: vi.fn() } }))
 vi.mock('@/lib/api/users', () => ({ usersApi: { patch: vi.fn(), remove: vi.fn() } }))
+vi.mock('@/lib/api/config', () => ({ changesApi: { list: vi.fn().mockResolvedValue([]) } }))
+
+const onChanged = vi.fn()
 
 const persona = (id: string, nombre: string, roles: string[]) =>
   ({ id, full_name: nombre, email: `${id}@ejemplo.cl`, roles, active: true, created_at: null }) as unknown as Profile
@@ -18,25 +22,28 @@ const USERS = [persona('u1', 'Pablo', ['owner']), persona('u2', 'María', ['read
 
 function mostrar() {
   render(
-    <PermisosProvider acceso={ADMIN}>
-      <UsersTable users={USERS} currentUserId="actor" roles={ROLES} catalogo={CATALOGO} />
-    </PermisosProvider>,
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <PermisosProvider acceso={ADMIN}>
+        <UsersTable users={USERS} currentUserId="actor" roles={ROLES} catalogo={CATALOGO} onChanged={onChanged} />
+      </PermisosProvider>
+    </QueryClientProvider>,
   )
 }
 
 const fila = (nombre: string) => screen.getByText(nombre).closest('tr')!
 
 describe('UsersTable', () => {
-  beforeEach(() => { vi.mocked(accessApi.setUserRoles).mockReset() })
+  beforeEach(() => { vi.mocked(accessApi.setUserRoles).mockReset(); onChanged.mockReset() })
 
-  it('edita los roles desde el menú de la fila y la fila muestra los nuevos', async () => {
+  it('edita los roles desde el menú de la fila y pide la lista de nuevo', async () => {
     vi.mocked(accessApi.setUserRoles).mockResolvedValue({ roles: ['reader', 'support'] })
     mostrar()
     fireEvent.click(within(fila('María')).getByRole('button', { name: 'Acciones' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Editar roles' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Editar roles' }))
+    expect(await screen.findByText(/Sin cambios registrados|Última modificación/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('checkbox', { name: /Soporte técnico/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Guardar roles' }))
-    expect(await within(fila('María')).findByText('Soporte técnico (proveedor)')).toBeInTheDocument()
+    await waitFor(() => expect(onChanged).toHaveBeenCalled())
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
@@ -52,7 +59,7 @@ describe('UsersTable', () => {
     vi.mocked(usersApi.patch).mockRejectedValue(new ApiError('Debe quedar al menos un Propietario', 409, null))
     mostrar()
     fireEvent.click(within(fila('María')).getByRole('button', { name: 'Acciones' }))
-    fireEvent.click(screen.getByRole('button', { name: /Desactivar acceso/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Desactivar acceso/ }))
     expect(await screen.findByText('Debe quedar al menos un Propietario')).toBeInTheDocument()
     expect(within(fila('María')).getByText('Activo')).toBeInTheDocument()
   })

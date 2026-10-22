@@ -1,8 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
-import { SegmentedControl } from '@/components/ui/SegmentedControl'
-import { CABECERA } from '@/components/ui/tabla/EncabezadoOrdenable'
+import { useMemo, useState } from 'react'
 import CreateUserForm from './CreateUserForm'
 import EditarRolesPanel from './EditarRolesPanel'
 import RolChips from './RolChips'
@@ -10,17 +8,20 @@ import type { Profile } from '@/lib/types'
 import { useAcceso, usePermiso } from '@/lib/authz/PermisosProvider'
 import type { PermisoInfo, RoleInfo } from '@/lib/api/access'
 import { usersApi } from '@/lib/api/users'
-import {
-  UserPlus, Trash2, Search,
-  ShieldCheck, UserCheck, UserX, MoreHorizontal, KeyRound, X,
-} from 'lucide-react'
-import { inputClass } from '@/components/ui/Field'
+import { UserPlus, Trash2, ShieldCheck, UserCheck, UserX, KeyRound, X } from 'lucide-react'
+import { ActionsMenu, type ActionsMenuItem } from '@/components/ui/ActionsMenu'
+import { Button } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import type { DataColumn } from '@/components/ui/tabla/data/columns'
+import { useDataTable } from '@/components/ui/tabla/data/useDataTable'
+import { DataTable } from '@/components/ui/tabla/data/DataTable'
+import { TableToolbar } from '@/components/ui/tabla/data/TableToolbar'
+import { EMPTY_VIEW, type TableView } from '@/lib/table/viewInUrl'
+import { LastChange, useLastChanges } from '@/app/dashboard/admin/settings/LastChange'
 import { StatusChip } from '@/components/ui/StatusChip'
 import { lifecycleStyle } from '@/lib/states'
 
 const METODO: Record<string, string> = { google: 'Google', azure: 'Microsoft', email: 'Email' }
-
-type FilterTab = 'all' | 'privileged' | 'active' | 'inactive'
 
 function initials(name: string | null | undefined, email: string | null | undefined): string {
   const source = name ?? email ?? '?'
@@ -36,280 +37,137 @@ interface Props {
   currentUserId: string
   roles:         RoleInfo[]
   catalogo:      PermisoInfo[]
+  /** Después de un cambio: la lista se vuelve a pedir (no hay copia local que
+   *  resincronizar; deuda del 11/10). */
+  onChanged:     () => void
 }
 
-/** Administran: Propietario o Administración (RBAC). */
-function administra(u: Profile): boolean {
-  return (u.roles ?? []).some(r => r === 'owner' || r === 'admin')
-}
-
-export default function UsersTable({ users: initial, currentUserId, roles, catalogo }: Props) {
+export default function UsersTable({ users, currentUserId, roles, catalogo, onChanged }: Props) {
   const puedeGestionar = usePermiso('users.manage')
   const soyPropietario = useAcceso().roles.includes('owner')
-  const [editandoId,    setEditandoId]    = useState<string | null>(null)
-  const [users,         setUsers]         = useState(initial)
-  const [showCreate,    setShowCreate]    = useState(false)
-  const [deletingId,    setDeletingId]    = useState<string | null>(null)
-  const [actionMenuId,  setActionMenuId]  = useState<string | null>(null)
-  const [search,        setSearch]        = useState('')
-  const [tab,           setTab]           = useState<FilterTab>('all')
-  const [, startTransition]              = useTransition()
+  const cambios = useLastChanges('people', 'users')
+  const [editandoId, setEditandoId] = useState<string | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
+  const [ocupadoId, setOcupadoId]   = useState<string | null>(null)
+  // Por qué la API rechazó el último cambio (403 de MFA, 409 del último Propietario).
+  const [aviso, setAviso] = useState<string | null>(null)
+  const [view, setView] = useState<TableView>(EMPTY_VIEW)
 
   const editando = users.find(u => u.id === editandoId) ?? null
-  // Por qué la API rechazó el último cambio (403 de MFA, 409 del último
-  // Propietario). Antes el interruptor volvía atrás sin decir nada.
-  const [aviso, setAviso] = useState<string | null>(null)
+  const nombreDeRol = (code: string) => roles.find(r => r.code === code)?.name ?? code
 
-  function updateLocal(id: string, patch: Partial<Profile>) {
-    setUsers(prev => prev.map(u => (u.id === id ? { ...u, ...patch } : u)))
-  }
-
-  function toggleActive(user: Profile) {
-    const next = !user.active
-    setActionMenuId(null)
+  async function cambiar(user: Profile, accion: () => Promise<unknown>, falla: string) {
     setAviso(null)
-    updateLocal(user.id, { active: next })
-    startTransition(async () => {
-      try { await usersApi.patch(user.id, { active: next }) }
-      catch (e) {
-        updateLocal(user.id, { active: user.active })
-        setAviso(e instanceof Error ? e.message : 'No se pudo cambiar el acceso')
-      }
-    })
-  }
-
-  async function handleDelete(user: Profile) {
-    if (!confirm(`¿Eliminar permanentemente a ${user.full_name ?? user.email}?\nEsta acción no se puede deshacer.`)) return
-    setActionMenuId(null)
-    setDeletingId(user.id)
+    setOcupadoId(user.id)
     try {
-      await usersApi.remove(user.id)
-      setUsers(prev => prev.filter(u => u.id !== user.id))
-    } catch (err) {
-      alert(`Error: ${err instanceof Error ? err.message : 'No se pudo eliminar'}`)
-      setDeletingId(null)
+      await accion()
+      onChanged()
+    } catch (e) {
+      setAviso(e instanceof Error && e.message ? e.message : falla)
+    } finally {
+      setOcupadoId(null)
     }
   }
 
-  // Filtering
-  const byTab = users.filter(u => {
-    if (tab === 'privileged') return administra(u)
-    if (tab === 'active')     return u.active !== false
-    if (tab === 'inactive')   return u.active === false
-    return true
-  })
-  const filtered = byTab.filter(u =>
-    `${u.full_name ?? ''} ${u.email ?? ''}`.toLowerCase().includes(search.toLowerCase())
-  )
-
-  const tabCounts = {
-    all:        users.length,
-    privileged: users.filter(administra).length,
-    active:     users.filter(u => u.active !== false).length,
-    inactive:   users.filter(u => u.active === false).length,
+  function acciones(user: Profile): ActionsMenuItem[] {
+    // A un Propietario solo lo toca otro Propietario; el resto de las reglas
+    // (último Propietario, escalada) las aplica la API.
+    const esPropietario = (user.roles ?? []).includes('owner')
+    if (user.id === currentUserId || !puedeGestionar || (esPropietario && !soyPropietario)) return []
+    const activo = user.active !== false
+    return [
+      { id: 'roles', label: 'Editar roles', icon: KeyRound, onSelect: () => setEditandoId(user.id) },
+      { id: 'acceso', label: activo ? 'Desactivar acceso' : 'Activar acceso', icon: activo ? UserX : UserCheck,
+        onSelect: () => void cambiar(user, () => usersApi.patch(user.id, { active: !activo }), 'No se pudo cambiar el acceso') },
+      { id: 'eliminar', label: 'Eliminar permanentemente', icon: Trash2, destructive: true,
+        onSelect: () => {
+          if (!confirm(`¿Eliminar permanentemente a ${user.full_name ?? user.email}?\nEsta acción no se puede deshacer.`)) return
+          void cambiar(user, () => usersApi.remove(user.id), 'No se pudo eliminar')
+        } },
+    ]
   }
 
-  const TABS: { key: FilterTab; label: string }[] = [
-    { key: 'all',        label: 'Todos'      },
-    { key: 'privileged', label: 'Administran' },
-    { key: 'active',     label: 'Activos'    },
-    { key: 'inactive',   label: 'Inactivos'  },
-  ]
+  const columnas = useMemo<DataColumn<Profile>[]>(() => [
+    { id: 'persona', header: 'Persona', hideable: false, value: u => u.full_name ?? u.email ?? null,
+      render: u => (
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/10 text-etiqueta font-bold text-accent">
+            {initials(u.full_name, u.email)}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-dato font-medium text-text-primary">
+              {u.full_name ?? '—'}
+              {u.id === currentUserId && <span className="ml-2 rounded-full bg-bg-main px-1.5 py-0.5 text-etiqueta font-normal text-informativo">tú</span>}
+            </p>
+            <p className="truncate text-etiqueta text-informativo">{u.email ?? '—'}</p>
+          </div>
+        </div>
+      ) },
+    { id: 'roles', header: 'Roles', sortable: false,
+      value: u => (u.roles ?? []).map(nombreDeRol).join(', ') || null,
+      values: u => (u.roles ?? []).map(nombreDeRol),
+      render: u => <div className="max-w-64"><RolChips codes={u.roles ?? []} roles={roles} /></div> },
+    { id: 'estado', header: 'Estado', value: u => lifecycleStyle('user', u.active !== false ? 'ACTIVE' : 'INACTIVE').label,
+      render: u => {
+        const estado = lifecycleStyle('user', u.active !== false ? 'ACTIVE' : 'INACTIVE')
+        return <StatusChip tone={estado.tone} icon={estado.icon}>{estado.label}</StatusChip>
+      } },
+    // Último ingreso, cómo entra y si tiene MFA (seguridad, 09/10).
+    { id: 'acceso', header: 'Acceso', filter: false, value: u => u.last_sign_in_at ?? null,
+      render: u => (
+        <span className="whitespace-nowrap text-etiqueta text-informativo">
+          {u.last_sign_in_at ? fmtDate(u.last_sign_in_at) : 'Nunca'}
+          <span className="block">
+            {(u.providers ?? []).map(x => METODO[x] ?? x).join(' · ') || '—'}{u.mfa ? ' · 2 pasos' : ''}
+          </span>
+        </span>
+      ) },
+    { id: 'acciones', header: 'Acciones', filter: false, sortable: false, hideable: false, value: () => null,
+      render: u => {
+        const items = acciones(u)
+        if (items.length) return <ActionsMenu label="Acciones" items={items} />
+        return u.id === currentUserId
+          ? <span className="px-2 text-etiqueta text-informativo">—</span>
+          : <ShieldCheck size={13} aria-hidden="true" className="text-informativo/40" />
+      } },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [roles, currentUserId, puedeGestionar, soyPropietario, ocupadoId])
+
+  const model = useDataTable({
+    rows: users, columns: columnas, getRowId: u => u.id, view, onViewChange: setView, pageSize: 50,
+    search: (u, q) => `${u.full_name ?? ''} ${u.email ?? ''}`.toLowerCase().includes(q),
+  })
 
   return (
     <>
       {showCreate && (
-        <CreateUserForm
-          roles={roles}
-          catalogo={catalogo}
-          onClose={() => setShowCreate(false)}
-          onCreated={() => { setShowCreate(false); window.location.reload() }}
-        />
+        <CreateUserForm roles={roles} catalogo={catalogo} onClose={() => setShowCreate(false)}
+          onCreated={() => { setShowCreate(false); onChanged() }} />
       )}
-
       {editando && (
-        <EditarRolesPanel
-          persona={editando}
-          roles={roles}
-          catalogo={catalogo}
+        <EditarRolesPanel persona={editando} roles={roles} catalogo={catalogo}
+          lastChange={<LastChange change={cambios.of(editando.id)} pending={cambios.isPending} />}
           onClose={() => setEditandoId(null)}
-          onSaved={nuevos => { updateLocal(editando.id, { roles: nuevos }); setEditandoId(null) }}
-        />
+          onSaved={() => { setEditandoId(null); onChanged(); cambios.invalidate() }} />
       )}
-
-      {/* Close dropdowns on outside click */}
-      {actionMenuId && (
-        <div
-          className="fixed inset-0 z-10"
-          onClick={() => setActionMenuId(null)}
-        />
-      )}
-
-      {aviso && (
-        <div role="alert" className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-border bg-white px-4 py-2.5 text-dato text-status-incidente">
-          <span>{aviso}</span>
-          <button type="button" onClick={() => setAviso(null)} aria-label="Cerrar aviso" className="text-informativo hover:text-text-primary">
-            <X size={14} />
-          </button>
-        </div>
-      )}
-
-      <div className="bg-white rounded-2xl border border-border overflow-hidden">
-
-        {/* ── Table header ─────────────────────────────────────────── */}
-        <div className="px-5 py-4 border-b border-border">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[180px] max-w-[280px]">
-              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-informativo" />
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Buscar por nombre o email…"
-                aria-label="Buscar personas"
-                className={`${inputClass({ size: 'sm' })} w-full pl-8`}
-              />
-            </div>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="ml-auto flex shrink-0 items-center gap-2 rounded-lg bg-accent px-3 py-1.5 text-dato font-semibold text-white hover:bg-accent/90"
-            >
-              <UserPlus size={14} />
-              Invitar persona
+      <Card className="space-y-3">
+        <TableToolbar model={model} searchPlaceholder="Buscar por nombre o email…"
+          actions={puedeGestionar ? (
+            <Button variant="primary" onClick={() => setShowCreate(true)}>
+              <UserPlus size={14} aria-hidden="true" /> Invitar persona
+            </Button>
+          ) : null} />
+        {aviso && (
+          <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-border bg-white px-4 py-2.5 text-dato text-status-incidente">
+            <span>{aviso}</span>
+            <button type="button" onClick={() => setAviso(null)} aria-label="Cerrar aviso" className="text-informativo hover:text-text-primary">
+              <X size={14} />
             </button>
           </div>
-
-          <div className="mt-3">
-            <SegmentedControl label="Filtrar" value={tab} onChange={setTab}
-              options={TABS.map(t => ({ id: t.key, label: t.label, badge: String(tabCounts[t.key]) }))} />
-          </div>
-        </div>
-
-        {/* ── Table ────────────────────────────────────────────────── */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm" style={{ minWidth: 680 }}>
-            <thead>
-              <tr className="border-b border-border bg-bg-main">
-                {['Persona', 'Roles', 'Estado', 'Acceso'].map(h => (
-                  <th key={h} scope="col" className={CABECERA}>{h}</th>
-                ))}
-                <th scope="col" className="w-12"><span className="sr-only">Acciones</span></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {filtered.map(user => {
-                // A un Propietario solo lo toca otro Propietario; el resto de las
-                // reglas (último Propietario, escalada) las aplica la API.
-                const esPropietario = (user.roles ?? []).includes('owner')
-                const manageable = user.id !== currentUserId && puedeGestionar && (!esPropietario || soyPropietario)
-                const isMe       = user.id === currentUserId
-                const initStr    = initials(user.full_name, user.email)
-
-                return (
-                  <tr
-                    key={user.id}
-                    className={`group transition-colors hover:bg-bg-main/60 ${deletingId === user.id ? 'opacity-40 pointer-events-none' : ''}`}
-                  >
-                    {/* Avatar + name + email */}
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-accent/10 text-accent">
-                          {initStr}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-medium text-text-primary text-sm truncate">
-                            {user.full_name ?? '—'}
-                            {isMe && <span className="ml-2 text-etiqueta font-normal text-informativo bg-bg-main px-1.5 py-0.5 rounded-full">tú</span>}
-                          </p>
-                          <p className="text-xs text-informativo truncate">{user.email ?? '—'}</p>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td className="px-5 py-3.5">
-                      <RolChips codes={user.roles ?? []} roles={roles} />
-                    </td>
-
-                    {/* Estado */}
-                    <td className="px-5 py-3.5">
-                      {(() => {
-                        const estado = lifecycleStyle('user', user.active !== false ? 'ACTIVE' : 'INACTIVE')
-                        return <StatusChip tone={estado.tone} icon={estado.icon}>{estado.label}</StatusChip>
-                      })()}
-                    </td>
-
-                    {/* Último ingreso, cómo entra y si tiene MFA (seguridad, 09/10) */}
-                    <td className="px-5 py-3.5 text-xs text-informativo whitespace-nowrap">
-                      {user.last_sign_in_at ? fmtDate(user.last_sign_in_at) : 'Nunca'}
-                      <span className="block text-informativo">
-                        {(user.providers ?? []).map(p => METODO[p] ?? p).join(' · ') || '—'}
-                        {user.mfa ? ' · 2 pasos' : ''}
-                      </span>
-                    </td>
-
-                    {/* Acciones */}
-                    <td className="px-4 py-3.5 text-right">
-                      {manageable ? (
-                        <div className="relative inline-block">
-                          <button
-                            aria-label="Acciones"
-                            onClick={() => setActionMenuId(actionMenuId === user.id ? null : user.id)}
-                            className="p-1.5 rounded-lg text-informativo hover:text-text-primary hover:bg-bg-main transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                          >
-                            <MoreHorizontal size={16} />
-                          </button>
-
-                          {actionMenuId === user.id && (
-                            <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-border rounded-xl shadow-xl p-1.5 w-48">
-                              <button
-                                onClick={() => { setActionMenuId(null); setEditandoId(user.id) }}
-                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left hover:bg-bg-main transition-colors"
-                              >
-                                <KeyRound size={13} className="text-accion" />
-                                <span>Editar roles</span>
-                              </button>
-                              <button
-                                onClick={() => toggleActive(user)}
-                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left hover:bg-bg-main transition-colors"
-                              >
-                                {user.active !== false
-                                  ? <><UserX size={13} className="text-warning" aria-hidden="true" /><span>Desactivar acceso</span></>
-                                  : <><UserCheck size={13} className="text-accion" aria-hidden="true" /><span>Activar acceso</span></>
-                                }
-                              </button>
-                              <div className="h-px bg-border mx-2 my-1" />
-                              <button
-                                onClick={() => handleDelete(user)}
-                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left text-status-incidente hover:bg-status-incidente/5 transition-colors"
-                              >
-                                <Trash2 size={13} />
-                                Eliminar permanentemente
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ) : isMe ? (
-                        <span className="text-etiqueta text-informativo px-2">—</span>
-                      ) : (
-                        <ShieldCheck size={13} aria-hidden="true" className="mx-auto text-informativo/40" />
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-5 py-14 text-center">
-                    <p className="text-sm text-informativo">
-                      {search ? `Sin resultados para "${search}"` : 'No hay usuarios en esta vista'}
-                    </p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+        )}
+        <DataTable model={model} label="Personas" empty="Nadie coincide con la búsqueda o los filtros."
+                   isRowActive={u => u.id === ocupadoId} />
+      </Card>
     </>
   )
 }

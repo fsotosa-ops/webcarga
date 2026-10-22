@@ -1,4 +1,5 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/lib/api/users', () => ({
@@ -7,6 +8,7 @@ vi.mock('@/lib/api/users', () => ({
 vi.mock('@/lib/api/access', () => ({
   accessApi: { roles: vi.fn(), permissions: vi.fn() },
 }))
+vi.mock('@/lib/api/config', () => ({ changesApi: { list: vi.fn().mockResolvedValue([]) } }))
 
 import { usersApi } from '@/lib/api/users'
 import { accessApi } from '@/lib/api/access'
@@ -18,7 +20,10 @@ const ANA: Acceso = {
   id: 'u1', email: 'ana@webcarga.cl', full_name: 'Ana', roles: ['admin'], role_names: ['Administración'],
   permissions: ['users.manage'], aal: 'aal2',
 }
-const mostrar = () => render(<PermisosProvider acceso={ANA}><UsuariosTab /></PermisosProvider>)
+const mostrar = () => render(
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <PermisosProvider acceso={ANA}><UsuariosTab /></PermisosProvider>
+  </QueryClientProvider>)
 
 const PROFILES = [
   { id: 'u1', full_name: 'Ana',  email: 'ana@webcarga.cl',  roles: ['admin'],  active: true,  created_at: '2026-01-01T00:00:00Z' },
@@ -45,24 +50,41 @@ describe('UsuariosTab', () => {
     expect(accessApi.permissions).toHaveBeenCalled()
   })
 
-  // Configuración, Parte 1: sin tarjetas de cifras; el total vive en el filtro.
-  it('los filtros son un control segmentado con sus conteos, sin tarjetas de cifras', async () => {
+  // Spec 2026-10-22: la tabla del kit; las pestañas pasan a filtros de columna.
+  it('las pestañas pasan a filtro de Estado del kit', async () => {
     mostrar()
-    const filtros = await screen.findByRole('group', { name: 'Filtrar' })
-    expect(within(filtros).getByRole('button', { name: /Todos/ })).toHaveTextContent('2')
+    await screen.findByRole('columnheader', { name: /Persona/ })
+    expect(screen.queryByRole('group', { name: 'Filtrar' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Agregar filtro' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Filtrar por Estado' })).toBeInTheDocument()
     expect(screen.queryByText('Usuarios')).not.toBeInTheDocument()
+  })
+
+  it('tras desactivar, la fila dice Inactivo sin recargar', async () => {
+    const activo = { ...PROFILES[1], active: true }
+    vi.mocked(usersApi.list)
+      .mockResolvedValueOnce([PROFILES[0], activo] as never)
+      .mockResolvedValue([PROFILES[0], { ...activo, active: false }] as never)
+    vi.mocked(usersApi.patch).mockResolvedValue({} as never)
+    mostrar()
+    const fila = (await screen.findByText('Beto')).closest('tr')!
+    expect(within(fila).getByText('Activo')).toBeInTheDocument()
+    fireEvent.click(within(fila).getByRole('button', { name: 'Acciones' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Desactivar acceso/ }))
+    await waitFor(() => expect(within(screen.getByText('Beto').closest('tr')!).getByText('Inactivo')).toBeInTheDocument())
+    expect(usersApi.patch).toHaveBeenCalledWith('u2', { active: false })
   })
 
   it('los encabezados de la tabla no van en mayúsculas', async () => {
     mostrar()
-    const encabezado = await screen.findByRole('columnheader', { name: 'Persona' })
+    const encabezado = await screen.findByRole('columnheader', { name: /Persona/ })
     expect(encabezado).not.toHaveClass('uppercase')
   })
 
   // El título de página lo pone la sección; este componente no lo repite.
   it('ya no repite el titulo de pagina', async () => {
     mostrar()
-    await screen.findByRole('group', { name: 'Filtrar' })
+    await screen.findByRole('columnheader', { name: /Persona/ })
     expect(screen.queryByText('Gestión de Usuarios')).not.toBeInTheDocument()
   })
 })

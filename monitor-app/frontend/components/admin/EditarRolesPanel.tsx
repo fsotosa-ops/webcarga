@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { PanelLateral } from '@/components/ui/PanelLateral'
 import { Button } from '@/components/ui/Button'
 import { accessApi, type PermisoInfo, type RoleInfo } from '@/lib/api/access'
@@ -13,13 +13,15 @@ interface Props {
   catalogo: PermisoInfo[]
   onSaved:  (roles: string[]) => void
   onClose:  () => void
+  /** "Última modificación" de la persona (registro de cambios, spec 2026-10-22). */
+  lastChange?: ReactNode
 }
 
 /** Panel lateral para cambiar los roles de una persona sin borrarla (maqueta
  *  aprobada 09/10). Antes de guardar dice qué permisos gana y pierde; si la
  *  API rechaza (escalada, último Propietario), el mensaje queda en el panel y
  *  lo elegido no se pierde. */
-export default function EditarRolesPanel({ persona, roles, catalogo, onSaved, onClose }: Props) {
+export default function EditarRolesPanel({ persona, roles, catalogo, onSaved, onClose, lastChange }: Props) {
   const originales = persona.roles ?? []
   const [elegidos, setElegidos] = useState<string[]>(originales)
   const [guardando, setGuardando] = useState(false)
@@ -75,6 +77,7 @@ export default function EditarRolesPanel({ persona, roles, catalogo, onSaved, on
         </div>
       }
     >
+      {lastChange && <div className="mb-3">{lastChange}</div>}
       <SelectorDeRoles roles={roles} catalogo={catalogo} value={elegidos} onChange={setElegidos} originales={originales} />
     </PanelLateral>
   )

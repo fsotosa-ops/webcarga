@@ -1,12 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Lock, Check, Minus, ShieldCheck } from 'lucide-react'
+import { Lock, Check, Minus, Plus, ShieldCheck } from 'lucide-react'
 import { accessApi, type PermisoInfo, type RoleInfo } from '@/lib/api/access'
 import { useAcceso, usePermiso } from '@/lib/authz/PermisosProvider'
 import { AREAS, TITULO_DE_AREA, codigoDe } from '@/lib/authz/roles'
 import { LoadState } from './shared'
 import { inputClass } from '@/components/ui/Field'
+import { Button } from '@/components/ui/Button'
+import { Card } from '@/components/ui/Card'
+import { LastChange, useLastChanges } from './LastChange'
 
 /** El código de un rol personalizado sale de su nombre, con el formato que
  *  exige la API (^custom_[a-z0-9_]{2,40}$). Nadie lo escribe a mano. El
@@ -91,19 +94,16 @@ export function RolesTab() {
   )
 
   return (
-    <div className="space-y-4">
+    <Card className="space-y-4">
+      {/* Spec 2026-10-22 §3.4: la explicación y la acción van dentro de la tarjeta, en su cabecera. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-dato text-informativo">
           Los de sistema vienen con la app; los personalizados los crea Administración.
         </p>
         {puedeGestionar && (
-          <button
-            type="button"
-            onClick={() => setModo({ tipo: 'crear' })}
-            className="px-4 py-2 rounded-lg bg-accent text-white text-dato font-medium hover:bg-accent/90"
-          >
-            + Crear rol
-          </button>
+          <Button variant="primary" onClick={() => setModo({ tipo: 'crear' })}>
+            <Plus size={14} aria-hidden="true" /> Nuevo rol
+          </Button>
         )}
       </div>
 
@@ -139,7 +139,7 @@ export function RolesTab() {
           )}
         </div>
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -148,6 +148,7 @@ function DetalleDeRol({ rol, catalogo, puedeGestionar, onEditar, onEliminado }: 
 }) {
   const [confirmando, setConfirmando] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const cambios = useLastChanges('people', 'roles')
   useEffect(() => { setConfirmando(false); setError(null) }, [rol.id])
 
   const tiene = (code: string) => rol.grants_all || rol.permissions.includes(code)
@@ -170,6 +171,7 @@ function DetalleDeRol({ rol, catalogo, puedeGestionar, onEditar, onEliminado }: 
           <p className="text-dato text-informativo">
             {rol.description}{rol.description ? ' · ' : ''}{rol.assigned} {rol.assigned === 1 ? 'persona' : 'personas'}
           </p>
+          {!rol.is_system && <LastChange change={cambios.of(rol.id)} pending={cambios.isPending} />}
         </div>
         {!rol.is_system && puedeGestionar && (
           <div className="flex gap-2">
