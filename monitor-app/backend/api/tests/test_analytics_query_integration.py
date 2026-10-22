@@ -99,3 +99,11 @@ async def test_filtro_de_lista_en_flota(conexion_revertida):
         purpose="rows"), personal=False)
     assert [r["_id"] for r in page["rows"]] == ["zz-k1"]
     assert page["counts"]["client_names"] == {"Sodimac": 2, "Walmart": 1}
+
+
+async def test_un_valor_con_coma_viaja_codificado(conexion_revertida):
+    """El frontend codifica cada valor (como writeView) para que una coma dentro de un valor no lo parta."""
+    await _viaje(conexion_revertida, codigo="ZZ-C", planificado=date(2025, 1, 9), cliente="Lider, Express")
+    page = await fetch_page(conexion_revertida, _req(**{"f.client_name": "Walmart,Lider%2C%20Express"}),
+                            personal=False)
+    assert [r["trip_code"] for r in page["rows"]] == ["ZZ-C"]

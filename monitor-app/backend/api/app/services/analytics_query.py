@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Literal
 
+from urllib.parse import unquote
+
 from fastapi import HTTPException
 
 from .analytics_columns import DATE_FIELDS, TABLES, AnalyticsColumn, columns_for
@@ -82,7 +84,8 @@ def parse_request(params: Mapping[str, str], *, purpose: Purpose) -> AnalyticsRe
         col = todas.get(clave[2:])
         if col is None or col.filter != "values":
             raise _422(f"No se puede filtrar por «{clave[2:]}»")
-        valores = [v for v in valor.split(",") if v != ""]
+        # Cada valor viene codificado (como `writeView` en el frontend): una coma dentro de un valor no lo parte.
+        valores = [unquote(v) for v in valor.split(",") if v != ""]
         if valores:
             filters[col.id] = valores
 
