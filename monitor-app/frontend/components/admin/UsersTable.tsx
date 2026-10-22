@@ -125,7 +125,7 @@ export default function UsersTable({ users, currentUserId, roles, catalogo, onCh
     { id: 'acciones', header: 'Acciones', filter: false, sortable: false, hideable: false, value: () => null,
       render: u => {
         const items = acciones(u)
-        if (items.length) return <ActionsMenu label="Acciones" items={items} />
+        if (items.length) return <ActionsMenu label="Acciones" items={items} disabled={ocupadoId === u.id} />
         return u.id === currentUserId
           ? <span className="px-2 text-etiqueta text-informativo">—</span>
           : <ShieldCheck size={13} aria-hidden="true" className="text-informativo/40" />

@@ -63,5 +63,16 @@ describe('UsersTable', () => {
     expect(await screen.findByText('Debe quedar al menos un Propietario')).toBeInTheDocument()
     expect(within(fila('María')).getByText('Activo')).toBeInTheDocument()
   })
-})
 
+  // Menor diferido 6 (revisión final 22/10): un doble clic repetía la acción.
+  it('mientras una fila guarda, su menú de acciones no se puede volver a abrir', async () => {
+    let soltar: () => void = () => {}
+    vi.mocked(usersApi.patch).mockImplementation(() => new Promise(r => { soltar = () => r({} as never) }))
+    mostrar()
+    fireEvent.click(within(fila('María')).getByRole('button', { name: 'Acciones' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Desactivar acceso/ }))
+    expect(within(fila('María')).getByRole('button', { name: 'Acciones' })).toBeDisabled()
+    soltar()
+    await waitFor(() => expect(within(fila('María')).getByRole('button', { name: 'Acciones' })).toBeEnabled())
+  })
+})

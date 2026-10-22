@@ -16,7 +16,12 @@ export type ActionsMenuItem = {
 /** El "⋯" de una ficha (kit de la Entrega 1 de fichas, 15/10): lo que no es la
  *  acción principal, y todo lo destructivo, fuera del cuerpo. Quien lo usa pasa
  *  solo lo que el permiso habilita; sin opciones, no se dibuja. */
-export function ActionsMenu({ label, items }: { label: string; items: ActionsMenuItem[] }) {
+export function ActionsMenu({ label, items, disabled = false }: {
+  label: string
+  items: ActionsMenuItem[]
+  /** Mientras la acción anterior está en curso: el menú no se abre (evita repetirla). */
+  disabled?: boolean
+}) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -31,9 +36,9 @@ export function ActionsMenu({ label, items }: { label: string; items: ActionsMen
 
   return (
     <div ref={ref} className="relative">
-      <button type="button" aria-label={label} aria-haspopup="menu" aria-expanded={open}
+      <button type="button" aria-label={label} aria-haspopup="menu" aria-expanded={open} disabled={disabled}
               onClick={() => setOpen(o => !o)}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-white text-informativo hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-white text-informativo hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-50">
         <MoreHorizontal size={16} aria-hidden="true" />
       </button>
       {open && (
