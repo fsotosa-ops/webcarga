@@ -32,7 +32,7 @@ export function DataTable<T>({ model, label, empty, selection, pageSizes, isRowA
   /** La fila desde la que se abrió algo (la vista rápida): queda marcada. */
   isRowActive?: (row: T) => boolean
 }) {
-  const { table, view, visibleColumns, pageRows, rows } = model
+  const { table, view, visibleColumns, pageRows, rows, total } = model
   const pageCount = table.getPageCount()
   const { pageIndex } = table.getState().pagination
 
@@ -105,7 +105,7 @@ export function DataTable<T>({ model, label, empty, selection, pageSizes, isRowA
         // Fuera de lo que se copia ("Copiar estatus" pega la tabla, no sus controles).
         <div data-no-copy className="flex items-center justify-between gap-3 text-etiqueta text-informativo">
           <span className="inline-flex items-center gap-2.5">
-            {rows.length === 1 ? '1 resultado' : `${rows.length} resultados`}
+            {total !== null && (total === 1 ? '1 resultado' : `${total.toLocaleString('es-CL')} resultados`)}
             {pageSizes && (
               <label className="inline-flex items-center gap-1.5">
                 Ver
@@ -117,7 +117,7 @@ export function DataTable<T>({ model, label, empty, selection, pageSizes, isRowA
               </label>
             )}
           </span>
-          {pageCount > 1 && (
+          {total !== null && pageCount > 1 && (
             <span className="inline-flex items-center gap-2">
               <button type="button" aria-label="Página anterior" disabled={!table.getCanPreviousPage()}
                 onClick={() => table.previousPage()} className="rounded p-1 hover:bg-bg-main disabled:opacity-40">

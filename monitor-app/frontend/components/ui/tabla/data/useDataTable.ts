@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   getCoreRowModel, getFacetedRowModel, getFilteredRowModel, getPaginationRowModel, getSortedRowModel,
   useReactTable, type ColumnDef, type Row,
@@ -10,6 +10,17 @@ import { ABSENT, PRESENT, cellMatches, cellValues, compareCells, type DataColumn
 
 /** Lo que cada persona eligió ver: columnas en orden y si están ocultas. */
 export type ColumnPrefs = { id: string; hidden: boolean }[]
+
+/** Modo servidor (Analítica, 22/10): filtrar, ordenar y paginar los hace la API. Las filas que llegan son la
+ *  página, tal cual; las cifras de cada filtro llegan en `counts`. `total` null = todavía no se sabe: no se muestra
+ *  ninguna cifra (una cifra derivada no se muestra hasta tener el dato). */
+export type ServerMode = {
+  total: number | null
+  counts: Record<string, Record<string, number>> | null
+  page: number
+  pageSize: number
+  onPage: (page: number, pageSize: number) => void
+}
 
 export type UseDataTableOptions<T> = {
   rows: T[]
@@ -21,6 +32,7 @@ export type UseDataTableOptions<T> = {
   search?: (row: T, q: string) => boolean
   columnPrefs?: ColumnPrefs | null
   pageSize?: number
+  server?: ServerMode
 }
 
 /** El motor de las tablas de datos del kit (Cierre con un solo patrón, spec §4.1):
@@ -29,7 +41,7 @@ export type UseDataTableOptions<T> = {
  *  puertas a lo mismo. La cifra de un valor es facetada: cuenta con los demás
  *  filtros y la búsqueda, no con el filtro de su propia columna. */
 export function useDataTable<T>({
-  rows, columns, getRowId, view, onViewChange, search, columnPrefs = null, pageSize = 50,
+  rows, columns, getRowId, view, onViewChange, search, columnPrefs = null, pageSize = 50, server,
 }: UseDataTableOptions<T>) {
   const porId = useMemo(() => new Map(columns.map(c => [c.id, c])), [columns])
   // Las columnas de la tabla; un filtro del servidor no es columna (ver `DataColumn.server`).
@@ -44,10 +56,22 @@ export function useDataTable<T>({
     enableHiding: c.hideable !== false,
   })), [enTabla])
 
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize })
+  const [paginaLocal, setPaginaLocal] = useState({ pageIndex: 0, pageSize })
+  // En modo servidor la página la gobierna quien consulta: el kit solo avisa los cambios.
+  const pagination = server ? { pageIndex: server.page, pageSize: server.pageSize } : paginaLocal
+  const setPagination = (next: typeof paginaLocal | ((p: typeof paginaLocal) => typeof paginaLocal)) => {
+    const valor = typeof next === 'function' ? next(pagination) : next
+    if (server) server.onPage(valor.pageIndex, valor.pageSize); else setPaginaLocal(valor)
+  }
   // Cualquier cambio de la vista vuelve a la primera página: la página 3 de otro filtro no existe.
   const firma = JSON.stringify(view)
-  useEffect(() => { setPagination(p => (p.pageIndex === 0 ? p : { ...p, pageIndex: 0 })) }, [firma])
+  const primeraVez = useRef(true)
+  useEffect(() => {
+    if (primeraVez.current) { primeraVez.current = false; return }
+    if (server) { if (server.page !== 0) server.onPage(0, server.pageSize); return }
+    setPaginaLocal(p => (p.pageIndex === 0 ? p : { ...p, pageIndex: 0 }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firma])
 
   const visibility = useMemo(() => {
     const v: Record<string, boolean> = {}
@@ -101,13 +125,16 @@ export function useDataTable<T>({
     getFacetedRowModel: getFacetedRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    manualFiltering: false,
+    manualFiltering: !!server,
+    manualSorting: !!server,
+    manualPagination: !!server,
+    rowCount: server ? (server.total ?? 0) : undefined,
   })
   // Si las filas se achican (un guardado que refresca, otro filtro) y la página elegida ya no
   // existe, se muestra la última que queda en vez de una página vacía. Ajuste en el render, no
   // en un efecto, para que no se pinte nunca la página vacía.
   const ultima = Math.max(0, table.getPageCount() - 1)
-  if (pagination.pageIndex > ultima) setPagination(p => ({ ...p, pageIndex: ultima }))
+  if (!server && pagination.pageIndex > ultima) setPaginaLocal(p => ({ ...p, pageIndex: ultima }))
 
   function facetRows(columnId: string): T[] {
     const col = table.getColumn(columnId)
@@ -118,6 +145,7 @@ export function useDataTable<T>({
     const c = porId.get(columnId)
     if (!c) return 0
     if (c.count) return c.count(value)
+    if (server) return server.counts?.[columnId]?.[value] ?? 0
     return facetRows(columnId).filter(r => cellMatches(c, r, [value])).length
   }
 
@@ -127,6 +155,11 @@ export function useDataTable<T>({
     if (c.filter === 'presence') return [PRESENT, ABSENT]
     const fijos = c.options ?? []
     if (c.server) return [...fijos, ...(view.filters[columnId] ?? []).filter(v => !fijos.includes(v))]
+    if (server) {
+      const delServidor = Object.keys(server.counts?.[columnId] ?? {})
+      const elegidos = (view.filters[columnId] ?? []).filter(v => !delServidor.includes(v))
+      return [...fijos, ...delServidor.filter(v => !fijos.includes(v)), ...elegidos]
+    }
     const presentes = new Set<string>()
     for (const r of facetRows(columnId)) for (const v of cellValues(c, r)) if (v) presentes.add(v)
     for (const v of view.filters[columnId] ?? []) presentes.add(v)
@@ -159,9 +192,12 @@ export function useDataTable<T>({
   return {
     table,
     view,
-    /** Todas las filas que pasan la vista, ordenadas (sin paginar): lo que se ve y se descarga. */
-    rows: table.getSortedRowModel().rows.map(r => r.original),
-    pageRows: table.getRowModel().rows.map(r => r.original),
+    /** Todas las filas que pasan la vista, ordenadas (sin paginar): lo que se ve y se descarga. En modo
+     *  servidor, la página que llegó (la descarga la arma la API). */
+    rows: server ? rows : table.getSortedRowModel().rows.map(r => r.original),
+    pageRows: server ? rows : table.getRowModel().rows.map(r => r.original),
+    /** Cuántas filas pasan la vista; null mientras el servidor no lo dice. */
+    total: server ? server.total : table.getSortedRowModel().rows.length,
     /** Las columnas visibles, en el orden de la persona. */
     visibleColumns: table.getVisibleLeafColumns().map(c => porId.get(c.id)!),
     /** Todas las columnas en el orden de la persona, con si se ven (para "Columnas"). */
