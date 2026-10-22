@@ -3,13 +3,22 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileDown, Loader2, RefreshCw } from 'lucide-react'
+import { FileDown, Loader2, Plus, RefreshCw } from 'lucide-react'
 import { DataTable } from '@/components/ui/tabla/data/DataTable'
 import { TableToolbar } from '@/components/ui/tabla/data/TableToolbar'
 import { useDataTable, type ColumnPrefs } from '@/components/ui/tabla/data/useDataTable'
 import { useTablePreferences } from '@/components/ui/tabla/data/useTablePreferences'
 import { useUrlView } from '@/components/ui/tabla/data/useUrlView'
 import { Button } from '@/components/ui/Button'
+import { Tabs } from '@/components/ui/Tabs'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import { EncabezadoDePagina } from '@/components/ui/EncabezadoDePagina'
+import { inputClass } from '@/components/ui/Field'
+import { StatusReportSection } from '@/components/dashboard/sections/StatusReportSection'
+import { reportSectionOf } from '@/lib/reporte/secciones'
+import { urlDelViaje } from '@/lib/navegacion/viaje'
+import { SCOPE_LABEL } from '@/lib/states'
+import type { ClosureScope } from '@/lib/types'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { EMPTY_VIEW, type TableView } from '@/lib/table/viewInUrl'
 import { ApiError } from '@/lib/api/client'
@@ -24,7 +33,7 @@ import {
 import type { PivotRow } from '@/lib/utils/pivot'
 import { FleetPivot } from './FleetPivot'
 import { PeriodPicker } from './PeriodPicker'
-import { SavedViewsPanel } from './SavedViewsPanel'
+import { ViewsManager } from './ViewsManager'
 import { SaveViewDialog } from './SaveViewDialog'
 import { toDataColumns } from './analyticsColumns'
 
@@ -126,13 +135,83 @@ function Aviso({ children, action }: { children: ReactNode; action?: ReactNode }
   )
 }
 
+type Mirada = AnalyticsDataset | 'report'
+const MIRADAS: { id: Mirada; label: string }[] = [
+  { id: 'trips', label: 'Viajes' }, { id: 'fleet', label: 'Flota por día' }, { id: 'report', label: 'Reporte del día' },
+]
+
+/** El esqueleto del Cierre: título con su control a la derecha (aquí el período o la fecha) y "Qué se mira". */
+function Cabecera({ derecha, mirada, onMirada, extra }: {
+  derecha: ReactNode
+  mirada: Mirada
+  onMirada: (m: Mirada) => void
+  extra?: ReactNode
+}) {
+  return (
+    <>
+      <EncabezadoDePagina titulo="Analítica" bajada="Viajes y flota de cualquier período, con tus columnas y vistas.">
+        {derecha}
+      </EncabezadoDePagina>
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-etiqueta text-informativo">Qué se mira</span>
+        <SegmentedControl label="Qué se mira" value={mirada} onChange={onMirada} options={MIRADAS} />
+        {extra}
+      </div>
+    </>
+  )
+}
+
+/** Ir al Reporte del día: una URL nueva (los filtros y el período de la tabla no existen ahí). */
+function irAlReporte(pathname: string) {
+  writeParams(pathname, new URLSearchParams({ dataset: 'report' }))
+}
+
+/** El Reporte de estatus del día, el mismo del Cierre (el mismo componente, no una copia). Convive en los dos
+ *  lados mientras el equipo de WebCarga decide dónde queda (decisión del usuario 22/10). */
+function ReporteDelDia() {
+  const pathname = usePathname()
+  const params = useSearchParams()
+  const fecha = params.get('fecha') ?? todayInChile()
+  const alcance: ClosureScope = params.get('scope') === 'equipo_completo' ? 'equipo_completo' : 'tractoreo'
+  const escribir = (cambios: Record<string, string>) => {
+    const p = new URLSearchParams(window.location.search)
+    for (const [k, v] of Object.entries(cambios)) p.set(k, v)
+    writeParams(pathname, p)
+  }
+  return (
+    <>
+      <Cabecera
+        derecha={
+          <label className="flex items-center gap-2 text-etiqueta text-informativo">
+            Fecha
+            <input type="date" aria-label="Fecha del reporte" value={fecha} className={inputClass({ size: 'sm' })}
+              onChange={e => e.target.value && escribir({ fecha: e.target.value })} />
+          </label>
+        }
+        mirada="report"
+        onMirada={m => { if (m !== 'report') writeParams(pathname, new URLSearchParams({ dataset: m })) }}
+        extra={<>
+          <span className="text-etiqueta text-informativo">Qué se cierra</span>
+          <SegmentedControl label="Qué se cierra" value={alcance} onChange={a => escribir({ scope: a })}
+            options={(['tractoreo', 'equipo_completo'] as ClosureScope[]).map(a => ({ id: a, label: SCOPE_LABEL[a] }))} />
+        </>} />
+      <div className="rounded-2xl border border-border bg-white p-4 shadow-sm sm:p-5">
+        <StatusReportSection fecha={fecha} alcance={alcance} section={reportSectionOf(params.get('seccion'))}
+          onSectionChange={s => escribir({ seccion: s })}
+          tripHref={id => urlDelViaje(id, `${pathname}?${params.toString()}`)} />
+      </div>
+    </>
+  )
+}
+
 export function AnalyticsWorkspace() {
   const puedeLeer = usePermiso('analytics.read')
+  const params = useSearchParams()
   if (!puedeLeer) {
     return <p className="rounded-xl border border-border bg-white px-4 py-6 text-center text-dato text-informativo">
       No tienes acceso a Analítica</p>
   }
-  return <Workspace />
+  return params.get('dataset') === 'report' ? <ReporteDelDia /> : <Workspace />
 }
 
 function Workspace() {
@@ -331,10 +410,40 @@ function Workspace() {
     </Button>
   )
 
+  const fijadas = (vistas.data ?? []).filter(v => v.pinned)
+  // Una vista abierta desde "Todas las vistas" sin estar fijada se ve como pestaña mientras está abierta.
+  const pestanas = activa && !activa.pinned ? [...fijadas, activa] : fijadas
+
+  function todos() {
+    setPagina(x => ({ ...x, page: 0 }))
+    setColumnasDeSesion(null)
+    setView(EMPTY_VIEW)
+    const p = new URLSearchParams(window.location.search)
+    p.delete('vista')
+    writeParams(pathname, p)
+  }
+
+  async function fijar(v: SavedView, pinned: boolean) {
+    const nueva = await analyticsApi.pinView(v.id, pinned)
+    qc.setQueryData<SavedView[]>(['analytics-views', dataset], xs => xs?.map(x => (x.id === nueva.id ? nueva : x)))
+  }
+
   return (
-    <div className="flex flex-col gap-4 lg:flex-row">
-      <SavedViewsPanel views={vistas.data ?? []} activeId={activa?.id ?? null} onApply={aplicar}
-        onNew={() => setGuardandoVista(true)} onRename={setRenombrando} onDelete={setBorrando} />
+    <>
+      <Cabecera
+        derecha={<PeriodPicker period={period} onPeriod={p => cambiarPeriodo(p)} dateField={dateField}
+          onDateField={f => cambiarPeriodo(period, f)} dateFields={meta.dateFields} today={today} />}
+        mirada={dataset} onMirada={m => (m === 'report' ? irAlReporte(pathname) : cambiarConjunto(m))}
+        extra={<>
+          {dataset === 'fleet' && (
+            <span className="hidden md:inline-flex">
+              <SegmentedControl label="Modo" value={modo} onChange={cambiarModo}
+                options={[{ id: 'table', label: 'Tabla' }, { id: 'pivot', label: 'Tabla dinámica' }]} />
+            </span>
+          )}
+          <Frescura loadedAt={filas.data?.loaded_at} />
+        </>} />
+
       {guardandoVista && <SaveViewDialog canShare={puedeCompartir} onClose={() => setGuardandoVista(false)}
         onSave={guardarNueva} />}
       {renombrando && <SaveViewDialog canShare={false} title="Renombrar vista" initialName={renombrando.name}
@@ -344,80 +453,75 @@ function Workspace() {
           description={borrando.scope === 'shared' ? 'La deja de ver todo el equipo.' : 'No se puede deshacer.'}
           errorFallback="No se pudo borrar la vista" onConfirm={borrar} onClose={() => setBorrando(null)} />
       )}
-      <div className="min-w-0 flex-1 space-y-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div role="group" aria-label="Conjunto de datos" className="inline-flex rounded-lg border border-border bg-white p-0.5">
-            {DATASETS.map(d => (
-              <button key={d.id} type="button" aria-pressed={d.id === dataset} onClick={() => cambiarConjunto(d.id)}
-                className={`rounded-md px-3 py-1 text-dato font-medium ${d.id === dataset
-                  ? 'bg-accent/10 text-text-primary' : 'text-informativo hover:text-text-primary'}`}>
-                {d.label}
-              </button>
-            ))}
-          </div>
-          <PeriodPicker period={period} onPeriod={p => cambiarPeriodo(p)} dateField={dateField}
-            onDateField={f => cambiarPeriodo(period, f)} dateFields={meta.dateFields} today={today} />
-          {dataset === 'fleet' && (
-            <div role="group" aria-label="Modo" className="hidden rounded-lg border border-border bg-white p-0.5 md:inline-flex">
-              {([['table', 'Tabla'], ['pivot', 'Tabla dinámica']] as const).map(([m, etiqueta]) => (
-                <button key={m} type="button" aria-pressed={m === modo} onClick={() => cambiarModo(m)}
-                  className={`rounded-md px-3 py-1 text-dato font-medium ${m === modo
-                    ? 'bg-accent/10 text-text-primary' : 'text-informativo hover:text-text-primary'}`}>
-                  {etiqueta}
-                </button>
-              ))}
-            </div>
-          )}
-          <Frescura loadedAt={filas.data?.loaded_at} />
-          {cambiada && (
-            <span className="inline-flex items-center gap-2">
-              {activa!.can_edit && (
-                <Button variant="primary" size="sm" onClick={() => { void guardarCambios() }}>Guardar cambios</Button>
-              )}
-              <Button size="sm" onClick={() => aplicar(activa!)}>Descartar</Button>
-            </span>
-          )}
+
+      {/* Un solo lienzo, como el Cierre: las vistas son las pestañas; la tabla y su barra, el cuerpo. */}
+      <div className="rounded-2xl border border-border bg-white shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 rounded-t-2xl border-b border-border px-3 py-2">
+          <Tabs label="Vistas" value={activa?.id ?? 'all'}
+            onChange={id => { if (id === 'all') todos(); else { const v = pestanas.find(x => x.id === id); if (v) aplicar(v) } }}
+            tabs={[{ id: 'all', label: 'Todos' }, ...pestanas.map(v => ({ id: v.id, label: v.name }))]} />
+          <span className="ml-auto inline-flex items-center gap-1">
+            <ViewsManager views={vistas.data ?? []} activeId={activa?.id ?? null} onApply={aplicar}
+              onPin={(v, pinned) => { void fijar(v, pinned) }} onRename={setRenombrando} onDelete={setBorrando} />
+            <button type="button" onClick={() => setGuardandoVista(true)}
+              className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-accion hover:underline">
+              <Plus size={12} aria-hidden="true" /> Nueva vista
+            </button>
+          </span>
         </div>
 
-        {filas.isError || columnas.isError ? (
-          <div className="flex items-center gap-3 rounded-lg border border-status-incidente/20 bg-status-incidente/5 px-4 py-3">
-            <p className="flex-1 text-dato text-status-incidente">
-              {/* Un 422 trae por qué (un período de más de 400 días): reintentar no lo arregla, decirlo sí. */}
-              {filas.error instanceof ApiError && filas.error.status === 422 && typeof filas.error.detail === 'string'
-                ? filas.error.detail : `No se pudieron cargar los ${meta.noun}`}</p>
-            <button type="button" onClick={() => { void columnas.refetch(); void filas.refetch() }}
-              className="inline-flex items-center gap-1.5 text-dato font-semibold text-status-incidente">
-              <RefreshCw size={12} aria-hidden="true" /> Reintentar
-            </button>
-          </div>
-        ) : modo === 'pivot' ? (
-          <>
-            <p className="text-dato text-informativo md:hidden">La tabla dinámica se usa en un computador: en el
-              teléfono no cabe. Elige el modo Tabla para ver los registros.</p>
-            <div className="hidden space-y-3 md:block">
-              {/* Los filtros se ven y se quitan igual que en la tabla (la Reportería abre con "Conductores"). */}
-              <TableToolbar model={model} />
-              {!listo ? <p className="py-8 text-center text-dato text-informativo">Cargando…</p>
-                : filas.data!.total > PIVOT_MAX
-                  ? <p className="text-dato text-status-incidente">El período tiene {filas.data!.total.toLocaleString('es-CL')}
-                      {' '}registros; la tabla dinámica arma hasta {PIVOT_MAX.toLocaleString('es-CL')}. Acota el período o los
-                      filtros.</p>
-                  : <FleetPivot rows={filas.data!.rows.map(comoFilaDePivot)}
-                      filename={`tabla_dinamica_${rango.from}_${rango.to}.csv`} />}
+        <div className="space-y-3 p-4 sm:p-5">
+          {cambiada && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-bg-main px-3 py-2 text-dato">
+              <span className="text-informativo">Cambios sin guardar</span>
+              {activa!.can_edit && (
+                <Button variant="primary" size="sm" onClick={() => { void guardarCambios() }}>Guardar</Button>
+              )}
+              <Button size="sm" onClick={() => setGuardandoVista(true)}>Guardar como nueva</Button>
+              <Button variant="link" size="sm" onClick={() => aplicar(activa!)}>Descartar</Button>
             </div>
-          </>
-        ) : (
-          <>
-            <TableToolbar model={model} preferences={preferencias} actions={excel}
-              searchPlaceholder={dataset === 'trips' ? 'Buscar Nº de viaje, patente o empresa…' : 'Buscar patente o empresa…'} />
-            {aviso && <p role="alert" className="text-dato text-status-incidente">{aviso}</p>}
-            <div className={filas.isPlaceholderData ? 'opacity-60 transition-opacity' : undefined}>
-              <DataTable model={model} label={meta.label} pageSizes={PAGE_SIZES} stickyFirstColumn
-                empty={listo ? vacio : null} />
+          )}
+
+          {filas.isError || columnas.isError ? (
+            <div className="flex items-center gap-3 rounded-lg border border-status-incidente/20 bg-status-incidente/5 px-4 py-3">
+              <p className="flex-1 text-dato text-status-incidente">
+                {/* Un 422 trae por qué (un período de más de 400 días): reintentar no lo arregla, decirlo sí. */}
+                {filas.error instanceof ApiError && filas.error.status === 422 && typeof filas.error.detail === 'string'
+                  ? filas.error.detail : `No se pudieron cargar los ${meta.noun}`}</p>
+              <button type="button" onClick={() => { void columnas.refetch(); void filas.refetch() }}
+                className="inline-flex items-center gap-1.5 text-dato font-semibold text-status-incidente">
+                <RefreshCw size={12} aria-hidden="true" /> Reintentar
+              </button>
             </div>
-          </>
-        )}
+          ) : modo === 'pivot' ? (
+            <>
+              <p className="text-dato text-informativo md:hidden">La tabla dinámica se usa en un computador: en el
+                teléfono no cabe. Elige el modo Tabla para ver los registros.</p>
+              <div className="hidden space-y-3 md:block">
+                {/* Los filtros se ven y se quitan igual que en la tabla (la Reportería abre con "Conductores"). */}
+                <TableToolbar model={model} />
+                {!listo ? <p className="py-8 text-center text-dato text-informativo">Cargando…</p>
+                  : filas.data!.total > PIVOT_MAX
+                    ? <p className="text-dato text-status-incidente">El período tiene {filas.data!.total.toLocaleString('es-CL')}
+                        {' '}registros; la tabla dinámica arma hasta {PIVOT_MAX.toLocaleString('es-CL')}. Acota el período o los
+                        filtros.</p>
+                    : <FleetPivot rows={filas.data!.rows.map(comoFilaDePivot)}
+                        filename={`tabla_dinamica_${rango.from}_${rango.to}.csv`} />}
+              </div>
+            </>
+          ) : (
+            <>
+              <TableToolbar model={model} preferences={preferencias} actions={excel}
+                searchPlaceholder={dataset === 'trips' ? 'Buscar Nº de viaje, patente o empresa…' : 'Buscar patente o empresa…'} />
+              {aviso && <p role="alert" className="text-dato text-status-incidente">{aviso}</p>}
+              <div className={filas.isPlaceholderData ? 'opacity-60 transition-opacity' : undefined}>
+                <DataTable model={model} label={meta.label} pageSizes={PAGE_SIZES} stickyFirstColumn
+                  empty={listo ? vacio : null} />
+              </div>
+            </>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   )
 }

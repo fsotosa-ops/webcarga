@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AnalyticsWorkspace } from './AnalyticsWorkspace'
-import { SavedViewsPanel } from './SavedViewsPanel'
 import { analyticsApi, type AnalyticsColumnMeta, type SavedView } from '@/lib/api/analytics'
 import { ApiError } from '@/lib/api/client'
 
@@ -15,7 +14,7 @@ vi.mock('@/lib/api/tablePreferences', () => ({
 vi.mock('@/lib/api/analytics', async (orig) => {
   const real = await orig<typeof import('@/lib/api/analytics')>()
   return { ...real, analyticsApi: { columns: vi.fn(), rows: vi.fn(), export: vi.fn(), views: vi.fn(),
-    createView: vi.fn(), updateView: vi.fn(), deleteView: vi.fn() } }
+    createView: vi.fn(), updateView: vi.fn(), deleteView: vi.fn(), pinView: vi.fn() } }
 })
 import { memoryUrl } from '@/lib/testing/inMemoryNavigation'
 
@@ -25,7 +24,7 @@ const COLUMNAS: AnalyticsColumnMeta[] = [
   { id: 'destination_zone', label: 'Zona', group: 'Lugares', type: 'text', filter: 'values', default_visible: false },
 ]
 const COMPARTIDA: SavedView = {
-  id: 'v1', dataset: 'trips', name: 'Walmart RM', scope: 'shared', can_edit: false, is_mine: false, updated_at: '',
+  id: 'v1', dataset: 'trips', name: 'Walmart RM', scope: 'shared', can_edit: false, is_mine: false, pinned: true, updated_at: '',
   view: { filters: { client_name: ['Walmart'] }, q: '', sort: null, period: { preset: 'last_month' }, date_field: 'planning' },
   columns: [{ id: 'trip_code', hidden: false }, { id: 'destination_zone', hidden: false }],
 }
@@ -49,11 +48,31 @@ beforeEach(() => {
 })
 
 describe('vistas guardadas', () => {
-  it('lista compartidas y mías', () => {
-    render(<SavedViewsPanel views={[COMPARTIDA, MIA]} activeId={null} onApply={vi.fn()} onNew={vi.fn()} />)
-    const panel = screen.getByRole('navigation', { name: 'Vistas guardadas' })
-    expect(within(panel).getByText('Compartidas')).toBeInTheDocument()
-    expect(within(panel).getByText('Mías')).toBeInTheDocument()
+  it('las fijadas son pestañas; Todas las vistas lista compartidas y mías', async () => {
+    const suelta: SavedView = { ...COMPARTIDA, id: 'v5', name: 'Sin fijar', pinned: false }
+    vi.mocked(analyticsApi.views).mockResolvedValue([COMPARTIDA, MIA, suelta])
+    pintar()
+    const pestanas = await screen.findByRole('group', { name: 'Vistas' })
+    await within(pestanas).findByRole('button', { name: 'Walmart RM' })
+    expect(within(pestanas).getAllByRole('button').map(b => b.textContent)).toEqual(['Todos', 'Walmart RM', 'Mía'])
+    fireEvent.click(screen.getByRole('button', { name: 'Todas las vistas (3)' }))
+    const panel = await screen.findByRole('dialog', { name: 'Todas las vistas' })
+    expect(within(panel).getByText('Sin fijar')).toBeInTheDocument()
+    fireEvent.click(within(panel).getByRole('button', { name: 'Mías' }))
+    expect(within(panel).getByRole('button', { name: 'Renombrar Mía' })).toBeInTheDocument()
+    expect(within(panel).queryByText('Sin fijar')).not.toBeInTheDocument()
+  })
+
+  it('fijar una vista desde Todas las vistas', async () => {
+    const suelta: SavedView = { ...COMPARTIDA, id: 'v5', name: 'Sin fijar', pinned: false }
+    vi.mocked(analyticsApi.views).mockResolvedValue([COMPARTIDA, suelta])
+    vi.mocked(analyticsApi.pinView).mockResolvedValue({ ...suelta, pinned: true })
+    pintar()
+    fireEvent.click(await screen.findByRole('button', { name: 'Todas las vistas (2)' }))
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Todas las vistas' }))
+      .getByRole('button', { name: 'Fijar Sin fijar' }))
+    await waitFor(() => expect(analyticsApi.pinView).toHaveBeenCalledWith('v5', true))
+    expect(await within(screen.getByRole('group', { name: 'Vistas' })).findByRole('button', { name: 'Sin fijar' })).toBeInTheDocument()
   })
 
   it('aplicar una vista escribe sus filtros, su período y sus columnas', async () => {
@@ -74,7 +93,7 @@ describe('vistas guardadas', () => {
     pintar()
     await screen.findByText('1')
     fireEvent.change(screen.getByRole('combobox', { name: 'Período' }), { target: { value: 'today' } })
-    expect(await screen.findByRole('button', { name: 'Guardar cambios' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^Guardar$/ })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Descartar' }))
     await waitFor(() => expect(memoryUrl.current()).toContain('period=last_month'))
   })
@@ -85,7 +104,7 @@ describe('vistas guardadas', () => {
     await screen.findByText('1')
     fireEvent.change(screen.getByRole('combobox', { name: 'Período' }), { target: { value: 'today' } })
     expect(await screen.findByRole('button', { name: 'Descartar' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Guardar cambios' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Guardar$/ })).not.toBeInTheDocument()
   })
 
   it('guardar una vista nueva; sin manage_views no se ofrece compartir', async () => {
@@ -175,14 +194,19 @@ describe('vistas guardadas', () => {
     vi.mocked(analyticsApi.updateView).mockResolvedValue({ ...MIA, name: 'Renombrada' })
     vi.mocked(analyticsApi.deleteView).mockResolvedValue(undefined)
     pintar()
-    await screen.findByRole('button', { name: 'Mía' })
-    expect(screen.queryByRole('button', { name: 'Borrar Walmart RM' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Renombrar Mía' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Todas las vistas (2)' }))
+    const panel = await screen.findByRole('dialog', { name: 'Todas las vistas' })
+    expect(within(panel).queryByRole('button', { name: 'Borrar Walmart RM' })).not.toBeInTheDocument()
+    fireEvent.click(within(panel).getByRole('button', { name: 'Mías' }))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Renombrar Mía' }))
     const dialogo = await screen.findByRole('dialog', { name: 'Renombrar vista' })
     fireEvent.change(within(dialogo).getByRole('textbox', { name: 'Nombre' }), { target: { value: 'Renombrada' } })
     fireEvent.click(within(dialogo).getByRole('button', { name: 'Guardar' }))
     await waitFor(() => expect(analyticsApi.updateView).toHaveBeenCalledWith('v2', { name: 'Renombrada' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Borrar Renombrada' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Todas las vistas (2)' }))
+    const otra = await screen.findByRole('dialog', { name: 'Todas las vistas' })
+    fireEvent.click(within(otra).getByRole('button', { name: 'Mías' }))
+    fireEvent.click(within(otra).getByRole('button', { name: 'Borrar Renombrada' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Borrar vista' }))
     await waitFor(() => expect(analyticsApi.deleteView).toHaveBeenCalledWith('v2'))
   })
@@ -193,7 +217,7 @@ describe('vistas guardadas', () => {
     pintar()
     await screen.findByText('1')
     fireEvent.change(screen.getByRole('combobox', { name: 'Período' }), { target: { value: 'today' } })
-    fireEvent.click(await screen.findByRole('button', { name: 'Guardar cambios' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Guardar$/ }))
     expect(await screen.findByText('No se pudieron guardar los cambios de la vista. Vuelve a intentarlo.')).toBeInTheDocument()
   })
 
@@ -201,7 +225,7 @@ describe('vistas guardadas', () => {
     permisos.lista = ['analytics.read', 'analytics.manage_views']
     vi.mocked(analyticsApi.columns).mockResolvedValue([...COLUMNAS,
       { id: 'driver_name', label: 'Conductor', group: 'Datos personales', type: 'text', filter: 'none', default_visible: true, personal: true }])
-    const bdot: SavedView = { ...MIA, id: 'v3', name: 'BDOT completo', columns: [],
+    const bdot: SavedView = { ...MIA, id: 'v3', name: 'BDOT completo', columns: [], pinned: true,
       view: { ...MIA.view, filters: {}, all_columns: true } }
     vi.mocked(analyticsApi.views).mockResolvedValue([bdot])
     vi.mocked(analyticsApi.updateView).mockResolvedValue(bdot)
@@ -210,8 +234,19 @@ describe('vistas guardadas', () => {
     expect(await screen.findByRole('columnheader', { name: /Zona/ })).toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: /Conductor/ })).not.toBeInTheDocument()
     fireEvent.change(screen.getByRole('combobox', { name: 'Período' }), { target: { value: 'today' } })
-    fireEvent.click(await screen.findByRole('button', { name: 'Guardar cambios' }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Guardar$/ }))
     await waitFor(() => expect(analyticsApi.updateView).toHaveBeenCalledWith('v3', expect.objectContaining({
       view: expect.objectContaining({ all_columns: true }), columns: [] })))
+  })
+
+  it('abrir una vista y cambiar el período: se marca el cambio y la vista sigue siendo la misma (humo en dev)', async () => {
+    pintar()
+    fireEvent.click(await within(await screen.findByRole('group', { name: 'Vistas' })).findByRole('button', { name: 'Mía' }))
+    await waitFor(() => expect(memoryUrl.current()).toContain('vista=v2'))
+    await screen.findByText('1')
+    fireEvent.change(screen.getByRole('combobox', { name: 'Período' }), { target: { value: 'today' } })
+    expect(await screen.findByText('Cambios sin guardar')).toBeInTheDocument()
+    expect(memoryUrl.current()).toContain('vista=v2')
+    expect(memoryUrl.current()).toContain('period=today')
   })
 })

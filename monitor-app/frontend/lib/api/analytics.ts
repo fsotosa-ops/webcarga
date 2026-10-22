@@ -46,6 +46,8 @@ export type SavedView = {
   columns: ColumnPrefs
   can_edit: boolean
   is_mine: boolean
+  /** Fijada como pestaña por esta persona. */
+  pinned: boolean
   updated_at: string
 }
 
@@ -119,4 +121,6 @@ export const analyticsApi = {
   updateView: (id: string, body: Partial<Omit<SavedViewInput, 'dataset'>>) =>
     apiFetch<SavedView>(`${BASE}/views/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteView: (id: string) => apiFetch<void>(`${BASE}/views/${id}`, { method: 'DELETE' }),
+  pinView: (id: string, pinned: boolean) =>
+    apiFetch<SavedView>(`${BASE}/views/${id}/pin`, { method: 'PUT', body: JSON.stringify({ pinned }) }),
 }

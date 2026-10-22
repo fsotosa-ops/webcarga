@@ -9,6 +9,7 @@ vi.mock('@/lib/authz/PermisosProvider', () => ({
   usePermiso: (p: string) => permisos.lista.includes(p),
 }))
 vi.mock('next/navigation', async () => (await import('@/lib/testing/inMemoryNavigation')).nextNavigation)
+vi.mock('@/lib/api/statusReport', () => ({ statusReportApi: { get: vi.fn(() => new Promise(() => {})) } }))
 vi.mock('@/lib/api/tablePreferences', () => ({
   tablePreferencesApi: { get: vi.fn().mockResolvedValue(null), save: vi.fn(), reset: vi.fn() },
 }))
@@ -17,7 +18,7 @@ vi.mock('@/lib/api/analytics', async (orig) => {
   return {
     ...real,
     analyticsApi: { columns: vi.fn(), rows: vi.fn(), export: vi.fn(), views: vi.fn().mockResolvedValue([]),
-      createView: vi.fn(), updateView: vi.fn(), deleteView: vi.fn() },
+      createView: vi.fn(), updateView: vi.fn(), deleteView: vi.fn(), pinView: vi.fn() },
   }
 })
 import { memoryUrl } from '@/lib/testing/inMemoryNavigation'
@@ -199,5 +200,15 @@ describe('AnalyticsWorkspace', () => {
     await screen.findByText('2079231')
     expect(screen.getByLabelText('Desde')).toHaveAttribute('min', '2025-09-16')
     expect(screen.getByLabelText('Hasta')).toHaveAttribute('max', '2027-02-04')
+  })
+
+  it('Reporte del día: el mismo reporte del Cierre, con su fecha y qué se cierra (convive en los dos lados)', async () => {
+    pintar()
+    await screen.findByText('2079231')
+    fireEvent.click(screen.getByRole('button', { name: 'Reporte del día' }))
+    expect(await screen.findByLabelText('Fecha del reporte')).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Qué se cierra' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Secciones del reporte' })).toBeInTheDocument()
+    expect(memoryUrl.current()).toBe('/dashboard/analytics?dataset=report')
   })
 })
