@@ -134,7 +134,18 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
        - El listado del Monitor tarda entre 1,8 y 2,3 s; `trips/meta` tarda 0,9 s. Las reglas nuevas suman unos
          10 ms en la base. No hay medición de antes del cambio: comparar si alguien lo nota lento.
      - `fct_trip_status_events` (desde `bronze.tms_trips_snapshot`: hitos publicado y asignado).
-     - Migración de `analytics`: vistas `bdot` y `bdot_people`, roles, y sacar `gold` de PostgREST.
+     - HECHO (22/10): capa `analytics` en producción.
+       - Migración `20261103090000` APLICADA (ensayo con ROLLBACK + autorización): schema `analytics` y roles
+         `analytics_reader` y `analytics_personal_reader` (NOLOGIN).
+       - Las tablas son modelos de dbt (`models/analytics`): `bdot`, `bdot_people` y `fleet_daily`, con `grants`.
+         Tablas y no vistas porque dbt reconstruye gold con `DROP ... CASCADE`; probado en local que se llevaba las
+         vistas.
+       - El pipeline corre `snapshot_carriers gold analytics`. Run 15792 en la real: bdot 3.758 = app.trips,
+         bdot_people 3.758, fleet_daily 9.090.
+       - Permisos verificados: el lector ve `bdot` y `fleet_daily` y no ve `bdot_people`; el lector personal ve
+         las tres; anon y authenticated, nada.
+       - `gold` sigue en `pgrst.db_schemas` pero es inocuo (anon y authenticated sin USAGE). Retirarlo es en la
+         configuración de API de Supabase.
      - Fase 2: el módulo Analítica.
    - DECISIÓN DEL USUARIO (22/10): Analítica no depende de Operaciones. Se construye con lo resuelto; los puntos para
      Operaciones (FRTC42, GPRZ30, tipos de Reclutamiento, Sodimac sin tracto, onboarding de conductores, umbral

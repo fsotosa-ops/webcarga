@@ -1,0 +1,21 @@
+version: 2
+
+# Presentación de Analítica: tablas delgadas sobre gold (ver dbt_project.yml por qué tablas), sin lógica propia. Si una vista necesita un cálculo, va en
+# gold. Permisos con `grants` (roles creados por la migración 20261103090000 de monitor-app).
+
+models:
+  - name: bdot
+    description: La sábana de la BDOT, un viaje por fila. Sin datos personales.
+    columns:
+      - name: trip_id
+        tests: [not_null, unique]
+  - name: bdot_people
+    description: Nombre y RUT del conductor de cada viaje. Solo con permiso de datos personales.
+    columns:
+      - name: trip_id
+        tests: [not_null, unique]
+  - name: fleet_daily
+    description: Conductor o equipo por día de negocio, como lo dice el Cierre.
+    columns:
+      - name: fleet_day_key
+        tests: [not_null, unique]

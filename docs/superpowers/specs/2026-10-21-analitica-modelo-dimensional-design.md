@@ -255,8 +255,16 @@ manuales 18. Las horas del TMS se leen como hora de Chile y se guardan en UTC.
   - `fct_trips` tiene los mismos viajes que `app.trips`;
   - un día firmado no cambia entre corridas;
   - las cifras de `fct_fleet_daily_status` cuadran con `frozen_totals` de la firma.
-- **Vistas de `analytics`:** se crean por migración de Supabase, igual que el resto del esquema de la app, para
-  que sus permisos queden versionados junto a la API.
+- **Presentación de `analytics`: modelos de dbt materializados como TABLAS** (`models/analytics`), con sus permisos
+  en el `grants` de dbt.
+  - Una vista no sirve: el `CASCADE` la borra al reconstruir gold, y entre ese momento y su recreación el módulo
+    quedaría sin datos (probado en la copia local el 22/10). Una tabla se reemplaza de una vez.
+  - Corrección del 22/10: dbt reconstruye cada tabla de gold borrando la anterior con `CASCADE`, así que una vista
+    creada por migración desaparecería cada hora.
+  - La migración de Supabase crea solo el schema `analytics` y los roles (`analytics_reader`,
+    `analytics_personal_reader`).
+  - Que `gold` siga expuesto en PostgREST (`pgrst.db_schemas`) es inocuo: anon y authenticated no tienen USAGE en
+    `gold`. Retirarlo se hace en la configuración de API de Supabase, no por migración.
 
 ## 8. Lo que cada módulo nuevo debe dejar (contrato con el desarrollo)
 
