@@ -13,10 +13,30 @@ from ..services.reordenamiento import (
 )
 from ..services.reglas_del_monitor import SQL_REGLAS_DEL_MONITOR
 from ..services.vencimientos import UMBRALES
-from ..services.revisiones import SQL_PENDIENTES_POR_SECCION, registrar_revision
+from ..services.revisiones import POR_SECCION, SQL_PENDIENTES_POR_SECCION, registrar_revision
+from ..services.config_changes import SQL_ULTIMOS_CAMBIOS, entity_type
 
 # Cada ruta declara su permiso (RBAC): ver tests/test_toda_ruta_declara_permiso.py.
 router = APIRouter(prefix="/config", tags=["config"])
+
+# Las secciones con registro de cambios: las de Configuración y las de accesos.
+_SECCIONES_CON_CAMBIOS_DE_ACCESO = {("people", "users"), ("people", "roles")}
+
+
+@router.get("/changes")
+async def list_config_changes(
+    area: str, section: str, pool=Depends(get_pool),
+    usuario=Depends(require(Permission.REFERENCE_READ)),
+):
+    """El último cambio de cada elemento de una sección: quién y cuándo (spec
+    2026-10-22-configuracion-orden-visual §3.3). Personas y Roles exigen además
+    gestionar usuarios, como su propia lista."""
+    if (area, section) in _SECCIONES_CON_CAMBIOS_DE_ACCESO:
+        exigir(usuario, Permission.USERS_MANAGE)
+    elif (area, section) not in POR_SECCION:
+        raise HTTPException(422, f"{area}/{section} no es una sección de Configuración")
+    filas = await pool.fetch(SQL_ULTIMOS_CAMBIOS, entity_type(area, section))
+    return [{**dict(f), "changed_at": f["changed_at"].isoformat()} for f in filas]
 
 # El `group_id` de un estado del TMS es su etapa del viaje (schemas/status_taxonomy.TRIP_STAGES),
 # la misma lista que la de los estados operacionales. `pendiente_cierre_tms` (minuta 09/10,
