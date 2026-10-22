@@ -22,47 +22,9 @@
 ### PARA LA PRÓXIMA SESIÓN (cierre del 22/10, actualizado al final del día)
 
 Todo lo de hoy está comiteado y en `dev` (último `27d46eb8`). El punto 0 (Configuración) quedó CERRADO y probado en
-dev; sus 6 menores quedaron hechos y probados en dev el mismo día. Pendientes, en orden:
-0. **Configuración ordenada (22/10, `febe1d8a..96c098d8` en dev, falta humo):** spec
-   `docs/superpowers/specs/2026-10-22-configuracion-orden-visual-design.md`, plan `docs/superpowers/plans/2026-10-22-configuracion-orden-visual.md`
-   (inline, 9 tareas + revisión final opus). Cierra el pendiente del 11/10 (pasada visual) y la deuda que seguía.
-   - Decisiones del usuario: retirar "Sin revisar" de Configuración y registrar quién cambió qué (incluye Personas y Roles).
-   - Listas con la tabla del kit (`SettingsList` sobre `DataTable`/`TableToolbar`, "+ Nuevo" en la barra, `Card`);
-     Umbrales y las dos Alertas de vencimiento en `SettingsForm` (Guardar cambios/Descartar, aviso al salir con cambios,
-     guardado parcial dice qué se guardó). Índice sin números. Personas: tabla del kit, datos de React Query (sin copia),
-     menú del kit. Roles: botón del kit y cabecera en la tarjeta.
-   - Registro de cambios: `services/config_changes.py` escribe en `public.audit_log` (`config:<area>/<section>`, id md5
-     del elemento); Personas/Roles reusan ROLE/USER_ROLE y se agrega PERSON. Lectura: `GET /config/changes` (reference.read)
-     y `GET /config/changes/people` (users.manage). "Última modificación" en panel, formulario, Personas y roles propios.
-   - `app.config_reviews` y `revision.tsx` se quedan (Documentos exigidos los usa); el backend sigue escribiendo revisiones.
-   - Verificación: backend 1.966 passed (copia local), frontend 2.131 + build + tsc; revisión final: 3 importantes
-     arreglados con test rojo→verde; 6 menores diferidos (ledger: bandera única de cambios sin guardar, aviso solo en el
-     índice, audit fuera de transacción, nombres de acción, Decimal vs float, doble clic en Personas).
-   - HUMO EN DEV (22/10): 17 secciones a 1440 y 390 sin desplazamiento horizontal, sin "Sin revisar" ni errores.
-     Umbrales: "Guardar cambios" deshabilitado sin cambios; Semáforo rojo 120→121→120 guardó, dijo "Guardado" y
-     "Última modificación: Felipe Sumadots, 22/10/2026"; `audit_log` tiene las dos filas con antes y después. Valor
-     restaurado. Con la sección quieta, 0 pedidos en 10 s (sin bucles).
-   - El usuario vio "Too Many Requests" durante el humo: lo causó el recorrido rápido de Playwright (34 páginas
-     seguidas) contra el límite de `proxy.ts` (60 pedidos/10 s por IP), compartido con su navegador. No es del código.
-   - Cerrado. Menores diferidos: el usuario pidió el 2 y el 6 (22/10, en dev, falta humo):
-     - 6 (`99386c5f`): el menú de acciones de Personas se deshabilita mientras la fila guarda (`ActionsMenu` acepta
-       `disabled`).
-     - 2 (+1): `useUnsavedChanges` escucha clics en el documento (captura, antes que el `Link` de Next) y pregunta en
-       cualquier enlace interno —índice, menú lateral, migas—; cuenta formularios con cambios (arregla el 1). El botón
-       Atrás del navegador queda fuera: un `popstate` no se cancela y simularlo choca con el router de Next.
-     - Después, del más fácil al más difícil (pedido del usuario):
-       - 5 (`270f9664`): `diferencia` compara números como Decimal: Decimal('0.1') vs 0.1 ya no es cambio.
-       - 4 (`85accd71`): desactivar un motivo se registra como `deactivate` y solo si estaba activo; retirar persona
-         registra `deactivate`, y `delete` recién después de que Supabase borra la cuenta.
-       - 3: estados, umbrales, rangos, reglas del Monitor y vocabularios guardan cambio + revisión + registro en una
-         transacción (test: si el registro falla, el cambio no queda). Invitar persona queda fuera (Supabase está fuera
-         de la base). Los arneses simulados usan conexión = pool (`wire_transactional_conn(pool, pool)`).
-       - Los 6 menores están hechos. Verificación: 526 tests de Configuración y accesos en verde (copia local).
-     - HUMO EN DEV (22/10, `85f026c1`): con un cambio sin guardar, ir a Analítica por el menú lateral abre "Tienes
-       cambios sin guardar. ¿Salir igual?"; al cancelar se queda en Umbrales con lo escrito (121). Guardar con la
-       transacción nueva: "Guardado" + "Última modificación: Felipe Sumadots, 22/10/2026"; vuelto a 120 (base: 120).
-       Sin cambios, el menú sale sin preguntar. El 404 de `table-preferences/analytics.trips` en consola es previo
-       (sin preferencias guardadas), no de esto. CERRADO.
+dev. Pendientes, en orden:
+0. Configuración ordenada (22/10): CERRADA, con sus 6 menores, probada en dev. Detalle en `AGENTLOG_ARCHIVE.md`
+   (sección "2026-10-22 — Configuración ordenada").
 1. **Operaciones:** avisar que la Flota del día se baja y se copia ("Descargar Excel" / "Copiar"): la vista se arma una
    vez (columnas y filtros, p. ej. por Origen habitual) y se manda al CD desde ahí. Ver la sección de abajo.
 2. **Certificación:** que quien grabó el video del arrastre lo pruebe con un arrastre de verdad (`da1ecd26`).
