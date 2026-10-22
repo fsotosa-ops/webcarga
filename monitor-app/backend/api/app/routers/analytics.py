@@ -5,10 +5,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from ..authz import Permission, require
+from ..db import get_pool
 from ..services.analytics_columns import can_see_personal, columns_for
+from ..services.analytics_query import fetch_page, parse_request
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -22,3 +24,14 @@ async def list_columns(dataset: Literal["trips", "fleet"] = "trips",
          "default_visible": c.default_visible}
         for c in columns_for(dataset, personal=can_see_personal(user))
     ]
+
+
+@router.get("/rows")
+async def list_rows(request: Request, pool=Depends(get_pool), user=Depends(require(Permission.ANALYTICS_READ))) -> dict:
+    """Una página de filas, el total y las cifras de cada filtro. `mode=pivot` (solo Flota por día) admite hasta
+    20.000 filas de una vez, para la tabla dinámica."""
+    params = dict(request.query_params)
+    purpose = "pivot" if params.get("mode") == "pivot" else "rows"
+    req = parse_request(params, purpose=purpose)
+    async with pool.acquire() as conn:
+        return await fetch_page(conn, req, personal=can_see_personal(user))
