@@ -54,7 +54,7 @@ describe('temperatureRangeSource', () => {
 })
 
 describe('monitorRulesSource', () => {
-  it('cada regla es una fila; se guardan de a una y se revisan como un solo formulario', async () => {
+  it('cada regla es una fila y se guardan de a una', async () => {
     vi.mocked(configApi.getMonitorAlertRules).mockResolvedValue({
       stale_report_hours: 4, tms_dropped_hours: 3, dwell_yellow_min: 30, dwell_orange_min: 60, dwell_red_min: 90,
       in_progress_idle_days: 3, stale_trip_days: null, dwell_hours: 2, late_arrival_grace_min: 15, unassigned_enabled: true,
@@ -63,7 +63,6 @@ describe('monitorRulesSource', () => {
     expect(filas.map(f => f.id)).toContain('stale_report_hours')
     expect(filas.map(f => f.id)).not.toContain('dwell_hours')
     const regla = filas.find(f => f.id === 'dwell_red_min')!
-    expect(monitorRulesSource.revisionId!(regla)).toBe('reglas')
     await monitorRulesSource.save(regla, { value: 120 })
     expect(configApi.patchMonitorAlertRules).toHaveBeenCalledWith({ dwell_red_min: 120 })
   })

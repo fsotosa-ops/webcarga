@@ -13,10 +13,10 @@ vi.mock('next/navigation', () => ({
 let puede = true
 vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => puede }))
 vi.mock('@/lib/api/config', () => ({
-  revisionesApi: { list: vi.fn(), confirm: vi.fn() },
+  changesApi: { list: vi.fn() },
 }))
 
-import { revisionesApi } from '@/lib/api/config'
+import { changesApi } from '@/lib/api/config'
 import { SettingsList } from './SettingsList'
 import type { SettingsSource } from './settings-sources'
 
@@ -33,8 +33,8 @@ function fuente(over: Partial<SettingsSource<Row>> = {}): SettingsSource<Row> {
     list: vi.fn().mockResolvedValue(ROWS),
     title: r => r.label,
     columns: [
-      { header: 'Motivo', cell: r => r.label },
-      { header: 'Qué significa', cell: r => (r.group === 'no_trabajando' ? 'No trabajó' : 'Trabajó') },
+      { id: 'label', header: 'Motivo', value: r => r.label },
+      { id: 'group', header: 'Qué significa', value: r => (r.group === 'no_trabajando' ? 'No trabajó' : 'Trabajó') },
     ],
     fields: () => [
       { key: 'label', label: 'Nombre', kind: 'text' },
@@ -43,7 +43,6 @@ function fuente(over: Partial<SettingsSource<Row>> = {}): SettingsSource<Row> {
     ],
     values: r => ({ label: r.label, group: r.group }),
     save: vi.fn().mockResolvedValue({}),
-    filters: () => [{ id: 'no_trabajando', label: 'No trabajó', match: r => r.group === 'no_trabajando' }],
     create: { noun: 'motivo', run: vi.fn().mockResolvedValue({}) },
     deactivate: { label: 'Desactivar', confirm: 'Sí, desactivar', run: vi.fn().mockResolvedValue({ en_uso_por: 0 }) },
     emptyText: 'No hay motivos todavía',
@@ -61,9 +60,9 @@ function renderLista(src: SettingsSource<Row>) {
 
 beforeEach(() => {
   search = ''; puede = true; push.mockClear(); replace.mockClear()
-  vi.mocked(revisionesApi.list).mockResolvedValue([
-    { element_id: 'b', reviewed_by: 'Ana', reviewed_at: '2026-10-01T12:00:00Z' },
-  ] as never)
+  vi.mocked(changesApi.list).mockResolvedValue([
+    { element_id: 'a', actor_name: 'Ana', changed_at: '2026-10-15T15:00:00Z' },
+  ])
 })
 
 describe('SettingsList: una lista de lectura y un panel', () => {
@@ -101,17 +100,6 @@ describe('SettingsList: una lista de lectura y un panel', () => {
     expect(screen.queryByRole('button', { name: /nuevo motivo/i })).toBeNull()
   })
 
-  it('sin cambios ofrece "Está bien así"; con cambios, Guardar envía solo lo cambiado', async () => {
-    search = 'item=a'
-    const src = fuente()
-    renderLista(src)
-    const panel = await screen.findByRole('dialog')
-    expect(within(panel).getByRole('button', { name: /está bien así/i })).toBeInTheDocument()
-    fireEvent.change(within(panel).getByRole('textbox', { name: 'Nombre' }), { target: { value: 'Panne mecánica' } })
-    fireEvent.click(within(panel).getByRole('button', { name: 'Guardar' }))
-    await waitFor(() => expect(src.save).toHaveBeenCalledWith(ROWS[0], { label: 'Panne mecánica' }))
-  })
-
   it('desactivar se confirma dentro del panel y avisa si algo lo usaba', async () => {
     search = 'item=a'
     const src = fuente({ deactivate: { label: 'Desactivar', confirm: 'Sí, desactivar', run: vi.fn().mockResolvedValue({ en_uso_por: 2 }) } })
@@ -122,23 +110,6 @@ describe('SettingsList: una lista de lectura y un panel', () => {
     fireEvent.click(within(panel).getByRole('button', { name: 'Sí, desactivar' }))
     await waitFor(() => expect(src.deactivate!.run).toHaveBeenCalledWith(ROWS[0]))
     expect(await screen.findByRole('status')).toHaveTextContent('2 reglas de documento')
-  })
-
-  it('los filtros cuentan desde los datos y "Sin revisar" desde las revisiones', async () => {
-    renderLista(fuente())
-    const filtros = await screen.findByRole('group', { name: 'Filtrar' })
-    await waitFor(() => expect(within(filtros).getByRole('button', { name: /Sin revisar/ })).toHaveTextContent('1'))
-    expect(within(filtros).getByRole('button', { name: /Todos/ })).toHaveTextContent('2')
-    expect(within(filtros).getByRole('button', { name: /No trabajó/ })).toHaveTextContent('1')
-    fireEvent.click(within(filtros).getByRole('button', { name: /Sin revisar/ }))
-    expect(screen.queryByText('Conductor backup')).toBeNull()
-  })
-
-  it('"Sin revisar" no muestra un 0 mientras las revisiones cargan', async () => {
-    vi.mocked(revisionesApi.list).mockReturnValue(new Promise(() => {}))
-    renderLista(fuente())
-    const filtros = await screen.findByRole('group', { name: 'Filtrar' })
-    expect(within(filtros).getByRole('button', { name: /Sin revisar/ })).not.toHaveTextContent(/\d/)
   })
 
   it('vacío: lo dice; error: ofrece reintentar', async () => {
@@ -154,7 +125,7 @@ describe('SettingsList: una lista de lectura y un panel', () => {
   it('"+ Nuevo motivo" abre el panel vacío y crea', async () => {
     const src = fuente()
     renderLista(src)
-    fireEvent.click(await screen.findByRole('button', { name: '+ Nuevo motivo' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Nuevo motivo/ }))
     expect(push).toHaveBeenCalledWith('/dashboard/admin/settings/operations/driver-reasons?item=nuevo')
   })
 
@@ -206,29 +177,6 @@ describe('SettingsList: una lista de lectura y un panel', () => {
     expect(src.save).not.toHaveBeenCalled()
   })
 
-  it('las reglas que se revisan como un formulario muestran la misma revisión en cada fila', async () => {
-    vi.mocked(revisionesApi.list).mockResolvedValue([
-      { element_id: 'reglas', reviewed_by: 'Ana', reviewed_at: '2026-10-01T12:00:00Z' },
-    ] as never)
-    renderLista(fuente({ revisionId: () => 'reglas' }))
-    const filtros = await screen.findByRole('group', { name: 'Filtrar' })
-    await waitFor(() => expect(within(filtros).getByRole('button', { name: /Sin revisar/ })).toHaveTextContent('0'))
-  })
-
-  it('"Sin revisar" cuenta decisiones: las filas de un mismo formulario cuentan una vez (como el índice)', async () => {
-    vi.mocked(revisionesApi.list).mockResolvedValue([] as never)
-    renderLista(fuente({ revisionId: () => 'reglas' }))
-    const filtros = await screen.findByRole('group', { name: 'Filtrar' })
-    await waitFor(() => expect(within(filtros).getByRole('button', { name: /Sin revisar/ })).toHaveTextContent('1'))
-  })
-
-  it('#5: un enlace con el elemento revisable (?item=reglas) abre la primera fila de ese formulario', async () => {
-    search = 'item=reglas'
-    renderLista(fuente({ revisionId: () => 'reglas' }))
-    const panel = await screen.findByRole('dialog')
-    expect(within(panel).getByRole('textbox', { name: 'Nombre' })).toHaveValue('Panne')
-  })
-
   it('#6: un elemento sin grupo pide elegirlo, y elegir el primero cuenta como cambio', async () => {
     search = 'item=s'
     const sinGrupo = { id: 's', label: 'Sin grupo', group: null as unknown as string }
@@ -241,5 +189,51 @@ describe('SettingsList: una lista de lectura y un panel', () => {
     fireEvent.click(within(panel).getByRole('button', { name: 'Guardar' }))
     await waitFor(() => expect(src.save).toHaveBeenCalledWith(sinGrupo, { group: 'no_trabajando' }))
   })
-})
 
+  // ── Spec 2026-10-22: la tabla del kit, sin "Sin revisar" ──────────────────
+  it('no muestra Sin revisar ni la columna Revisión', async () => {
+    renderLista(fuente())
+    await screen.findByText('Panne')
+    expect(screen.queryByText('Sin revisar')).toBeNull()
+    expect(screen.queryByRole('columnheader', { name: /Revisión/ })).toBeNull()
+  })
+
+  it('la barra del kit filtra por la columna Qué significa', async () => {
+    search = `f.group=${encodeURIComponent('No trabajó')}`
+    renderLista(fuente())
+    await screen.findByText('Panne')
+    expect(screen.queryByText('Conductor backup')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Quitar filtro Qué significa' })).toBeInTheDocument()
+  })
+
+  it('con mover, el orden es el guardado y las columnas no ordenan', async () => {
+    const enOrden = [{ id: 'z', label: 'Zeta', group: 'no_trabajando' }, ...ROWS]
+    renderLista(fuente({ list: vi.fn().mockResolvedValue(enOrden), move: vi.fn() }))
+    await screen.findByText('Zeta')
+    const filas = screen.getAllByRole('row').slice(1).map(r => r.textContent)
+    expect(filas[0]).toContain('Zeta')
+    expect(filas[1]).toContain('Panne')
+    // El botón de ordenar se llama como la columna; el de filtrar, "Filtrar por …".
+    expect(within(screen.getByRole('columnheader', { name: /Motivo/ })).queryByRole('button', { name: 'Motivo' })).toBeNull()
+  })
+
+  it('el panel muestra Última modificación y Guardar deshabilitado sin cambios', async () => {
+    search = 'item=a'
+    const src = fuente()
+    renderLista(src)
+    const panel = await screen.findByRole('dialog')
+    expect(await within(panel).findByText('Última modificación: Ana, 15/10/2026')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Guardar' })).toBeDisabled()
+    fireEvent.change(within(panel).getByRole('textbox', { name: 'Nombre' }), { target: { value: 'Panne mecánica' } })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(src.save).toHaveBeenCalledWith(ROWS[0], { label: 'Panne mecánica' }))
+    expect(await within(panel).findByText('Guardado')).toBeInTheDocument()
+  })
+
+  it('+ Nuevo va en la barra y solo con permiso de edición', async () => {
+    renderLista(fuente())
+    const nuevo = await screen.findByRole('button', { name: /Nuevo motivo/ })
+    const barra = nuevo.closest('div.rounded-2xl')
+    expect(barra?.contains(screen.getByRole('button', { name: 'Agregar filtro' }))).toBe(true)
+  })
+})

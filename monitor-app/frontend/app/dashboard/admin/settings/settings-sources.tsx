@@ -24,15 +24,17 @@ export interface SettingsSource<Row extends { id: string }> {
   list:        () => Promise<Row[]>
   /** Cómo se llama el elemento en el panel. */
   title:       (row: Row) => string
-  columns:     { header: string; cell: (row: Row) => ReactNode }[]
+  /** Las columnas de la tabla del kit: `value` filtra, busca y ordena; `cell` dibuja
+   *  (por defecto, el valor). */
+  columns:     { id: string; header: string; value: (row: Row) => string | null; cell?: (row: Row) => ReactNode }[]
+  /** Cómo se dibuja la sección (spec 2026-10-22 §3.1): `list`, una tabla con panel;
+   *  `form`, valores sueltos en un formulario. Por defecto, lista. */
+  kind?:       'list' | 'form'
   /** Los campos del panel; sin `row`, los del alta. */
   fields:      (row: Row | undefined) => SettingsField[]
   values:      (row: Row) => SettingsValues
   /** Un error que impide guardar, antes de enviar. */
   validate?:   (values: SettingsValues, row?: Row) => string | null
-  /** El elemento que se revisa, si no es la fila (las reglas del Monitor se
-   *  revisan como un formulario). */
-  revisionId?: (row: Row) => string
   save:        (row: Row, changes: SettingsValues) => Promise<unknown>
   /** Una nota fija del panel (por qué no se crea, qué afecta). */
   note?:       ReactNode
@@ -42,16 +44,11 @@ export interface SettingsSource<Row extends { id: string }> {
   /** Desactivar (un vocabulario) o borrar (un rango); se confirma en el panel.
    *  `en_uso_por`: cuántas reglas de documento lo seguían usando. */
   deactivate?: { label: string; confirm: string; run: (row: Row) => Promise<{ en_uso_por?: number } | unknown> }
-  filters?:    (rows: Row[]) => { id: string; label: string; match: (row: Row) => boolean }[]
   emptyText:   string
 }
 
 const conTono = (label: string, group: string | null | undefined) =>
   <StatusChip tone={tripStageStyle(group).tone}>{label || '—'}</StatusChip>
-
-const porColumna = <Row extends { group?: string | null }>(rows: Row[]) =>
-  TRIP_STAGES.filter(c => rows.some(r => r.group === c.id))
-    .map(c => ({ id: c.id, label: c.label, match: (r: Row) => r.group === c.id }))
 
 /** Estados del viaje (`app.trip_statuses`): los define el TMS; aquí se ajusta su
  *  nombre visible, su columna (que da el tono) y su orden. */
@@ -61,9 +58,10 @@ export const tripStatusSource: SettingsSource<TripStatusRow> = {
   list: () => configApi.getStatuses(),
   title: s => s.label,
   columns: [
-    { header: 'Cómo se ve', cell: s => conTono(s.label, s.group) },
-    { header: 'Nombre en el TMS', cell: s => <span className="font-mono text-etiqueta text-informativo">{s.id}</span> },
-    { header: 'Columna', cell: s => tripStageStyle(s.group).label },
+    { id: 'label', header: 'Cómo se ve', value: s => s.label, cell: s => conTono(s.label, s.group) },
+    { id: 'tms', header: 'Nombre en el TMS', value: s => s.id,
+      cell: s => <span className="font-mono text-etiqueta text-informativo">{s.id}</span> },
+    { id: 'stage', header: 'Etapa', value: s => tripStageStyle(s.group).label },
   ],
   fields: () => [
     { key: 'label', label: 'Nombre visible', kind: 'text' },
@@ -74,7 +72,6 @@ export const tripStatusSource: SettingsSource<TripStatusRow> = {
   save: (s, c) => configApi.patchStatus(s.id, c as Partial<Pick<TripStatusRow, 'label' | 'group'>>),
   note: 'Este nombre lo define el TMS: los estados no se crean ni se borran desde la app.',
   move: (s, d) => configApi.moveStatus(s.id, d),
-  filters: porColumna,
   emptyText: 'No hay estados del TMS todavía.',
 }
 
@@ -151,8 +148,9 @@ export function vocabularySource(domain: TaxonomyDomain): SettingsSource<Taxonom
     list: () => taxonomiesApi.list(domain),
     title: r => r.label,
     columns: [
-      { header: v.columna, cell: r => (grupo?.conTono ? conTono(r.label, r.group) : r.label) },
-      ...(grupo ? [{ header: grupo.label, cell: (r: TaxonomyRow) => etiquetaDe(r.group) }] : []),
+      { id: 'label', header: v.columna, value: r => r.label,
+        cell: r => (grupo?.conTono ? conTono(r.label, r.group) : r.label) },
+      ...(grupo ? [{ id: 'group', header: grupo.label, value: (r: TaxonomyRow) => etiquetaDe(r.group) }] : []),
     ],
     fields: () => [
       { key: 'label', label: 'Nombre', kind: 'text' },
@@ -168,8 +166,6 @@ export function vocabularySource(domain: TaxonomyDomain): SettingsSource<Taxonom
       run: vals => taxonomiesApi.create({ domain, label: String(vals.label ?? ''), ...(grupo ? { group: String(vals.group ?? grupo.porDefecto) } : {}) }),
     },
     deactivate: { label: 'Desactivar', confirm: 'Sí, desactivar', run: r => taxonomiesApi.deactivate(r.id) },
-    filters: grupo ? rows => grupo.options.filter(o => rows.some(r => r.group === o.id))
-      .map(o => ({ id: o.id, label: o.label, match: (r: TaxonomyRow) => r.group === o.id })) : undefined,
     emptyText: `No hay ${v.noun === 'tipo de operación' ? 'tipos de operación' : `${v.noun}s`} todavía.`,
   }
 }
@@ -195,9 +191,9 @@ export function thresholdSource(docType: string): SettingsSource<ThresholdRow> {
       .then(rows => rows.filter(r => r.doc_type === docType).map(r => ({ ...r, id: r.doc_type }))),
     title: r => r.label,
     columns: [
-      { header: 'Umbral', cell: r => r.label },
-      { header: 'Aviso', cell: r => `${dias(r.warning_days)} antes` },
-      { header: 'Crítico', cell: r => (r.error_days ? `${dias(r.error_days)} antes` : 'Al vencer') },
+      { id: 'label', header: 'Umbral', value: r => r.label },
+      { id: 'warning', header: 'Aviso', value: r => `${dias(r.warning_days)} antes` },
+      { id: 'error', header: 'Crítico', value: r => (r.error_days ? `${dias(r.error_days)} antes` : 'Al vencer') },
     ],
     fields: () => [
       { key: 'warning_days', label: 'Aviso (días antes)', kind: 'number', min: 1 },
@@ -220,8 +216,8 @@ export const temperatureRangeSource: SettingsSource<TemperatureRow> = {
   list: () => configApi.getTemperatureRanges().then(rows => rows.map(r => ({ ...r, id: r.cargo_type }))),
   title: r => r.label,
   columns: [
-    { header: 'Tipo de carga', cell: r => r.label },
-    { header: 'Rango', cell: r => `${r.min_c} a ${r.max_c} °C` },
+    { id: 'label', header: 'Tipo de carga', value: r => r.label },
+    { id: 'range', header: 'Rango', value: r => `${r.min_c} a ${r.max_c} °C` },
   ],
   fields: row => [
     ...(row ? [] : [{ key: 'cargo_type', label: 'Código', kind: 'text' as const, help: 'Como lo informa el TMS; no se cambia después.' }]),
@@ -270,12 +266,11 @@ export const monitorRulesSource: SettingsSource<RuleRow> = {
   }))),
   title: r => r.label,
   columns: [
-    { header: 'Regla', cell: r => r.label },
-    { header: 'Valor', cell: r => (r.value == null ? 'Sin límite' : `${r.value} ${r.unit}`) },
+    { id: 'label', header: 'Regla', value: r => r.label },
+    { id: 'value', header: 'Valor', value: r => (r.value == null ? 'Sin límite' : `${r.value} ${r.unit}`) },
   ],
   fields: row => [{ key: 'value', label: row ? `Valor (${row.unit})` : 'Valor', kind: 'number', min: 0, help: row?.help }],
   values: r => ({ value: r.value }),
-  revisionId: () => 'reglas',
   validate: (v, row) => (v.value == null && !row?.optional ? 'Completa el valor.' : null),
   save: (r, c) => configApi.patchMonitorAlertRules({ [r.id]: c.value ?? null } as Partial<MonitorAlertRules>),
   emptyText: 'No hay reglas del Monitor.',
