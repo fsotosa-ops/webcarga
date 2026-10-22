@@ -49,6 +49,11 @@ class Permission(str, Enum):
     # Comercial
     COMMERCIAL_READ = "commercial.read"
     COMMERCIAL_EDIT = "commercial.edit"
+    # Analítica (plan del módulo, 22/10)
+    ANALYTICS_READ = "analytics.read"
+    ANALYTICS_EXPORT = "analytics.export"
+    ANALYTICS_MANAGE_VIEWS = "analytics.manage_views"
+    ANALYTICS_PERSONAL_DATA = "analytics.personal_data"
     # Datos de referencia que usan todas las pantallas (estados, umbrales,
     # temperaturas, taxonomías, búsqueda de ajustes)
     REFERENCE_READ = "reference.read"
@@ -93,6 +98,11 @@ PERMISSION_META: dict[Permission, PermissionMeta] = {
     P.INSURANCE_CONFIGURE: PermissionMeta("insurance", "Configurar tipos de cobertura"),
     P.COMMERCIAL_READ: PermissionMeta("commercial", "Ver tarifario, clientes y reportes"),
     P.COMMERCIAL_EDIT: PermissionMeta("commercial", "Editar tarifas, ubicaciones y clientes"),
+    P.ANALYTICS_READ: PermissionMeta("analytics", "Ver Analítica y guardar vistas personales"),
+    P.ANALYTICS_EXPORT: PermissionMeta("analytics", "Descargar Excel de Analítica"),
+    P.ANALYTICS_MANAGE_VIEWS: PermissionMeta("analytics", "Crear y editar vistas compartidas de Analítica"),
+    P.ANALYTICS_PERSONAL_DATA: PermissionMeta(
+        "analytics", "Ver y descargar nombre y RUT del conductor en Analítica", privileged=True),
     P.REFERENCE_READ: PermissionMeta("reference", "Ver los datos de referencia de la app"),
     P.USERS_MANAGE: PermissionMeta("admin", "Invitar personas y asignar roles", privileged=True),
     P.ROLES_MANAGE: PermissionMeta("admin", "Crear y editar roles personalizados", privileged=True),
@@ -101,7 +111,7 @@ PERMISSION_META: dict[Permission, PermissionMeta] = {
 
 READ_ALL: frozenset[Permission] = frozenset({
     P.OPERATIONS_READ, P.DIRECTORY_READ, P.CERTIFICATION_READ, P.INSURANCE_READ,
-    P.COMMERCIAL_READ, P.REFERENCE_READ,
+    P.COMMERCIAL_READ, P.REFERENCE_READ, P.ANALYTICS_READ,
 })
 
 
@@ -124,6 +134,8 @@ def _rol(code: str, name: str, description: str, *extra: Permission) -> SystemRo
 _OPS_OPERADOR = (P.TRIPS_EDIT_BASIC, P.TRIPS_VOID, P.CLOSURES_DECLARE, P.CLOSURES_SIGN, P.DIRECTORY_FLEET_STATUS,
                  P.CERTIFICATION_REQUEST)
 _CERT_OPERADOR = (P.DOCUMENTS_UPLOAD,)
+# Analítica (22/10): descargar y compartir vistas es de los supervisores y admin; nombre y RUT, solo admin.
+_ANALITICA_SUPERVISOR = (P.ANALYTICS_EXPORT, P.ANALYTICS_MANAGE_VIEWS)
 _SEG_OPERADOR = (P.POLICIES_EDIT,)
 
 SYSTEM_ROLES: tuple[SystemRole, ...] = (
@@ -134,24 +146,27 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
     # services/cierre_lineas.py y services/anular_viajes.py). TRIPS_VOID va con
     # TRIPS_VOID_ANY: la ruta de anular exige trips.void.
     _rol("admin", "Administración", "Gestiona personas, roles y la configuración general.",
-         P.USERS_MANAGE, P.ROLES_MANAGE, P.SETTINGS_MANAGE, P.CLOSURES_OVERRIDE, P.TRIPS_VOID, P.TRIPS_VOID_ANY),
+         P.USERS_MANAGE, P.ROLES_MANAGE, P.SETTINGS_MANAGE, P.CLOSURES_OVERRIDE, P.TRIPS_VOID, P.TRIPS_VOID_ANY,
+         *_ANALITICA_SUPERVISOR, P.ANALYTICS_PERSONAL_DATA),
     _rol("support", "Soporte técnico (proveedor)", "Lee para diagnosticar; no ejecuta acciones de negocio."),
     _rol("reader", "Lectura", "Ve todas las áreas sin editar."),
     _rol("operations_operator", "Operador de Operaciones",
          "Opera el día: viajes, motivos y firma del cierre.", *_OPS_OPERADOR),
     _rol("operations_supervisor", "Supervisor de Operaciones",
          "Operador + datos sensibles del viaje, altas, directorio y configuración de Operaciones.",
-         *_OPS_OPERADOR, P.TRIPS_EDIT_SENSITIVE, P.TRIPS_CREATE, P.OPERATIONS_CONFIGURE, P.DIRECTORY_EDIT),
+         *_OPS_OPERADOR, P.TRIPS_EDIT_SENSITIVE, P.TRIPS_CREATE, P.OPERATIONS_CONFIGURE, P.DIRECTORY_EDIT,
+         *_ANALITICA_SUPERVISOR),
     _rol("certification_operator", "Operador de Certificación", "Carga y clasifica documentos.", *_CERT_OPERADOR),
     _rol("certification_supervisor", "Supervisor de Certificación",
          "Operador + aprobación de documentos, requisitos y directorio.",
          *_CERT_OPERADOR, P.DOCUMENTS_REVIEW, P.CERTIFICATION_CONFIGURE, P.DIRECTORY_EDIT, P.DIRECTORY_DELETE,
-         P.DIRECTORY_FLEET_STATUS, P.DIRECTORY_IDENTITY),
+         P.DIRECTORY_FLEET_STATUS, P.DIRECTORY_IDENTITY, *_ANALITICA_SUPERVISOR),
     _rol("insurance_operator", "Operador de Seguros", "Gestiona pólizas, coberturas y cuotas.", *_SEG_OPERADOR),
     _rol("insurance_supervisor", "Supervisor de Seguros", "Operador + eliminación de pólizas y tipos de cobertura.",
-         *_SEG_OPERADOR, P.POLICIES_DELETE, P.INSURANCE_CONFIGURE),
+         *_SEG_OPERADOR, P.POLICIES_DELETE, P.INSURANCE_CONFIGURE, *_ANALITICA_SUPERVISOR),
     _rol("commercial_operator", "Operador Comercial", "Consulta tarifario, clientes y reportes."),
-    _rol("commercial_supervisor", "Supervisor Comercial", "Edita tarifas, ubicaciones y clientes.", P.COMMERCIAL_EDIT),
+    _rol("commercial_supervisor", "Supervisor Comercial", "Edita tarifas, ubicaciones y clientes.", P.COMMERCIAL_EDIT,
+         *_ANALITICA_SUPERVISOR),
 )
 
 # Registro histórico de la migración desde la escalera vieja (spec §9; la

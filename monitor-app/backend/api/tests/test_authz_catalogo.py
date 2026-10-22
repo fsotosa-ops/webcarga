@@ -15,7 +15,7 @@ def test_todo_permiso_tiene_metadatos():
     assert set(PERMISSION_META) == set(Permission)
     for p, meta in PERMISSION_META.items():
         assert meta.area in {"operations", "directory", "certification", "insurance",
-                             "commercial", "admin", "reference"}, p
+                             "commercial", "admin", "reference", "analytics"}, p
         assert meta.description.strip(), p
 
 
@@ -61,7 +61,9 @@ def test_firma_y_borrado_de_viajes_en_el_operador():
 
 def test_privilegiados_son_los_de_administracion():
     priv = {p for p, m in PERMISSION_META.items() if m.privileged}
-    assert priv == {Permission.USERS_MANAGE, Permission.ROLES_MANAGE, Permission.SETTINGS_MANAGE}
+    # analytics.personal_data (22/10): nombre y RUT del conductor en Analítica, con verificación en dos pasos.
+    assert priv == {Permission.USERS_MANAGE, Permission.ROLES_MANAGE, Permission.SETTINGS_MANAGE,
+                    Permission.ANALYTICS_PERSONAL_DATA}
 
 
 def test_mapa_de_roles_viejos():
@@ -107,3 +109,19 @@ def test_ningun_rol_de_sistema_usa_el_prefijo_de_los_personalizados():
 def test_eliminar_viajes_ya_no_es_un_permiso():
     """Eliminar pasó a anular con motivo (spec 2026-10-10): el borrado físico no existe."""
     assert not any(p.value.startswith("trips.delete") for p in Permission)
+
+
+def test_permisos_de_analitica():
+    """Plan del módulo Analítica (22/10): leer es de todos; descargar y compartir vistas, de los supervisores y
+    admin; nombre y RUT del conductor, solo admin (y owner por grants_all), con verificación en dos pasos."""
+    roles = {r.code: r for r in SYSTEM_ROLES}
+    for r in SYSTEM_ROLES:
+        if not r.grants_all:
+            assert Permission.ANALYTICS_READ in r.permissions, r.code
+    con_descarga = {"admin", "operations_supervisor", "certification_supervisor", "insurance_supervisor",
+                    "commercial_supervisor"}
+    for permiso in (Permission.ANALYTICS_EXPORT, Permission.ANALYTICS_MANAGE_VIEWS):
+        assert {c for c, r in roles.items() if permiso in r.permissions} == con_descarga, permiso
+    assert {c for c, r in roles.items() if Permission.ANALYTICS_PERSONAL_DATA in r.permissions} == {"admin"}
+    assert PERMISSION_META[Permission.ANALYTICS_PERSONAL_DATA].privileged
+    assert PERMISSION_META[Permission.ANALYTICS_READ].area == "analytics"
