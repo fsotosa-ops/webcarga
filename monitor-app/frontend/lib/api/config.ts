@@ -206,3 +206,12 @@ export const revisionesApi = {
       body: JSON.stringify({ domain, section, element_id }),
     }),
 }
+
+/** El último cambio de un elemento de Configuración (spec 2026-10-22 §3.3). */
+export interface ConfigChange { element_id: string; actor_name: string | null; changed_at: string }
+
+export const changesApi = {
+  list: (area: string, section: string) =>
+    apiFetch<ConfigChange[]>(
+      `/api/v1/config/changes?area=${encodeURIComponent(area)}&section=${encodeURIComponent(section)}`),
+}
