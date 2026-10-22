@@ -173,4 +173,31 @@ describe('AnalyticsWorkspace', () => {
     await screen.findByText('2079231')
     expect(screen.queryByRole('group', { name: 'Modo' })).not.toBeInTheDocument()
   })
+
+  // ── Fix pass de la revisión final ──────────────────────────────────────────
+
+  it('si el período pasa de 50.000 filas, el botón lo dice antes de descargar (I5)', async () => {
+    vi.mocked(analyticsApi.rows).mockResolvedValue({ ...PAGINA, total: 61234 })
+    pintar()
+    await screen.findByText('2079231')
+    const boton = screen.getByRole('button', { name: /Excel/ })
+    await waitFor(() => expect(boton).toBeDisabled())
+    expect(boton).toHaveAttribute('title', 'El período tiene 61.234 filas; el máximo por descarga es 50.000. Acota el período o los filtros.')
+  })
+
+  it('un error de la API con detalle lo muestra (I6)', async () => {
+    const { ApiError } = await import('@/lib/api/client')
+    vi.mocked(analyticsApi.rows).mockRejectedValue(new ApiError('El período no puede tener más de 400 días', 422,
+      'El período no puede tener más de 400 días'))
+    pintar()
+    expect(await screen.findByText('El período no puede tener más de 400 días')).toBeInTheDocument()
+  })
+
+  it('el rango libre no deja elegir más de 400 días (I6)', async () => {
+    memoryUrl.reset('/dashboard/analytics?period=custom&from=2026-01-01&to=2026-10-20')
+    pintar()
+    await screen.findByText('2079231')
+    expect(screen.getByLabelText('Desde')).toHaveAttribute('min', '2025-09-16')
+    expect(screen.getByLabelText('Hasta')).toHaveAttribute('max', '2027-02-04')
+  })
 })

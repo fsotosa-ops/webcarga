@@ -134,4 +134,84 @@ describe('vistas guardadas', () => {
     expect(await within(dialogo).findByText('No se pudo guardar la vista. Vuelve a intentarlo.')).toBeInTheDocument()
     expect(within(dialogo).getByRole('textbox', { name: 'Nombre' })).toHaveValue('X')
   })
+
+  // ── Fix pass de la revisión final ──────────────────────────────────────────
+
+  it('una vista con orden no aparece cambiada aunque la API devuelva las claves en otro orden (I1)', async () => {
+    const conOrden: SavedView = { ...MIA, view: { ...MIA.view,
+      sort: JSON.parse('{"dir": "asc", "column": "client_name"}'),
+      period: JSON.parse('{"to": "2026-10-07", "from": "2026-10-01", "preset": "custom"}') } }
+    vi.mocked(analyticsApi.views).mockResolvedValue([conOrden])
+    memoryUrl.reset('/dashboard/analytics?vista=v2&f.client_name=Walmart&sort=client_name:asc&period=custom&from=2026-10-01&to=2026-10-07')
+    pintar()
+    await screen.findByText('1')
+    await screen.findByRole('button', { name: 'Mía' })
+    expect(screen.queryByRole('button', { name: 'Descartar' })).not.toBeInTheDocument()
+  })
+
+  it('una vista que ordena o filtra por una columna que no está en el catálogo abre sin ella (I2, Review Focus 4)', async () => {
+    const vieja: SavedView = { ...MIA, view: { ...MIA.view, sort: { column: 'columna_retirada', dir: 'asc' },
+      filters: { columna_retirada: ['x'], client_name: ['Walmart'] } } }
+    vi.mocked(analyticsApi.views).mockResolvedValue([vieja])
+    pintar()
+    fireEvent.click(await screen.findByRole('button', { name: 'Mía' }))
+    await waitFor(() => {
+      const ultima = vi.mocked(analyticsApi.rows).mock.calls.at(-1)![0]
+      expect(ultima.view.sort).toBeNull()
+      expect(ultima.view.filters).toEqual({ client_name: ['Walmart'] })
+    })
+  })
+
+  it('una URL con un orden por una columna que no existe no rompe la consulta', async () => {
+    memoryUrl.reset('/dashboard/analytics?sort=driver_name:asc&f.driver_name=X')
+    pintar()
+    await screen.findByText('1')
+    const ultima = vi.mocked(analyticsApi.rows).mock.calls.at(-1)![0]
+    expect(ultima.view.sort).toBeNull()
+    expect(ultima.view.filters).toEqual({})
+  })
+
+  it('el dueño renombra y borra su vista (I4)', async () => {
+    vi.mocked(analyticsApi.updateView).mockResolvedValue({ ...MIA, name: 'Renombrada' })
+    vi.mocked(analyticsApi.deleteView).mockResolvedValue(undefined)
+    pintar()
+    await screen.findByRole('button', { name: 'Mía' })
+    expect(screen.queryByRole('button', { name: 'Borrar Walmart RM' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Renombrar Mía' }))
+    const dialogo = await screen.findByRole('dialog', { name: 'Renombrar vista' })
+    fireEvent.change(within(dialogo).getByRole('textbox', { name: 'Nombre' }), { target: { value: 'Renombrada' } })
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'Guardar' }))
+    await waitFor(() => expect(analyticsApi.updateView).toHaveBeenCalledWith('v2', { name: 'Renombrada' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Borrar Renombrada' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Borrar vista' }))
+    await waitFor(() => expect(analyticsApi.deleteView).toHaveBeenCalledWith('v2'))
+  })
+
+  it('si falla guardar los cambios, lo dice (M4)', async () => {
+    vi.mocked(analyticsApi.updateView).mockRejectedValue(new Error('red'))
+    memoryUrl.reset('/dashboard/analytics?vista=v2&f.client_name=Walmart&period=last_month')
+    pintar()
+    await screen.findByText('1')
+    fireEvent.change(screen.getByRole('combobox', { name: 'Período' }), { target: { value: 'today' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Guardar cambios' }))
+    expect(await screen.findByText('No se pudieron guardar los cambios de la vista. Vuelve a intentarlo.')).toBeInTheDocument()
+  })
+
+  it('"BDOT completo" (all_columns) muestra todas menos las personales, y al guardar las conserva así (M3)', async () => {
+    permisos.lista = ['analytics.read', 'analytics.manage_views']
+    vi.mocked(analyticsApi.columns).mockResolvedValue([...COLUMNAS,
+      { id: 'driver_name', label: 'Conductor', group: 'Datos personales', type: 'text', filter: 'none', default_visible: true, personal: true }])
+    const bdot: SavedView = { ...MIA, id: 'v3', name: 'BDOT completo', columns: [],
+      view: { ...MIA.view, filters: {}, all_columns: true } }
+    vi.mocked(analyticsApi.views).mockResolvedValue([bdot])
+    vi.mocked(analyticsApi.updateView).mockResolvedValue(bdot)
+    pintar()
+    fireEvent.click(await screen.findByRole('button', { name: 'BDOT completo' }))
+    expect(await screen.findByRole('columnheader', { name: /Zona/ })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /Conductor/ })).not.toBeInTheDocument()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Período' }), { target: { value: 'today' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Guardar cambios' }))
+    await waitFor(() => expect(analyticsApi.updateView).toHaveBeenCalledWith('v3', expect.objectContaining({
+      view: expect.objectContaining({ all_columns: true }), columns: [] })))
+  })
 })

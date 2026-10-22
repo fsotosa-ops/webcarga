@@ -14,6 +14,8 @@ export type AnalyticsColumnMeta = {
   type: 'text' | 'date' | 'datetime' | 'number' | 'bool' | 'list'
   filter: 'values' | 'none'
   default_visible: boolean
+  /** Nombre o RUT del conductor: solo llega con el permiso de datos personales. */
+  personal?: boolean
 }
 
 export type AnalyticsRow = Record<string, unknown> & { _id: string }

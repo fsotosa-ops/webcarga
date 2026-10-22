@@ -9,12 +9,14 @@ import { ApiError } from '@/lib/api/client'
 
 /** Guardar la vista actual con un nombre (HU Analítica, criterio 9). Compartir solo con analytics.manage_views.
  *  Si falla, no se cierra ni pierde el nombre. */
-export function SaveViewDialog({ canShare, onClose, onSave }: {
+export function SaveViewDialog({ canShare, onClose, onSave, title = 'Guardar vista', initialName = '' }: {
   canShare: boolean
+  title?: string
+  initialName?: string
   onClose: () => void
   onSave: (name: string, shared: boolean) => Promise<void>
 }) {
-  const [nombre, setNombre] = useState('')
+  const [nombre, setNombre] = useState(initialName)
   const [compartir, setCompartir] = useState(false)
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -34,10 +36,10 @@ export function SaveViewDialog({ canShare, onClose, onSave }: {
   }
 
   return (
-    <Dialog label="Guardar vista" onClose={onClose} dismissible={!guardando}
+    <Dialog label={title} onClose={onClose} dismissible={!guardando}
       className="inset-0 m-auto h-fit w-[min(92vw,380px)] rounded-2xl bg-white p-5 shadow-xl animate-modal-in">
       <form className="space-y-3" onSubmit={e => { e.preventDefault(); if (nombre.trim()) void guardar() }}>
-        <p className="text-base font-bold text-text-primary">Guardar vista</p>
+        <p className="text-base font-bold text-text-primary">{title}</p>
         <label className="block text-dato">
           <span className="text-informativo">Nombre</span>
           <input aria-label="Nombre" value={nombre} maxLength={60} autoFocus disabled={guardando}

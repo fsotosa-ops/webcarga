@@ -11,7 +11,9 @@ import { useTablePreferences } from '@/components/ui/tabla/data/useTablePreferen
 import { useUrlView } from '@/components/ui/tabla/data/useUrlView'
 import { Button } from '@/components/ui/Button'
 import { usePermiso } from '@/lib/authz/PermisosProvider'
-import { EMPTY_VIEW } from '@/lib/table/viewInUrl'
+import { EMPTY_VIEW, type TableView } from '@/lib/table/viewInUrl'
+import { ApiError } from '@/lib/api/client'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import {
   DEFAULT_PERIOD, readPeriod, resolvePeriod, todayInChile, writePeriod, type DateField, type Period,
 } from '@/lib/analytics/period'
@@ -74,15 +76,46 @@ function Frescura({ loadedAt }: { loadedAt: string | null | undefined }) {
  *  oculto. "BDOT completo" (all_columns) = todas las del catálogo. Una columna que ya no existe se ignora (la
  *  tabla del kit no la encuentra). */
 function columnasDeLaVista(v: SavedView, catalogo: AnalyticsColumnMeta[]): ColumnPrefs {
-  if (v.view.all_columns) return catalogo.map(c => ({ id: c.id, hidden: false }))
+  // "Todas" = todas las que NO son personales (HU, criterio 10): un dato personal se elige a propósito.
+  if (v.view.all_columns) return catalogo.map(c => ({ id: c.id, hidden: !!c.personal }))
   const propias = v.columns.filter(c => !c.hidden).map(c => ({ id: c.id, hidden: false }))
   const ids = new Set(propias.map(c => c.id))
   return [...propias, ...catalogo.filter(c => !ids.has(c.id)).map(c => ({ id: c.id, hidden: true }))]
 }
 
-const mismaVista = (a: SavedViewState, b: SavedViewState) =>
-  JSON.stringify([a.filters, a.q, a.sort, a.period, a.date_field ?? null])
-  === JSON.stringify([b.filters, b.q, b.sort, b.period, b.date_field ?? null])
+/** Una vista en forma canónica para comparar: la base (jsonb) devuelve las claves de un objeto en otro orden
+ *  ({"dir", "column"}), así que se compara por valores, no por el texto del objeto. */
+function canonica(v: SavedViewState): string {
+  const filtros = Object.keys(v.filters ?? {}).sort().map(k => [k, v.filters[k]])
+  return JSON.stringify([filtros, v.q ?? '', v.sort ? [v.sort.column, v.sort.dir] : null,
+    [v.period?.preset ?? null, v.period?.from ?? null, v.period?.to ?? null], v.date_field ?? null])
+}
+const mismaVista = (a: SavedViewState, b: SavedViewState) => canonica(a) === canonica(b)
+
+/** Una vista (de la URL o guardada) sin lo que el catálogo de esta persona no tiene: una columna retirada, o una
+ *  personal sin el permiso. Si no, la API responde 422 y la pantalla queda en "no se pudo" para siempre. */
+function limpiarVista(v: TableView, catalogo: AnalyticsColumnMeta[]): TableView {
+  const filtrables = new Set(catalogo.filter(c => c.filter === 'values').map(c => c.id))
+  const existen = new Set(catalogo.map(c => c.id))
+  return {
+    filters: Object.fromEntries(Object.entries(v.filters ?? {}).filter(([k]) => filtrables.has(k))),
+    q: v.q ?? '',
+    sort: v.sort && existen.has(v.sort.column) ? v.sort : null,
+  }
+}
+
+/** Descargar un archivo: el enlace va al documento y la URL se libera después (Safari y Firefox cancelaban la
+ *  descarga si se revocaba al instante, con el enlace fuera del documento). */
+function bajarArchivo(blob: Blob, nombre: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = nombre
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+}
 
 function Aviso({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
@@ -131,6 +164,8 @@ function Workspace() {
   const activa = vistas.data?.find(v => v.id === params.get('vista')) ?? null
   const [columnasDeSesion, setColumnasDeSesion] = useState<ColumnPrefs | null>(null)
   const [guardandoVista, setGuardandoVista] = useState(false)
+  const [renombrando, setRenombrando] = useState<SavedView | null>(null)
+  const [borrando, setBorrando] = useState<SavedView | null>(null)
   const columnasActivas = activa ? (columnasDeSesion ?? columnasDeLaVista(activa, columnas.data ?? [])) : null
   const preferencias = activa
     ? { columns: columnasActivas, save: setColumnasDeSesion, reset: () => setColumnasDeSesion(null), ready: true }
@@ -138,9 +173,11 @@ function Workspace() {
 
   // Tabla dinámica: solo en Flota por día (lo que era la Reportería).
   const modo: 'table' | 'pivot' = dataset === 'fleet' && params.get('mode') === 'pivot' ? 'pivot' : 'table'
+  // La consulta nunca lleva un filtro o un orden que el catálogo de esta persona no tiene (Review Focus 3 y 4).
+  const vistaDeConsulta = limpiarVista(view, columnas.data ?? [])
   const consulta: AnalyticsQuery = modo === 'pivot'
-    ? { dataset, period, dateField, view, page: 0, size: PIVOT_MAX }
-    : { dataset, period, dateField, view, page: pagina.page, size: pagina.size }
+    ? { dataset, period, dateField, view: vistaDeConsulta, page: 0, size: PIVOT_MAX }
+    : { dataset, period, dateField, view: vistaDeConsulta, page: pagina.page, size: pagina.size }
   const filas = useQuery({
     queryKey: ['analytics-rows', consulta, today, modo],
     queryFn: () => analyticsApi.rows(consulta, today, modo),
@@ -164,30 +201,62 @@ function Workspace() {
     writeParams(pathname, writePeriod(new URLSearchParams(window.location.search), p, f))
   }
 
-  const estadoActual: SavedViewState = { ...view, period, date_field: dateField }
+  const estadoActual: SavedViewState = { ...vistaDeConsulta, period, date_field: dateField,
+    ...(modo === 'pivot' ? { mode: 'pivot' as const } : {}) }
 
   function aplicar(v: SavedView) {
     setPagina(x => ({ ...x, page: 0 }))
     setColumnasDeSesion(null)
     // Igual que al cambiar de conjunto: primero la vista (escribe desde la URL que conoce), después lo demás.
-    setView({ filters: v.view.filters ?? {}, q: v.view.q ?? '', sort: v.view.sort ?? null })
+    const catalogo = v.dataset === dataset ? (columnas.data ?? []) : null
+    const vista = { filters: v.view.filters ?? {}, q: v.view.q ?? '', sort: v.view.sort ?? null }
+    setView(catalogo ? limpiarVista(vista, catalogo) : vista)
     const p = writePeriod(new URLSearchParams(window.location.search), v.view.period ?? DEFAULT_PERIOD,
       v.view.date_field ?? null)
     p.set('dataset', v.dataset)
     p.set('vista', v.id)
+    if (v.view.mode === 'pivot') p.set('mode', 'pivot'); else p.delete('mode')
     writeParams(pathname, p)
   }
 
-  const cambiada = !!activa && (!mismaVista(estadoActual, { ...activa.view, date_field: activa.view.date_field
-    ?? DATASETS.find(d => d.id === activa.dataset)!.dateFields[0] }) || columnasDeSesion !== null)
+  const cambiada = !!activa && (!mismaVista(estadoActual, { ...activa.view,
+    ...limpiarVista(activa.view, columnas.data ?? []),
+    date_field: activa.view.date_field ?? DATASETS.find(d => d.id === activa.dataset)!.dateFields[0] })
+    || (activa.view.mode === 'pivot') !== (modo === 'pivot') || columnasDeSesion !== null)
 
   const columnasVisibles = (): ColumnPrefs => model.visibleColumns.map(c => ({ id: c.id, hidden: false }))
 
   async function guardarCambios() {
     if (!activa) return
-    const v = await analyticsApi.updateView(activa.id, { view: estadoActual, columns: columnasVisibles() })
+    setAviso(null)
+    // "Todas las columnas" sigue siéndolo si no se movieron: así la vista suma las columnas nuevas del catálogo.
+    const todas = !!activa.view.all_columns && columnasDeSesion === null
+    try {
+      const v = await analyticsApi.updateView(activa.id, {
+        view: { ...estadoActual, ...(todas ? { all_columns: true } : {}) },
+        columns: todas ? [] : columnasVisibles(),
+      })
+      qc.setQueryData<SavedView[]>(['analytics-views', dataset], xs => xs?.map(x => (x.id === v.id ? v : x)))
+      setColumnasDeSesion(null)
+    } catch {
+      setAviso('No se pudieron guardar los cambios de la vista. Vuelve a intentarlo.')
+    }
+  }
+
+  async function renombrar(name: string) {
+    const v = await analyticsApi.updateView(renombrando!.id, { name })
     qc.setQueryData<SavedView[]>(['analytics-views', dataset], xs => xs?.map(x => (x.id === v.id ? v : x)))
-    setColumnasDeSesion(null)
+  }
+
+  async function borrar() {
+    const id = borrando!.id
+    await analyticsApi.deleteView(id)
+    qc.setQueryData<SavedView[]>(['analytics-views', dataset], xs => xs?.filter(x => x.id !== id))
+    if (activa?.id === id) {
+      const p = new URLSearchParams(window.location.search)
+      p.delete('vista')
+      writeParams(pathname, p)
+    }
   }
 
   async function guardarNueva(name: string, shared: boolean) {
@@ -212,8 +281,11 @@ function Workspace() {
     // Los filtros y la fecha de un conjunto no existen en el otro. Primero se vacía la vista (escribe la URL
     // desde la que conoce) y después el conjunto encima de esa URL: al revés, la vista borraba el conjunto.
     setView(EMPTY_VIEW)
+    setColumnasDeSesion(null)
     const p = writePeriod(new URLSearchParams(window.location.search), period, null)
     p.set('dataset', id)
+    p.delete('vista')
+    p.delete('mode')
     writeParams(pathname, p)
   }
 
@@ -222,10 +294,7 @@ function Workspace() {
     setDescargando(true)
     try {
       const { blob, filename } = await analyticsApi.export(consulta, model.visibleColumns.map(c => c.id), today)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url; a.download = filename; a.click()
-      URL.revokeObjectURL(url)
+      bajarArchivo(blob, filename)
     } catch (e) {
       setAviso(e instanceof ExportTooLargeError
         ? `El período tiene ${e.total.toLocaleString('es-CL')} filas; el máximo por descarga es `
@@ -248,9 +317,13 @@ function Workspace() {
           : `No hay ${meta.noun} entre el ${ddmmyyyy(rango.from)} y el ${ddmmyyyy(rango.to)}`}
       </Aviso>
 
+  // El límite se sabe antes de descargar: el total de la página ya está (HU, criterio 12).
+  const demasiadas = listo && filas.data!.total > EXPORT_MAX
   const excel = (
-    <Button disabled={!puedeDescargar || descargando || !listo}
-      title={puedeDescargar ? undefined : 'Pide a un supervisor que la descargue'}
+    <Button disabled={!puedeDescargar || descargando || !listo || demasiadas}
+      title={!puedeDescargar ? 'Pide a un supervisor que la descargue'
+        : demasiadas ? `El período tiene ${filas.data!.total.toLocaleString('es-CL')} filas; el máximo por descarga es `
+          + `${EXPORT_MAX.toLocaleString('es-CL')}. Acota el período o los filtros.` : undefined}
       onClick={() => { void descargar() }}>
       {descargando ? <Loader2 size={14} className="animate-spin" aria-hidden="true" />
         : <FileDown size={14} aria-hidden="true" />}
@@ -261,9 +334,16 @@ function Workspace() {
   return (
     <div className="flex flex-col gap-4 lg:flex-row">
       <SavedViewsPanel views={vistas.data ?? []} activeId={activa?.id ?? null} onApply={aplicar}
-        onNew={() => setGuardandoVista(true)} />
+        onNew={() => setGuardandoVista(true)} onRename={setRenombrando} onDelete={setBorrando} />
       {guardandoVista && <SaveViewDialog canShare={puedeCompartir} onClose={() => setGuardandoVista(false)}
         onSave={guardarNueva} />}
+      {renombrando && <SaveViewDialog canShare={false} title="Renombrar vista" initialName={renombrando.name}
+        onClose={() => setRenombrando(null)} onSave={name => renombrar(name)} />}
+      {borrando && (
+        <ConfirmDialog title={`Borrar la vista «${borrando.name}»`} confirmLabel="Borrar vista" tone="danger"
+          description={borrando.scope === 'shared' ? 'La deja de ver todo el equipo.' : 'No se puede deshacer.'}
+          errorFallback="No se pudo borrar la vista" onConfirm={borrar} onClose={() => setBorrando(null)} />
+      )}
       <div className="min-w-0 flex-1 space-y-3">
         <div className="flex flex-wrap items-center gap-3">
           <div role="group" aria-label="Conjunto de datos" className="inline-flex rounded-lg border border-border bg-white p-0.5">
@@ -302,7 +382,9 @@ function Workspace() {
         {filas.isError || columnas.isError ? (
           <div className="flex items-center gap-3 rounded-lg border border-status-incidente/20 bg-status-incidente/5 px-4 py-3">
             <p className="flex-1 text-dato text-status-incidente">
-              No se pudieron cargar los {meta.noun}</p>
+              {/* Un 422 trae por qué (un período de más de 400 días): reintentar no lo arregla, decirlo sí. */}
+              {filas.error instanceof ApiError && filas.error.status === 422 && typeof filas.error.detail === 'string'
+                ? filas.error.detail : `No se pudieron cargar los ${meta.noun}`}</p>
             <button type="button" onClick={() => { void columnas.refetch(); void filas.refetch() }}
               className="inline-flex items-center gap-1.5 text-dato font-semibold text-status-incidente">
               <RefreshCw size={12} aria-hidden="true" /> Reintentar

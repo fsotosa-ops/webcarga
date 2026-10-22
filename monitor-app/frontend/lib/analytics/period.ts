@@ -7,6 +7,8 @@ export type Period = { preset: PeriodPreset; from?: string; to?: string }
 export type DateField = 'planning' | 'delivered' | 'signed' | 'business'
 
 export const DEFAULT_PERIOD: Period = { preset: 'last_30d' }
+/** El período más largo que acepta la API (services/analytics_query.py, MAX_PERIOD_DAYS). */
+export const MAX_PERIOD_DAYS = 400
 
 export const PERIOD_LABELS: Record<PeriodPreset, string> = {
   today: 'Hoy', last_7d: 'Últimos 7 días', last_30d: 'Últimos 30 días', this_month: 'Este mes',
@@ -22,7 +24,7 @@ const DATE_FIELDS = Object.keys(DATE_FIELD_LABELS) as DateField[]
 const ISO = /^\d{4}-\d{2}-\d{2}$/
 
 /** Fechas como texto AAAA-MM-DD, sin pasar por la zona horaria del navegador. */
-function sumarDias(iso: string, dias: number): string {
+export function sumarDias(iso: string, dias: number): string {
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(Date.UTC(y, m - 1, d + dias)).toISOString().slice(0, 10)
 }

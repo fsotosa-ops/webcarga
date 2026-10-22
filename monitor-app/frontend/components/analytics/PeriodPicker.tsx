@@ -2,7 +2,8 @@
 
 import { inputClass } from '@/components/ui/Field'
 import {
-  DATE_FIELD_LABELS, PERIOD_LABELS, resolvePeriod, type DateField, type Period, type PeriodPreset,
+  DATE_FIELD_LABELS, MAX_PERIOD_DAYS, PERIOD_LABELS, resolvePeriod, sumarDias, type DateField, type Period,
+  type PeriodPreset,
 } from '@/lib/analytics/period'
 
 const SELECT = `${inputClass({ size: 'sm' })} w-auto`
@@ -18,6 +19,9 @@ export function PeriodPicker({ period, onPeriod, dateField, onDateField, dateFie
   today: string
 }) {
   const rango = resolvePeriod(period, today)
+  // El tope de la API (400 días): el rango libre no deja elegir más.
+  const desdeMinimo = sumarDias(rango.to, -(MAX_PERIOD_DAYS - 1))
+  const hastaMaximo = sumarDias(rango.from, MAX_PERIOD_DAYS - 1)
   return (
     <div className="flex flex-wrap items-center gap-2 text-dato">
       <label className="inline-flex items-center gap-1.5">
@@ -32,10 +36,10 @@ export function PeriodPicker({ period, onPeriod, dateField, onDateField, dateFie
       </label>
       {period.preset === 'custom' && (
         <span className="inline-flex items-center gap-1.5">
-          <input type="date" aria-label="Desde" value={rango.from} max={rango.to} className={SELECT}
+          <input type="date" aria-label="Desde" value={rango.from} min={desdeMinimo} max={rango.to} className={SELECT}
             onChange={e => e.target.value && onPeriod({ preset: 'custom', from: e.target.value, to: rango.to })} />
           <span className="text-informativo">a</span>
-          <input type="date" aria-label="Hasta" value={rango.to} min={rango.from} className={SELECT}
+          <input type="date" aria-label="Hasta" value={rango.to} min={rango.from} max={hastaMaximo} className={SELECT}
             onChange={e => e.target.value && onPeriod({ preset: 'custom', from: rango.from, to: e.target.value })} />
         </span>
       )}
