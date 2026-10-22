@@ -35,6 +35,7 @@ from .routers.requirements import requirements_router as compliance_requirements
 from .routers.access import router as access_router
 from .routers.shippers import router as shippers_router
 from .routers.status_report import router as status_report_router
+from .routers.analytics import router as analytics_router
 from .routers.status_taxonomies import router as status_taxonomies_router
 from .routers.tms_clients import router as tms_clients_router
 from .routers.trips import router as trips_router
@@ -156,6 +157,7 @@ app.include_router(equipment_closures_router,  prefix="/api/v1")
 app.include_router(closures_router,            prefix="/api/v1")
 # Reporte de estatus del día, 6 secciones (Fase 5, HU-04)
 app.include_router(status_report_router,       prefix="/api/v1")
+app.include_router(analytics_router,           prefix="/api/v1")
 app.include_router(tms_clients_router,         prefix="/api/v1")
 app.include_router(internal_router,            prefix="/api/v1")
 

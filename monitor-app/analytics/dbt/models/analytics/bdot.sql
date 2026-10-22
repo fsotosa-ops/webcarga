@@ -32,6 +32,8 @@ SELECT
     dc.carrier_name,
     dc.carrier_tax_id,
     f.carrier_source,
+    -- Conductor: solo el id; nombre y RUT están en analytics.driver_identity, con otro permiso.
+    f.driver_id,
     -- Equipos
     tr.license_plate                     AS tractor_plate,
     rm.license_plate                     AS trailer_plate,
