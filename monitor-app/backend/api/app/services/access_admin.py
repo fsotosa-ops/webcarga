@@ -112,7 +112,10 @@ async def retirar_persona(conn, actor: dict, user_id: str) -> None:
     async with conn.transaction():
         await assert_can_manage_user(conn, actor, user_id, deactivating=True)
         await conn.execute("UPDATE public.profiles SET active = false WHERE id = $1", user_id)
-        await log_change(conn, actor=actor["sub"], entity_type="PERSON", entity_id=user_id, action="delete")
+        # Lo que pasa aquí es una desactivación; el borrado de la cuenta (Supabase) va
+        # después y lo registra quien lo hace, si se hace.
+        await log_change(conn, actor=actor["sub"], entity_type="PERSON", entity_id=user_id, action="deactivate",
+                         old_value={"active": True}, new_value={"active": False})
     await invalidate_access(user_id)
 
 

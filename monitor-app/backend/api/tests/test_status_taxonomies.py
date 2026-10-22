@@ -102,7 +102,7 @@ def test_patch_taxonomy_no_fields_422():
 
 def test_deactivate_taxonomy():
     pool = AsyncMock()
-    pool.fetchrow.return_value = {"domain": "FLEET_SERVICE_TYPE", "label": "Sider"}
+    pool.fetchrow.return_value = {"domain": "FLEET_SERVICE_TYPE", "label": "Sider", "estaba_activa": True}
     pool.fetchval.return_value = 0
     client = make_client(pool)
     res = client.delete("/api/v1/config/taxonomies/t1")
@@ -116,7 +116,7 @@ def test_desactivar_un_subtipo_en_uso_avisa_cuantas_reglas_lo_usan():
     casillas y la condicion se ve como '0 marcas' sin serlo. Quien desactiva
     tiene que enterarse en el momento, no despues."""
     pool = AsyncMock()
-    pool.fetchrow.return_value = {"domain": "FLEET_SERVICE_TYPE", "label": "Sider"}
+    pool.fetchrow.return_value = {"domain": "FLEET_SERVICE_TYPE", "label": "Sider", "estaba_activa": True}
     pool.fetchval.return_value = 2
     client = make_client(pool)
 
@@ -131,7 +131,7 @@ def test_deactivate_taxonomy_cuenta_las_condiciones_que_apuntan_al_id():
     de las condiciones. Sin fijar la consulta y el argumento, un conteo que
     mirara otra columna -- o que ignorara el id -- pasaria igual."""
     pool = AsyncMock()
-    pool.fetchrow.return_value = {"domain": "FLEET_SERVICE_TYPE", "label": "Sider"}
+    pool.fetchrow.return_value = {"domain": "FLEET_SERVICE_TYPE", "label": "Sider", "estaba_activa": True}
     pool.fetchval.return_value = 2
     client = make_client(pool)
 

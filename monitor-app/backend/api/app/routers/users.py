@@ -130,6 +130,8 @@ async def delete_user(
             raise _http(e)
 
     await asyncio.to_thread(supabase.auth.admin.delete_user, user_id)
+    await log_change(pool, actor=actor["sub"], entity_type="PERSON", entity_id=user_id, action="delete",
+                     old_value={"email": target["email"]})
     # Sin invitación no puede volver a crearse la cuenta entrando con Google.
     await pool.execute("DELETE FROM public.admin_whitelist WHERE lower(email) = lower($1)", target["email"])
     await invalidate_access(user_id)

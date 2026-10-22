@@ -16,7 +16,7 @@ from decimal import Decimal
 
 from .audit import log_change
 
-ACCIONES = {"create", "update", "move", "delete"}
+ACCIONES = {"create", "update", "move", "deactivate", "delete"}
 
 
 def entity_uuid(area: str, section: str, element_id: str) -> str:

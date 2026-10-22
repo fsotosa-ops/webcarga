@@ -156,14 +156,18 @@ async def move_taxonomy(
 
 @router.delete("/{taxonomy_id}")
 async def deactivate_taxonomy(taxonomy_id: str, pool=Depends(get_pool), usuario=Depends(require(Permission.OPERATIONS_CONFIGURE))):
+    # Lo que estaba antes, en la misma sentencia: desactivar algo ya inactivo no es un cambio.
     desactivada = await pool.fetchrow(
-        "UPDATE app.status_taxonomies SET active = false, updated_at = NOW() WHERE id = $1 RETURNING domain, label",
+        """WITH previo AS (SELECT active FROM app.status_taxonomies WHERE id = $1)
+           UPDATE app.status_taxonomies SET active = false, updated_at = NOW() WHERE id = $1
+           RETURNING domain, label, (SELECT active FROM previo) AS estaba_activa""",
         taxonomy_id,
     )
     if desactivada is None:
         raise HTTPException(404, "No encontrado")
-    await _cambio(pool, desactivada["domain"], taxonomy_id, usuario, "delete", {"active": True, "label": desactivada["label"]},
-                  {"active": False})
+    if desactivada["estaba_activa"]:
+        await _cambio(pool, desactivada["domain"], taxonomy_id, usuario, "deactivate",
+                      {"active": True, "label": desactivada["label"]}, {"active": False})
     # Cuántas condiciones de documento siguen apuntando a este valor. El
     # borrado es lógico, así que la regla NO se rompe — pero la casilla
     # desaparece de la pantalla y la condición se ve como "0 marcas" sin serlo.

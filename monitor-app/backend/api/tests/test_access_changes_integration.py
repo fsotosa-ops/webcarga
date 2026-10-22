@@ -9,7 +9,7 @@ import json
 import pytest
 
 from app.authz.sync import sync_catalog
-from app.services.access_admin import actualizar_persona, create_role, set_user_roles, update_role
+from app.services.access_admin import actualizar_persona, create_role, retirar_persona, set_user_roles, update_role
 from tests.conftest import PoolDeUnaConexion, usuario
 
 pytestmark = pytest.mark.integracion
@@ -76,3 +76,19 @@ def test_el_historial_de_accesos_exige_solo_gestionar_usuarios():
 
     ruta = next(r for r in app.routes if isinstance(r, APIRoute) and r.path == "/api/v1/config/changes/people")
     assert tuple(_permisos(ruta.dependant)) == (Permission.USERS_MANAGE,)
+
+
+async def test_retirar_una_persona_registra_su_desactivacion_no_un_borrado(conexion_revertida):
+    """Menor diferido 4: el borrado de la cuenta (Supabase) va después y puede fallar;
+    lo que pasó en la base es una desactivación."""
+    conn = conexion_revertida
+    await sync_catalog(conn)
+    a, b = await _dos_perfiles(conn)
+    await conn.execute("UPDATE public.profiles SET active = true WHERE id = $1", b)
+    await set_user_roles(conn, usuario("owner", sub=a), b, ["reader"])
+
+    await retirar_persona(conn, usuario("owner", sub=a), b)
+
+    fila = await conn.fetchrow(
+        "SELECT action FROM public.audit_log WHERE entity_type = 'PERSON' AND entity_id = $1::uuid ORDER BY id DESC LIMIT 1", b)
+    assert fila["action"] == "deactivate"

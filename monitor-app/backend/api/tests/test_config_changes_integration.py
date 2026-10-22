@@ -99,7 +99,7 @@ async def test_taxonomia_crear_y_desactivar_registran(conexion_revertida):
     await deactivate_taxonomy(str(nueva["id"]), pool=pool, usuario=actor)
 
     acciones = [f["action"] for f in await _ultimas(conn, "operations", "driver-reasons", str(nueva["id"]))]
-    assert acciones == ["create", "delete"]
+    assert acciones == ["create", "deactivate"]
 
 
 async def test_regla_del_monitor_registra_por_regla(conexion_revertida):
@@ -125,3 +125,20 @@ def test_diferencia_no_ve_cambio_entre_decimal_y_float_iguales():
     assert diferencia({"min_c": Decimal("2.5"), "max_c": Decimal("8.0")}, {"min_c": 2.5, "max_c": 8}) == ({}, {})
     assert diferencia({"min_c": Decimal("0.1")}, {"min_c": 0.1}) == ({}, {})
     assert diferencia({"min_c": Decimal("2.5")}, {"min_c": 3.0}) == ({"min_c": Decimal("2.5")}, {"min_c": 3.0})
+
+
+# ── Menor diferido 4 (revisión final 22/10): el registro dice lo que pasó ────
+
+async def test_desactivar_dos_veces_registra_una_sola_desactivacion(conexion_revertida):
+    from app.routers.status_taxonomies import StatusTaxonomyBody, create_taxonomy, deactivate_taxonomy
+    conn = conexion_revertida
+    actor = await _usuario_real(conn)
+    pool = PoolDeUnaConexion(conn)
+    nueva = await create_taxonomy(StatusTaxonomyBody(domain="DRIVER_REASON", label="ZZ motivo 2", sort_order=999,
+                                                     group_id="no_trabajando"), pool=pool, usuario=actor)
+
+    await deactivate_taxonomy(str(nueva["id"]), pool=pool, usuario=actor)
+    await deactivate_taxonomy(str(nueva["id"]), pool=pool, usuario=actor)
+
+    acciones = [f["action"] for f in await _ultimas(conn, "operations", "driver-reasons", str(nueva["id"]))]
+    assert acciones == ["create", "deactivate"]

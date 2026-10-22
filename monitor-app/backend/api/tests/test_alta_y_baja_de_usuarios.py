@@ -206,3 +206,21 @@ def test_invitar_queda_registrado_sin_secretos():
     assert "PERSON" in auditorias[0].args and "create" in auditorias[0].args
     assert all("Secreta-12345678" not in str(a) for a in auditorias[0].args)
 
+
+
+def test_el_borrado_se_registra_solo_si_supabase_borro(reglas_permiten):
+    """Menor diferido 4: 'delete' en el registro solo cuando la cuenta se borró."""
+    sb, pool = MagicMock(), AsyncMock()
+    pool.fetchrow.return_value = {"email": "ana@webcarga.com"}
+    res = _cliente(ADMIN, pool=pool, supabase=sb).delete("/api/v1/users/u-9")
+    assert res.status_code == 204
+    borrados = [c for c in pool.execute.call_args_list if "audit_log" in c.args[0] and "delete" in c.args]
+    assert len(borrados) == 1
+
+    sb2, pool2 = MagicMock(), AsyncMock()
+    pool2.fetchrow.return_value = {"email": "ana@webcarga.com"}
+    sb2.auth.admin.delete_user.side_effect = RuntimeError("Supabase caído")
+    import pytest as _pytest
+    with _pytest.raises(RuntimeError):
+        _cliente(ADMIN, pool=pool2, supabase=sb2).delete("/api/v1/users/u-9")
+    assert not [c for c in pool2.execute.call_args_list if "audit_log" in c.args[0] and "delete" in c.args]
