@@ -67,8 +67,8 @@ describe('el dato de la navegación', () => {
 
 describe('la entrada activa', () => {
   const todas = hojas.map(h => h.href)
-  it('el prefijo más largo: el histórico del Cierre marca el Cierre', () => {
-    expect(activeHref('/dashboard/operations/closures/history', todas)).toBe('/dashboard/operations/closures')
+  it('el prefijo más largo: una pantalla dentro del Cierre marca el Cierre', () => {
+    expect(activeHref('/dashboard/operations/closures/algo', todas)).toBe('/dashboard/operations/closures')
   })
   it('una pantalla interna marca su entrada: el detalle de un viaje marca el Monitor', () => {
     expect(activeHref('/dashboard/operations/monitor/trips/x', todas)).toBe('/dashboard/operations/monitor')

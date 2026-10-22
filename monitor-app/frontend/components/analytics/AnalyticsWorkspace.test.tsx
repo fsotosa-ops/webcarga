@@ -148,4 +148,29 @@ describe('AnalyticsWorkspace', () => {
     expect(await screen.findByText('2079231')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByRole('columnheader', { name: /Cliente/ })).not.toBeInTheDocument())
   })
+
+  it('Flota por día en modo tabla dinámica pide hasta 20.000 filas y arma el pivot', async () => {
+    memoryUrl.reset('/dashboard/analytics?dataset=fleet&mode=pivot&f.subject_type=DRIVER&period=this_month')
+    vi.mocked(analyticsApi.columns).mockResolvedValue([
+      { id: 'business_date', label: 'Día', group: 'Fechas', type: 'date', filter: 'none', default_visible: true },
+      { id: 'subject_type', label: 'Conductor o equipo', group: 'Sujeto', type: 'text', filter: 'values', default_visible: true },
+    ])
+    vi.mocked(analyticsApi.rows).mockResolvedValue({
+      rows: [{ _id: 'k1', carrier_name: 'Transportes Sur', client_names: ['Walmart'], status: 'ASSIGNED', reason: null,
+        business_date: '2026-10-20' }], total: 1, counts: {}, loaded_at: null })
+    pintar()
+    expect(await screen.findByText('Transportes Sur', { selector: 'td' })).toBeInTheDocument()
+    const [consulta, , modo] = vi.mocked(analyticsApi.rows).mock.calls.at(-1)!
+    expect(modo).toBe('pivot')
+    expect(consulta.size).toBe(20000)
+    expect(consulta.view.filters).toEqual({ subject_type: ['DRIVER'] })
+    // El filtro que trae la Reportería se ve como chip y se puede quitar.
+    expect(screen.getByText(/Conductor o equipo/)).toBeInTheDocument()
+  })
+
+  it('el modo tabla dinámica solo existe en Flota por día', async () => {
+    pintar()
+    await screen.findByText('2079231')
+    expect(screen.queryByRole('group', { name: 'Modo' })).not.toBeInTheDocument()
+  })
 })

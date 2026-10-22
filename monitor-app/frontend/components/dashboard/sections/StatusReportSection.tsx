@@ -155,7 +155,7 @@ export function StatusReportSection({ fecha, alcance, section, onSectionChange, 
           className={ACCION} title="Copia la sección a la vista, lista para pegar en un correo o un chat">
           {copiado ? <><Check size={12} aria-hidden="true" /> Copiado</> : <><Copy size={12} aria-hidden="true" /> Copiar estatus</>}
         </button>
-        <Link href="/dashboard/operations/closures/history" target="_blank" className={ACCION}>
+        <Link href="/dashboard/analytics?dataset=fleet&mode=pivot&f.subject_type=DRIVER&period=this_month" target="_blank" className={ACCION}>
           <History size={12} aria-hidden="true" /> Ver histórico
         </Link>
       </span>

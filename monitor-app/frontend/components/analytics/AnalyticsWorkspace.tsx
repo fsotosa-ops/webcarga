@@ -19,6 +19,8 @@ import {
   analyticsApi, ExportTooLargeError, type AnalyticsColumnMeta, type AnalyticsDataset, type AnalyticsQuery,
   type AnalyticsRow, type SavedView, type SavedViewState,
 } from '@/lib/api/analytics'
+import type { PivotRow } from '@/lib/utils/pivot'
+import { FleetPivot } from './FleetPivot'
 import { PeriodPicker } from './PeriodPicker'
 import { SavedViewsPanel } from './SavedViewsPanel'
 import { SaveViewDialog } from './SaveViewDialog'
@@ -32,6 +34,17 @@ export const DATASETS: { id: AnalyticsDataset; label: string; noun: string; date
   { id: 'fleet', label: 'Flota por día', noun: 'registros', dateFields: ['business'] },
 ]
 export const PAGE_SIZES = [50, 100, 200]
+/** La tabla dinámica arma todo en el navegador: hasta 20.000 filas de una vez (lo mismo limita la API). */
+const PIVOT_MAX = 20_000
+
+/** Una fila de analytics.fleet_daily en lo que lee la tabla dinámica. */
+const comoFilaDePivot = (r: AnalyticsRow): PivotRow => ({
+  carrier_name: (r.carrier_name as string | null) ?? null,
+  client_names: (r.client_names as string[] | null) ?? [],
+  status: r.status as PivotRow['status'],
+  unassigned_reason_label: (r.reason as string | null) ?? null,
+  business_date: String(r.business_date),
+})
 const EXPORT_MAX = 50_000
 
 const ddmmyyyy = (iso: string) => iso.split('-').reverse().join('/')
@@ -123,10 +136,14 @@ function Workspace() {
     ? { columns: columnasActivas, save: setColumnasDeSesion, reset: () => setColumnasDeSesion(null), ready: true }
     : preferenciasGuardadas
 
-  const consulta: AnalyticsQuery = { dataset, period, dateField, view, page: pagina.page, size: pagina.size }
+  // Tabla dinámica: solo en Flota por día (lo que era la Reportería).
+  const modo: 'table' | 'pivot' = dataset === 'fleet' && params.get('mode') === 'pivot' ? 'pivot' : 'table'
+  const consulta: AnalyticsQuery = modo === 'pivot'
+    ? { dataset, period, dateField, view, page: 0, size: PIVOT_MAX }
+    : { dataset, period, dateField, view, page: pagina.page, size: pagina.size }
   const filas = useQuery({
-    queryKey: ['analytics-rows', consulta, today],
-    queryFn: () => analyticsApi.rows(consulta, today),
+    queryKey: ['analytics-rows', consulta, today, modo],
+    queryFn: () => analyticsApi.rows(consulta, today, modo),
     enabled: columnas.isSuccess,
     placeholderData: keepPreviousData,
   })
@@ -181,6 +198,12 @@ function Workspace() {
     p.set('vista', v.id)
     writeParams(pathname, p)
     setColumnasDeSesion(null)
+  }
+
+  function cambiarModo(m: 'table' | 'pivot') {
+    const p = new URLSearchParams(window.location.search)
+    if (m === 'pivot') p.set('mode', 'pivot'); else p.delete('mode')
+    writeParams(pathname, p)
   }
 
   function cambiarConjunto(id: AnalyticsDataset) {
@@ -254,6 +277,17 @@ function Workspace() {
           </div>
           <PeriodPicker period={period} onPeriod={p => cambiarPeriodo(p)} dateField={dateField}
             onDateField={f => cambiarPeriodo(period, f)} dateFields={meta.dateFields} today={today} />
+          {dataset === 'fleet' && (
+            <div role="group" aria-label="Modo" className="hidden rounded-lg border border-border bg-white p-0.5 md:inline-flex">
+              {([['table', 'Tabla'], ['pivot', 'Tabla dinámica']] as const).map(([m, etiqueta]) => (
+                <button key={m} type="button" aria-pressed={m === modo} onClick={() => cambiarModo(m)}
+                  className={`rounded-md px-3 py-1 text-dato font-medium ${m === modo
+                    ? 'bg-accent/10 text-text-primary' : 'text-informativo hover:text-text-primary'}`}>
+                  {etiqueta}
+                </button>
+              ))}
+            </div>
+          )}
           <Frescura loadedAt={filas.data?.loaded_at} />
           {cambiada && (
             <span className="inline-flex items-center gap-2">
@@ -274,6 +308,22 @@ function Workspace() {
               <RefreshCw size={12} aria-hidden="true" /> Reintentar
             </button>
           </div>
+        ) : modo === 'pivot' ? (
+          <>
+            <p className="text-dato text-informativo md:hidden">La tabla dinámica se usa en un computador: en el
+              teléfono no cabe. Elige el modo Tabla para ver los registros.</p>
+            <div className="hidden space-y-3 md:block">
+              {/* Los filtros se ven y se quitan igual que en la tabla (la Reportería abre con "Conductores"). */}
+              <TableToolbar model={model} />
+              {!listo ? <p className="py-8 text-center text-dato text-informativo">Cargando…</p>
+                : filas.data!.total > PIVOT_MAX
+                  ? <p className="text-dato text-status-incidente">El período tiene {filas.data!.total.toLocaleString('es-CL')}
+                      {' '}registros; la tabla dinámica arma hasta {PIVOT_MAX.toLocaleString('es-CL')}. Acota el período o los
+                      filtros.</p>
+                  : <FleetPivot rows={filas.data!.rows.map(comoFilaDePivot)}
+                      filename={`tabla_dinamica_${rango.from}_${rango.to}.csv`} />}
+            </div>
+          </>
         ) : (
           <>
             <TableToolbar model={model} preferences={preferencias} actions={excel}

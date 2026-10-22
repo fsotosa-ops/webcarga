@@ -107,3 +107,12 @@ async def test_un_valor_con_coma_viaja_codificado(conexion_revertida):
     page = await fetch_page(conexion_revertida, _req(**{"f.client_name": "Walmart,Lider%2C%20Express"}),
                             personal=False)
     assert [r["trip_code"] for r in page["rows"]] == ["ZZ-C"]
+
+
+def test_la_tabla_dinamica_es_de_flota_y_hasta_20000():
+    base = {"dataset": "fleet", "from": "2025-01-01", "to": "2025-01-31"}
+    assert parse_request({**base, "size": "20000"}, purpose="pivot").size == 20000
+    for malo in ({**base, "size": "20001"}, {**base, "dataset": "trips", "size": "100"}):
+        with pytest.raises(HTTPException) as exc:
+            parse_request(malo, purpose="pivot")
+        assert exc.value.status_code == 422

@@ -1,10 +1,20 @@
-import type { DailyClosureReportRow, DriverDayStatusValue } from '@/lib/types'
+import type { DriverDayStatusValue } from '@/lib/types'
 
 /** Motor de tabla dinámica para Reportería (spec
  *  2026-07-21-cuadratura-reporteria-redesign-design.md). Campos fijos y
  *  conocidos (no drag-and-drop de datos arbitrarios) — a propósito, ver el
  *  spec: evita construir un motor de pivot genérico cuando el set real de
  *  dimensiones es chico y estable. */
+
+/** Lo que la tabla dinámica necesita de una fila: un conductor o equipo en un día (la fila de
+ *  analytics.fleet_daily; antes, la de /daily-closures/report de la Reportería). */
+export type PivotRow = {
+  carrier_name: string | null
+  client_names: string[]
+  status: DriverDayStatusValue
+  unassigned_reason_label: string | null
+  business_date: string
+}
 
 export type FieldId = 'carrier' | 'client' | 'status' | 'reason' | 'date'
 export type Granularity = 'day' | 'week' | 'month' | 'quarter' | 'semester'
@@ -52,7 +62,7 @@ export function bucketDate(dateStr: string, granularity: Granularity): string {
  *  (un conductor puede haber servido a más de un cliente el mismo día; ese
  *  conductor cuenta una vez por cada cliente cuando "Cliente" es una
  *  dimensión activa, misma semántica que Fase 1.5). */
-export function fieldValues(row: DailyClosureReportRow, spec: PivotFieldSpec): string[] {
+export function fieldValues(row: PivotRow, spec: PivotFieldSpec): string[] {
   switch (spec.field) {
     case 'carrier': return [row.carrier_name ?? 'Sin empresa']
     case 'client':  return row.client_names.length ? row.client_names : ['Sin cliente']
@@ -64,7 +74,7 @@ export function fieldValues(row: DailyClosureReportRow, spec: PivotFieldSpec): s
 
 /** Todos los valores distintos que existen para un campo en el dataset
  *  completo — para poblar el selector de valores de un filtro. */
-export function distinctFieldValues(rows: DailyClosureReportRow[], spec: PivotFieldSpec): string[] {
+export function distinctFieldValues(rows: PivotRow[], spec: PivotFieldSpec): string[] {
   const set = new Set<string>()
   for (const r of rows) for (const v of fieldValues(r, spec)) set.add(v)
   return [...set].sort()
@@ -72,12 +82,12 @@ export function distinctFieldValues(rows: DailyClosureReportRow[], spec: PivotFi
 
 export type PivotFilter = { spec: PivotFieldSpec; allowed: Set<string> }
 
-export function applyFilters(rows: DailyClosureReportRow[], filters: PivotFilter[]): DailyClosureReportRow[] {
+export function applyFilters(rows: PivotRow[], filters: PivotFilter[]): PivotRow[] {
   if (!filters.length) return rows
   return rows.filter(r => filters.every(f => fieldValues(r, f.spec).some(v => f.allowed.has(v))))
 }
 
-function compoundKey(row: DailyClosureReportRow, specs: PivotFieldSpec[]): string[] {
+function compoundKey(row: PivotRow, specs: PivotFieldSpec[]): string[] {
   if (!specs.length) return ['Total']
   let keys = ['']
   for (const spec of specs) {
@@ -96,7 +106,7 @@ export type PivotResult = {
   grandTotal:  number
 }
 
-export function buildPivot(rows: DailyClosureReportRow[], rowSpecs: PivotFieldSpec[], colSpecs: PivotFieldSpec[]): PivotResult {
+export function buildPivot(rows: PivotRow[], rowSpecs: PivotFieldSpec[], colSpecs: PivotFieldSpec[]): PivotResult {
   const cells: Record<string, Record<string, number>> = {}
   const rowTotals: Record<string, number> = {}
   const colTotals: Record<string, number> = {}
