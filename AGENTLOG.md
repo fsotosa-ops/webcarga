@@ -187,7 +187,19 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
            ANALYTICS_EXPORT con `rows=944` y `personal=false`.
          - Tabla dinámica contra la Reportería, septiembre, conductores: 1.085 contra 1.077. La única diferencia es
            el 02/09 (49 contra 41): antes de la primera firma (03/09) la Reportería cuenta solo a los conductores que
-           estaban en el roster de Tractoreo ese día. DECIDIR con el usuario si Analítica aplica la misma regla.
+           estaban en el roster de Tractoreo ese día. RESUELTO (22/10, `7c54b5b9`, decisión del usuario "opción 1"):
+           - El usuario preguntó si se mezclaba el Cierre con la reportería. Sí: la regla "quién cuenta" vivía en el
+             SQL del router del Cierre. Decisión: definirla UNA vez en la base y que la lean todos.
+           - Migración `20261106090000_closure_report_population` (APLICADA en la base real, con autorización):
+             `app.tractoreo_roster(día)` y `app.closure_line_in_report(tipo, sujeto, día)`. `driver_roster.py` y el
+             WHERE de `_DETAIL_SQL`/`_REPORT_SQL` las llaman. gold: `fct_fleet_daily_status.in_report` (el hecho
+             guarda todo); `analytics.fleet_daily` filtra `WHERE s.in_report`.
+           - Ensayo con ROLLBACK en la base real: 0 diferencias de roster (día por día desde 01/07) y 0 de regla
+             (todas las líneas); ~2 s. Tests: `test_closure_report_population_integration.py` (7, mutación
+             detectada); 238 tests del Cierre verdes en la copia local.
+           - Tras `analytics_gold` (run 15888): septiembre 1.077 y 02/09 = 41, igual que la Reportería. 673 líneas
+             del hecho quedan fuera del reporte (casi todas de julio-agosto, antes de la primera firma): las cifras
+             de Analítica de esos meses bajan en esa cantidad.
          - Reporte del día del 16/10: 30 del día y 2 en ruta (la fecha de Chile movió 1).
          - 390 sin desplazamiento horizontal.
          - Arreglado: con el permiso, Conductor y RUT aparecían como columnas de entrada; ahora se eligen en Columnas
