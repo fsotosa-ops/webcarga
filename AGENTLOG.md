@@ -155,6 +155,19 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
        - Excel en el servidor y auditado.
        - Reportería fusionada como "Tabla dinámica" de Flota por día.
        - `bdot_people` pasa a `driver_identity`.
+     - MÓDULO IMPLEMENTADO (22/10, ejecución inline, ledger en .superpowers/sdd/2026-10-22-modulo-analitica/progress.md):
+       - Backend: `routers/analytics.py` (`/columns`, `/rows`, `/export`), `routers/analytics_views.py`,
+         `services/analytics_{columns,query,export}.py`.
+       - Permisos: `analytics.read/export/manage_views/personal_data`.
+       - Frontend: `/dashboard/analytics` con `AnalyticsWorkspace`, `PeriodPicker`, `SavedViewsPanel`,
+         `SaveViewDialog`, `FleetPivot`, y el modo servidor del kit de tabla.
+       - La Reportería redirige a Flota por día › Tabla dinámica (conductores, este mes).
+       - Revisión final (opus): 0 críticos, 6 importantes y 9 menores arreglados con test RED→GREEN; 6 menores
+         diferidos en el ledger (conteos en 11 consultas, `q` sin escapar, tope de 200 valores por filtro, etc.).
+       - Producción (autorizado): `20261104090000_saved_views` APLICADA (3 vistas sembradas);
+         `analytics.bdot_people` borrada; su modelo quedó deshabilitado en Mage (falta borrar el archivo desde la
+         interfaz de Mage).
+       - Sin uso, a limpiar aparte: `dailyClosuresApi.report` y `GET /daily-closures/report`.
      - PLAN ESCRITO (22/10): `docs/superpowers/plans/2026-10-22-modulo-analitica.md`, 13 tasks.
        - dbt: `driver_identity` y los clientes del día en `fleet_daily`.
        - Permisos.
