@@ -167,7 +167,18 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
        - Producción (autorizado): `20261104090000_saved_views` APLICADA (3 vistas sembradas);
          `analytics.bdot_people` borrada; su modelo quedó deshabilitado en Mage (falta borrar el archivo desde la
          interfaz de Mage).
-       - Sin uso, a limpiar aparte: `dailyClosuresApi.report` y `GET /daily-closures/report`.
+       - HUMO EN DEV, 1ª pasada (22/10): la tabla carga con datos reales. El usuario observó que el menú de vistas
+         (una columna a la izquierda) no seguía el look & feel de la app ni el estándar.
+         - Decisión: patrón de HubSpot, con comparativa en la HU. Las vistas fijadas por persona son pestañas
+           (`app.saved_view_pins`, migración 20261105090000 APLICADA). "Todas las vistas" las administra. La barra
+           de cambios ofrece Guardar, Guardar como nueva y Descartar.
+         - La pantalla sigue el esqueleto del Cierre. Filas de una línea y fechas en dd/mm/aaaa (`f04c6dbd`).
+       - DECISIÓN DEL USUARIO (22/10): los reportes del Cierre conviven en los dos lados hasta que WebCarga decida.
+         - La Reportería vuelve a su pantalla (`fa50eafd`) y además está en Analítica como Tabla dinámica.
+         - El Reporte de estatus del día está en el Cierre y en Analítica ("Reporte del día", mismo componente).
+         - Por eso `/daily-closures/report` vuelve a tener uso.
+       - SIGUIENTE: humo en dev del rediseño, cuando termine el despliegue (vistas, Excel con su fila en
+         `audit_log`, tabla dinámica contra la Reportería, Reporte del día, 1440 y 390).
      - PLAN ESCRITO (22/10): `docs/superpowers/plans/2026-10-22-modulo-analitica.md`, 13 tasks.
        - dbt: `driver_identity` y los clientes del día en `fleet_daily`.
        - Permisos.
