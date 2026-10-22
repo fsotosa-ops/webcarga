@@ -23,6 +23,8 @@ EXPORT_MAX_ROWS = 50_000
 PIVOT_MAX_ROWS = 20_000
 MAX_PERIOD_DAYS = 400
 COUNTS_LIMIT = 200
+# 400 días de viajes caben de sobra; más allá, un número de página es un error (desbordaba el OFFSET).
+MAX_PAGE = 100_000
 
 # La búsqueda de la barra: qué columnas mira en cada conjunto.
 SEARCH: dict[str, tuple[str, ...]] = {
@@ -101,7 +103,7 @@ def parse_request(params: Mapping[str, str], *, purpose: Purpose) -> AnalyticsRe
         size = int(params.get("size", "50"))
     except ValueError:
         raise _422("Página o tamaño inválidos")
-    if page < 0:
+    if not 0 <= page <= MAX_PAGE:
         raise _422("Página inválida")
     if purpose == "rows" and size not in PAGE_SIZES:
         raise _422(f"Tamaño de página inválido: {size}")

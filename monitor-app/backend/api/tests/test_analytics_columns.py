@@ -46,3 +46,9 @@ async def test_el_endpoint_respeta_el_permiso():
     # El permiso es privilegiado: sin verificación en dos pasos, tampoco.
     sin_mfa = {c["id"] for c in await list_columns(dataset="trips", user=usuario("admin", aal="aal1"))}
     assert not sin_mfa & PERSONALES
+
+
+async def test_el_catalogo_dice_cuales_son_personales():
+    """Fix pass: "BDOT completo" es todas las columnas que NO son personales (HU, criterio 10)."""
+    con = {c["id"]: c for c in await list_columns(dataset="trips", user=usuario("admin"))}
+    assert con["driver_name"]["personal"] is True and con["trip_code"]["personal"] is False

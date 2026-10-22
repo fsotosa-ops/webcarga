@@ -10,7 +10,9 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
+from fastapi.concurrency import run_in_threadpool
 from openpyxl import Workbook
+from openpyxl.cell import WriteOnlyCell
 from openpyxl.styles import Font
 
 from .analytics_columns import AnalyticsColumn, columns_for
@@ -34,20 +36,30 @@ def _celda(valor, tipo: str):
 
 
 def workbook_bytes(header_line: str, columns: Sequence[AnalyticsColumn], rows: Sequence[Mapping]) -> bytes:
-    libro = Workbook()
-    hoja = libro.active
-    hoja.title = "Analítica"
+    """Modo `write_only` (fix pass de la revisión, 22/10): escribe fila a fila sin guardar la hoja entera en
+    memoria; con 50.000 × 40 celdas el modo normal se acercaba al límite de 512 MiB de la API."""
+    libro = Workbook(write_only=True)
+    hoja = libro.create_sheet("Analítica")
     hoja.append([header_line])
-    hoja.append([c.label for c in columns])
-    for celda in hoja[2]:
+    encabezado = []
+    for c in columns:
+        celda = WriteOnlyCell(hoja, value=c.label)
         celda.font = Font(bold=True)
+        encabezado.append(celda)
+    hoja.append(encabezado)
+    formatos = {c.id: ("dd/mm/yyyy" if c.type == "date" else "dd/mm/yyyy hh:mm")
+                for c in columns if c.type in ("date", "datetime")}
     for fila in rows:
-        hoja.append([_celda(fila[c.id], c.type) for c in columns])
-    for i, c in enumerate(columns, start=1):
-        if c.type in ("date", "datetime"):
-            formato = "dd/mm/yyyy" if c.type == "date" else "dd/mm/yyyy hh:mm"
-            for (celda,) in hoja.iter_rows(min_row=3, min_col=i, max_col=i):
-                celda.number_format = formato
+        salida_fila = []
+        for c in columns:
+            valor = _celda(fila[c.id], c.type)
+            if c.id in formatos and valor is not None:
+                celda = WriteOnlyCell(hoja, value=valor)
+                celda.number_format = formatos[c.id]
+                salida_fila.append(celda)
+            else:
+                salida_fila.append(valor)
+        hoja.append(salida_fila)
     salida = io.BytesIO()
     libro.save(salida)
     return salida.getvalue()
@@ -75,7 +87,8 @@ async def export_workbook(conn, req: AnalyticsRequest, *, columns: Sequence[str]
     sql, params = build_select(req, personal=personal, columns=columns)
     filas = await conn.fetch(sql, *params)
     elegidas = [cols[c] for c in columns]
-    contenido = workbook_bytes(_encabezado(req, cols, await loaded_at(conn)), elegidas, filas)
+    # Fuera del bucle de eventos: armar el archivo es CPU y bloqueaba todas las demás consultas de la instancia.
+    contenido = await run_in_threadpool(workbook_bytes, _encabezado(req, cols, await loaded_at(conn)), elegidas, filas)
     await log_change(conn, actor=actor, entity_type="ANALYTICS_EXPORT", entity_id=uuid4(), action="export",
                      new_value={"dataset": req.dataset, "from": req.date_from.isoformat(),
                                 "to": req.date_to.isoformat(), "date_field": req.date_field, "filters": req.filters,

@@ -24,7 +24,7 @@ async def list_columns(dataset: Literal["trips", "fleet"] = "trips",
     """El catálogo que ve el frontend. Sin el permiso de datos personales, esas columnas no existen."""
     return [
         {"id": c.id, "label": c.label, "group": c.group, "type": c.type, "filter": c.filter,
-         "default_visible": c.default_visible}
+         "default_visible": c.default_visible, "personal": c.personal}
         for c in columns_for(dataset, personal=can_see_personal(user))
     ]
 

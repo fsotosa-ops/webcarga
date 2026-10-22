@@ -116,3 +116,10 @@ def test_la_tabla_dinamica_es_de_flota_y_hasta_20000():
         with pytest.raises(HTTPException) as exc:
             parse_request(malo, purpose="pivot")
         assert exc.value.status_code == 422
+
+
+def test_una_pagina_absurda_es_422():
+    """Fix pass (M8): page=10**20 desbordaba el OFFSET de asyncpg (500)."""
+    with pytest.raises(HTTPException) as exc:
+        _req(page=10**20)
+    assert exc.value.status_code == 422
