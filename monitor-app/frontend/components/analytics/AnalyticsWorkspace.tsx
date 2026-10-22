@@ -2,11 +2,11 @@
 
 import { useMemo, useState, type ReactNode } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FileDown, Loader2, RefreshCw } from 'lucide-react'
 import { DataTable } from '@/components/ui/tabla/data/DataTable'
 import { TableToolbar } from '@/components/ui/tabla/data/TableToolbar'
-import { useDataTable } from '@/components/ui/tabla/data/useDataTable'
+import { useDataTable, type ColumnPrefs } from '@/components/ui/tabla/data/useDataTable'
 import { useTablePreferences } from '@/components/ui/tabla/data/useTablePreferences'
 import { useUrlView } from '@/components/ui/tabla/data/useUrlView'
 import { Button } from '@/components/ui/Button'
@@ -16,9 +16,12 @@ import {
   DEFAULT_PERIOD, readPeriod, resolvePeriod, todayInChile, writePeriod, type DateField, type Period,
 } from '@/lib/analytics/period'
 import {
-  analyticsApi, ExportTooLargeError, type AnalyticsDataset, type AnalyticsQuery, type AnalyticsRow,
+  analyticsApi, ExportTooLargeError, type AnalyticsColumnMeta, type AnalyticsDataset, type AnalyticsQuery,
+  type AnalyticsRow, type SavedView, type SavedViewState,
 } from '@/lib/api/analytics'
 import { PeriodPicker } from './PeriodPicker'
+import { SavedViewsPanel } from './SavedViewsPanel'
+import { SaveViewDialog } from './SaveViewDialog'
 import { toDataColumns } from './analyticsColumns'
 
 /** Analítica: la BDOT reconstruida (HU monitor-app/docs/user-stories/20261022/01-hu-analitica.md).
@@ -54,6 +57,20 @@ function Frescura({ loadedAt }: { loadedAt: string | null | undefined }) {
   )
 }
 
+/** Las columnas de una vista guardada como preferencia de la tabla: las suyas visibles y en su orden, el resto
+ *  oculto. "BDOT completo" (all_columns) = todas las del catálogo. Una columna que ya no existe se ignora (la
+ *  tabla del kit no la encuentra). */
+function columnasDeLaVista(v: SavedView, catalogo: AnalyticsColumnMeta[]): ColumnPrefs {
+  if (v.view.all_columns) return catalogo.map(c => ({ id: c.id, hidden: false }))
+  const propias = v.columns.filter(c => !c.hidden).map(c => ({ id: c.id, hidden: false }))
+  const ids = new Set(propias.map(c => c.id))
+  return [...propias, ...catalogo.filter(c => !ids.has(c.id)).map(c => ({ id: c.id, hidden: true }))]
+}
+
+const mismaVista = (a: SavedViewState, b: SavedViewState) =>
+  JSON.stringify([a.filters, a.q, a.sort, a.period, a.date_field ?? null])
+  === JSON.stringify([b.filters, b.q, b.sort, b.period, b.date_field ?? null])
+
 function Aviso({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <div className="space-y-2 py-2">
@@ -63,19 +80,21 @@ function Aviso({ children, action }: { children: ReactNode; action?: ReactNode }
   )
 }
 
-export function AnalyticsWorkspace({ aside }: { aside?: ReactNode } = {}) {
+export function AnalyticsWorkspace() {
   const puedeLeer = usePermiso('analytics.read')
   if (!puedeLeer) {
     return <p className="rounded-xl border border-border bg-white px-4 py-6 text-center text-dato text-informativo">
       No tienes acceso a Analítica</p>
   }
-  return <Workspace aside={aside} />
+  return <Workspace />
 }
 
-function Workspace({ aside }: { aside?: ReactNode }) {
+function Workspace() {
   const pathname = usePathname()
   const params = useSearchParams()
   const puedeDescargar = usePermiso('analytics.export')
+  const puedeCompartir = usePermiso('analytics.manage_views')
+  const qc = useQueryClient()
   const dataset: AnalyticsDataset = params.get('dataset') === 'fleet' ? 'fleet' : 'trips'
   const meta = DATASETS.find(d => d.id === dataset)!
   const { period, dateField: fechaEnUrl } = readPeriod(params)
@@ -91,7 +110,18 @@ function Workspace({ aside }: { aside?: ReactNode }) {
   const columnas = useQuery({ queryKey: ['analytics-columns', dataset], queryFn: () => analyticsApi.columns(dataset),
     staleTime: 5 * 60_000 })
   const columns = useMemo(() => toDataColumns(columnas.data ?? []), [columnas.data])
-  const preferencias = useTablePreferences(`analytics.${dataset}`)
+  const preferenciasGuardadas = useTablePreferences(`analytics.${dataset}`)
+
+  // La vista guardada activa (`vista=<id>` en la URL). Mientras está activa, sus columnas mandan; mover columnas
+  // cambia la sesión, no las preferencias de la persona.
+  const vistas = useQuery({ queryKey: ['analytics-views', dataset], queryFn: () => analyticsApi.views(dataset) })
+  const activa = vistas.data?.find(v => v.id === params.get('vista')) ?? null
+  const [columnasDeSesion, setColumnasDeSesion] = useState<ColumnPrefs | null>(null)
+  const [guardandoVista, setGuardandoVista] = useState(false)
+  const columnasActivas = activa ? (columnasDeSesion ?? columnasDeLaVista(activa, columnas.data ?? [])) : null
+  const preferencias = activa
+    ? { columns: columnasActivas, save: setColumnasDeSesion, reset: () => setColumnasDeSesion(null), ready: true }
+    : preferenciasGuardadas
 
   const consulta: AnalyticsQuery = { dataset, period, dateField, view, page: pagina.page, size: pagina.size }
   const filas = useQuery({
@@ -105,7 +135,7 @@ function Workspace({ aside }: { aside?: ReactNode }) {
 
   const model = useDataTable<AnalyticsRow>({
     rows: filas.data?.rows ?? [], columns, getRowId: r => r._id, view, onViewChange: setView,
-    columnPrefs: preferencias.columns,
+    columnPrefs: preferencias.columns ?? null,
     server: {
       total: listo ? filas.data!.total : null, counts: listo ? filas.data!.counts : null,
       page: pagina.page, pageSize: pagina.size, onPage: (page, size) => setPagina({ page, size }),
@@ -114,7 +144,43 @@ function Workspace({ aside }: { aside?: ReactNode }) {
 
   function cambiarPeriodo(p: Period, f: DateField | null = fechaEnUrl) {
     setPagina(x => ({ ...x, page: 0 }))
-    writeParams(pathname, writePeriod(new URLSearchParams(params.toString()), p, f))
+    writeParams(pathname, writePeriod(new URLSearchParams(window.location.search), p, f))
+  }
+
+  const estadoActual: SavedViewState = { ...view, period, date_field: dateField }
+
+  function aplicar(v: SavedView) {
+    setPagina(x => ({ ...x, page: 0 }))
+    setColumnasDeSesion(null)
+    // Igual que al cambiar de conjunto: primero la vista (escribe desde la URL que conoce), después lo demás.
+    setView({ filters: v.view.filters ?? {}, q: v.view.q ?? '', sort: v.view.sort ?? null })
+    const p = writePeriod(new URLSearchParams(window.location.search), v.view.period ?? DEFAULT_PERIOD,
+      v.view.date_field ?? null)
+    p.set('dataset', v.dataset)
+    p.set('vista', v.id)
+    writeParams(pathname, p)
+  }
+
+  const cambiada = !!activa && (!mismaVista(estadoActual, { ...activa.view, date_field: activa.view.date_field
+    ?? DATASETS.find(d => d.id === activa.dataset)!.dateFields[0] }) || columnasDeSesion !== null)
+
+  const columnasVisibles = (): ColumnPrefs => model.visibleColumns.map(c => ({ id: c.id, hidden: false }))
+
+  async function guardarCambios() {
+    if (!activa) return
+    const v = await analyticsApi.updateView(activa.id, { view: estadoActual, columns: columnasVisibles() })
+    qc.setQueryData<SavedView[]>(['analytics-views', dataset], xs => xs?.map(x => (x.id === v.id ? v : x)))
+    setColumnasDeSesion(null)
+  }
+
+  async function guardarNueva(name: string, shared: boolean) {
+    const v = await analyticsApi.createView({ dataset, name, scope: shared ? 'shared' : 'personal',
+      view: estadoActual, columns: columnasVisibles() })
+    qc.setQueryData<SavedView[]>(['analytics-views', dataset], xs => [...(xs ?? []), v])
+    const p = new URLSearchParams(window.location.search)
+    p.set('vista', v.id)
+    writeParams(pathname, p)
+    setColumnasDeSesion(null)
   }
 
   function cambiarConjunto(id: AnalyticsDataset) {
@@ -171,7 +237,10 @@ function Workspace({ aside }: { aside?: ReactNode }) {
 
   return (
     <div className="flex flex-col gap-4 lg:flex-row">
-      {aside}
+      <SavedViewsPanel views={vistas.data ?? []} activeId={activa?.id ?? null} onApply={aplicar}
+        onNew={() => setGuardandoVista(true)} />
+      {guardandoVista && <SaveViewDialog canShare={puedeCompartir} onClose={() => setGuardandoVista(false)}
+        onSave={guardarNueva} />}
       <div className="min-w-0 flex-1 space-y-3">
         <div className="flex flex-wrap items-center gap-3">
           <div role="group" aria-label="Conjunto de datos" className="inline-flex rounded-lg border border-border bg-white p-0.5">
@@ -186,6 +255,14 @@ function Workspace({ aside }: { aside?: ReactNode }) {
           <PeriodPicker period={period} onPeriod={p => cambiarPeriodo(p)} dateField={dateField}
             onDateField={f => cambiarPeriodo(period, f)} dateFields={meta.dateFields} today={today} />
           <Frescura loadedAt={filas.data?.loaded_at} />
+          {cambiada && (
+            <span className="inline-flex items-center gap-2">
+              {activa!.can_edit && (
+                <Button variant="primary" size="sm" onClick={() => { void guardarCambios() }}>Guardar cambios</Button>
+              )}
+              <Button size="sm" onClick={() => aplicar(activa!)}>Descartar</Button>
+            </span>
+          )}
         </div>
 
         {filas.isError || columnas.isError ? (

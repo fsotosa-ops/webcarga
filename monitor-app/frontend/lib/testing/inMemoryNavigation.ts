@@ -65,6 +65,9 @@ export const memoryUrl = {
   /** Vuelve a una URL (ruta y consulta) y limpia lo registrado. */
   reset(destino: string) {
     url = new URL(destino, 'http://test/')
+    // `window.location` también, como en el navegador: una pantalla que escribe sobre la URL actual
+    // (Analítica, 22/10) la lee de ahí.
+    window.history.replaceState(null, '', `${url.pathname}${url.search}`)
     router.replace.mockClear(); router.push.mockClear()
     listeners.forEach(l => l())
   },
