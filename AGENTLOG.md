@@ -22,7 +22,7 @@
 ### PARA LA PRÓXIMA SESIÓN (cierre del 22/10, actualizado al final del día)
 
 Todo lo de hoy está comiteado y en `dev` (último `27d46eb8`). El punto 0 (Configuración) quedó CERRADO y probado en
-dev; de sus 6 menores se hicieron el 2 (con el 1) y el 6, falta su humo; el 3, 4 y 5 siguen diferidos. Pendientes, en orden:
+dev; sus 6 menores quedaron hechos el mismo día (falta el humo de los últimos cambios). Pendientes, en orden:
 0. **Configuración ordenada (22/10, `febe1d8a..96c098d8` en dev, falta humo):** spec
    `docs/superpowers/specs/2026-10-22-configuracion-orden-visual-design.md`, plan `docs/superpowers/plans/2026-10-22-configuracion-orden-visual.md`
    (inline, 9 tareas + revisión final opus). Cierra el pendiente del 11/10 (pasada visual) y la deuda que seguía.
@@ -50,8 +50,16 @@ dev; de sus 6 menores se hicieron el 2 (con el 1) y el 6, falta su humo; el 3, 4
      - 2 (+1): `useUnsavedChanges` escucha clics en el documento (captura, antes que el `Link` de Next) y pregunta en
        cualquier enlace interno —índice, menú lateral, migas—; cuenta formularios con cambios (arregla el 1). El botón
        Atrás del navegador queda fuera: un `popstate` no se cancela y simularlo choca con el router de Next.
-     - Siguen diferidos: 3 (audit fuera de transacción), 4 (nombres de acción), 5 (Decimal vs float).
-     - **Siguiente:** humo en dev: editar un umbral y salir por el menú lateral (debe preguntar; cancelar se queda).
+     - Después, del más fácil al más difícil (pedido del usuario):
+       - 5 (`270f9664`): `diferencia` compara números como Decimal: Decimal('0.1') vs 0.1 ya no es cambio.
+       - 4 (`85accd71`): desactivar un motivo se registra como `deactivate` y solo si estaba activo; retirar persona
+         registra `deactivate`, y `delete` recién después de que Supabase borra la cuenta.
+       - 3: estados, umbrales, rangos, reglas del Monitor y vocabularios guardan cambio + revisión + registro en una
+         transacción (test: si el registro falla, el cambio no queda). Invitar persona queda fuera (Supabase está fuera
+         de la base). Los arneses simulados usan conexión = pool (`wire_transactional_conn(pool, pool)`).
+       - Los 6 menores están hechos. Verificación: 526 tests de Configuración y accesos en verde (copia local).
+     - **Siguiente:** humo en dev: editar un umbral y salir por el menú lateral (debe preguntar; cancelar se queda);
+       guardar un umbral y ver que sigue funcionando con la transacción.
 1. **Operaciones:** avisar que la Flota del día se baja y se copia ("Descargar Excel" / "Copiar"): la vista se arma una
    vez (columnas y filtros, p. ej. por Origen habitual) y se manda al CD desde ahí. Ver la sección de abajo.
 2. **Certificación:** que quien grabó el video del arrastre lo pruebe con un arrastre de verdad (`da1ecd26`).
