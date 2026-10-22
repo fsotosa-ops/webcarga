@@ -185,8 +185,10 @@ manuales 18. Las horas del TMS se leen como hora de Chile y se guardan en UTC.
   - En Walmart y Wingsuite la asignación llega con el viaje: la hora disponible es cuándo el TMS lo publicó, no
     cuándo se asignó.
   - Para Sodimac sale del snapshot, con la precisión de 15 minutos.
-  - Confirmar con Operaciones qué quieren medir. Si es la hora en que WebCarga consigue camión, falta que la app
-    la registre.
+  - Decisión del usuario (22/10): se construye con lo que hay, sin preguntar a Operaciones. El reporte dice de dónde
+    sale cada hora (`assigned_at_source`: TMS con patente, o publicación del viaje cuando la patente llega con él).
+    Si algún día se quiere la hora en que WebCarga consigue camión, es un dato nuevo que registra la app; no es
+    prerrequisito.
 - **Reasignaciones:** `trip_fleet_links` se actualiza en el mismo lugar y no guarda historia. Si importa saber
   cuántas veces cambió el camión de un viaje, la app debe registrar cada cambio (sección 8).
 - **Descarga:** sin fuente.

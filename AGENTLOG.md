@@ -136,6 +136,9 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
      - `fct_trip_status_events` (desde `bronze.tms_trips_snapshot`: hitos publicado y asignado).
      - Migración de `analytics`: vistas `bdot` y `bdot_people`, roles, y sacar `gold` de PostgREST.
      - Fase 2: el módulo Analítica.
+   - DECISIÓN DEL USUARIO (22/10): Analítica no depende de Operaciones. Se construye con lo resuelto; los puntos para
+     Operaciones (FRTC42, GPRZ30, tipos de Reclutamiento, Sodimac sin tracto, onboarding de conductores, umbral
+     `stale_trip_days`) son backlog aparte y no bloquean nada de Analítica.
    - (hecho) Leído el proyecto dbt de Mage (`.mage-agent/local_sync/dbt/tms`, y `monitor-app/docs`
      contra la base real), la convención de dbt del proyecto y cómo se programa su ejecución.
    - Antes: llevar la zona de destino a una función SQL que `destination_zone.py` reutilice.
