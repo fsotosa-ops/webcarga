@@ -185,7 +185,7 @@ type ThresholdRow = AlertThresholdMeta & { id: string }
 
 export function thresholdSource(docType: string): SettingsSource<ThresholdRow> {
   return {
-    area: AREA_DEL_UMBRAL[docType], section: 'expiry-alerts',
+    area: AREA_DEL_UMBRAL[docType], section: 'expiry-alerts', kind: 'form',
     queryKey: ['config', 'alert-thresholds', docType],
     list: () => configApi.getAlertThresholds()
       .then(rows => rows.filter(r => r.doc_type === docType).map(r => ({ ...r, id: r.doc_type }))),
@@ -258,7 +258,7 @@ const REGLAS_DEL_MONITOR: { id: keyof MonitorAlertRules; label: string; unit: st
 type RuleRow = { id: string; label: string; unit: string; help: string; optional: boolean; value: number | null }
 
 export const monitorRulesSource: SettingsSource<RuleRow> = {
-  area: 'operations', section: 'alert-thresholds',
+  area: 'operations', section: 'alert-thresholds', kind: 'form',
   queryKey: ['config', 'monitor-alert-rules'],
   list: () => configApi.getMonitorAlertRules().then(r => REGLAS_DEL_MONITOR.map(x => ({
     id: x.id, label: x.label, unit: x.unit, help: x.help, optional: !!x.optional,

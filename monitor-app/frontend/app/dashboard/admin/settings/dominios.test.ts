@@ -4,6 +4,13 @@ import { SECCION_DE_TAXONOMIA } from './settings-sources'
 import { PERMISO_DE_SECCION } from './secciones'
 
 describe('registro de dominios', () => {
+  // Spec 2026-10-22 §3.1: los valores sueltos son un formulario; el resto, listas.
+  it('cada sección dibuja su tipo de página', () => {
+    const formularios = DOMINIOS.flatMap(d => d.secciones
+      .filter(s => (s.Panel as { kind?: string }).kind === 'form').map(s => `${d.clave}/${s.clave}`))
+    expect(formularios.sort()).toEqual(['certification/expiry-alerts', 'insurance/expiry-alerts', 'operations/alert-thresholds'])
+  })
+
   it('las claves de dominio son unicas', () => {
     const claves = DOMINIOS.map(d => d.clave)
     expect(new Set(claves).size).toBe(claves.length)

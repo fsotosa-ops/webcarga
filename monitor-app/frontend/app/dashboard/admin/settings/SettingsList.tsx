@@ -217,7 +217,7 @@ function PanelElemento<Row extends { id: string }>({
   )
 }
 
-function Campo({ campo, valor, disabled, onChange }: {
+export function Campo({ campo, valor, disabled, onChange }: {
   campo: SettingsField
   valor: SettingsValues[string]
   disabled: boolean

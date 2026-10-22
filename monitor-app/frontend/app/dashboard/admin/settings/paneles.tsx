@@ -2,22 +2,25 @@
 
 import type { ComponentType } from 'react'
 import { SettingsList } from './SettingsList'
+import { SettingsForm } from './SettingsForm'
 import {
   SECCION_DE_TAXONOMIA, tripStatusSource, monitorRulesSource, temperatureRangeSource, thresholdSource, vocabularySource,
   type SettingsSource,
 } from './settings-sources'
 
-/** El panel de una sección hecho desde su fuente: todas se dibujan con
- *  `SettingsList` (Configuración, Parte 1). */
-function porFuente<Row extends { id: string }>(source: SettingsSource<Row>, nombre: string): ComponentType {
-  const Panel = () => <SettingsList source={source} />
+/** El panel de una sección hecho desde su fuente: una lista (`SettingsList`) o, si
+ *  son valores sueltos, un formulario (`SettingsForm`) (spec 2026-10-22 §3.1). El
+ *  tipo queda a la vista en `Panel.kind` (dominios.test lo recorre). */
+function porFuente<Row extends { id: string }>(source: SettingsSource<Row>, nombre: string): ComponentType & { kind: 'list' | 'form' } {
+  const kind = source.kind ?? 'list'
+  const Panel: ComponentType = kind === 'form' ? () => <SettingsForm source={source} /> : () => <SettingsList source={source} />
   Panel.displayName = nombre
-  return Panel
+  return Object.assign(Panel, { kind })
 }
 
 /** Las secciones que se dibujan con `SettingsList`: abren un elemento con `?item=`. */
 export const SECCIONES_CON_LISTA: string[] = [
-  tripStatusSource.section, monitorRulesSource.section, temperatureRangeSource.section, 'expiry-alerts',
+  tripStatusSource.section, temperatureRangeSource.section,
   ...Object.values(SECCION_DE_TAXONOMIA).map(([, seccion]) => seccion),
 ]
 
