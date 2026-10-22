@@ -92,9 +92,16 @@ async def actualizar_persona(conn, actor: dict, user_id: str, *, active: bool | 
     la misma transacción, bajo el candado de Propietarios."""
     async with conn.transaction():
         await assert_can_manage_user(conn, actor, user_id, deactivating=active is False)
+        previo = await conn.fetchrow("SELECT active, full_name FROM public.profiles WHERE id = $1", user_id)
         await conn.execute(
             "UPDATE public.profiles SET active = COALESCE($2, active), full_name = COALESCE($3, full_name) WHERE id = $1",
             user_id, active, full_name)
+        # Registro de cambios (spec 2026-10-22): solo lo que cambió.
+        pedidos = {k: v for k, v in {"active": active, "full_name": full_name}.items() if v is not None}
+        antes = {k: previo[k] for k, v in pedidos.items() if previo[k] != v}
+        if antes:
+            await log_change(conn, actor=actor["sub"], entity_type="PERSON", entity_id=user_id, action="update",
+                             old_value=antes, new_value={k: pedidos[k] for k in antes})
     await invalidate_access(user_id)
 
 
@@ -105,6 +112,7 @@ async def retirar_persona(conn, actor: dict, user_id: str) -> None:
     async with conn.transaction():
         await assert_can_manage_user(conn, actor, user_id, deactivating=True)
         await conn.execute("UPDATE public.profiles SET active = false WHERE id = $1", user_id)
+        await log_change(conn, actor=actor["sub"], entity_type="PERSON", entity_id=user_id, action="delete")
     await invalidate_access(user_id)
 
 
@@ -177,6 +185,8 @@ async def update_role(conn, actor: dict, role_id: str, name: str | None, descrip
             raise AccessError(404, "Rol no encontrado")
         if rol["is_system"]:
             raise AccessError(409, "Los roles de sistema no se editan")
+        previos = sorted(r["permission_code"] for r in await conn.fetch(
+            "SELECT permission_code FROM app.role_permissions WHERE role_id = $1::uuid", role_id))
         if permissions is not None:
             pedidos = await _validar_permisos(conn, actor, permissions)
             await conn.execute("DELETE FROM app.role_permissions WHERE role_id = $1::uuid", role_id)
@@ -184,7 +194,9 @@ async def update_role(conn, actor: dict, role_id: str, name: str | None, descrip
         await conn.execute(
             "UPDATE app.roles SET name = COALESCE($2, name), description = COALESCE($3, description) WHERE id = $1::uuid",
             role_id, name, description)
+        # El antes también (registro de cambios, spec 2026-10-22): qué permisos tenía.
         await log_change(conn, actor=actor["sub"], entity_type="ROLE", entity_id=role_id, action="update",
+                         old_value={"name": rol["name"], "description": rol["description"], "permissions": previos},
                          new_value={"name": name, "description": description, "permissions": permissions})
         afectados = [str(r["user_id"]) for r in await conn.fetch("SELECT user_id FROM app.user_roles WHERE role_id = $1::uuid", role_id)]
     for uid in afectados:

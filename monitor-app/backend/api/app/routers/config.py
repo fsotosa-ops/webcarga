@@ -19,8 +19,17 @@ from ..services.config_changes import SQL_ULTIMOS_CAMBIOS, diferencia, entity_ty
 # Cada ruta declara su permiso (RBAC): ver tests/test_toda_ruta_declara_permiso.py.
 router = APIRouter(prefix="/config", tags=["config"])
 
-# Las secciones con registro de cambios: las de Configuración y las de accesos.
-_SECCIONES_CON_CAMBIOS_DE_ACCESO = {("people", "users"), ("people", "roles")}
+# Personas y Roles ya se auditaban con sus propios tipos (USER_ROLE, ROLE) y el id
+# real de la entidad; se leen esos, no se escriben dos veces.
+_SECCIONES_CON_CAMBIOS_DE_ACCESO = {("people", "users"): ["PERSON", "USER_ROLE"], ("people", "roles"): ["ROLE"]}
+_SQL_ULTIMOS_CAMBIOS_DE_ACCESO = """
+SELECT DISTINCT ON (a.entity_id) a.entity_id::text AS element_id,
+       COALESCE(p.full_name, p.email) AS actor_name, a.occurred_at AS changed_at
+  FROM public.audit_log a
+  LEFT JOIN public.profiles p ON p.id = a.actor
+ WHERE a.entity_type = ANY($1::text[])
+ ORDER BY a.entity_id, a.occurred_at DESC, a.id DESC
+"""
 
 
 @router.get("/changes")
@@ -31,11 +40,14 @@ async def list_config_changes(
     """El último cambio de cada elemento de una sección: quién y cuándo (spec
     2026-10-22-configuracion-orden-visual §3.3). Personas y Roles exigen además
     gestionar usuarios, como su propia lista."""
-    if (area, section) in _SECCIONES_CON_CAMBIOS_DE_ACCESO:
+    tipos_de_acceso = _SECCIONES_CON_CAMBIOS_DE_ACCESO.get((area, section))
+    if tipos_de_acceso:
         exigir(usuario, Permission.USERS_MANAGE)
+        filas = await pool.fetch(_SQL_ULTIMOS_CAMBIOS_DE_ACCESO, tipos_de_acceso)
     elif (area, section) not in POR_SECCION:
         raise HTTPException(422, f"{area}/{section} no es una sección de Configuración")
-    filas = await pool.fetch(SQL_ULTIMOS_CAMBIOS, entity_type(area, section))
+    else:
+        filas = await pool.fetch(SQL_ULTIMOS_CAMBIOS, entity_type(area, section))
     return [{**dict(f), "changed_at": f["changed_at"].isoformat()} for f in filas]
 
 # El `group_id` de un estado del TMS es su etapa del viaje (schemas/status_taxonomy.TRIP_STAGES),

@@ -3,6 +3,7 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from typing import Optional
+from ..services.audit import log_change
 from ..auth import get_supabase
 from ..authz import Permission, require
 from ..authz.effective import invalidate_access
@@ -101,6 +102,11 @@ async def create_user(
         "UPDATE public.profiles SET full_name = $2 WHERE id = $1",
         user_id, body.full_name,
     )
+    # Registro de cambios (spec 2026-10-22): quién invitó a quién, con qué roles.
+    # Nunca la contraseña.
+    await log_change(pool, actor=actor["sub"], entity_type="PERSON", entity_id=user_id, action="create",
+                     new_value={"email": email, "full_name": body.full_name, "roles": roles,
+                                "invitation_sent": invitation_sent})
     row = await pool.fetchrow(_PERFIL, user_id)
     return {**dict(row), "invitation_sent": invitation_sent}
 

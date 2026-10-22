@@ -192,3 +192,17 @@ def test_un_admin_borra_y_retira_la_invitacion(reglas_permiten):
     # Primero se desactiva bajo el candado; recién después se borra en Auth.
     assert orden == ["desactiva", "borra en Auth"]
     assert any("DELETE FROM public.admin_whitelist" in c.args[0] for c in pool.execute.call_args_list)
+
+
+def test_invitar_queda_registrado_sin_secretos():
+    """Registro de cambios (spec 2026-10-22, accesos): quién invitó a quién y con qué
+    roles. Nunca la contraseña."""
+    sb, pool = _supabase_que_crea(), _pool_con_perfil()
+    res = _cliente(ADMIN, pool=pool, supabase=sb).post("/api/v1/users", json={**ALTA, "password": "Secreta-12345678"})
+
+    assert res.status_code == 201
+    auditorias = [c for c in pool.execute.call_args_list if "audit_log" in c.args[0]]
+    assert len(auditorias) == 1
+    assert "PERSON" in auditorias[0].args and "create" in auditorias[0].args
+    assert all("Secreta-12345678" not in str(a) for a in auditorias[0].args)
+
