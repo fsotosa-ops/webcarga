@@ -155,6 +155,21 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
        - Excel en el servidor y auditado.
        - Reportería fusionada como "Tabla dinámica" de Flota por día.
        - `bdot_people` pasa a `driver_identity`.
+     - PLAN ESCRITO (22/10): `docs/superpowers/plans/2026-10-22-modulo-analitica.md`, 13 tasks.
+       - dbt: `driver_identity` y los clientes del día en `fleet_daily`.
+       - Permisos.
+       - Catálogo de columnas.
+       - Consulta paginada.
+       - Excel auditado.
+       - `app.saved_views` (migración 20261104090000).
+       - Modo servidor del kit.
+       - Período en la URL.
+       - Cliente de la API.
+       - Pantalla.
+       - Vistas en la pantalla.
+       - Tabla dinámica + retiro de la Reportería.
+       - Producción y humo.
+       Pendiente: el usuario elige el modo de ejecución.
      - BACKLOG: identificación internacional, en el issue #14
        (https://github.com/fsotosa-ops/webcarga/issues/14).
        - Hoy `drivers` exige un RUT chileno canónico (CHECK) y `tax_id` es UNIQUE sin país en drivers y carriers.
