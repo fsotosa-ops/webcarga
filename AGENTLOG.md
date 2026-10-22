@@ -200,6 +200,10 @@ de la BD OT dependen de Facturación (fuera del MVP, cláusula 5.2).
            - Tras `analytics_gold` (run 15888): septiembre 1.077 y 02/09 = 41, igual que la Reportería. 673 líneas
              del hecho quedan fuera del reporte (casi todas de julio-agosto, antes de la primera firma): las cifras
              de Analítica de esos meses bajan en esa cantidad.
+           - HUMO EN DEV (22/10, API `webcarga-monitor-api-dev-00262`): Cierre del 02/09 carga sin errores; conductores
+             41 (28 asignados, 12 no asignados, 1 por regularizar), 0 fuera del roster. 21/10: 45, con 2 fuera del
+             roster marcados (después de la primera firma, correcto). Reportería septiembre: 1.077 filas, 02/09 = 41.
+             Analítica (`analytics.fleet_daily`): 02/09 = 41 y 21/10 = 45. Las tres pantallas dicen lo mismo.
          - Reporte del día del 16/10: 30 del día y 2 en ruta (la fecha de Chile movió 1).
          - 390 sin desplazamiento horizontal.
          - Arreglado: con el permiso, Conductor y RUT aparecían como columnas de entrada; ahora se eligen en Columnas
