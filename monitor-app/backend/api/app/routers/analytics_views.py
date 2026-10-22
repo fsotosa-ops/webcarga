@@ -36,6 +36,11 @@ class SavedViewBody(BaseModel):
     columns: list[ColumnPreference] = Field(max_length=80)
 
 
+class PinBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    pinned: bool
+
+
 class SavedViewPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = Field(default=None, min_length=1, max_length=60)
@@ -76,7 +81,30 @@ def _conservar_personales(guardada: list[dict], nueva: list[dict], personales: s
     return salida
 
 
-def _salida(fila, user: dict) -> dict:
+async def _fijadas(conn, dataset: str, user: dict) -> set[str] | None:
+    """Las vistas que la persona fijó en ese conjunto de datos; None si nunca eligió (se usan las por defecto)."""
+    filas = await conn.fetch(
+        "SELECT view_id::text, pinned FROM app.saved_view_pins WHERE user_id = $1::uuid AND dataset = $2",
+        user["sub"], dataset)
+    return {f["view_id"] for f in filas if f["pinned"]} if filas else None
+
+
+def _fijada_por_defecto(fila, user: dict) -> bool:
+    """Sin elección propia: las compartidas del sistema y las suyas."""
+    return fila["owner_id"] is None or fila["owner_id"] == user["sub"]
+
+
+async def _guardar_eleccion_por_defecto(conn, dataset: str, user: dict) -> None:
+    """La primera vez que alguien fija o suelta, se guarda lo que veía por defecto: desde ahí manda su elección."""
+    await conn.execute(
+        "INSERT INTO app.saved_view_pins (user_id, view_id, dataset, pinned) "
+        "SELECT $1::uuid, v.id, v.dataset, (v.owner_id IS NULL OR v.owner_id = $1::uuid) FROM app.saved_views v "
+        "WHERE v.dataset = $2 AND (v.scope = 'shared' OR v.owner_id = $1::uuid) "
+        "AND NOT EXISTS (SELECT 1 FROM app.saved_view_pins p WHERE p.user_id = $1::uuid AND p.dataset = $2) "
+        "ON CONFLICT DO NOTHING", user["sub"], dataset)
+
+
+def _salida(fila, user: dict, fijadas: set[str] | None = None) -> dict:
     """Una vista como la ve este usuario: sin las columnas personales si no tiene el permiso."""
     columnas = json.loads(fila["columns"])
     vista = json.loads(fila["view"])
@@ -86,6 +114,7 @@ def _salida(fila, user: dict) -> dict:
         vista = _vista_sin_personales(vista, personales)
     return {"id": fila["id"], "dataset": fila["dataset"], "name": fila["name"], "scope": fila["scope"],
             "view": vista, "columns": columnas, "can_edit": _puede_editar(fila, user),
+            "pinned": (fila["id"] in fijadas) if fijadas is not None else _fijada_por_defecto(fila, user),
             "is_mine": fila["owner_id"] == user["sub"], "updated_at": fila["updated_at"]}
 
 
@@ -107,10 +136,12 @@ async def _cargar(conn, view_id: UUID, user: dict):
 @router.get("")
 async def list_views(dataset: Literal["trips", "fleet"] = "trips", pool=Depends(get_pool),
                      user=Depends(require(Permission.ANALYTICS_READ))) -> list[dict]:
-    filas = await pool.fetch(
-        f"SELECT {_COLS} FROM app.saved_views WHERE dataset = $1 AND (scope = 'shared' OR owner_id = $2::uuid) "
-        "ORDER BY scope DESC, name", dataset, user["sub"])
-    return [_salida(f, user) for f in filas]
+    async with pool.acquire() as conn:
+        filas = await conn.fetch(
+            f"SELECT {_COLS} FROM app.saved_views WHERE dataset = $1 AND (scope = 'shared' OR owner_id = $2::uuid) "
+            "ORDER BY scope DESC, name", dataset, user["sub"])
+        fijadas = await _fijadas(conn, dataset, user)
+    return [_salida(f, user, fijadas) for f in filas]
 
 
 @router.post("", status_code=201)
@@ -119,15 +150,23 @@ async def create_view(body: SavedViewBody, pool=Depends(get_pool),
     if body.scope == "shared":
         exigir(user, Permission.ANALYTICS_MANAGE_VIEWS)
     _validar_columnas(body.dataset, body.columns, user)
-    try:
-        fila = await pool.fetchrow(
-            f"INSERT INTO app.saved_views (owner_id, dataset, name, scope, view, columns) "
-            f"VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6::jsonb) RETURNING {_COLS}",
-            user["sub"], body.dataset, body.name.strip(), body.scope, json.dumps(body.view),
-            json.dumps([c.model_dump() for c in body.columns]))
-    except asyncpg.UniqueViolationError:
-        raise HTTPException(409, "Ya hay una vista con ese nombre")
-    return _salida(fila, user)
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            try:
+                fila = await conn.fetchrow(
+                    f"INSERT INTO app.saved_views (owner_id, dataset, name, scope, view, columns) "
+                    f"VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6::jsonb) RETURNING {_COLS}",
+                    user["sub"], body.dataset, body.name.strip(), body.scope, json.dumps(body.view),
+                    json.dumps([c.model_dump() for c in body.columns]))
+            except asyncpg.UniqueViolationError:
+                raise HTTPException(409, "Ya hay una vista con ese nombre")
+            # Quien la crea la ve como pestaña, también si ya había elegido sus fijadas.
+            if await _fijadas(conn, body.dataset, user) is not None:
+                await conn.execute(
+                    "INSERT INTO app.saved_view_pins (user_id, view_id, dataset, pinned) VALUES ($1::uuid, $2::uuid, $3, true) "
+                    "ON CONFLICT (user_id, view_id) DO UPDATE SET pinned = true", user["sub"], fila["id"], body.dataset)
+            fijadas = await _fijadas(conn, body.dataset, user)
+    return _salida(fila, user, fijadas)
 
 
 @router.patch("/{view_id}")
@@ -165,7 +204,8 @@ async def update_view(view_id: UUID, body: SavedViewPatch, pool=Depends(get_pool
                 json.dumps(columnas) if columnas is not None else None)
         except asyncpg.UniqueViolationError:
             raise HTTPException(409, "Ya hay una vista con ese nombre")
-    return _salida(fila, user)
+        fijadas = await _fijadas(conn, fila["dataset"], user)
+    return _salida(fila, user, fijadas)
 
 
 @router.delete("/{view_id}", status_code=204)
@@ -176,3 +216,19 @@ async def delete_view(view_id: UUID, pool=Depends(get_pool),
         if not _puede_editar(fila, user):
             raise HTTPException(403, "Solo su dueño o un administrador puede borrarla")
         await conn.execute("DELETE FROM app.saved_views WHERE id = $1", view_id)
+
+
+@router.put("/{view_id}/pin")
+async def pin_view(view_id: UUID, body: PinBody, pool=Depends(get_pool),
+                   user=Depends(require(Permission.ANALYTICS_READ))) -> dict:
+    """Fijar o soltar una vista como pestaña. Es de cada persona: no cambia lo que ven los demás."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            fila = await _cargar(conn, view_id, user)
+            await _guardar_eleccion_por_defecto(conn, fila["dataset"], user)
+            await conn.execute(
+                "INSERT INTO app.saved_view_pins (user_id, view_id, dataset, pinned) VALUES ($1::uuid, $2, $3, $4) "
+                "ON CONFLICT (user_id, view_id) DO UPDATE SET pinned = EXCLUDED.pinned",
+                user["sub"], view_id, fila["dataset"], body.pinned)
+            fijadas = await _fijadas(conn, fila["dataset"], user)
+    return _salida(fila, user, fijadas)

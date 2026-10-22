@@ -153,3 +153,48 @@ async def test_una_sembrada_no_se_vuelve_personal(conexion_revertida):
     with pytest.raises(HTTPException) as exc:
         await update_view(bdot["id"], SavedViewPatch(scope="personal"), pool=pool, user=con_roles(ana, "admin"))
     assert exc.value.status_code == 422
+
+
+# ── Vistas fijadas como pestañas (patrón de HubSpot, 22/10) ───────────────────
+
+from app.routers.analytics_views import PinBody, pin_view  # noqa: E402
+
+
+async def test_sin_eleccion_propia_se_fijan_las_del_sistema_y_las_mias(conexion_revertida):
+    pool = PoolDeUnaConexion(conexion_revertida)
+    ana, beto = await _dos_usuarios(conexion_revertida)
+    await create_view(_cuerpo("ZZ de beto", scope="shared"), pool=pool, user=con_roles(beto, "operations_supervisor"))
+    await create_view(_cuerpo("ZZ mía"), pool=pool, user=ana)
+    vistas = {v["name"]: v["pinned"] for v in await list_views(dataset="trips", pool=pool, user=ana)}
+    assert vistas["BDOT completo"] is True and vistas["ZZ mía"] is True
+    assert vistas["ZZ de beto"] is False  # compartida de otra persona: está en "Todas las vistas", no fijada
+
+
+async def test_fijar_y_soltar_se_recuerda_por_persona(conexion_revertida):
+    pool = PoolDeUnaConexion(conexion_revertida)
+    ana, beto = await _dos_usuarios(conexion_revertida)
+    vistas = {v["name"]: v for v in await list_views(dataset="trips", pool=pool, user=ana)}
+    await pin_view(vistas["BDOT completo"]["id"], PinBody(pinned=False), pool=pool, user=ana)
+    await pin_view(vistas["Operación por cliente"]["id"], PinBody(pinned=True), pool=pool, user=ana)
+    de_ana = {v["name"]: v["pinned"] for v in await list_views(dataset="trips", pool=pool, user=ana)}
+    de_beto = {v["name"]: v["pinned"] for v in await list_views(dataset="trips", pool=pool, user=beto)}
+    assert (de_ana["BDOT completo"], de_ana["Operación por cliente"]) == (False, True)
+    assert (de_beto["BDOT completo"], de_beto["Operación por cliente"]) == (True, True)  # beto no eligió nada
+
+
+async def test_una_vista_nueva_queda_fijada_para_quien_la_crea(conexion_revertida):
+    pool = PoolDeUnaConexion(conexion_revertida)
+    ana, _ = await _dos_usuarios(conexion_revertida)
+    vistas = {v["name"]: v for v in await list_views(dataset="trips", pool=pool, user=ana)}
+    await pin_view(vistas["BDOT completo"]["id"], PinBody(pinned=False), pool=pool, user=ana)  # ya eligió
+    creada = await create_view(_cuerpo("ZZ nueva"), pool=pool, user=ana)
+    assert creada["pinned"] is True
+
+
+async def test_no_se_fija_una_vista_personal_ajena(conexion_revertida):
+    pool = PoolDeUnaConexion(conexion_revertida)
+    ana, beto = await _dos_usuarios(conexion_revertida)
+    de_beto = await create_view(_cuerpo("ZZ privada"), pool=pool, user=beto)
+    with pytest.raises(HTTPException) as exc:
+        await pin_view(de_beto["id"], PinBody(pinned=True), pool=pool, user=ana)
+    assert exc.value.status_code == 404
