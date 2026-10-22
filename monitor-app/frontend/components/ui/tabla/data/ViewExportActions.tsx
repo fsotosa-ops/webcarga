@@ -48,7 +48,8 @@ export function ViewExportActions<T>({ model, title, fileName }: {
       const { columns, rows } = visibleTable(model)
       const { heading } = viewForPasting(model, title)
       await descargarExcel([hojaDeLaTabla(title, heading, columns, rows)], fileName)
-    } catch {
+    } catch (e) {
+      console.error('Descargar Excel de la vista', e)
       setError('No se pudo descargar el Excel. Vuelve a intentarlo.')
     } finally {
       setBajando(false)
@@ -57,14 +58,14 @@ export function ViewExportActions<T>({ model, title, fileName }: {
 
   return (
     <span className="flex flex-wrap items-center gap-2">
-      <Button size="sm" disabled={vacia || bajando} onClick={() => { void descargar() }}
+      <Button disabled={vacia || bajando} onClick={() => { void descargar() }}
         title="Baja lo que estás viendo: tus columnas, en tu orden, con tus filtros">
-        {bajando ? <Loader2 size={12} className="motion-safe:animate-spin" aria-hidden="true" /> : <FileDown size={12} aria-hidden="true" />}
+        {bajando ? <Loader2 size={14} className="motion-safe:animate-spin" aria-hidden="true" /> : <FileDown size={14} aria-hidden="true" />}
         Descargar Excel
       </Button>
-      <Button size="sm" disabled={vacia} onClick={() => { void copiar() }}
+      <Button disabled={vacia} onClick={() => { void copiar() }}
         title="Copia lo que estás viendo, listo para pegar en un correo o en WhatsApp">
-        {copiado ? <><Check size={12} aria-hidden="true" /> Copiado</> : <><Copy size={12} aria-hidden="true" /> Copiar</>}
+        {copiado ? <><Check size={14} aria-hidden="true" /> Copiado</> : <><Copy size={14} aria-hidden="true" /> Copiar</>}
       </Button>
       {error && <span role="alert" className="text-etiqueta text-status-incidente">{error}</span>}
     </span>

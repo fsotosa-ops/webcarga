@@ -113,3 +113,16 @@ describe('lo que estás viendo (C13)', () => {
     expect(hoja.data.map(f => f.map(valor))).toEqual([['Recorte: Tractoreo · 1 fila'], [], ['Patente', 'Vueltas'], ['ABCD12', 2]])
   })
 })
+
+// Flota del día, 22/10: el título "Flota del día 21/10 · Tractoreo" como nombre de hoja hizo
+// fallar la descarga en dev (Excel no acepta []/\:*? en el nombre). Los tests de la pantalla
+// simulaban la descarga; este pasa la hoja por la librería de verdad.
+describe('hojaDeLaTabla y Excel', () => {
+  it('un título con caracteres que Excel no acepta igual produce un archivo válido', async () => {
+    const { default: escribirExcel } = await import('write-excel-file/node')
+    const hoja = hojaDeLaTabla('Flota del día 21/10 · Tractoreo [a:b]*?', 'Recorte', [{ header: 'Conductor' }], [['Ana']])
+
+    await expect(escribirExcel([hoja]).toBuffer()).resolves.toBeTruthy()
+    expect(hoja.sheet).toBe('Flota del día 21-10 · Tractoreo')
+  })
+})

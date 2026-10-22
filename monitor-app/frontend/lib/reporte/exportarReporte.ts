@@ -12,6 +12,10 @@ type Fila = Celda[]
 /** Una hoja del .xlsx: nombre y filas. */
 export type HojaDeExcel = { sheet: string; data: Fila[] }
 
+/** El nombre de una hoja como lo acepta Excel: sin []/\\:*? y de 31 caracteres como máximo
+ *  (un título con fecha, "21/10", hacía fallar la descarga). */
+const nombreDeHoja = (nombre: string) => nombre.replace(/[[\]/\\:*?]/g, '-').slice(0, 31).trim()
+
 /** Una fila de encabezado o de subtotal. */
 const negrita = (fila: Valor[]): Fila =>
   fila.map(v => (v === null || v === '' ? null : { value: v, fontWeight: 'bold' as const }))
@@ -142,7 +146,7 @@ export function hojasDelReporte(
 export function hojasDeLaSeccion(
   seccion: Exclude<ReportSection, 'staffing'>, reporte: OperationTypeReport, clave: ClosureScope, recorte: string,
 ): HojaDeExcel[] {
-  return HOJAS[seccion].map(h => ({ sheet: `${h.nombre} · ${corta(clave)}`, data: [[recorte], [], ...h.filas(reporte, clave)] }))
+  return HOJAS[seccion].map(h => ({ sheet: nombreDeHoja(`${h.nombre} · ${corta(clave)}`), data: [[recorte], [], ...h.filas(reporte, clave)] }))
 }
 
 /** "Lo que estás viendo" de una tabla del kit (C13): sus columnas visibles en su
@@ -151,7 +155,7 @@ export function hojaDeLaTabla(
   sheet: string, recorte: string, columnas: { header: string; numeric?: boolean }[], filas: (string | null)[][],
 ): HojaDeExcel {
   return {
-    sheet: sheet.slice(0, 31),
+    sheet: nombreDeHoja(sheet),
     data: [
       [recorte], [],
       negrita(columnas.map(c => c.header)),
