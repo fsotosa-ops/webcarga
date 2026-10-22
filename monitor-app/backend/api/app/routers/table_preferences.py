@@ -25,7 +25,8 @@ class ColumnPreference(BaseModel):
 
 class TablePreferencesBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    columns: list[ColumnPreference] = Field(max_length=50)
+    # 80: Analítica tiene ~40 columnas por conjunto de datos y el catálogo crece por etapas (22/10).
+    columns: list[ColumnPreference] = Field(max_length=80)
 
 
 @router.get("/{table_key}")

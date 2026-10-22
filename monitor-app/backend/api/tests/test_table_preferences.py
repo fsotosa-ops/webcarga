@@ -38,7 +38,7 @@ def test_valida_la_clave_y_las_columnas():
     assert client.put("/api/v1/me/table-preferences/closure.fleet",
                       json={"columns": [{"id": "con espacio", "hidden": False}]}).status_code == 422
     assert client.put("/api/v1/me/table-preferences/closure.fleet",
-                      json={"columns": [{"id": f"c{i}", "hidden": False} for i in range(51)]}).status_code == 422
+                      json={"columns": [{"id": f"c{i}", "hidden": False} for i in range(81)]}).status_code == 422
     assert client.put("/api/v1/me/table-preferences/closure.fleet",
                       json={"columns": FLOTA, "color": "red"}).status_code == 422
 
