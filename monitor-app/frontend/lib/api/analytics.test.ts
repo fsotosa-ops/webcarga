@@ -41,7 +41,7 @@ describe('analyticsApi', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       expect(url).toContain('/api/v1/analytics/export?')
       expect(url).toContain('columns=trip_code%2Cclient_name')
-      return new Response(new Blob(['x']), { status: 200 })
+      return new Response('x', { status: 200 })
     }))
     const { filename } = await analyticsApi.export(Q, ['trip_code', 'client_name'], '2026-10-22')
     expect(filename).toBe('analitica_trips_2026-10-01_2026-10-07.xlsx')
