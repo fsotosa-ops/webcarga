@@ -57,7 +57,7 @@ async def test_empresa_no_activa_es_409_y_no_escribe(conexion_revertida, estado)
     assert e.value.detail["code"] == "CARRIER_NOT_ACTIVE"
     assert f"Empresa {flota['suffix']}" in e.value.detail["message"]
     if estado == "ONBOARDING":   # C-R8: dice qué hacer
-        assert "onboarding" in e.value.detail["message"] and "Directorio" in e.value.detail["message"]
+        assert "onboarding" in e.value.detail["message"] and "Certificación" in e.value.detail["message"]
     assert await _vinculo_manual(conn, trip_id) is None
 
 

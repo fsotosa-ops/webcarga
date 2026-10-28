@@ -66,4 +66,7 @@ class StatusTaxonomyPatch(BaseModel):
     label:      Optional[str] = None
     active:     Optional[bool] = None
     group_id:   Optional[str] = None
+    #: Solo DEACTIVATION_REASON (28/10): una baja con este motivo se reactiva únicamente
+    #: con directory.reinstate. La valida el router, que conoce el dominio de la fila.
+    blocks_reactivation: Optional[bool] = None
 

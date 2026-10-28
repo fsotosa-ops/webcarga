@@ -18,7 +18,7 @@ router = APIRouter(prefix="/config/taxonomies", tags=["config"])
 # formulario. Ver 20260816090000_status_taxonomies_code.sql.
 _FIELDS = (
     'id::text, domain, code, label, '
-    'group_id AS "group", sort_order, active'
+    'group_id AS "group", sort_order, active, blocks_reactivation'
 )
 
 # El mismo orden contra el que se mueve (TAXONOMIAS.orden). Si divergieran, la
@@ -98,6 +98,8 @@ async def patch_taxonomy(
     if not data:
         raise HTTPException(422, "Ningún campo enviado")
     _exigir_grupo_valido(existing["domain"], data.get("group_id"))
+    if "blocks_reactivation" in data and existing["domain"] != "DEACTIVATION_REASON":
+        raise HTTPException(422, "La baja definitiva es un atributo de los motivos de baja")
 
     sets, vals = [], [taxonomy_id]
     for field, value in data.items():

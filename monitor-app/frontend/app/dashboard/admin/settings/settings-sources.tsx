@@ -87,10 +87,14 @@ const APLICA_A = {
   ],
 }
 
+const SI_NO = [{ id: 'no', label: 'No' }, { id: 'si', label: 'Sí' }]
+
 /** Los vocabularios de `app.status_taxonomies`: un registro, una fuente. */
 const VOCABULARIOS: Record<TaxonomyDomain, {
   area: string; section: string; noun: string; columna: string
   grupo?: { label: string; help: string; options: { id: string; label: string }[]; porDefecto: string; conTono?: boolean }
+  /** Los motivos de baja llevan además "Baja definitiva" (28/10). */
+  definitiva?: true
 }> = {
   OPERATIONAL_STATE: {
     area: 'operations', section: 'operational-statuses', noun: 'estado', columna: 'Estado',
@@ -120,7 +124,7 @@ const VOCABULARIOS: Record<TaxonomyDomain, {
   },
   DEACTIVATION_REASON: {
     area: 'directory', section: 'deactivation-reasons', noun: 'motivo', columna: 'Motivo',
-    grupo: APLICA_A,
+    grupo: APLICA_A, definitiva: true,
   },
   REACTIVATION_REASON: {
     area: 'directory', section: 'reactivation-reasons', noun: 'motivo', columna: 'Motivo',
@@ -155,15 +159,28 @@ export function vocabularySource(domain: TaxonomyDomain): SettingsSource<Taxonom
       { id: 'label', header: v.columna, value: r => r.label,
         cell: r => (grupo?.conTono ? conTono(r.label, r.group) : r.label) },
       ...(grupo ? [{ id: 'group', header: grupo.label, value: (r: TaxonomyRow) => etiquetaDe(r.group) }] : []),
+      ...(v.definitiva ? [{ id: 'blocks_reactivation', header: 'Baja definitiva',
+        value: (r: TaxonomyRow) => (r.blocks_reactivation ? 'Sí' : 'No') }] : []),
     ],
     fields: () => [
       { key: 'label', label: 'Nombre', kind: 'text' },
       ...(grupo ? [{ key: 'group', label: grupo.label, kind: 'select' as const, options: grupo.options, help: grupo.help }] : []),
+      ...(v.definitiva ? [{ key: 'blocks_reactivation', label: 'Baja definitiva', kind: 'select' as const, options: SI_NO,
+        help: 'Una baja con este motivo solo la puede revertir Administración.' }] : []),
     ],
     // Sin grupo (llegó así) se muestra vacío y se pide elegirlo: mostrar el de
     // por defecto haría que elegirlo no contara como cambio.
-    values: r => (grupo ? { label: r.label, group: r.group ?? '' } : { label: r.label }),
-    save: (r, c) => taxonomiesApi.patch(r.id, c as { label?: string; group?: string }),
+    values: r => ({
+      label: r.label,
+      ...(grupo ? { group: r.group ?? '' } : {}),
+      ...(v.definitiva ? { blocks_reactivation: r.blocks_reactivation ? 'si' : 'no' } : {}),
+    }),
+    save: (r, c) => {
+      const { blocks_reactivation, ...rest } = c as { label?: string; group?: string; blocks_reactivation?: string }
+      return taxonomiesApi.patch(r.id, {
+        ...rest, ...(blocks_reactivation !== undefined ? { blocks_reactivation: blocks_reactivation === 'si' } : {}),
+      })
+    },
     move: (r, d) => taxonomiesApi.move(r.id, d),
     create: {
       noun: v.noun,

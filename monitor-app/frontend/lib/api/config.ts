@@ -107,6 +107,9 @@ export type TaxonomyRow = OperationalStateMeta & {
   sort_order: number
   active: boolean
   code: string | null
+  /** Solo en los motivos de baja (28/10): una baja con este motivo la revierte solo
+   *  Administración. Opcional: backend y frontend se despliegan por separado. */
+  blocks_reactivation?: boolean
 }
 
 export const taxonomiesApi = {
@@ -119,7 +122,7 @@ export const taxonomiesApi = {
       body: JSON.stringify({ ...body, group: undefined, group_id: body.group }),
     }),
 
-  patch: (id: string, body: Partial<{ label: string; active: boolean; group: string }>) =>
+  patch: (id: string, body: Partial<{ label: string; active: boolean; group: string; blocks_reactivation: boolean }>) =>
     apiFetch<TaxonomyRow>(`/api/v1/config/taxonomies/${id}`, {
       method: 'PATCH',
       body: JSON.stringify({ ...body, group: undefined, group_id: body.group }),

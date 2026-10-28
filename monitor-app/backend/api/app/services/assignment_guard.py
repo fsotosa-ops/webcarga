@@ -108,8 +108,9 @@ def _verdict(row, can_operate: dict[str, bool], target: str = "trip") -> Assignm
         # C-R8 (confirmado por el usuario): en onboarding se le piden documentos, pero no recibe viajes.
         return AssignmentCheck(blocking={
             "code": CARRIER_NOT_ACTIVE,
-            "message": (f"La empresa {row['business_name']} está en onboarding: actívala en el "
-                        "Directorio para asignarle viajes.")})
+            # Desde el 28/10 la activa Certificación, o se activa sola cuando su carpeta cumple.
+            "message": (f"La empresa {row['business_name']} está en onboarding: recibe viajes cuando "
+                        "Certificación la active o su carpeta esté completa.")})
     if row["carrier_id"] and row["carrier_status"] != "ACTIVE":
         return AssignmentCheck(blocking={
             "code": CARRIER_NOT_ACTIVE,

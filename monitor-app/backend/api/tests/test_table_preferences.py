@@ -54,9 +54,8 @@ async def test_guarda_lee_reemplaza_y_restablece(conexion_revertida):
     pool = PoolDeUnaConexion(conexion_revertida)
     ana, beto = await _dos_personas(conexion_revertida)
 
-    with pytest.raises(HTTPException) as nada:
-        await get_table_preferences("closure.fleet", pool=pool, user=ana)
-    assert nada.value.status_code == 404
+    # Sin preferencia guardada no es un error (28/10): un 404 ensuciaba la consola de cada pantalla.
+    assert (await get_table_preferences("closure.fleet", pool=pool, user=ana)) == {"columns": None}
 
     await put_table_preferences("closure.fleet", TablePreferencesBody(columns=FLOTA), pool=pool, user=ana)
     assert (await get_table_preferences("closure.fleet", pool=pool, user=ana))["columns"] == FLOTA
@@ -67,11 +66,7 @@ async def test_guarda_lee_reemplaza_y_restablece(conexion_revertida):
     assert (await get_table_preferences("closure.fleet", pool=pool, user=ana))["columns"] == otra
 
     # Es de cada persona.
-    with pytest.raises(HTTPException) as ajena:
-        await get_table_preferences("closure.fleet", pool=pool, user=beto)
-    assert ajena.value.status_code == 404
+    assert (await get_table_preferences("closure.fleet", pool=pool, user=beto)) == {"columns": None}
 
     await delete_table_preferences("closure.fleet", pool=pool, user=ana)
-    with pytest.raises(HTTPException) as borrada:
-        await get_table_preferences("closure.fleet", pool=pool, user=ana)
-    assert borrada.value.status_code == 404
+    assert (await get_table_preferences("closure.fleet", pool=pool, user=ana)) == {"columns": None}

@@ -6,7 +6,7 @@ como los grupos del Monitor (`filter_groups.py`). Restablecer = borrar."""
 import json
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..auth import get_current_user
@@ -35,8 +35,10 @@ async def get_table_preferences(table_key: TableKey, pool=Depends(get_pool), use
         "SELECT columns FROM app.table_preferences WHERE user_id = $1 AND table_key = $2",
         user["sub"], table_key,
     )
+    # Sin preferencia guardada no es un error: la tabla usa su orden declarado. Un 404
+    # quedaba como error en la consola de cada pantalla con una tabla del kit (28/10).
     if fila is None:
-        raise HTTPException(404, "Sin preferencia guardada")
+        return {"columns": None}
     # jsonb llega como texto: el pool no registra un codec para jsonb.
     return {"columns": json.loads(fila["columns"])}
 

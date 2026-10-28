@@ -208,3 +208,15 @@ def test_un_estado_del_tablero_rechaza_un_grupo_de_motivo():
     res = client.patch("/api/v1/config/taxonomies/t1", json={"group_id": "no_trabajando"})
 
     assert res.status_code == 422
+
+
+def test_la_baja_definitiva_es_solo_de_los_motivos_de_baja():
+    """blocks_reactivation (28/10) no tiene sentido en otro vocabulario: 422 y no escribe."""
+    pool = AsyncMock()
+    pool.fetchrow.return_value = {"id": "t1", "domain": "REACTIVATION_REASON"}
+    client = make_client(pool)
+
+    res = client.patch("/api/v1/config/taxonomies/t1", json={"blocks_reactivation": True})
+
+    assert res.status_code == 422
+    pool.execute.assert_not_awaited()

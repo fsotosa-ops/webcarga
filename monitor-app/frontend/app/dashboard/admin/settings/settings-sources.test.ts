@@ -49,6 +49,24 @@ describe('vocabularySource', () => {
     expect(vocabularySource('TRIP_VOID_REASON').fields(undefined).map(f => f.key)).toEqual(['label'])
   })
 
+  it('Motivos de baja marcan la baja definitiva, que viaja como booleano (28/10)', async () => {
+    const src = vocabularySource('DEACTIVATION_REASON')
+    const campo = src.fields(undefined).find(f => f.key === 'blocks_reactivation')!
+    expect(campo.label).toBe('Baja definitiva')
+    expect(campo.kind === 'select' && campo.options.map(o => o.label)).toEqual(['No', 'Sí'])
+    const fila = { ...MOTIVO, group: 'all', blocks_reactivation: true }
+    expect(src.values(fila as never)).toMatchObject({ blocks_reactivation: 'si' })
+    expect(src.columns.find(c => c.id === 'blocks_reactivation')!.value(fila as never)).toBe('Sí')
+    await src.save(fila as never, { blocks_reactivation: 'no' })
+    expect(taxonomiesApi.patch).toHaveBeenCalledWith('m1', { blocks_reactivation: false })
+  })
+
+  it('solo los motivos de baja tienen baja definitiva', () => {
+    for (const d of ['REACTIVATION_REASON', 'DRIVER_REASON', 'RETURN_TO_ONBOARDING_REASON'] as const) {
+      expect(vocabularySource(d).fields(undefined).map(f => f.key)).not.toContain('blocks_reactivation')
+    }
+  })
+
   it('ninguna fuente envía colores', async () => {
     const src = vocabularySource('EQUIPMENT_STATE')
     await src.save(MOTIVO as never, { label: 'Disponible' })

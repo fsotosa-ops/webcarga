@@ -30,10 +30,16 @@ dev. Pendientes, en orden:
 2. **Certificación:** que quien grabó el video del arrastre lo pruebe con un arrastre de verdad (`da1ecd26`).
 3. **Analítica:** marcha en paralelo de 2 semanas contra el Excel de Operaciones; Fase 3 (reportes estándar);
    `fct_trip_status_events`; quitar `bdot_people.sql` (deshabilitado) desde la UI de Mage; issue #14.
-4. **Onboarding fuera del Cierre (28/10, cerrado y en dev; detalle en AGENTLOG_ARCHIVE.md).** Quedan como
-   mejoras: editar `blocks_reactivation` desde Configuración; aviso "operó con documento vencido" para
-   Certificación; P14 (bloquear asignaciones a quien no está habilitado); el 404 de
-   `GET /api/v1/me/table-preferences/closure.*` en consola (sin preferencias guardadas, no rompe).
+4. **Onboarding fuera del Cierre (28/10, cerrado y en dev; detalle en AGENTLOG_ARCHIVE.md).** Hecho después
+   (28/10, tarde): "Baja definitiva" (Sí/No) en Configuración › Motivos de baja (la API la acepta solo en ese
+   vocabulario); `GET /me/table-preferences/{key}` responde `columns: null` en vez de 404; el mensaje de la
+   guarda para una empresa en onboarding nombra a Certificación.
+   **POSPUESTOS por el usuario (28/10), hasta que termine la carga documental:** P14 (bloquear
+   asignaciones a quien no está habilitado) y el aviso "operó con documento vencido". Medido en producción:
+   las 37 empresas activas están No habilitadas y los 210 viajes de 7 días con empresa activa son de empresas
+   no habilitadas, así que hoy bloquearían o marcarían todo. Casos borde ya listados: granularidad
+   (empresa o conductor y tracto), excepción con motivo, viaje en curso, "por vencer" no bloquea, viaje
+   futuro, faltante sin fecha y aviso agrupado por sujeto y día.
 5. Lección del día: un pedido de reunión (export de la Flota del día, 16/10) se perdió por no anotarse. Al revisar una
    reunión, pasar cada pedido al AGENTLOG o a una HU el mismo día.
 
