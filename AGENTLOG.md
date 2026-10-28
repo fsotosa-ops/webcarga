@@ -33,6 +33,90 @@ dev. Pendientes, en orden:
 4. Lección del día: un pedido de reunión (export de la Flota del día, 16/10) se perdió por no anotarse. Al revisar una
    reunión, pasar cada pedido al AGENTLOG o a una HU el mismo día.
 
+### CHECKPOINT VIGENTE — Empresas en onboarding en el Cierre (28/10, plan aprobado, sin código)
+
+**Por qué:** el usuario reportó que la flota de empresas en onboarding aparece en el Cierre. Plan aprobado:
+`~/.claude/plans/distributed-scribbling-stardust.md`.
+
+**Diagnóstico (base real solo lectura + Playwright en dev):**
+- El código ya excluye `ONBOARDING` (`app.tractoreo_roster`, `SQL_ESTADO_TRACTOS`).
+- Caso real: Transportes Crismat Spa (`9b0377d6…`), 22/10.
+  - Se activó por excepción 47 minutos después de crearse, sin papeles.
+  - Se le asignaron conductor y tracto y el recálculo creó 2 líneas.
+  - Se dio de baja ("En proceso de Onboarding", porque no existe volver a onboarding).
+  - Las líneas quedaron, Operaciones les puso motivo y el día se firmó con ellas.
+- Causa: `recalcular_en` solo agrega y actualiza; nunca quita (regla 0.4). Además `operational_status` no
+  tiene vigencia por día, activa Operaciones y la excepción no vence.
+- En dev, el 20/10 (abierto): 2 conductores de "Test Empresa Webcarga" (dada de baja) salen como "No
+  asignado" sin ninguna marca; son 2 de los 4 que bloquean. No aparecen en Pendientes.
+- Además: 404 en `GET /api/v1/me/table-preferences/closure.pending` (anotado, aparte).
+
+**Decisiones del usuario (28/10):**
+- Activación automática cuando la carpeta cumple (rige desde mañana), más Certificación a mano con la fecha
+  que elija. Operaciones ya no activa.
+- La excepción es provisoria, con fecha de compromiso; al vencer sin cumplir, vuelve sola a onboarding.
+- "Volver a onboarding" (Certificación, con motivo).
+- Un documento vencido no saca de la operación (queda "no habilitado").
+- Un estado rige desde el día del cambio.
+- Flota de una empresa no activa con viaje: la línea se queda y bloquea.
+- Los casos raros van a Pendientes, no dentro de la Flota del día.
+- Empresa dada de baja que vuelve: "Reactivar" revisa la carpeta; completa → activa, incompleta → onboarding.
+  "Volver a onboarding" solo desde activa.
+- Baja definitiva: motivo con `blocks_reactivation`; reactivar exige `directory.reinstate` (solo admin).
+
+**Hecho (28/10), comiteado en `dev` (`f5328e21`), SIN push y SIN migraciones en producción:**
+- Migraciones nuevas, aplicadas solo en la copia local:
+  - `20261107090000_lifecycle_status_periods`: períodos de estado, `status_on`, `set_lifecycle_status`, trigger
+    que captura a cualquier escritor, siembra desde audit_log, vocabulario RETURN_TO_ONBOARDING_REASON y
+    `status_taxonomies.blocks_reactivation` + motivo DO_NOT_REHIRE.
+  - `20261108090000_closure_population_by_status_day`: `tractoreo_roster` y `closure_asset_population` con el
+    estado de ESE día, más `closure_population(día)`.
+- Backend:
+  - `lifecycle.transition` acepta `effective_date`, `exception_until` y `reinstate_check`.
+  - Reactivar evalúa la carpeta con `requirements_pending_in_certification` (un savepoint que se deshace:
+    para una dada de baja el resumen siempre dice `requirements_met = false`).
+  - `activate_ready_carriers` (barrido con consulta barata previa) corre en `cola_del_cierre`.
+  - `recalcular_en` reconcilia (`_SQL_RECONCILIAR` audita `closure_line_left_population`).
+  - Pre-cierre: `EMPRESA_ONBOARDING` usa el estado y la flota de ese día; aviso nuevo `LEFT_DAY_POPULATION`.
+  - Permiso nuevo `directory.reinstate` (solo admin).
+- Frontend:
+  - `LifecycleDialog`: activar sin excepción, "Rige desde", fecha de compromiso, volver a onboarding.
+  - En la ficha, Activar y Volver a onboarding solo con `directory.delete`.
+  - Pendientes: "Empresa no activa con viaje" enlaza a la ficha (ya no activa desde el Cierre) y "Salió del día".
+  - Configuración › Directorio: motivos para volver a onboarding.
+- Verificación: backend 2010/2010 en local; vitest 2138/2138; `tsc` y build OK; mutaciones vistas en rojo
+  (recalificar, baja definitiva, vigencia de mañana, reconciliación, población con el estado de hoy, fecha
+  de compromiso).
+- Playwright en la copia local (escenario "ZZ Demo Crismat"):
+  - Certificación la vuelve a onboarding; tras el ejecutor sale de la Flota del día y aparece en Pendientes
+    como "Salió del día", con su motivo y comentario.
+  - "Empresa no activa con viaje" bloquea.
+  - Ventanas vistas a 1440 y 390.
+- Impacto medido en producción (solo SELECT, simulando la siembra): en la ventana de 45 días saldrían 28
+  líneas de 8 días abiertos (16/09 a 20/10), ninguna con algo escrito ni con viaje (Test Empresa Webcarga y
+  dos empresas dadas de baja). No entra ninguna línea nueva.
+- HU: `monitor-app/docs/user-stories/20261028/01-hu-onboarding-fuera-del-cierre.md` (la carpeta está en
+  .gitignore, como las demás HU).
+- Desviaciones del plan, a propósito:
+  - Se mantiene la clave `EMPRESA_ONBOARDING` (6 archivos la usan); cambió lo que calcula y su etiqueta.
+  - La población es solo el roster de flota activa. La flota de una empresa no activa que viajó no tiene
+    línea: queda como aviso que bloquea. Incluirla por "tuvo viaje" metía a Equipo Completo en el Cierre de
+    Tractoreo.
+  - El grupo `out_of_roster` de `dayFleet.ts` se mantiene: sirve para leer días firmados.
+
+**Siguiente paso exacto (checklist):**
+- [ ] Autorización del usuario para producción, en este orden:
+  1. Ensayo con ROLLBACK de las 2 migraciones (MCP Supabase), conteo de períodos.
+  2. Aplicarlas.
+  3. Push a `dev`, fuera de la ventana de ingesta (:00 :15 :30 :45), y confirmar que corren Deploy Monitor
+     API y Deploy Frontend.
+- [ ] Crismat: "Reactivar" desde su ficha. Con la carpeta incompleta queda en onboarding (pedir autorización).
+- [ ] Humo en dev con Playwright: Pendientes del 20/10 (los 2 conductores de Test Empresa Webcarga pasan a
+  "Salió del día"), la ficha de una empresa en onboarding y el 404 de `table-preferences/closure.pending`
+  (aparte).
+- [ ] Mejoras anotadas: editar `blocks_reactivation` desde Configuración; aviso "operó con documento
+  vencido"; P14.
+
 ### CHECKPOINT VIGENTE — Analítica (BDOT en la app) (21/10, Fase 0 `22ef3d5c` en dev)
 
 **Por qué:** la reunión del 16/10 (Granola 24f97159, Pablo/Fabián/Enrique) pidió un módulo Analítica que reemplace el
