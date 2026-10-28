@@ -19,10 +19,12 @@
 > (**Ciclo de vida del Directorio con motivo (21/10)** cerrado y archivado: estado de baja único, acciones con motivo,
 > ambas migraciones aplicadas en la real. El test de sincronía de etapas del viaje (rojo desde el 17/10) quedó arreglado el mismo día.)
 
-### PARA LA PRÓXIMA SESIÓN (cierre del 22/10, actualizado al final del día)
+### PARA LA PRÓXIMA SESIÓN (actualizado el 28/10 al cierre)
 
-Todo lo de hoy está comiteado y en `dev` (último `27d46eb8`). El punto 0 (Configuración) quedó CERRADO y probado en
-dev. Pendientes, en orden:
+Todo lo del 28/10 está comiteado, en `dev` y desplegado (último `53fd04c4`). En producción: migraciones
+`20261107090000` y `20261108090000` APLICADAS. Crismat reactivada desde la app: quedó en onboarding.
+
+Pendientes, en orden:
 0. Configuración ordenada (22/10): CERRADA, con sus 6 menores, probada en dev. Detalle en `AGENTLOG_ARCHIVE.md`
    (sección "2026-10-22 — Configuración ordenada").
 1. **Operaciones:** avisar que la Flota del día se baja y se copia ("Descargar Excel" / "Copiar"): la vista se arma una
@@ -33,7 +35,9 @@ dev. Pendientes, en orden:
 4. **Onboarding fuera del Cierre (28/10, cerrado y en dev; detalle en AGENTLOG_ARCHIVE.md).** Hecho después
    (28/10, tarde): "Baja definitiva" (Sí/No) en Configuración › Motivos de baja (la API la acepta solo en ese
    vocabulario); `GET /me/table-preferences/{key}` responde `columns: null` en vez de 404; el mensaje de la
-   guarda para una empresa en onboarding nombra a Certificación.
+   guarda para una empresa en onboarding nombra a Certificación. Commit `53fd04c4`, DESPLEGADO en dev (Monitor
+   API y Frontend OK). Verificado en dev con Playwright: la columna "Baja definitiva" se ve en Motivos de baja
+   ("No volver a trabajar con ella" = Sí) y la consola queda sin errores.
    **POSPUESTOS por el usuario (28/10), hasta que termine la carga documental:** P14 (bloquear
    asignaciones a quien no está habilitado) y el aviso "operó con documento vencido". Medido en producción:
    las 37 empresas activas están No habilitadas y los 210 viajes de 7 días con empresa activa son de empresas
