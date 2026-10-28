@@ -105,12 +105,13 @@ dev. Pendientes, en orden:
   - El grupo `out_of_roster` de `dayFleet.ts` se mantiene: sirve para leer días firmados.
 
 **Siguiente paso exacto (checklist):**
-- [ ] Autorización del usuario para producción, en este orden:
-  1. Ensayo con ROLLBACK de las 2 migraciones (MCP Supabase), conteo de períodos.
-  2. Aplicarlas.
-  3. Push a `dev`, fuera de la ventana de ingesta (:00 :15 :30 :45), y confirmar que corren Deploy Monitor
-     API y Deploy Frontend.
-- [ ] Crismat: "Reactivar" desde su ficha. Con la carpeta incompleta queda en onboarding (pedir autorización).
+- [x] Producción (autorizado 28/10):
+  - Ensayo con error forzado y ROLLBACK, por psql: 529 períodos, 0 diferencias con el estado de hoy, roster
+    de hoy en 43 (igual que antes).
+  - Las 2 migraciones APLICADAS.
+  - Push a `dev` a las 14:35 (`e328c32c`). Deploy Monitor API y Deploy Frontend en curso.
+- [ ] Cuando el usuario avise que el deploy terminó (no esperar en bucle):
+- [ ] Crismat: "Reactivar" desde su ficha (autorizado). Con la carpeta incompleta queda en onboarding.
 - [ ] Humo en dev con Playwright: Pendientes del 20/10 (los 2 conductores de Test Empresa Webcarga pasan a
   "Salió del día"), la ficha de una empresa en onboarding y el 404 de `table-preferences/closure.pending`
   (aparte).
