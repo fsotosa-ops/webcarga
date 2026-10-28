@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import time
 
-from . import cierre_lineas
+from . import cierre_lineas, lifecycle
 
 log = logging.getLogger(__name__)
 
@@ -28,9 +28,26 @@ ORDER BY 1
 """
 
 
+async def ciclo_de_vida_del_dia(pool) -> dict:
+    """Antes de recalcular (plan 2026-10-28): los cambios de estado programados que ya
+    rigen pasan a la fila, la empresa que cumple se activa sola y la excepción vencida
+    vuelve a onboarding. Cada cambio encola sus días, así que el recálculo de esta misma
+    corrida ya los ve. Un fallo acá no detiene el Cierre."""
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                aplicados = await conn.fetchval("SELECT app.apply_due_lifecycle_statuses()")
+                resumen = await lifecycle.activate_ready_carriers(conn)
+        return {"aplicados": aplicados, **resumen}
+    except Exception as exc:
+        log.exception("ciclo_de_vida_del_dia_fallido")
+        return {"error": str(exc)}
+
+
 async def procesar_cola(pool, *, presupuesto_s: float = 45.0) -> dict:
     inicio = time.monotonic()
     resumen: dict = {"recalculados": [], "cerrados": [], "ocupados": [], "fallidos": [], "pendientes": 0}
+    resumen["ciclo_de_vida"] = await ciclo_de_vida_del_dia(pool)
     filas = await pool.fetch(_SQL_PENDIENTES)
     for i, fila in enumerate(filas):
         if time.monotonic() - inicio > presupuesto_s:

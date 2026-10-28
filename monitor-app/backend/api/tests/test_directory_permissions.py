@@ -166,12 +166,12 @@ def test_el_operador_no_edita_un_equipo():
     assert not conn.execute.called
 
 
-def test_el_supervisor_de_operaciones_activa_una_empresa_nueva(monkeypatch, transicion):
-    """Excepción R5 (decisión del usuario, 12/10): activar una empresa nueva es
-    editar; el Supervisor de Operaciones la activa desde el pre-cierre."""
+def test_el_supervisor_de_operaciones_ya_no_activa_una_empresa_nueva(monkeypatch, transicion):
+    """28/10 (reemplaza la excepción R5 del 12/10): habilita quien califica, no quien
+    despacha. Activar una empresa en onboarding es de Certificación (directory.delete)."""
     pool, _ = pool_de_empresa(monkeypatch, "ONBOARDING")
-    assert cliente(SUP_OPS, pool).post("/api/v1/carriers/c1/activate", json={}).status_code == 200
-    assert transicion.await_args.kwargs["action"] == "activate"
+    assert cliente(SUP_OPS, pool).post("/api/v1/carriers/c1/activate", json={}).status_code == 403
+    assert not transicion.called
 
 
 def test_el_operador_no_activa_una_empresa_nueva(monkeypatch, transicion):

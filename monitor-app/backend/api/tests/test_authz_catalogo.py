@@ -62,8 +62,9 @@ def test_firma_y_borrado_de_viajes_en_el_operador():
 def test_privilegiados_son_los_de_administracion():
     priv = {p for p, m in PERMISSION_META.items() if m.privileged}
     # analytics.personal_data (22/10): nombre y RUT del conductor en Analítica, con verificación en dos pasos.
+    # directory.reinstate (28/10): revertir una baja definitiva es solo de Administración.
     assert priv == {Permission.USERS_MANAGE, Permission.ROLES_MANAGE, Permission.SETTINGS_MANAGE,
-                    Permission.ANALYTICS_PERSONAL_DATA}
+                    Permission.ANALYTICS_PERSONAL_DATA, Permission.DIRECTORY_REINSTATE}
 
 
 def test_mapa_de_roles_viejos():

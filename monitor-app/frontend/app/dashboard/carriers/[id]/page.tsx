@@ -47,6 +47,13 @@ const TABS: Tab[] = ['documentos', 'conductores', 'equipos', 'seguros']
 const CONTACT_ROLE_OPTIONS = ['LEGAL_REP', 'OPERATIONS', 'FINANCE', 'DOCUMENTS']
 
 
+/** "Queda activa desde el 29/10.": el aviso tras un cambio de estado con fecha. */
+function rigeDesde(texto: string, effective: string | undefined): string | undefined {
+  if (!effective) return undefined
+  const [, m, d] = effective.split('-')
+  return `${texto} desde el ${d}/${m}.`
+}
+
 export default function EmpresaDetailPage() {
   return (
     <Suspense fallback={null}>
@@ -112,8 +119,10 @@ function EmpresaDetailPageInner() {
 
   const [bajaModalOpen, setBajaModalOpen] = useState(false)
   const [reactivateOpen, setReactivateOpen] = useState(false)
-  // Activar una empresa en onboarding que no cumple los obligatorios (21/10).
-  const [activateExceptionOpen, setActivateExceptionOpen] = useState(false)
+  // Activar una empresa en onboarding (Certificación, 28/10): con la carpeta completa,
+  // solo la fecha desde la que rige; sin ella, como excepción con motivo y compromiso.
+  const [activateOpen, setActivateOpen] = useState<null | 'ready' | 'exception'>(null)
+  const [returnToOnboardingOpen, setReturnToOnboardingOpen] = useState(false)
   const [clientsOpen, setClientsOpen] = useState(false)
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
 
@@ -150,8 +159,6 @@ function EmpresaDetailPageInner() {
   const assets  = assetsQuery.data ?? []
 
   const [notice, setNotice] = useState<string | null>(null)
-  // "Activar" no tiene diálogo propio: si falla, se dice (revisión final de la Entrega 1).
-  const [activateError, setActivateError] = useState<string | null>(null)
   /** Todo cambio pasa por acá: una sola lista de qué queda obsoleto, y el aviso
    *  cuando el cambio llega al Cierre (que se recalcula en el servidor). */
   async function afterChange(change: DirectoryChange, done?: string) {
@@ -169,20 +176,25 @@ function EmpresaDetailPageInner() {
     await lifecycleApi.deactivate('carrier', id, body)
     await afterChange({ entity: 'carrier', id, type: 'update' })
   }
-  /** Activar una empresa en onboarding: completa el alta, sin motivo ni flota que elegir. */
-  async function handleActivateCarrier() {
-    await lifecycleApi.activateCarrier(id)
-    await afterChange({ entity: 'carrier', id, type: 'update' })
+  /** Activar una empresa en onboarding desde la fecha elegida; como excepción, con
+   *  motivo y fecha de compromiso. */
+  async function handleActivate(body: LifecycleBody) {
+    const result = await lifecycleApi.activateCarrier(id, body)
+    await afterChange({ entity: 'carrier', id, type: 'update' }, rigeDesde('Queda activa', result.effective_date))
   }
-  /** Activar como excepción: no cumple los obligatorios; lo decide Certificación, con motivo. */
-  async function handleActivateException(body: LifecycleBody) {
-    await lifecycleApi.activateCarrier(id, { reason_id: body.reason_id, note: body.note })
-    await afterChange({ entity: 'carrier', id, type: 'update' })
+  /** Una empresa activa vuelve a onboarding (activada antes de tiempo), con motivo. */
+  async function handleReturnToOnboarding(body: LifecycleBody) {
+    const result = await lifecycleApi.returnToOnboarding(id, body)
+    await afterChange({ entity: 'carrier', id, type: 'update' }, rigeDesde('Vuelve a onboarding', result.effective_date))
   }
-  /** Reactivar una dada de baja, con motivo, eligiendo qué flota vuelve (D2, P3). */
+  /** Reactivar una dada de baja, con motivo, eligiendo qué flota vuelve (D2, P3). Con la
+   *  carpeta incompleta queda en onboarding (28/10): se dice, porque no es lo que se pidió. */
   async function handleReactivateCarrier(body: LifecycleBody) {
-    await lifecycleApi.reactivate('carrier', id, body)
-    await afterChange({ entity: 'carrier', id, type: 'assignment' })
+    const result = await lifecycleApi.reactivate('carrier', id, body)
+    await afterChange({ entity: 'carrier', id, type: 'assignment' },
+      result.operational_status === 'ONBOARDING'
+        ? 'Le faltan documentos obligatorios: queda en onboarding y se activa sola cuando su carpeta cumpla.'
+        : undefined)
   }
   async function handleAddClient(shipperId: string) {
     await carriersApi.addShipper(id, shipperId)
@@ -306,8 +318,8 @@ function EmpresaDetailPageInner() {
     </div>
   )
 
-  // Activar una empresa nueva es un alta (directory.edit); dar de baja y reactivar
-  // piden directory.delete (backend: schemas/states.LIFECYCLE_TRANSITIONS).
+  // Activar, volver a onboarding, dar de baja y reactivar son de Certificación
+  // (directory.delete, 28/10; backend: schemas/states.LIFECYCLE_TRANSITIONS).
   const life = lifecycleStyle('carrier', carrier.operational_status)
   const enabled = enablementStyle(carrier.compliance_summary, carrier.operational_status === 'ACTIVE')
   const status = carrier.operational_status
@@ -396,19 +408,13 @@ function EmpresaDetailPageInner() {
         ) : undefined}
         menuItems={[
           ...(canEdit && shippersQuery.data ? [{ id: 'clients', label: 'Editar clientes', onSelect: () => setClientsOpen(true) }] : []),
-          // Onboarding (21/10): sale cuando cumple lo mismo que la habilitación. Si no
-          // cumple, solo Certificación la activa como excepción, con motivo; a los demás
-          // se les dice qué falta. La API aplica la misma regla.
-          // Activar siempre exige editar el Directorio (la ruta lo pide), también la excepción.
-          ...(status === 'ONBOARDING' && canEdit ? [{ id: 'activate', label: 'Activar', onSelect: () => {
-              setActivateError(null)
-              if (carrier.compliance_summary.requirements_met === false) {
-                if (canAdmin) setActivateExceptionOpen(true)
-                else setActivateError(`Faltan ${blockingCountsLine(carrier.compliance_summary)} para activarla. Lo puede activar Certificación como excepción.`)
-                return
-              }
-              handleActivateCarrier().catch(e => setActivateError(e instanceof Error ? e.message : 'No se pudo activar.'))
-            } }] : []),
+          // Onboarding (28/10): la activa Certificación (directory.delete), o se activa sola
+          // cuando cumple. Sin la carpeta completa, solo como excepción. La API aplica la
+          // misma regla.
+          ...(status === 'ONBOARDING' && canAdmin ? [{ id: 'activate', label: 'Activar', onSelect: () =>
+              setActivateOpen(carrier.compliance_summary.requirements_met === false ? 'exception' : 'ready') }] : []),
+          ...(status === 'ACTIVE' && canAdmin
+            ? [{ id: 'return-to-onboarding', label: 'Volver a onboarding', onSelect: () => setReturnToOnboardingOpen(true) }] : []),
           ...(isCarrierDeactivated(status) && canAdmin
             ? [{ id: 'reactivate', label: 'Reactivar', onSelect: () => setReactivateOpen(true) }] : []),
           ...(!isCarrierDeactivated(status) && canAdmin
@@ -416,7 +422,6 @@ function EmpresaDetailPageInner() {
           ...(canAdmin ? [{ id: 'delete', label: 'Eliminar', destructive: true, onSelect: () => setDeleteModalOpen(true) }] : []),
         ]}
       />
-      {activateError && <p role="alert" className="text-dato text-status-incidente">{activateError}</p>}
 
       {/* ── Tabs — una sección visible a la vez, cero scroll entre ellas ── */}
       <Tabs
@@ -578,13 +583,22 @@ function EmpresaDetailPageInner() {
         />
       )}
 
-      {activateExceptionOpen && (
+      {activateOpen && (
         <LifecycleDialog
-          action="activate" scope="carrier"
+          action="activate" exception={activateOpen === 'exception'} scope="carrier"
           label={carrier.business_name || 'esta empresa'}
-          pending={blockingCountsLine(carrier.compliance_summary)}
-          onClose={() => setActivateExceptionOpen(false)}
-          onConfirm={handleActivateException}
+          pending={activateOpen === 'exception' ? blockingCountsLine(carrier.compliance_summary) : undefined}
+          onClose={() => setActivateOpen(null)}
+          onConfirm={handleActivate}
+        />
+      )}
+
+      {returnToOnboardingOpen && (
+        <LifecycleDialog
+          action="return_to_onboarding" scope="carrier"
+          label={carrier.business_name || 'esta empresa'}
+          onClose={() => setReturnToOnboardingOpen(false)}
+          onConfirm={handleReturnToOnboarding}
         />
       )}
 

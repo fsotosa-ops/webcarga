@@ -35,10 +35,11 @@ CARRIER_STATUSES_IN_CERTIFICATION: tuple[str, ...] = ("ACTIVE", "ONBOARDING")
 # aquí, una vez; la aplica services/lifecycle.py y las rutas de acción leen su
 # permiso de esta misma tabla.
 LifecycleEntity = Literal["CARRIER", "DRIVER", "ASSET"]
-LifecycleAction = Literal["activate", "deactivate", "reactivate"]
+LifecycleAction = Literal["activate", "deactivate", "reactivate", "return_to_onboarding"]
 DEACTIVATION_REASON = "DEACTIVATION_REASON"
 REACTIVATION_REASON = "REACTIVATION_REASON"
 ACTIVATION_EXCEPTION_REASON = "ACTIVATION_EXCEPTION_REASON"
+RETURN_TO_ONBOARDING_REASON = "RETURN_TO_ONBOARDING_REASON"
 
 
 @dataclass(frozen=True)
@@ -59,30 +60,52 @@ class LifecycleTransition:
     #: este vocabulario. None = no hay excepción.
     exception_permission: Permission | None = None
     exception_reason_domain: str | None = None
+    #: Desde cuándo rige si no se manda fecha (plan 2026-10-28): "today" es el primer día
+    #: no firmado; "tomorrow", el siguiente. Activar rige desde mañana: así una empresa
+    #: habilitada a media tarde no entra al Cierre de hoy con flota que nunca pudo salir.
+    default_effective: Literal["today", "tomorrow"] = "today"
+    #: A qué estado va si la carpeta no cumple, en vez de `to_state` (28/10): una
+    #: empresa dada de baja que vuelve con la carpeta incompleta se recalifica en
+    #: onboarding. None = la carpeta no decide el destino.
+    to_state_if_pending: str | None = None
+    #: La acción revierte una baja: un motivo con `blocks_reactivation` (baja
+    #: definitiva) exige además `directory.reinstate`.
+    reverts_deactivation: bool = False
 
 
 LIFECYCLE_TRANSITIONS: dict[tuple[str, str], LifecycleTransition] = {
-    # Activar una empresa nueva lo hace el Supervisor de Operaciones desde el
-    # pre-cierre (R5): directory.edit. Dar de baja o reactivar una empresa es de
-    # Certificación (D-e, 12/10): directory.delete.
+    # Activar, dar de baja, reactivar o volver a onboarding una empresa es de Certificación
+    # (directory.delete): habilita quien califica, no quien despacha (28/10; antes Operaciones
+    # activaba desde el pre-cierre). Sin que nadie lo haga, la empresa que cumple se activa
+    # sola (lifecycle.activate_ready_carriers).
     ("CARRIER", "activate"): LifecycleTransition(
-        frozenset({"ONBOARDING"}), "ACTIVE", Permission.DIRECTORY_EDIT, None, requires_tax_id=True,
+        frozenset({"ONBOARDING"}), "ACTIVE", Permission.DIRECTORY_DELETE, None, requires_tax_id=True,
         requires_requirements_met=True,
-        # Activar sin la carpeta completa lo decide Certificación, dueña de la documentación.
-        exception_permission=Permission.DIRECTORY_DELETE, exception_reason_domain=ACTIVATION_EXCEPTION_REASON),
+        # Sin la carpeta completa es una excepción provisoria: motivo y fecha de compromiso.
+        exception_permission=Permission.DIRECTORY_DELETE, exception_reason_domain=ACTIVATION_EXCEPTION_REASON,
+        default_effective="tomorrow"),
+    # La salida inversa: una empresa activada antes de tiempo, o una baja que vuelve a
+    # certificarse, no se da de baja "por mientras" (mezclaba dos estados, 22/10).
+    ("CARRIER", "return_to_onboarding"): LifecycleTransition(
+        frozenset({"ACTIVE"}), "ONBOARDING", Permission.DIRECTORY_DELETE, RETURN_TO_ONBOARDING_REASON),
     ("CARRIER", "deactivate"): LifecycleTransition(
         frozenset({"ACTIVE", "ONBOARDING"}), "INACTIVE", Permission.DIRECTORY_DELETE, DEACTIVATION_REASON),
+    # Una dada de baja vuelve por la misma puerta que una nueva (28/10): con la carpeta
+    # completa, activa (reincorporación); incompleta, onboarding (recalificación).
     ("CARRIER", "reactivate"): LifecycleTransition(
-        frozenset({"INACTIVE"}), "ACTIVE", Permission.DIRECTORY_DELETE, REACTIVATION_REASON, requires_tax_id=True),
+        frozenset({"INACTIVE"}), "ACTIVE", Permission.DIRECTORY_DELETE, REACTIVATION_REASON, requires_tax_id=True,
+        to_state_if_pending="ONBOARDING", reverts_deactivation=True),
     # Conductores y equipos: los da de baja y reactiva Operaciones (bloque 0, D-e).
     ("DRIVER", "deactivate"): LifecycleTransition(
         frozenset({"ACTIVE"}), "INACTIVE", Permission.DIRECTORY_FLEET_STATUS, DEACTIVATION_REASON),
     ("DRIVER", "reactivate"): LifecycleTransition(
-        frozenset({"INACTIVE"}), "ACTIVE", Permission.DIRECTORY_FLEET_STATUS, REACTIVATION_REASON),
+        frozenset({"INACTIVE"}), "ACTIVE", Permission.DIRECTORY_FLEET_STATUS, REACTIVATION_REASON,
+        reverts_deactivation=True),
     ("ASSET", "deactivate"): LifecycleTransition(
         frozenset({"ACTIVE"}), "INACTIVE", Permission.DIRECTORY_FLEET_STATUS, DEACTIVATION_REASON),
     ("ASSET", "reactivate"): LifecycleTransition(
-        frozenset({"INACTIVE"}), "ACTIVE", Permission.DIRECTORY_FLEET_STATUS, REACTIVATION_REASON),
+        frozenset({"INACTIVE"}), "ACTIVE", Permission.DIRECTORY_FLEET_STATUS, REACTIVATION_REASON,
+        reverts_deactivation=True),
 }
 DocumentState = Literal["UP_TO_DATE", "EXPIRING", "OVERDUE", "MISSING", "NOT_REQUIRED"]
 AlertSeverity = Literal["warning", "critical"]

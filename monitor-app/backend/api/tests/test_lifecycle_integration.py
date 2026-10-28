@@ -104,21 +104,23 @@ async def test_la_matriz_de_transiciones(conexion_revertida, entity, start, acti
     conn = conexion_revertida
     actor = (await _usuario_real(conn))["sub"]
     subject = await _subject(conn, entity, start)
-    if action == "activate":
+    if entity == "CARRIER" and action in ("activate", "reactivate"):
         await _without_documents(conn, subject)   # la regla de la carpeta tiene sus propios tests
     reason = _reason_for(action)
     reason_id = await _reason(conn, *reason) if reason else None
+    # Activar rige desde mañana si no se manda fecha (28/10); la matriz mira el estado de hoy.
+    hoy = {"effective_date": await lifecycle.first_open_day(conn)} if action == "activate" else {}
 
     if end is None:
         with pytest.raises(HTTPException) as exc:
             await lifecycle.transition(conn, entity=entity, entity_id=subject, action=action,
-                                       actor=actor, reason_id=reason_id)
+                                       actor=actor, reason_id=reason_id, **hoy)
         assert exc.value.status_code == 409
         assert (await _status(conn, entity, subject))["operational_status"] == start
         return
 
     await lifecycle.transition(conn, entity=entity, entity_id=subject, action=action,
-                               actor=actor, reason_id=reason_id)
+                               actor=actor, reason_id=reason_id, **hoy)
     row = await _status(conn, entity, subject)
     assert row["operational_status"] == end
     assert row["reason_id"] == reason_id
@@ -196,7 +198,8 @@ async def test_activar_una_empresa_sin_rut_pide_el_rut(conexion_revertida):
     assert exc.value.status_code == 422
 
     rut = _rut()
-    await lifecycle.transition(conn, entity="CARRIER", entity_id=carrier, action="activate", actor=actor, tax_id=rut)
+    await lifecycle.transition(conn, entity="CARRIER", entity_id=carrier, action="activate", actor=actor, tax_id=rut,
+                               effective_date=await lifecycle.first_open_day(conn))
     row = await conn.fetchrow("SELECT operational_status, tax_id FROM public.carriers WHERE id = $1", carrier)
     assert (row["operational_status"], row["tax_id"]) == ("ACTIVE", rut)
 
@@ -228,9 +231,11 @@ async def test_una_heredada_del_padron_viejo_se_reactiva_con_la_flota_elegida(co
     conn = conexion_revertida
     actor = (await _usuario_real(conn))["sub"]
     carrier = await _carrier(conn, "ACTIVE")
+    await _without_documents(conn, carrier)   # vuelve con la carpeta al día: reincorporación (28/10)
     kept, released = await _driver(conn), await _driver(conn)
     for d in (kept, released):
         await fa.assign(conn, fa.DRIVER, d, carrier, actor=actor)
+    await _without_documents(conn, kept)   # el que vuelve, con su carpeta al día
     await conn.execute(
         "UPDATE public.carriers SET operational_status = 'INACTIVE', status_reason_id = $2 WHERE id = $1",
         carrier, await _reason(conn, "DEACTIVATION_REASON", "LEGACY_IMPORT"))
@@ -240,7 +245,8 @@ async def test_una_heredada_del_padron_viejo_se_reactiva_con_la_flota_elegida(co
         reason_id=await _reason(conn, "REACTIVATION_REASON", "RELATIONSHIP_RESUMED"),
         driver_ids=[kept], asset_ids=[])
 
-    assert result == {"operational_status": "ACTIVE", "released_drivers": 1, "released_assets": 0}
+    assert result == {"operational_status": "ACTIVE", "effective_date": (await lifecycle.first_open_day(conn)).isoformat(),
+                      "released_drivers": 1, "released_assets": 0}
     assert str(await conn.fetchval("SELECT app.carrier_of('DRIVER', $1::uuid)", kept)) == carrier
     assert await conn.fetchval("SELECT app.carrier_of('DRIVER', $1::uuid)", released) is None
 
@@ -320,8 +326,9 @@ async def test_activar_como_excepcion_pide_un_motivo_de_su_vocabulario(conexion_
     assert exc.value.status_code == 422
 
     motivo = await _reason(conn, "ACTIVATION_EXCEPTION_REASON", "CLIENT_NEEDS_IT_NOW")
+    hoy = await lifecycle.first_open_day(conn)
     await lifecycle.transition(conn, entity="CARRIER", entity_id=carrier, action="activate", actor=actor,
-                               reason_id=motivo)
+                               reason_id=motivo, effective_date=hoy, exception_until=hoy)
     row = await _status(conn, "CARRIER", carrier)
     assert (row["operational_status"], row["reason_id"]) == ("ACTIVE", motivo)
     audit = await conn.fetchval(

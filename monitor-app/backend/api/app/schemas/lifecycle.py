@@ -1,4 +1,5 @@
 """Los cuerpos de las acciones del ciclo de vida (services/lifecycle.py)."""
+from datetime import date
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -12,6 +13,8 @@ class LifecycleReasonBody(BaseModel):
 
     reason_id: str
     note: Optional[str] = Field(default=None, max_length=500)
+    #: Desde qué día rige (plan 2026-10-28). Sin fecha: el primer día no firmado.
+    effective_date: Optional[date] = None
 
 
 class CarrierReactivateBody(LifecycleReasonBody):
@@ -21,15 +24,19 @@ class CarrierReactivateBody(LifecycleReasonBody):
 
 
 class CarrierActivateBody(BaseModel):
-    """Activar una empresa en onboarding: sale cuando cumple lo mismo que la
-    habilitación, sin motivo. Si todavía no tiene RUT, se manda aquí. Sin cumplirlo,
-    solo como excepción: `reason_id` (ACTIVATION_EXCEPTION_REASON) y el permiso de
-    Certificación (schemas/states.LIFECYCLE_TRANSITIONS)."""
+    """Activar una empresa en onboarding (Certificación): sale cuando cumple lo mismo
+    que la habilitación, sin motivo. Si todavía no tiene RUT, se manda aquí. Sin
+    cumplirlo, solo como excepción provisoria: `reason_id` (ACTIVATION_EXCEPTION_REASON)
+    y `exception_until` (schemas/states.LIFECYCLE_TRANSITIONS)."""
     model_config = ConfigDict(extra="forbid")
 
     tax_id: Optional[str] = None
     reason_id: Optional[str] = None
     note: Optional[str] = Field(default=None, max_length=500)
+    #: Desde qué día rige; sin fecha, desde mañana (28/10).
+    effective_date: Optional[date] = None
+    #: Solo en una excepción: hasta qué día la carpeta tiene que quedar completa.
+    exception_until: Optional[date] = None
 
     @field_validator("tax_id", mode="before")
     @classmethod

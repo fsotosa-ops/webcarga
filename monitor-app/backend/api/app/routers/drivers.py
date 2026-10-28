@@ -9,7 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import get_current_user, get_supabase
-from ..authz import Permission, require, require_fields
+from ..authz import Permission, exigir, require, require_fields
 from ..db import get_pool
 from ..schemas.contact import ContactCreateBody
 from ..schemas.driver import DRIVER_FIELD_PERMISSIONS, DriverCreateBody, DriverPatchBody
@@ -414,7 +414,7 @@ async def deactivate_driver(
         async with conn.transaction():
             await lifecycle.transition(
                 conn, entity="DRIVER", entity_id=driver_id, action="deactivate", actor=user["sub"],
-                reason_id=body.reason_id, note=body.note)
+                reason_id=body.reason_id, note=body.note, effective_date=body.effective_date)
     return await get_driver(driver_id, pool, user)
 
 
@@ -427,7 +427,8 @@ async def reactivate_driver(
         async with conn.transaction():
             await lifecycle.transition(
                 conn, entity="DRIVER", entity_id=driver_id, action="reactivate", actor=user["sub"],
-                reason_id=body.reason_id, note=body.note)
+                reason_id=body.reason_id, note=body.note, effective_date=body.effective_date,
+                reinstate_check=lambda: exigir(user, Permission.DIRECTORY_REINSTATE))
     return await get_driver(driver_id, pool, user)
 
 

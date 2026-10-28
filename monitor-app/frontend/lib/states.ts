@@ -526,7 +526,8 @@ export const OPERATION_TYPE_CONFLICT_LABEL = 'Tipo distinto al del cliente'
 export const NOTICE_TYPE_LABEL: Record<NoticeType, string> = {
   CONDUCTOR_SIN_EMPRESA: 'Conductor sin empresa',
   PATENTE_NO_REGISTRADA: 'Patente sin empresa',
-  EMPRESA_ONBOARDING: 'Empresa en onboarding',
+  EMPRESA_ONBOARDING: 'Empresa no activa con viaje',
+  LEFT_DAY_POPULATION: 'Salió del día',
   SIN_TIPO_OPERACION: SCOPE_GAP_LABEL.NO_OPERATION_TYPE,
   EMPRESA_NO_RECONOCIDA: 'Empresa no reconocida',
   CONDUCTOR_NO_REGISTRADO: 'Conductor no registrado',

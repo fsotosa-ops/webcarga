@@ -36,7 +36,7 @@ def _single_value(values: list[str]) -> str | None:
 ESCALACIONES = (
     "PATENTE_NO_REGISTRADA", "EMPRESA_NO_RECONOCIDA", "CONDUCTOR_NO_REGISTRADO",
     "EMPRESA_ONBOARDING", "SIN_TIPO_OPERACION", "CONDUCTOR_SIN_EMPRESA",
-    "OPERATION_TYPE_CONFLICT",
+    "OPERATION_TYPE_CONFLICT", "LEFT_DAY_POPULATION",
 )
 
 
@@ -154,16 +154,60 @@ async def leer_senales(conn, fecha: _date) -> Senales:
     return Senales(patentes=patentes, conductores=conductores)
 
 
-# Trae el estado (bloque 0 del Directorio): "Activar empresa" se ofrece con
-# directory.edit solo a las ONBOARDING; el resto de las transiciones son de
-# directory.delete. El estado depende de c.id: el DISTINCT no cambia las filas.
+# Un viaje del día con flota de una empresa que ESE día no está activa (en onboarding o
+# dada de baja): la flota no está en el Cierre (app.closure_population) y el viaje sí
+# ocurrió, así que bloquea la firma hasta resolverlo. Lo resuelve Certificación (activar
+# con vigencia de ese día) u Operaciones (corregir la flota del viaje). La empresa sale de
+# la resolución del viaje y del tracto por su patente, con las asignaciones de ESE día;
+# el estado, de app.status_on (plan 2026-10-28). Trae el estado para decir cuál de los dos.
 _SQL_ONBOARDING = """
-SELECT DISTINCT c.id::text AS carrier_id, c.business_name AS carrier_name, c.operational_status
-FROM app.trips t
-JOIN public.assets a ON upper(trim(a.license_plate)) = upper(trim(t.fleet->>'tractor_plate'))
-JOIN public.asset_assignments aa ON aa.asset_id = a.id AND aa.status = 'ACTIVE'
-JOIN public.carriers c ON c.id = aa.carrier_id
-WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1)) AND c.operational_status != 'ACTIVE'
+WITH day_trips AS (
+    SELECT t.id, t.fleet->>'tractor_plate' AS plate
+    FROM app.trips t WHERE t.id IN (SELECT trip_id FROM app.trips_del_dia($1))
+),
+trip_carriers AS (
+    SELECT COALESCE(vfr.resolved_carrier_id, vfr.resolved_tractor_home_carrier_id,
+                    vfr.resolved_driver_home_carrier_id) AS carrier_id
+    FROM day_trips dt JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = dt.id
+    UNION
+    SELECT aa.counterpart_id
+    FROM day_trips dt
+    JOIN public.assets a ON upper(trim(a.license_plate)) = upper(trim(dt.plate))
+    JOIN app.fleet_assignment_periods aa ON aa.relation = 'ASSET_CARRIER' AND aa.subject_id = a.id
+         AND aa.valid_during @> $1::date
+)
+SELECT c.id::text AS carrier_id, c.business_name AS carrier_name,
+       app.status_on('CARRIER', c.id, $1::date) AS operational_status
+FROM (SELECT DISTINCT carrier_id FROM trip_carriers WHERE carrier_id IS NOT NULL) x
+JOIN public.carriers c ON c.id = x.carrier_id
+WHERE app.status_on('CARRIER', c.id, $1::date) IS DISTINCT FROM 'ACTIVE'
+"""
+
+# Lo que salió del día (plan 2026-10-28): la línea que el recálculo borró porque el sujeto
+# dejó de pertenecer a la población de ese día, con lo que tenía escrito. Se lee de
+# audit_log (cierre_lineas._SQL_RECONCILIAR); si volvió a la población, su línea existe y
+# el aviso desaparece. No bloquea: es para que Operaciones lo revise. Por qué salió lo
+# dicen los estados de ESE día (el del sujeto y el de su empresa) y su empresa de ese día.
+_SQL_SALIO_DEL_DIA = """
+SELECT DISTINCT ON (a.entity_type, a.entity_id)
+       a.entity_type AS subject_type, a.entity_id::text AS subject_id,
+       COALESCE(d.full_name, ast.license_plate) AS subject_name,
+       c.id::text AS carrier_id, c.business_name AS carrier_name,
+       app.status_on('CARRIER', c.id, $1::date) AS carrier_status,
+       app.status_on(a.entity_type, a.entity_id, $1::date) AS subject_status,
+       a.new_value->>'status' AS line_status,
+       r.label AS reason_label, a.new_value->>'comentario' AS comment,
+       a.occurred_at
+FROM public.audit_log a
+LEFT JOIN public.drivers d ON a.entity_type = 'DRIVER' AND d.id = a.entity_id
+LEFT JOIN public.assets ast ON a.entity_type = 'ASSET' AND ast.id = a.entity_id
+LEFT JOIN public.carriers c ON c.id = app.carrier_of(a.entity_type, a.entity_id, $1::date)
+LEFT JOIN app.status_taxonomies r ON r.id = (a.new_value->>'reason_id')::uuid
+WHERE a.action = 'closure_line_left_population'
+  AND a.new_value->>'business_date' = to_char($1::date, 'YYYY-MM-DD')
+  AND NOT EXISTS (SELECT 1 FROM app.closure_lines l
+                  WHERE l.business_date = $1 AND l.subject_type = a.entity_type AND l.subject_id = a.entity_id)
+ORDER BY a.entity_type, a.entity_id, a.occurred_at DESC
 """
 
 # Trae la PATENTE: la acción es abrir ese tracto y clasificarlo.
@@ -269,6 +313,9 @@ async def avisos_del_dia(conn, fecha: _date) -> dict:
     for aviso in sin_empresa:
         aviso["trips"] = [{**t, "zone": zonas.get(t["id"], "Sin clasificar")} for t in aviso["trips"]]
     escalations["CONDUCTOR_SIN_EMPRESA"] = sin_empresa
+    escalations["LEFT_DAY_POPULATION"] = [
+        {**dict(r), "occurred_at": r["occurred_at"].isoformat(), "scope": None}
+        for r in await conn.fetch(_SQL_SALIO_DEL_DIA, fecha)]
     escalations["OPERATION_TYPE_CONFLICT"] = [
         {**dict(r), "trips": json.loads(r["trips"])} for r in await conn.fetch(_SQL_TIPO_DISTINTO, fecha)]
     auto_resolved = [_resuelta(r) for r in await conn.fetch(_SQL_RESUELTAS, fecha)]

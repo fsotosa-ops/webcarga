@@ -1296,7 +1296,19 @@ export type PreCierreEscalations = {
    *  `reason` sólo aparece cuando el TMS informó algo que ni siquiera es un
    *  RUT: ahí no hay a quién dar de alta. */
   CONDUCTOR_NO_REGISTRADO: ({ driver_rut: string; driver_name_tms?: string | null; reason?: string } & ScopedNotice)[]
+  /** Un viaje del día con flota de una empresa que ESE día no está activa (en
+   *  onboarding o dada de baja, plan 2026-10-28): su flota no está en el Cierre y el
+   *  viaje bloquea la firma. `operational_status` es el estado de ese día. */
   EMPRESA_ONBOARDING:      ({ carrier_id: string; carrier_name: string; operational_status?: string } & ScopedNotice)[]
+  /** Flota que salió del día después de calcularse su línea (la empresa dejó de estar
+   *  activa, el conductor salió del roster…), con lo que tenía escrito. No bloquea.
+   *  Opcional: backend y frontend se despliegan por separado. */
+  LEFT_DAY_POPULATION?: ({
+    subject_type: 'DRIVER' | 'ASSET'; subject_id: string; subject_name: string | null
+    carrier_id: string | null; carrier_name: string | null
+    carrier_status: string | null; subject_status: string | null
+    line_status: string | null; reason_label: string | null; comment: string | null; occurred_at: string
+  } & ScopedNotice)[]
   /** Tracto activo sin Tractoreo/Equipo Completo. Trae la patente porque la
    *  acción es clasificar UN vehículo, y una empresa con cuatro tractos no
    *  dice cuál. Y sí bloquea el cierre, aunque no esté en

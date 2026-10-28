@@ -29,6 +29,7 @@ export const PERMISO_DE_SECCION = {
   'directory/deactivation-reasons':  'operations.configure',
   'directory/reactivation-reasons':  'operations.configure',
   'directory/activation-exception-reasons': 'operations.configure',
+  'directory/return-to-onboarding-reasons': 'operations.configure',
   'insurance/expiry-alerts':         'insurance.configure',
   'people/users':                    'users.manage',
   'people/roles':                    'roles.manage',

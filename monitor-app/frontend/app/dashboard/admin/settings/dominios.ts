@@ -5,7 +5,7 @@ import {
 import {
   EstadosDelViajePanel, EstadosOperacionalesPanel, EstadosDeEquipoPanel, MotivosDeConductorPanel,
   MotivosDeNoAsignacionPanel, MotivosDeAnulacionPanel, SubtiposPanel, TiposDeOperacionPanel,
-  MotivosDeBajaPanel, MotivosDeReactivacionPanel, MotivosDeActivacionExcepcionalPanel,
+  MotivosDeBajaPanel, MotivosDeReactivacionPanel, MotivosDeActivacionExcepcionalPanel, MotivosDeVolverAOnboardingPanel,
   SECCIONES_CON_LISTA, AlertasDeDocumentosPanel, AlertasDePolizasPanel, RangosDeTemperaturaPanel,
   UmbralesDelMonitorPanel,
 } from './paneles'
@@ -109,6 +109,8 @@ export const DOMINIOS: Dominio[] = [
         proposito: 'Por qué vuelve a operar', Panel: MotivosDeReactivacionPanel },
       { clave: 'activation-exception-reasons', titulo: 'Motivos de activación excepcional',
         proposito: 'Por qué se activó una empresa sin la carpeta completa', Panel: MotivosDeActivacionExcepcionalPanel },
+      { clave: 'return-to-onboarding-reasons', titulo: 'Motivos para volver a onboarding',
+        proposito: 'Por qué una empresa activa vuelve a certificarse', Panel: MotivosDeVolverAOnboardingPanel },
     ],
   },
   {

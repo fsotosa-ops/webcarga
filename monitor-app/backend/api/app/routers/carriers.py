@@ -877,9 +877,10 @@ async def activate_carrier(
     carrier_id: str, body: CarrierActivateBody, pool=Depends(get_pool),
     user=Depends(require(lifecycle.transition_for("CARRIER", "activate").permission)),
 ):
-    """Saca a una empresa del onboarding (→ ACTIVE) cuando cumple los obligatorios. Con
-    motivo es una activación como excepción, y la decide quien tiene el permiso de la
-    excepción (Certificación): depende del cuerpo, por eso se exige aquí."""
+    """Saca a una empresa del onboarding (→ ACTIVE) cuando cumple los obligatorios, desde
+    la fecha que se elija (sin fecha, mañana). Con motivo es una activación como
+    excepción provisoria, con fecha de compromiso; la decide quien tiene el permiso de
+    la excepción: depende del cuerpo, por eso se exige aquí."""
     rule = lifecycle.transition_for("CARRIER", "activate")
     if body.reason_id:
         exigir(user, rule.exception_permission)
@@ -887,7 +888,23 @@ async def activate_carrier(
         async with conn.transaction():
             return await lifecycle.transition(
                 conn, entity="CARRIER", entity_id=carrier_id, action="activate", actor=user["sub"],
-                tax_id=body.tax_id, reason_id=body.reason_id, note=body.note)
+                tax_id=body.tax_id, reason_id=body.reason_id, note=body.note,
+                effective_date=body.effective_date, exception_until=body.exception_until)
+
+
+@router.post("/{carrier_id}/return-to-onboarding")
+async def return_carrier_to_onboarding(
+    carrier_id: str, body: LifecycleReasonBody, pool=Depends(get_pool),
+    user=Depends(require(lifecycle.transition_for("CARRIER", "return_to_onboarding").permission)),
+):
+    """Vuelve a onboarding, con motivo: una empresa activada antes de tiempo, o una baja
+    que vuelve a certificarse. Su flota queda vinculada; sale del Cierre desde el día en
+    que rige."""
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            return await lifecycle.transition(
+                conn, entity="CARRIER", entity_id=carrier_id, action="return_to_onboarding", actor=user["sub"],
+                reason_id=body.reason_id, note=body.note, effective_date=body.effective_date)
 
 
 @router.post("/{carrier_id}/deactivate")
@@ -900,7 +917,7 @@ async def deactivate_carrier(
         async with conn.transaction():
             return await lifecycle.transition(
                 conn, entity="CARRIER", entity_id=carrier_id, action="deactivate", actor=user["sub"],
-                reason_id=body.reason_id, note=body.note)
+                reason_id=body.reason_id, note=body.note, effective_date=body.effective_date)
 
 
 @router.post("/{carrier_id}/reactivate")
@@ -913,5 +930,6 @@ async def reactivate_carrier(
         async with conn.transaction():
             return await lifecycle.transition(
                 conn, entity="CARRIER", entity_id=carrier_id, action="reactivate", actor=user["sub"],
-                reason_id=body.reason_id, note=body.note,
-                driver_ids=body.driver_ids, asset_ids=body.asset_ids)
+                reason_id=body.reason_id, note=body.note, effective_date=body.effective_date,
+                driver_ids=body.driver_ids, asset_ids=body.asset_ids,
+                reinstate_check=lambda: exigir(user, Permission.DIRECTORY_REINSTATE))

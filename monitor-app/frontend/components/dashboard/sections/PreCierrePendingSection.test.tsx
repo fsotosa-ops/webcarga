@@ -14,7 +14,6 @@ vi.mock('@/lib/api/carriers', () => ({
     listDrivers: vi.fn().mockResolvedValue([{ id: 'd1', full_name: 'Juan Pérez' }]), listAssets: vi.fn().mockResolvedValue([]),
   },
 }))
-vi.mock('@/lib/api/lifecycle', () => ({ lifecycleApi: { activateCarrier: vi.fn(), reactivate: vi.fn() } }))
 vi.mock('@/lib/api/config', async orig => {
   const real = await orig<typeof import('@/lib/api/config')>()
   return { ...real, taxonomiesApi: { ...real.taxonomiesApi, list: vi.fn().mockResolvedValue([
@@ -96,12 +95,13 @@ describe('PreCierrePendingSection', () => {
     expect(screen.queryByRole('button', { name: 'Crear empresa nueva' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Dar de alta a este conductor' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Asignar a Transportes Juan Ramirez Spa/i })).not.toBeInTheDocument()
-    // Una por fila: patente, conductor no registrado, empresa en alta y conductor sin empresa.
-    expect(screen.getAllByText('Lo resuelve un supervisor desde el Directorio.')).toHaveLength(4)
+    // Una por fila: patente, conductor no registrado y conductor sin empresa. La empresa no
+    // activa no se resuelve en el Cierre (28/10): su fila enlaza a la ficha, para todos.
+    expect(screen.getAllByText('Lo resuelve un supervisor desde el Directorio.')).toHaveLength(3)
+    expect(within(fila(/Hizo viajes este día y está en onboarding/)).getByRole('link', { name: 'Abrir su ficha' })).toBeInTheDocument()
   })
 
-  it('una empresa en ONBOARDING se activa con directory.edit; una dada de baja pide directory.delete', async () => {
-    permisos.negados = new Set(['directory.delete'])
+  it('una empresa no activa con viaje no se activa desde el Cierre: se abre su ficha (28/10)', async () => {
     const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
     vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
       escalations: {
@@ -115,8 +115,42 @@ describe('PreCierrePendingSection', () => {
     }))
     renderSection()
     await screen.findAllByText(/Transportes Baja/)
-    expect(screen.getAllByRole('button', { name: 'Activar empresa' })).toHaveLength(1)
-    expect(screen.getAllByText('Lo resuelve un supervisor desde el Directorio.')).toHaveLength(1)
+
+    expect(screen.queryByRole('button', { name: 'Activar empresa' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reactivar empresa' })).not.toBeInTheDocument()
+    const nueva = fila(/Hizo viajes este día y está en onboarding/)
+    expect(within(nueva).getByRole('link', { name: 'Abrir su ficha' })).toHaveAttribute('href', '/dashboard/carriers/c9')
+    expect(within(nueva).getByText(/Bloquea la firma hasta que Certificación la active desde este día/)).toBeInTheDocument()
+    expect(within(fila(/Hizo viajes este día y está dada de baja/)).getByRole('link', { name: 'Abrir su ficha' }))
+      .toHaveAttribute('href', '/dashboard/carriers/c8')
+  })
+
+  it('lo que salió del día se ve en Pendientes, con por qué y lo que tenía, y no bloquea (28/10)', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
+      escalations: {
+        PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
+        EMPRESA_ONBOARDING: [], SIN_TIPO_OPERACION: [],
+        LEFT_DAY_POPULATION: [
+          { subject_type: 'DRIVER', subject_id: 'd7', subject_name: 'Hugo Valenzuela', carrier_id: 'c9',
+            carrier_name: 'Transportes Nueva', carrier_status: 'ONBOARDING', subject_status: 'ACTIVE',
+            line_status: 'UNASSIGNED', reason_label: 'Otro', comment: 'EETT en proceso', occurred_at: '2026-10-22T19:00:00Z' },
+          { subject_type: 'ASSET', subject_id: 'a7', subject_name: 'YH2300', carrier_id: 'c9',
+            carrier_name: 'Transportes Nueva', carrier_status: 'ONBOARDING', subject_status: 'ACTIVE',
+            line_status: 'UNASSIGNED', reason_label: null, comment: null, occurred_at: '2026-10-22T19:00:00Z' },
+        ],
+      },
+    }))
+    renderSection()
+
+    const conductor = (await screen.findByText(/Tenía motivo «Otro» y el comentario «EETT en proceso»/)).closest('tr')!
+    expect(within(conductor).getByText('Salió del día')).toBeInTheDocument()
+    expect(within(conductor).getByText(/Salió del día: la empresa está en onboarding/)).toBeInTheDocument()
+    expect(within(conductor).getByRole('link', { name: 'Abrir su ficha' })).toHaveAttribute('href', '/dashboard/drivers/d7')
+    // Sin motivo ni comentario, esa mitad se omite.
+    const tracto = screen.getAllByText('YH2300')[0].closest('tr')!
+    expect(within(tracto).getByText('Salió del día: la empresa está en onboarding. No bloquea.')).toBeInTheDocument()
+    expect(within(tracto).getByRole('link', { name: 'Abrir su ficha' })).toHaveAttribute('href', '/dashboard/assets/a7')
   })
 
   it('muestra las resoluciones automáticas (Tipo A)', async () => {
@@ -164,95 +198,6 @@ describe('PreCierrePendingSection', () => {
     // Crear la empresa parte con el nombre que informa el TMS.
     fireEvent.click(screen.getByRole('button', { name: 'Crear empresa nueva' }))
     expect(screen.getByDisplayValue('TRANSPORTE VICENTE BUGARIN SPA')).toBeInTheDocument()
-  })
-
-  it('EMPRESA_ONBOARDING: "Activar empresa" usa la acción de activar', async () => {
-    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
-    const { lifecycleApi } = await import('@/lib/api/lifecycle')
-    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
-      escalations: {
-        PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
-        EMPRESA_ONBOARDING: [{ carrier_id: 'c9', carrier_name: 'Transportes Nueva' }],
-        SIN_TIPO_OPERACION: [],
-      },
-    }))
-    vi.mocked(lifecycleApi.activateCarrier).mockResolvedValue({ operational_status: 'ACTIVE' })
-    renderSection()
-    await screen.findAllByText(/Transportes Nueva/)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Activar empresa' }))
-
-    await waitFor(() => expect(lifecycleApi.activateCarrier).toHaveBeenCalledWith('c9', {}))
-  })
-
-  it('EMPRESA_ONBOARDING de una dada de baja: reactiva con motivo y su flota, no con un atajo', async () => {
-    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
-    const { lifecycleApi } = await import('@/lib/api/lifecycle')
-    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
-      escalations: {
-        PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
-        EMPRESA_ONBOARDING: [{ carrier_id: 'c8', carrier_name: 'Transportes Baja', operational_status: 'INACTIVE' }],
-        SIN_TIPO_OPERACION: [],
-      },
-    }))
-    vi.mocked(lifecycleApi.reactivate).mockResolvedValue({})
-    renderSection()
-    await screen.findAllByText(/Transportes Baja/)
-    expect(screen.queryByRole('button', { name: 'Activar empresa' })).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Reactivar empresa' }))
-    await screen.findByRole('option', { name: 'Retoma la relación comercial' })
-    expect(screen.getByRole('checkbox', { name: 'Juan Pérez' })).toBeChecked()
-    fireEvent.change(screen.getByRole('combobox', { name: 'Motivo' }), { target: { value: 'r-vuelve' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Reactivar' }))
-
-    await waitFor(() => expect(lifecycleApi.reactivate).toHaveBeenCalledWith(
-      'carrier', 'c8', { reason_id: 'r-vuelve', note: undefined, driver_ids: ['d1'], asset_ids: [] }))
-  })
-
-  it('EMPRESA_ONBOARDING: si no cumple los obligatorios, lo dice y no pide el RUT', async () => {
-    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
-    const { lifecycleApi } = await import('@/lib/api/lifecycle')
-    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
-      escalations: {
-        PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
-        EMPRESA_ONBOARDING: [{ carrier_id: 'c9', carrier_name: 'Transportes Nueva' }],
-        SIN_TIPO_OPERACION: [],
-      },
-    }))
-    vi.mocked(lifecycleApi.activateCarrier).mockRejectedValueOnce(new ApiError(
-      'Faltan 2 obligatorios de la empresa para activarla. Certificación puede activarla como excepción, con motivo.',
-      409, { code: 'ONBOARDING_INCOMPLETE', own: 2, fleet: 0 }))
-    renderSection()
-    await screen.findAllByText(/Transportes Nueva/)
-    fireEvent.click(screen.getByRole('button', { name: 'Activar empresa' }))
-    expect(await screen.findByText(/Faltan 2 obligatorios de la empresa/)).toBeInTheDocument()
-    expect(screen.queryByLabelText('RUT de Transportes Nueva')).not.toBeInTheDocument()
-  })
-
-  it('EMPRESA_ONBOARDING: si falla (sin RUT), ofrece completar el RUT inline', async () => {
-    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
-    const { lifecycleApi } = await import('@/lib/api/lifecycle')
-    vi.mocked(dailyClosuresApi.get).mockResolvedValue(status({
-      escalations: {
-        PATENTE_NO_REGISTRADA: [], EMPRESA_NO_RECONOCIDA: [], CONDUCTOR_NO_REGISTRADO: [],
-        EMPRESA_ONBOARDING: [{ carrier_id: 'c9', carrier_name: 'Transportes Nueva' }],
-        SIN_TIPO_OPERACION: [],
-      },
-    }))
-    vi.mocked(lifecycleApi.activateCarrier).mockRejectedValueOnce(new ApiError('No se puede activar una empresa sin RUT/tax_id', 422, null))
-    renderSection()
-    await screen.findAllByText(/Transportes Nueva/)
-    fireEvent.click(screen.getByRole('button', { name: 'Activar empresa' }))
-    await screen.findByText('No se puede activar una empresa sin RUT/tax_id')
-
-    fireEvent.change(screen.getByLabelText('RUT de Transportes Nueva'), { target: { value: '11.111.111-1' } })
-    vi.mocked(lifecycleApi.activateCarrier).mockResolvedValueOnce({ operational_status: 'ACTIVE' })
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar RUT y activar' }))
-
-    await waitFor(() => expect(lifecycleApi.activateCarrier).toHaveBeenLastCalledWith(
-      'c9', { tax_id: '11.111.111-1' },
-    ))
   })
 
   it('SIN_TIPO_OPERACION: link directo a la ficha de la empresa', async () => {

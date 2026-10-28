@@ -15,14 +15,17 @@ interface Options {
   /** A quién aplica (el `group` de la fila): `carrier`, `driver` o `asset`. Una fila
    *  sin grupo o con `all` aplica a todos. Sin `scope` no se filtra. */
   scope?: string
+  /** `false` cuando la acción no pide motivo (activar una empresa que cumple). */
+  enabled?: boolean
 }
 
 /** Los motivos activos de un catálogo, en el orden de Configuración. */
-export function useReasons(domain: TaxonomyDomain, { noteCode, scope }: Options): { motivos: ReasonOption[]; cargando: boolean } {
+export function useReasons(domain: TaxonomyDomain, { noteCode, scope, enabled = true }: Options): { motivos: ReasonOption[]; cargando: boolean } {
   const q = useQuery({
     queryKey: taxonomyKey(domain),
     queryFn: () => taxonomiesApi.list(domain),
     staleTime: 5 * 60_000,
+    enabled,
   })
   return {
     cargando: q.isLoading,

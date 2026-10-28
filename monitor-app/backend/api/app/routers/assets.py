@@ -8,7 +8,7 @@ from asyncpg.exceptions import ForeignKeyViolationError
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import get_current_user, get_supabase
-from ..authz import Permission, require, require_fields
+from ..authz import Permission, exigir, require, require_fields
 from ..db import get_pool
 from ..schemas.asset import ASSET_FIELD_PERMISSIONS, AssetCreateBody, AssetPatchBody
 from ..services.assignment_guard import AssignmentSubjects, enforce_assignment
@@ -205,7 +205,7 @@ async def deactivate_asset(
         async with conn.transaction():
             await lifecycle.transition(
                 conn, entity="ASSET", entity_id=asset_id, action="deactivate", actor=user["sub"],
-                reason_id=body.reason_id, note=body.note)
+                reason_id=body.reason_id, note=body.note, effective_date=body.effective_date)
     return await get_asset(asset_id, pool, user)
 
 
@@ -218,7 +218,8 @@ async def reactivate_asset(
         async with conn.transaction():
             await lifecycle.transition(
                 conn, entity="ASSET", entity_id=asset_id, action="reactivate", actor=user["sub"],
-                reason_id=body.reason_id, note=body.note)
+                reason_id=body.reason_id, note=body.note, effective_date=body.effective_date,
+                reinstate_check=lambda: exigir(user, Permission.DIRECTORY_REINSTATE))
     return await get_asset(asset_id, pool, user)
 
 

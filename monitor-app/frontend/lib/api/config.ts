@@ -96,6 +96,8 @@ export type TaxonomyDomain =
   | 'DEACTIVATION_REASON' | 'REACTIVATION_REASON'
   // Por qué se activó una empresa sin la carpeta completa (onboarding, 21/10).
   | 'ACTIVATION_EXCEPTION_REASON'
+  // Por qué una empresa activa vuelve a onboarding (28/10).
+  | 'RETURN_TO_ONBOARDING_REASON'
 /** `code` es el identificador ESTABLE de un valor del catálogo, separado del
  *  nombre visible. Lo tienen sólo los vocabularios a los que otras tablas
  *  apuntan por texto —hoy WEBCARGA_OPERATION_TYPE— y por eso es opcional. Es

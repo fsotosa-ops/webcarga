@@ -156,7 +156,7 @@ CEILINGS: dict[str, dict[str, int]] = {
         "services/cierre_lineas.py": 0,              # D2: el Cierre juzga con la empresa del día
         "services/driver_roster.py": 0,
         "services/plantilla_certificacion.py": 1,
-        "services/pre_cierre.py": 2,                 # Cierre, no se toca
+        "services/pre_cierre.py": 1,                 # 28/10: el aviso de empresa no activa lee las asignaciones del día
     },
 }
 # La tupla FUNNEL_ACTIVE_STATUSES = ("ACTIVE", "ONBOARDING") se queda (C-R15): no es un predicado

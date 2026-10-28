@@ -14,6 +14,7 @@ export const PERMISOS = {
   'directory.read': { area: 'directory', privileged: false },
   'directory.edit': { area: 'directory', privileged: false },
   'directory.delete': { area: 'directory', privileged: false },
+  'directory.reinstate': { area: 'directory', privileged: true },
   'directory.fleet_status': { area: 'directory', privileged: false },
   'directory.identity': { area: 'directory', privileged: false },
   'certification.read': { area: 'certification', privileged: false },

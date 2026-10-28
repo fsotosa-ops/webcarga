@@ -35,6 +35,7 @@ export const TiposDeOperacionPanel = porFuente(vocabularySource('WEBCARGA_OPERAT
 export const MotivosDeBajaPanel = porFuente(vocabularySource('DEACTIVATION_REASON'), 'MotivosDeBajaPanel')
 export const MotivosDeReactivacionPanel = porFuente(vocabularySource('REACTIVATION_REASON'), 'MotivosDeReactivacionPanel')
 export const MotivosDeActivacionExcepcionalPanel = porFuente(vocabularySource('ACTIVATION_EXCEPTION_REASON'), 'MotivosDeActivacionExcepcionalPanel')
+export const MotivosDeVolverAOnboardingPanel = porFuente(vocabularySource('RETURN_TO_ONBOARDING_REASON'), 'MotivosDeVolverAOnboardingPanel')
 export const AlertasDeDocumentosPanel = porFuente(thresholdSource('documento_por_vencer'), 'AlertasDeDocumentosPanel')
 export const AlertasDePolizasPanel = porFuente(thresholdSource('poliza_por_vencer'), 'AlertasDePolizasPanel')
 export const RangosDeTemperaturaPanel = porFuente(temperatureRangeSource, 'RangosDeTemperaturaPanel')

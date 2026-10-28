@@ -4,17 +4,20 @@ import { useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { CamposDeMotivo } from '@/components/ui/CamposDeMotivo'
-import { FIELD_LABEL } from '@/components/ui/Field'
+import { FIELD_LABEL, Field, inputClass } from '@/components/ui/Field'
 import { eleccionCompleta, useReasons, type EleccionDeMotivo } from '@/hooks/useReasons'
 import type { LifecycleAction, LifecycleBody, LifecycleScope } from '@/lib/api/lifecycle'
 import type { CarrierDeactivationImpact } from '@/lib/types'
+import { hoyEnChile } from '@/lib/utils/datetime'
 
 export type FleetItem = { id: string; label: string }
 
 interface Props {
-  /** `activate` es activar como excepción: una empresa en onboarding que no cumple los
-   *  obligatorios (21/10). Activarla cumpliendo no pide ventana. */
+  /** `activate` activa una empresa en onboarding (lo hace Certificación, 28/10): con
+   *  `exception`, una que no cumple los obligatorios (motivo y fecha de compromiso);
+   *  sin ella, una que cumple (solo la fecha desde la que rige). */
   action:    LifecycleAction
+  exception?: boolean
   /** A quién se le cambia el estado: filtra los motivos que le aplican. */
   scope:     LifecycleScope
   /** Cómo se nombra en el título: "conductor Juan Pérez", "esta empresa". */
@@ -40,12 +43,36 @@ const TEXTO = {
     title: 'Reactivar', confirm: 'Reactivar', error: 'Error al reactivar',
     domain: 'REACTIVATION_REASON', sinMotivos: 'No hay motivos de reactivación activos: agrégalos en Configuración › Directorio.',
   },
-  activate: {
+  activate_exception: {
     title: 'Activar como excepción', confirm: 'Activar', error: 'Error al activar',
     domain: 'ACTIVATION_EXCEPTION_REASON',
     sinMotivos: 'No hay motivos de activación excepcional activos: agrégalos en Configuración › Directorio.',
   },
+  activate: {
+    title: 'Activar', confirm: 'Activar', error: 'Error al activar', domain: null, sinMotivos: '',
+  },
+  return_to_onboarding: {
+    title: 'Volver a onboarding', confirm: 'Volver a onboarding', error: 'Error al volver a onboarding',
+    domain: 'RETURN_TO_ONBOARDING_REASON',
+    sinMotivos: 'No hay motivos para volver a onboarding activos: agrégalos en Configuración › Directorio.',
+  },
 } as const
+
+/** `YYYY-MM-DD` más `n` días, sin pasar por la hora local. */
+function plusDays(day: string, n: number): string {
+  const d = new Date(`${day}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Qué pide cada acción, además del motivo: la fecha desde la que rige (activar rige
+ *  por defecto desde mañana, para no entrar al Cierre del día en que se habilita) y,
+ *  en la excepción, hasta cuándo la carpeta tiene que quedar completa. */
+const DATES: Partial<Record<keyof typeof TEXTO, { effectiveOffset: number; commitment: boolean }>> = {
+  activate: { effectiveOffset: 1, commitment: false },
+  activate_exception: { effectiveOffset: 1, commitment: true },
+  return_to_onboarding: { effectiveOffset: 0, commitment: false },
+}
 
 function plural(n: number, uno: string, varios: string) {
   return `${n} ${n === 1 ? uno : varios}`
@@ -57,10 +84,17 @@ function plural(n: number, uno: string, varios: string) {
  *  sale del catálogo de Configuración y queda en la ficha y en la auditoría. Dar de
  *  baja una empresa muestra antes lo que toca; reactivarla deja elegir qué flota
  *  vuelve. Una variante es una prop, no un componente hermano. */
-export function LifecycleDialog({ action, scope, label, onClose, onConfirm, impact, fleet, pending }: Props) {
-  const t = TEXTO[action]
-  const { motivos, cargando } = useReasons(t.domain, { noteCode: 'OTHER', scope })
+export function LifecycleDialog({ action, exception, scope, label, onClose, onConfirm, impact, fleet, pending }: Props) {
+  const variant = action === 'activate' && exception ? 'activate_exception' : action
+  const t = TEXTO[variant]
+  const dates = DATES[variant]
+  const { motivos, cargando } = useReasons(t.domain ?? 'DEACTIVATION_REASON', { noteCode: 'OTHER', scope, enabled: t.domain !== null })
   const [eleccion, setEleccion] = useState<EleccionDeMotivo>({ motivoId: '', nota: '' })
+  const today = hoyEnChile()
+  const [effective, setEffective] = useState(() => plusDays(today, dates?.effectiveOffset ?? 0))
+  const [commitment, setCommitment] = useState('')
+  const datesOk = !dates || (effective >= today && (!dates.commitment || (commitment !== '' && commitment >= effective)))
+  const reasonOk = t.domain === null || eleccionCompleta(motivos, eleccion)
   const [kept, setKept] = useState<Set<string>>(
     () => new Set([...(fleet?.drivers ?? []), ...(fleet?.assets ?? [])].map(i => i.id)))
   const loadingImpact = impact === null
@@ -92,11 +126,12 @@ export function LifecycleDialog({ action, scope, label, onClose, onConfirm, impa
       title={`${t.title}: ${label}`}
       confirmLabel={t.confirm}
       tone={action === 'deactivate' ? 'danger' : 'primary'}
-      confirmDisabled={loadingImpact || !eleccionCompleta(motivos, eleccion)}
+      confirmDisabled={loadingImpact || !reasonOk || !datesOk}
       errorFallback={t.error}
       onConfirm={() => onConfirm({
-        reason_id: eleccion.motivoId,
-        note: eleccion.nota.trim() || undefined,
+        ...(t.domain !== null ? { reason_id: eleccion.motivoId, note: eleccion.nota.trim() || undefined } : {}),
+        ...(dates ? { effective_date: effective } : {}),
+        ...(dates?.commitment ? { exception_until: commitment } : {}),
         ...(fleet ? {
           driver_ids: fleet.drivers.filter(d => kept.has(d.id)).map(d => d.id),
           asset_ids:  fleet.assets.filter(a => kept.has(a.id)).map(a => a.id),
@@ -105,19 +140,46 @@ export function LifecycleDialog({ action, scope, label, onClose, onConfirm, impa
       onClose={onClose}
     >
       <p className="text-informativo">
-        {action === 'deactivate'
-          ? 'Deja de operar y de contar en los pendientes. Se puede reactivar en cualquier momento.'
-          : action === 'activate'
-            ? `No cumple los obligatorios para activarla${pending ? `: faltan ${pending}` : ''}. Queda activa como excepción, con el motivo registrado, y No habilitada hasta que los regularice.`
-            : 'Vuelve a operar. La habilitación se recalcula: con documentos vencidos no puede tomar viajes hasta regularizarlos.'}
+        {{
+          deactivate: 'Deja de operar y de contar en los pendientes. Se puede reactivar en cualquier momento.',
+          activate_exception: `No cumple los obligatorios para activarla${pending ? `: faltan ${pending}` : ''}. Queda activa como excepción, con el motivo registrado, hasta la fecha de compromiso. Si a esa fecha su carpeta no está completa, vuelve sola a onboarding.`,
+          activate: 'Su carpeta está completa. Entra a la operación y al Cierre desde el día que elijas.',
+          return_to_onboarding: 'Sale de la operación y del Cierre desde el día que elijas. Su flota queda vinculada. Se activa sola cuando su carpeta cumpla, o la activa Certificación.',
+          reactivate: scope === 'carrier'
+            ? 'Si su carpeta está completa, vuelve a operar. Si le faltan documentos obligatorios, queda en onboarding y se activa sola cuando cumpla.'
+            : 'Vuelve a operar. La habilitación se recalcula: con documentos vencidos no puede tomar viajes hasta regularizarlos.',
+        }[variant]}
       </p>
 
-      <div className="space-y-3">
-        <CamposDeMotivo
-          variante="dialogo" motivos={motivos} cargando={cargando}
-          eleccion={eleccion} onChange={setEleccion} sinMotivos={t.sinMotivos}
-        />
-      </div>
+      {t.domain !== null && (
+        <div className="space-y-3">
+          <CamposDeMotivo
+            variante="dialogo" motivos={motivos} cargando={cargando}
+            eleccion={eleccion} onChange={setEleccion} sinMotivos={t.sinMotivos}
+          />
+        </div>
+      )}
+
+      {dates && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Rige desde" required error={effective < today ? 'No puede ser anterior a hoy.' : undefined}>
+            {(id, describedBy) => (
+              <input id={id} type="date" min={today} value={effective} aria-describedby={describedBy}
+                onChange={e => setEffective(e.target.value)} className={`${inputClass({ invalid: effective < today })} w-full`} />
+            )}
+          </Field>
+          {dates.commitment && (
+            <Field label="Carpeta completa a más tardar" required
+              error={commitment !== '' && commitment < effective ? 'Tiene que ser desde el día en que rige.' : undefined}>
+              {(id, describedBy) => (
+                <input id={id} type="date" min={effective} value={commitment} aria-describedby={describedBy}
+                  onChange={e => setCommitment(e.target.value)}
+                  className={`${inputClass({ invalid: commitment !== '' && commitment < effective })} w-full`} />
+              )}
+            </Field>
+          )}
+        </div>
+      )}
 
       {impact !== undefined && (
         <div className="rounded-md border border-border bg-bg-main px-3 py-2 text-dato text-informativo" aria-live="polite">

@@ -35,6 +35,7 @@ class Permission(str, Enum):
     DIRECTORY_DELETE = "directory.delete"
     DIRECTORY_FLEET_STATUS = "directory.fleet_status"
     DIRECTORY_IDENTITY = "directory.identity"
+    DIRECTORY_REINSTATE = "directory.reinstate"
     # Certificación
     CERTIFICATION_READ = "certification.read"
     DOCUMENTS_UPLOAD = "documents.upload"
@@ -85,6 +86,8 @@ PERMISSION_META: dict[Permission, PermissionMeta] = {
     P.DIRECTORY_READ: PermissionMeta("directory", "Ver empresas, conductores, flota y contactos"),
     P.DIRECTORY_EDIT: PermissionMeta("directory", "Crear y editar empresas, conductores, flota y contactos"),
     P.DIRECTORY_DELETE: PermissionMeta("directory", "Dar de baja y reactivar empresas, y eliminar empresas y contactos"),
+    P.DIRECTORY_REINSTATE: PermissionMeta(
+        "directory", "Reactivar una empresa, conductor o equipo dado de baja en forma definitiva", privileged=True),
     P.DIRECTORY_FLEET_STATUS: PermissionMeta("directory", "Dar de baja y reactivar conductores y equipos"),
     P.DIRECTORY_IDENTITY: PermissionMeta("directory", "Corregir el RUT de un conductor y la patente de un equipo, con motivo"),
     P.CERTIFICATION_READ: PermissionMeta("certification", "Ver documentos y el catálogo de requisitos"),
@@ -147,6 +150,8 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
     # TRIPS_VOID_ANY: la ruta de anular exige trips.void.
     _rol("admin", "Administración", "Gestiona personas, roles y la configuración general.",
          P.USERS_MANAGE, P.ROLES_MANAGE, P.SETTINGS_MANAGE, P.CLOSURES_OVERRIDE, P.TRIPS_VOID, P.TRIPS_VOID_ANY,
+         # Una baja definitiva (motivo con blocks_reactivation, 28/10) se revierte solo desde Administración.
+         P.DIRECTORY_REINSTATE,
          *_ANALITICA_SUPERVISOR, P.ANALYTICS_PERSONAL_DATA),
     _rol("support", "Soporte técnico (proveedor)", "Lee para diagnosticar; no ejecuta acciones de negocio."),
     _rol("reader", "Lectura", "Ve todas las áreas sin editar."),

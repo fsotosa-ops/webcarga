@@ -112,13 +112,10 @@ WITH active_roster AS (
     SELECT a.id AS asset_id,
            {is_scope_sql('wot', 'tractoreo')} AS is_tractoreo,
            {is_scope_sql('wot', 'equipo_completo')} AS is_equipo_completo
-    FROM public.assets a
-    -- D2: la empresa del tracto ESE día.
-    JOIN app.fleet_assignment_periods aa ON aa.relation = 'ASSET_CARRIER' AND aa.subject_id = a.id
-         AND aa.valid_during @> $1::date
-    JOIN public.carriers c ON c.id = aa.counterpart_id AND c.operational_status = 'ACTIVE'
+    -- Los tractos del día, con la empresa y el estado de ESE día (D2; plan 2026-10-28).
+    FROM app.closure_asset_population($1::date) pop
+    JOIN public.assets a ON a.id = pop.asset_id
     LEFT JOIN app.status_taxonomies wot ON wot.id = a.webcarga_operation_type_id
-    WHERE a.operational_status = 'ACTIVE' AND public.is_power_unit(a.asset_type)
 ),
 today_trips AS (
     SELECT DISTINCT vfr.resolved_tractor_asset_id AS asset_id
@@ -176,6 +173,30 @@ WHERE (app.closure_lines.status, app.closure_lines.requires_reason, app.closure_
       IS DISTINCT FROM (EXCLUDED.status, EXCLUDED.requires_reason, EXCLUDED.home_location_id)
 """
 
+
+# El día contiene exactamente su población (plan 2026-10-28): lo que salió —la empresa
+# volvió a onboarding o se dio de baja, el conductor salió del roster, el tracto cambió de
+# empresa— se borra, y queda en audit_log con todo lo que tenía. Ese registro es el aviso
+# LEFT_DAY_POPULATION de Pendientes (services/pre_cierre.py): el caso raro se revisa
+# allí, no dentro de la Flota del día. Si vuelve a la población, el upsert lo recrea.
+# Antes (regla 0.4) la línea quedaba, sin marca visible, contando y bloqueando la firma.
+_SQL_RECONCILIAR = """
+WITH gone AS (
+    DELETE FROM app.closure_lines l
+    WHERE l.business_date = $1
+      AND NOT EXISTS (SELECT 1 FROM app.closure_population($1) p
+                      WHERE p.subject_type = l.subject_type AND p.subject_id = l.subject_id)
+    RETURNING l.*
+)
+INSERT INTO public.audit_log (actor, entity_type, entity_id, action, field, new_value, source)
+SELECT NULL, g.subject_type, g.subject_id, 'closure_line_left_population', 'closure_line',
+       jsonb_build_object(
+           'business_date', g.business_date, 'status', g.status, 'reason_id', g.reason_id,
+           'valid_until', g.valid_until, 'comentario', g.comentario, 'resolved_by', g.resolved_by,
+           'resolved_at', g.resolved_at, 'reason_from_driver_id', g.reason_from_driver_id),
+       'closure_recompute'
+FROM gone g
+"""
 
 _SQL_UPSERT_CONDUCTORES = _sql_upsert("DRIVER", SQL_ESTADO_CONDUCTORES)
 _SQL_UPSERT_TRACTOS = _sql_upsert("ASSET", SQL_ESTADO_TRACTOS)
@@ -428,6 +449,7 @@ async def recalcular_en(conn, fecha: date) -> None:
     """Deriva las líneas del día. Quien llama ya tomó el período ABIERTO con
     `bloquear_periodo`, dentro de una transacción. Desde D2 no escribe el
     directorio: solo deriva las líneas."""
+    await conn.execute(_SQL_RECONCILIAR, fecha)
     await conn.execute(_SQL_UPSERT_CONDUCTORES, fecha)
     await conn.execute(_SQL_UPSERT_TRACTOS, fecha)
     await conn.execute(_SQL_HEREDAR_VIGENCIA, fecha)

@@ -130,6 +130,10 @@ const VOCABULARIOS: Record<TaxonomyDomain, {
   ACTIVATION_EXCEPTION_REASON: {
     area: 'directory', section: 'activation-exception-reasons', noun: 'motivo', columna: 'Motivo',
   },
+  // Solo empresas: no lleva "Aplica a".
+  RETURN_TO_ONBOARDING_REASON: {
+    area: 'directory', section: 'return-to-onboarding-reasons', noun: 'motivo', columna: 'Motivo',
+  },
 }
 
 /** La sección de Configuración que edita cada vocabulario (la revisión y el

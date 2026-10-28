@@ -36,6 +36,22 @@ export function fleetGapShortfall(g: FleetDriverGapRow): string {
   return g.gap > 1 ? `Faltan ${g.gap} conductores` : `${plural(Math.abs(g.gap), 'conductor', 'conductores')} de más`
 }
 
+type LeftDay = NonNullable<PreCierreEscalations['LEFT_DAY_POPULATION']>[number]
+
+/** Por qué salió del día y qué tenía escrito, en dos frases. Si la línea no tenía
+ *  motivo ni comentario, esa mitad se omite. */
+export function describeLeftDay(s: LeftDay): string {
+  const who = s.subject_type === 'DRIVER' ? 'el conductor está dado de baja' : 'el equipo está dado de baja'
+  const why = s.subject_status && s.subject_status !== 'ACTIVE' ? who
+    : !s.carrier_id ? 'no tiene empresa ese día'
+    : s.carrier_status === 'ONBOARDING' ? 'la empresa está en onboarding'
+    : s.carrier_status && s.carrier_status !== 'ACTIVE' ? 'la empresa está dada de baja'
+    : s.subject_type === 'DRIVER' ? 'ya no está en el roster de Tractoreo' : 'ya no es un tracto de una empresa activa'
+  const had = [s.reason_label ? `motivo «${s.reason_label}»` : null, s.comment ? `el comentario «${s.comment}»` : null]
+    .filter(Boolean).join(' y ')
+  return `Salió del día: ${why}.${had ? ` Tenía ${had}.` : ''} No bloquea.`
+}
+
 export function buildNotices(esc: PreCierreEscalations, gap: FleetDriverGapRow[] | undefined): Notice[] {
   // `?? []`: backend y frontend se despliegan por separado; una clave que todavía no
   // llega no puede llevarse la lista entera.
@@ -55,7 +71,17 @@ export function buildNotices(esc: PreCierreEscalations, gap: FleetDriverGapRow[]
     ...(esc.EMPRESA_ONBOARDING ?? []).map((s): Notice => ({
       ...base, type: 'EMPRESA_ONBOARDING', source: s, key: `EMPRESA_ONBOARDING:${s.carrier_id}`,
       subject: s.carrier_name, carrier: s.carrier_name, scope: s.scope ?? null,
-      detail: 'Está en onboarding. ¿Activarla para incluirla en el cierre?',
+      // Una empresa que no está activa no forma parte del Cierre (28/10): el viaje ocurrió
+      // igual, así que se resuelve antes de firmar. La habilita Certificación.
+      detail: `Hizo viajes este día y ${s.operational_status === 'INACTIVE' ? 'está dada de baja' : 'está en onboarding'}: `
+        + 'su flota no está en el Cierre. Bloquea la firma hasta que Certificación la active desde este día '
+        + 'o se corrija la flota del viaje.',
+    })),
+    ...(esc.LEFT_DAY_POPULATION ?? []).map((s): Notice => ({
+      ...base, type: 'LEFT_DAY_POPULATION', source: s, key: `LEFT_DAY_POPULATION:${s.subject_type}:${s.subject_id}`,
+      subject: s.subject_name ?? (s.subject_type === 'DRIVER' ? 'Conductor' : 'Equipo'),
+      carrier: s.carrier_name, scope: s.scope ?? null,
+      detail: describeLeftDay(s),
     })),
     ...(esc.SIN_TIPO_OPERACION ?? []).map((s): Notice => ({
       ...base, type: 'SIN_TIPO_OPERACION', source: s, key: `SIN_TIPO_OPERACION:${s.carrier_id}:${s.tractor_plate ?? ''}`,

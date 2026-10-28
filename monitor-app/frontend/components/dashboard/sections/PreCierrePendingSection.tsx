@@ -103,8 +103,9 @@ export function PreCierrePendingSection({ fecha, alcance, tripHref }: Props) {
         <p className="flex items-start gap-1 text-etiqueta text-informativo">
           <Info size={11} className="mt-0.5 shrink-0" aria-hidden="true" />
           <span>
-            Estos pendientes bloquean el cierre del día, salvo la falta de tipo de operación, las patentes sin empresa y
-            el desbalance de dotación. Resuélvelos aquí, o pide a un administrador que fuerce el cierre dejando una nota.
+            Estos pendientes bloquean el cierre del día, salvo la falta de tipo de operación, las patentes sin empresa,
+            el desbalance de dotación y lo que salió del día. Resuélvelos aquí, o pide a un administrador que fuerce el
+            cierre dejando una nota.
           </span>
         </p>
       )}
