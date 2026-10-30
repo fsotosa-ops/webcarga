@@ -50,7 +50,7 @@ Pendientes, en orden:
    `next/font/local` (`8435c417`): el deploy ya no depende de Google. Sin mirar en pantalla: popover del Monitor y
    Pendientes del Cierre (necesitan un caso real). Detalle del kit: el pie gris de `PanelLateral` centrado deja las
    esquinas de abajo rectas (todas las ventanas centradas).
-7. **Lo dado de baja no recibe documentación, por ningún camino (30/10): en `dev`, falta mirarlo en pantalla.**
+7. **Lo dado de baja no recibe documentación, por ningún camino (30/10): en `dev`, VERIFICADO en pantalla.**
    Auditoría: la guarda vieja comparaba `<> 'ACTIVE'` (07/09, antes de onboarding) y estaba copiada en subir y
    clasificar; onboarding no podía recibir archivos ("está dada de baja") y otros ocho caminos escribían sin regla en
    empresas de baja. Decisión del usuario: la baja (temporal o definitiva) no acepta nada; un conductor/equipo dado de
@@ -64,8 +64,11 @@ Pendientes, en orden:
    ficha de conductor/equipo oculta subir/revisar/pedir; los buscadores de destino de la bandeja filtran por estados
    en certificación. **Tests:** `tests/test_certification_lock_integration.py` (13, contra Postgres en transacción
    revertida, un test por camino; 2 mutaciones verificadas); los tests con mock usan el fixture opt-in
-   `regla_de_baja_probada_aparte`. **Siguiente paso:** mirar en dev una empresa en onboarding (Subir funciona) y una
-   ficha de conductor dado de baja (sin Subir), sin guardar en datos reales.
+   `regla_de_baja_probada_aparte`. Reactivar abre de nuevo (test: baja → 409 → reactivar con carpeta incompleta →
+   ONBOARDING → sube; conductor reactivado también, `9f54c58e`). Verificado en dev sin guardar: Albistur (onboarding)
+   muestra "Subir" por fila y "Subir documentos"; la ficha de un conductor dado de baja muestra sus documentos sin
+   "Subir" ni "Pedir"; Pendientes dice "Empresas activas y en onboarding…" y lista a Albistur y Crismat en
+   Póliza de Seguro Vigente › Faltan. Ojo: si la reactivación rige mañana (día firmado), hasta entonces rechaza.
 5. Lección del día: un pedido de reunión (export de la Flota del día, 16/10) se perdió por no anotarse. Al revisar una
    reunión, pasar cada pedido al AGENTLOG o a una HU el mismo día.
 
