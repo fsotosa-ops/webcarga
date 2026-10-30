@@ -30,6 +30,11 @@ function conductorYaExiste(e: unknown): ConductorYaExiste | null {
 // En un contenedor angosto (el popover del Monitor) cada campo toma la fila
 // entera; en uno ancho (la ficha) van en una sola fila. Container query: el
 // alta se adapta a donde la pongan, sin una variante por anfitrión.
+// Por eso la raíz abierta lleva `w-full`: un contenedor de consultas no se mide
+// por su contenido (su ancho propio cuenta como vacío), así que donde el
+// anfitrión lo mide por contenido —una fila flex, como en Certificación, o una
+// celda de tabla— quedaba del ancho del padding y los campos se montaban. Ocupa
+// siempre el ancho de su lugar.
 const INPUT = `${inputClass({ size: 'sm' })} @max-md:basis-full @max-md:w-full`
 
 interface Props {
@@ -235,7 +240,7 @@ export function AltaDeFlota({
   }
 
   return (
-    <div className="@container p-3 rounded-lg bg-bg-main">
+    <div className="@container w-full p-3 rounded-lg bg-bg-main">
       {/* Un solo contenedor: en angosto, el orden pone los botones al final,
           después de la empresa, como en cualquier formulario. */}
       <div className="flex items-center gap-2 flex-wrap">

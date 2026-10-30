@@ -44,6 +44,14 @@ Pendientes, en orden:
    no habilitadas, así que hoy bloquearían o marcarían todo. Casos borde ya listados: granularidad
    (empresa o conductor y tracto), excepción con motivo, viaje en curso, "por vencer" no bloquea, viaje
    futuro, faltante sin fecha y aviso agrupado por sujeto y día.
+6. **Alta de conductor/equipo en Certificación (30/10): ARREGLADO, falta mirarlo en dev.** Salía angosta y con
+   los campos montados. Causa: la raíz de `AltaDeFlota` es un `@container` (`container-type: inline-size`, desde
+   `34b3fac9`), que no se mide por su contenido; Certificación la pone como ítem de una fila flex, así que quedaba
+   del ancho del padding (24 px medidos en una reproducción aislada). Arreglo en el componente compartido, no en el
+   anfitrión: la raíz abierta lleva `w-full` (contrato: ocupa el ancho de su lugar). Ficha de empresa y popover del
+   Monitor no cambian (ya eran bloques). **Siguiente paso:** en dev, Certificación › empresa nueva › "Agregar
+   conductor"/"Agregar equipo" a 1440 y 390; mirar también "Dar de alta a este conductor" en Pendientes del Cierre
+   (celda de tabla, mismo mecanismo). Deuda vista, no tocada: los botones del formulario no usan `Button` del kit.
 5. Lección del día: un pedido de reunión (export de la Flota del día, 16/10) se perdió por no anotarse. Al revisar una
    reunión, pasar cada pedido al AGENTLOG o a una HU el mismo día.
 
