@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
-import { Check, Loader2, X } from 'lucide-react'
+import { useId, useState } from 'react'
+import { Loader2 } from 'lucide-react'
 import { carriersApi, type CarrierCreateResult } from '@/lib/api/carriers'
 import type { ManagementType } from '@/lib/types'
-import { inputClass } from '@/components/ui/Field'
+import { FIELD_LABEL, Field, inputClass } from '@/components/ui/Field'
+import { Button } from '@/components/ui/Button'
+import { PanelLateral } from '@/components/ui/PanelLateral'
 
 interface Props {
   open:                 boolean
@@ -31,6 +33,7 @@ export function NewCarrierPanel({ open, initialBusinessName = '', onClose, onCre
   const [gestiones, setGestiones] = useState<ManagementType[]>([])
   const [creating, setCreating] = useState(false)
   const [err, setErr]           = useState<string | null>(null)
+  const formId = useId()
 
   function alternarGestion(codigo: ManagementType) {
     setGestiones(prev => (prev.includes(codigo)
@@ -72,70 +75,67 @@ export function NewCarrierPanel({ open, initialBusinessName = '', onClose, onCre
 
   if (!open) return null
 
+  // Diálogo del kit (30/10), igual que el alta de conductor y equipo: era una
+  // tarjeta suelta con el nombre del campo solo como placeholder, "Tax ID" en
+  // inglés y botones fuera del kit.
   return (
-    <div className="bg-white border border-border rounded-2xl p-4 max-w-sm space-y-2">
-      <p className="text-xs font-bold text-text-primary mb-1">Nueva empresa</p>
-      <input
-        placeholder="Tax ID"
-        aria-label="Tax ID"
-        value={form.tax_id}
-        onChange={e => setForm(v => ({ ...v, tax_id: e.target.value }))}
-        className={`${inputClass({ size: 'sm' })} w-full`}
-      />
-      {/* Toda empresa nueva nace en onboarding (21/10), con o sin RUT. */}
-      <p className="text-[11px] text-informativo">
-        Se creará En onboarding: carga su documentación y actívala cuando cumpla los obligatorios.
-      </p>
-      <input
-        placeholder="Razón social"
-        aria-label="Razón social"
-        value={form.business_name}
-        onChange={e => setForm(v => ({ ...v, business_name: e.target.value }))}
-        className={`${inputClass({ size: 'sm' })} w-full`}
-      />
-      {/* Tipo de gestión (D7). Son dos marcas independientes, no un desplegable
-          de tres opciones: marcar las dos ES el caso mixto. Un valor 'AMBAS'
-          obligaría a que toda consulta futura lo recordara, y olvidarlo deja
-          afuera a la empresa mixta en silencio.
-
-          Opcional a propósito: la flota manda cuando existe. Esto sólo cubre a
-          la empresa que todavía no registró vehículos, y propone el subtipo
-          correcto al registrar el primero. */}
-      <fieldset className="pt-0.5">
-        <legend className="text-[11px] text-informativo pb-1">Tipo de gestión</legend>
-        <div className="flex gap-3">
-          {GESTIONES.map(({ codigo, label }) => (
-            <label key={codigo} className="flex items-center gap-1.5 text-xs text-text-primary cursor-pointer">
-              <input
-                type="checkbox"
-                aria-label={label}
-                checked={gestiones.includes(codigo)}
-                onChange={() => alternarGestion(codigo)}
-                className="accent-accent cursor-pointer"
-              />
-              {label}
-            </label>
-          ))}
+    <PanelLateral
+      placement="center"
+      titulo="Nueva empresa"
+      // Toda empresa nueva nace en onboarding (21/10), con o sin RUT.
+      description="Se creará En onboarding: carga su documentación y actívala cuando cumpla los obligatorios."
+      onCerrar={handleClose}
+      dismissible={!creating}
+      pie={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={handleClose} disabled={creating}>Cancelar</Button>
+          <Button variant="primary" type="submit" form={formId} disabled={creating || !form.business_name}>
+            {creating && <Loader2 size={13} className="animate-spin" aria-hidden="true" />}
+            {creating ? 'Creando…' : 'Crear empresa'}
+          </Button>
         </div>
-        <p className="text-etiqueta text-informativo pt-1">
-          Opcional. Si no la eliges, se deduce de los vehículos que registres.
-        </p>
-      </fieldset>
+      }
+    >
+      <form id={formId} onSubmit={e => { e.preventDefault(); void handleCreate() }} className="space-y-4">
+        <Field label="Razón social" required>
+          {(id, d) => (
+            <input id={id} aria-describedby={d} autoFocus value={form.business_name}
+                   onChange={e => setForm(v => ({ ...v, business_name: e.target.value }))}
+                   className={`${inputClass()} w-full`} />
+          )}
+        </Field>
+        <Field label="RUT" hint="Opcional. Se puede agregar después.">
+          {(id, d) => (
+            <input id={id} aria-describedby={d} placeholder="76.123.456-7" value={form.tax_id}
+                   onChange={e => setForm(v => ({ ...v, tax_id: e.target.value }))}
+                   className={`${inputClass()} w-full font-identificador`} />
+          )}
+        </Field>
+        {/* Tipo de gestión (D7). Son dos marcas independientes, no un desplegable
+            de tres opciones: marcar las dos ES el caso mixto. Un valor 'AMBAS'
+            obligaría a que toda consulta futura lo recordara, y olvidarlo deja
+            afuera a la empresa mixta en silencio.
 
-      {err && <p className="text-xs text-status-incidente">{err}</p>}
-      <div className="flex items-center gap-2 pt-1">
-        <button
-          onClick={handleCreate}
-          disabled={creating || !form.business_name}
-          className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent/90 disabled:opacity-50"
-        >
-          {creating ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
-          Crear empresa
-        </button>
-        <button onClick={handleClose} aria-label="Cancelar" className="p-1.5 text-informativo hover:text-text-primary">
-          <X size={14} />
-        </button>
-      </div>
-    </div>
+            Opcional a propósito: la flota manda cuando existe. Esto sólo cubre a
+            la empresa que todavía no registró vehículos, y propone el subtipo
+            correcto al registrar el primero. */}
+        <fieldset>
+          <legend className={`${FIELD_LABEL} mb-1.5`}>Tipo de gestión</legend>
+          <div className="flex gap-4">
+            {GESTIONES.map(({ codigo, label }) => (
+              <label key={codigo} className="flex items-center gap-1.5 text-dato text-text-primary cursor-pointer">
+                <input type="checkbox" checked={gestiones.includes(codigo)}
+                       onChange={() => alternarGestion(codigo)} className="accent-accent cursor-pointer" />
+                {label}
+              </label>
+            ))}
+          </div>
+          <p className="mt-1 text-etiqueta text-informativo">
+            Opcional. Si no la eliges, se deduce de los vehículos que registres.
+          </p>
+        </fieldset>
+        {err && <p role="alert" className="text-etiqueta text-status-incidente">{err}</p>}
+      </form>
+    </PanelLateral>
   )
 }

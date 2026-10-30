@@ -19,28 +19,28 @@ describe('NewCarrierPanel', () => {
 
   it('pre-fills business_name from initialBusinessName', () => {
     render(<NewCarrierPanel open initialBusinessName="Agrocapilla Ltda" onClose={vi.fn()} onCreated={vi.fn()} />)
-    expect(screen.getByLabelText('Razón social')).toHaveValue('Agrocapilla Ltda')
+    expect(screen.getByLabelText(/Razón social/)).toHaveValue('Agrocapilla Ltda')
   })
 
   it('disables the create button until business_name is filled, tax_id is not required', () => {
     render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
     expect(screen.getByRole('button', { name: /Crear empresa/ })).toBeDisabled()
-    fireEvent.change(screen.getByLabelText('Tax ID'), { target: { value: '76217085-K' } })
+    fireEvent.change(screen.getByLabelText('RUT'), { target: { value: '76217085-K' } })
     expect(screen.getByRole('button', { name: /Crear empresa/ })).toBeDisabled()
-    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Nueva Spa' } })
+    fireEvent.change(screen.getByLabelText(/Razón social/), { target: { value: 'Nueva Spa' } })
     expect(screen.getByRole('button', { name: /Crear empresa/ })).toBeEnabled()
   })
 
   it('enables the create button with only business_name filled (no tax_id)', () => {
     render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
-    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Nueva Spa' } })
+    fireEvent.change(screen.getByLabelText(/Razón social/), { target: { value: 'Nueva Spa' } })
     expect(screen.getByRole('button', { name: /Crear empresa/ })).toBeEnabled()
   })
 
   it('dice que toda empresa nueva nace en onboarding, con o sin RUT', () => {
     render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
     expect(screen.getByText(/Se creará En onboarding/)).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('Tax ID'), { target: { value: '76.123.456-7' } })
+    fireEvent.change(screen.getByLabelText('RUT'), { target: { value: '76.123.456-7' } })
     expect(screen.getByText(/Se creará En onboarding/)).toBeInTheDocument()
   })
 
@@ -49,8 +49,8 @@ describe('NewCarrierPanel', () => {
     vi.mocked(carriersApi.create).mockResolvedValue(created)
     const onCreated = vi.fn()
     render(<NewCarrierPanel open onClose={vi.fn()} onCreated={onCreated} />)
-    fireEvent.change(screen.getByLabelText('Tax ID'), { target: { value: '76217085-K' } })
-    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Nueva Spa' } })
+    fireEvent.change(screen.getByLabelText('RUT'), { target: { value: '76217085-K' } })
+    fireEvent.change(screen.getByLabelText(/Razón social/), { target: { value: 'Nueva Spa' } })
     fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }))
     await waitFor(() => expect(carriersApi.create).toHaveBeenCalledWith({ tax_id: '76217085-K', business_name: 'Nueva Spa' }))
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(created))
@@ -61,7 +61,7 @@ describe('NewCarrierPanel', () => {
     vi.mocked(carriersApi.create).mockResolvedValue(created)
     const onCreated = vi.fn()
     render(<NewCarrierPanel open onClose={vi.fn()} onCreated={onCreated} />)
-    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Onboarding Spa' } })
+    fireEvent.change(screen.getByLabelText(/Razón social/), { target: { value: 'Onboarding Spa' } })
     fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }))
     await waitFor(() => expect(carriersApi.create).toHaveBeenCalledWith({ business_name: 'Onboarding Spa' }))
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(created))
@@ -71,8 +71,8 @@ describe('NewCarrierPanel', () => {
     vi.mocked(carriersApi.create).mockRejectedValue(new Error('Tax ID duplicado'))
     const onCreated = vi.fn()
     render(<NewCarrierPanel open onClose={vi.fn()} onCreated={onCreated} />)
-    fireEvent.change(screen.getByLabelText('Tax ID'), { target: { value: '76217085-K' } })
-    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Nueva Spa' } })
+    fireEvent.change(screen.getByLabelText('RUT'), { target: { value: '76217085-K' } })
+    fireEvent.change(screen.getByLabelText(/Razón social/), { target: { value: 'Nueva Spa' } })
     fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }))
     expect(await screen.findByText('Tax ID duplicado')).toBeInTheDocument()
     expect(onCreated).not.toHaveBeenCalled()
@@ -90,7 +90,7 @@ describe('NewCarrierPanel', () => {
   it('manda la gestion elegida', async () => {
     vi.mocked(carriersApi.create).mockResolvedValue({ id: 'c1' } as never)
     render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
-    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Nueva Spa' } })
+    fireEvent.change(screen.getByLabelText(/Razón social/), { target: { value: 'Nueva Spa' } })
     fireEvent.click(screen.getByLabelText('Tractoreo'))
     fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }))
 
@@ -101,7 +101,7 @@ describe('NewCarrierPanel', () => {
   it('marcar las dos manda las dos, en el orden canonico', async () => {
     vi.mocked(carriersApi.create).mockResolvedValue({ id: 'c1' } as never)
     render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
-    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Mixta Spa' } })
+    fireEvent.change(screen.getByLabelText(/Razón social/), { target: { value: 'Mixta Spa' } })
     // A proposito en el orden inverso: el backend normaliza, pero mandar el
     // orden canonico evita que dos filas equivalentes difieran por `=`.
     fireEvent.click(screen.getByLabelText('Equipo Completo'))
@@ -118,7 +118,7 @@ describe('NewCarrierPanel', () => {
   it('sin gestion elegida no manda el campo', async () => {
     vi.mocked(carriersApi.create).mockResolvedValue({ id: 'c1' } as never)
     render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
-    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Sin Gestion Spa' } })
+    fireEvent.change(screen.getByLabelText(/Razón social/), { target: { value: 'Sin Gestion Spa' } })
     fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }))
 
     await waitFor(() => expect(carriersApi.create).toHaveBeenCalled())
@@ -127,14 +127,40 @@ describe('NewCarrierPanel', () => {
 
   it('la gestion no bloquea el alta', () => {
     render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
-    fireEvent.change(screen.getByLabelText('Razón social'), { target: { value: 'Nueva Spa' } })
+    fireEvent.change(screen.getByLabelText(/Razón social/), { target: { value: 'Nueva Spa' } })
     expect(screen.getByRole('button', { name: /Crear empresa/ })).toBeEnabled()
   })
 
   it('calls onClose when Cancelar is clicked', () => {
     const onClose = vi.fn()
     render(<NewCarrierPanel open onClose={onClose} onCreated={vi.fn()} />)
-    fireEvent.click(screen.getByLabelText('Cancelar'))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('es un diálogo del kit y dice que la empresa nace en onboarding', () => {
+    render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
+    expect(screen.getByRole('dialog', { name: 'Nueva empresa' }))
+      .toHaveAccessibleDescription(/Se creará En onboarding/)
+  })
+
+  it('Enter crea: los campos van dentro de un formulario', async () => {
+    vi.mocked(carriersApi.create).mockResolvedValue({ id: 'c1' } as never)
+    render(<NewCarrierPanel open onClose={vi.fn()} onCreated={vi.fn()} />)
+    const razon = screen.getByLabelText(/Razón social/)
+    fireEvent.change(razon, { target: { value: 'Nueva Spa' } })
+    fireEvent.submit(razon.closest('form')!)
+    await waitFor(() => expect(carriersApi.create).toHaveBeenCalledWith({ business_name: 'Nueva Spa' }))
+  })
+
+  it('mientras crea, Escape no lo cierra', async () => {
+    vi.mocked(carriersApi.create).mockReturnValue(new Promise(() => {}))
+    const onClose = vi.fn()
+    render(<NewCarrierPanel open onClose={onClose} onCreated={vi.fn()} />)
+    fireEvent.change(screen.getByLabelText(/Razón social/), { target: { value: 'Nueva Spa' } })
+    fireEvent.click(screen.getByRole('button', { name: /Crear empresa/ }))
+    expect(await screen.findByRole('button', { name: /Creando/ })).toBeDisabled()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
   })
 })
