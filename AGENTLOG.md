@@ -44,20 +44,24 @@ Pendientes, en orden:
    no habilitadas, así que hoy bloquearían o marcarían todo. Casos borde ya listados: granularidad
    (empresa o conductor y tracto), excepción con motivo, viaje en curso, "por vencer" no bloquea, viaje
    futuro, faltante sin fecha y aviso agrupado por sujeto y día.
-6. **Alta de conductor/equipo como diálogo (30/10): comiteada y en `dev`, falta mirarla en dev.** Salía angosta y
-   con los campos montados en Certificación. Causa: la raíz de `AltaDeFlota` era un `@container`, que no se mide por
-   su contenido, dentro de una fila flex (24 px medidos). Primero se subió `w-full` (`8b49b64e`); al revisarlo contra
-   el estándar el usuario eligió en el visual companion la opción A: **diálogo centrado del kit** (`PanelLateral
-   placement="center"`, como "Nuevo viaje"; Salesforce/Linear/Stripe). Campos con `Field` (etiqueta, asterisco,
-   ayuda), pie con `Button` (Cancelar / Agregar conductor|equipo), Enter guarda, no se cierra mientras guarda,
-   Cancelar descarta y vuelve a lo precargado, 409 muestra error y salida sin cerrar, RUT del TMS de solo lectura,
-   "Empresa" con su consecuencia cuando no viene dada. Sin container queries. Prop nueva `nombreEmpresa` ("Queda
-   asignado a X"); `CarrierSearchPicker` acepta `inputId`/`describedBy` para que lo nombre la etiqueta. 9 tests (2
-   mutaciones verificadas), tsc y build OK. Suite completa: 4 fallas bajo carga (14 min); `PasoViajesSection` pasa
-   sola y no usa el alta; las otras 3 no se identificaron (se cortó para no cargar la máquina del usuario: probar en
-   dev, no en local). **Siguiente paso:** ver en CI si vitest queda verde; en dev, Certificación › empresa › Agregar
-   conductor/equipo a 1440 y 390, ficha de empresa, popover del Monitor y Pendientes del Cierre, SIN guardar nada.
-   Deuda vista: `NewCarrierPanel` tiene la misma forma vieja (placeholder como etiqueta, botones crudos).
+6. **Diálogos del kit para altas + fuentes locales (30/10): en `dev`.** Alta de conductor/equipo como diálogo
+   centrado (`6cf365b3`), verificada en dev (Certificación, ficha › Conductores, 1440 y 390; sin guardar). "Nueva
+   empresa" con el mismo patrón y "RUT" en vez de "Tax ID" (`694c9d7f`). Fuentes en `app/fonts` con
+   `next/font/local` (`8435c417`): el deploy ya no depende de Google. Sin mirar en pantalla: popover del Monitor y
+   Pendientes del Cierre (necesitan un caso real). Detalle del kit: el pie gris de `PanelLateral` centrado deja las
+   esquinas de abajo rectas (todas las ventanas centradas).
+7. **AUDITORÍA (30/10): una empresa en onboarding NO puede recibir archivos.** Confirmado leyendo el código: la
+   guarda de "dada de baja" compara `operational_status <> 'ACTIVE'` en `backend/api/app/routers/compliance.py:1641`
+   (subir por fila y `/bulk-file`) y `document_ingest.py:529` (clasificar en la bandeja). Es del 07/09, antes de que
+   existiera ONBOARDING (21/10). El frontend muestra "Subir" (`isCarrierInCertification`) y el backend responde 409
+   "está dada de baja". Bloquea también a la flota de la empresa y a una empresa reactivada que vuelve a onboarding;
+   y como activar exige la carpeta completa, el círculo se cierra. Otros hallazgos del informe: `/pending` sin
+   empresa filtra solo ACTIVE aunque su resumen cuenta onboarding (`compliance.py:469,547`); la planilla por defecto
+   excluye onboarding (`plantilla_certificacion.py:205`); la ficha de flota muestra "Subir" sin mirar el estado de la
+   empresa; y varios caminos escriben sin guarda en empresas dadas de baja (planilla, PATCH, reasignar, solicitar,
+   mover a la bandeja; sujeto sin asignación activa pasa siempre). **Siguiente paso:** que el usuario decida si la
+   baja bloquea toda escritura; luego arreglar C1/C2 con `CARRIER_STATUSES_IN_CERTIFICATION` (no un literal) + test
+   con ONBOARDING, y alinear `/pending` y la planilla.
 5. Lección del día: un pedido de reunión (export de la Flota del día, 16/10) se perdió por no anotarse. Al revisar una
    reunión, pasar cada pedido al AGENTLOG o a una HU el mismo día.
 
