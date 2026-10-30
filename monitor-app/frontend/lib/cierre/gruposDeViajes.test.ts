@@ -62,6 +62,14 @@ describe('gruposDeViajes', () => {
     expect(conductorPorEmparejar({ ...base, driver_name_tms: 'X', is_assigned: false })).toBe(false)
   })
 
+  it('por regularizar pone lo del día primero, y los pendientes anteriores después', () => {
+    const grupos = { ...GRUPOS, por_regularizar: [
+      viaje('viejo', '9', { planning_date: '2026-09-15' }),
+      viaje('hoy-b', '20'), viaje('hoy-a', '10'),
+    ] }
+    expect(tripsToRegularize(grupos).map(f => f.trip_id)).toEqual(['hoy-a', 'hoy-b', 'viejo'])
+  })
+
   it('por regularizar se lee aparte y no entra en los viajes de la pestaña Viajes', () => {
     const grupos = { ...GRUPOS, por_regularizar: [viaje('r1', '7')] }
     expect(tripsToRegularize(grupos).map(f => f.trip_id)).toEqual(['r1'])

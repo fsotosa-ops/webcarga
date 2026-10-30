@@ -107,6 +107,20 @@ async def test_completing_the_fleet_takes_it_out(conexion_revertida):
     assert trip_id not in await groups(conn)
 
 
+async def test_a_tms_placeholder_is_not_a_driver_name(conexion_revertida):
+    """"POR CONFIRMAR /" es la forma del TMS de decir "todavía no hay": no se ofrece
+    emparejarlo ni darlo de alta (catálogo TMS_PLACEHOLDER_DRIVER_NAME, app.tms_driver_name)."""
+    conn = conexion_revertida
+    _, tractor, _ = await coherent_fleet(conn)
+    trip_id = await insert_trip(conn, planning_date=DAY, fleet='{"driver_name_tms": "POR CONFIRMAR /"}')
+    await link(conn, trip_id, tractor=tractor, driver=None)
+
+    entry = (await to_regularize(conn))[str(trip_id)]
+    assert entry["missing_fleet"] == ["driver"]
+    assert entry["driver_name_tms"] is None
+    assert entry["driver_name"] is None
+
+
 async def test_assigned_to_webcarga_without_a_third_party_is_missing_the_carrier(conexion_revertida):
     """El TMS dice asignado, pero a WebCarga: no hay tracto, conductor ni empresa del Directorio."""
     conn = conexion_revertida

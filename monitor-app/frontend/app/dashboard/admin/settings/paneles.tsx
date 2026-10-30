@@ -30,6 +30,7 @@ export const EstadosDeEquipoPanel = porFuente(vocabularySource('EQUIPMENT_STATE'
 export const MotivosDeConductorPanel = porFuente(vocabularySource('DRIVER_REASON'), 'MotivosDeConductorPanel')
 export const MotivosDeNoAsignacionPanel = porFuente(vocabularySource('TRIP_UNASSIGNED_REASON'), 'MotivosDeNoAsignacionPanel')
 export const MotivosDeAnulacionPanel = porFuente(vocabularySource('TRIP_VOID_REASON'), 'MotivosDeAnulacionPanel')
+export const NombresDeRellenoPanel = porFuente(vocabularySource('TMS_PLACEHOLDER_DRIVER_NAME'), 'NombresDeRellenoPanel')
 export const SubtiposPanel = porFuente(vocabularySource('FLEET_SERVICE_TYPE'), 'SubtiposPanel')
 export const TiposDeOperacionPanel = porFuente(vocabularySource('WEBCARGA_OPERATION_TYPE'), 'TiposDeOperacionPanel')
 export const MotivosDeBajaPanel = porFuente(vocabularySource('DEACTIVATION_REASON'), 'MotivosDeBajaPanel')

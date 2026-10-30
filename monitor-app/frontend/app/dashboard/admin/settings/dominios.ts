@@ -4,7 +4,7 @@ import {
 } from 'lucide-react'
 import {
   EstadosDelViajePanel, EstadosOperacionalesPanel, EstadosDeEquipoPanel, MotivosDeConductorPanel,
-  MotivosDeNoAsignacionPanel, MotivosDeAnulacionPanel, SubtiposPanel, TiposDeOperacionPanel,
+  MotivosDeNoAsignacionPanel, MotivosDeAnulacionPanel, NombresDeRellenoPanel, SubtiposPanel, TiposDeOperacionPanel,
   MotivosDeBajaPanel, MotivosDeReactivacionPanel, MotivosDeActivacionExcepcionalPanel, MotivosDeVolverAOnboardingPanel,
   SECCIONES_CON_LISTA, AlertasDeDocumentosPanel, AlertasDePolizasPanel, RangosDeTemperaturaPanel,
   UmbralesDelMonitorPanel,
@@ -83,6 +83,8 @@ export const DOMINIOS: Dominio[] = [
         proposito: 'Por qué WebCarga no tomó una carga que le ofrecieron', Panel: MotivosDeNoAsignacionPanel },
       { clave: 'void-reasons', titulo: 'Motivos de anulación',
         proposito: 'Por qué se anula un viaje cargado en la app', Panel: MotivosDeAnulacionPanel },
+      { clave: 'tms-placeholder-names', titulo: 'Nombres de relleno del TMS',
+        proposito: 'Qué nombres de conductor del TMS no son una persona ("POR CONFIRMAR")', Panel: NombresDeRellenoPanel },
     ],
   },
   {

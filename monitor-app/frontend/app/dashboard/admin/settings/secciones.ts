@@ -22,6 +22,7 @@ export const PERMISO_DE_SECCION = {
   'operations/driver-reasons':       'operations.configure',
   'operations/unassigned-reasons':   'operations.configure',
   'operations/void-reasons':         'operations.configure',
+  'operations/tms-placeholder-names': 'operations.configure',
   'fleet/subtypes':                  'operations.configure',
   'fleet/operation-types':           'operations.configure',
   // Los vocabularios de app.status_taxonomies se editan con operations.configure

@@ -91,6 +91,8 @@ export type TaxonomyDomain =
   // Por qué se anuló un viaje manual (spec 2026-10-10): corrige un registro mal
   // cargado. No confundir con TRIP_UNASSIGNED_REASON, que es un resultado de negocio.
   | 'TRIP_VOID_REASON'
+  // Nombres de conductor del TMS que no son una persona ("POR CONFIRMAR"), 30/10.
+  | 'TMS_PLACEHOLDER_DRIVER_NAME'
   // Por qué se da de baja o se reactiva una empresa, un conductor o un equipo
   // (plan 2026-10-21). `group` dice a quién aplica: all, carrier, driver o asset.
   | 'DEACTIVATION_REASON' | 'REACTIVATION_REASON'

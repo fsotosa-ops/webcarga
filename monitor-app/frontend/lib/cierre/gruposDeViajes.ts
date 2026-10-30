@@ -130,9 +130,13 @@ export function situationOf(f: FilaDeViaje): string {
   return PESTANAS_DE_VIAJES.find(p => p.id === GRUPOS_DE_VIAJES[f.grupo].pestana)?.etiqueta ?? GRUPOS_DE_VIAJES[f.grupo].chip
 }
 
-/** Los viajes por regularizar, en el orden de `filasDePestana`. */
+/** Los viajes por regularizar, LO DEL DÍA PRIMERO: el coordinador trabaja el día que
+ *  cierra, y los pendientes de días anteriores van después (al revés que en Viajes,
+ *  donde manda lo más antiguo). A igual fecha, por Nº de viaje. */
 export function tripsToRegularize(grupos: Partial<Record<GrupoDelCierre, ViajeDelCierre[]>>): FilaDeViaje[] {
   return filasDePestana(grupos, 'to_regularize')
+    .sort((a, b) => b.planning_date.localeCompare(a.planning_date)
+      || (a.source_system_trip_id ?? a.trip_id).localeCompare(b.source_system_trip_id ?? b.trip_id, 'es', { numeric: true }))
 }
 
 export function pestanaInicial(grupos: Partial<Record<GrupoDelCierre, ViajeDelCierre[]>>): PestanaDeViajes {

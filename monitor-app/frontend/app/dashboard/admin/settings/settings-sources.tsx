@@ -116,6 +116,9 @@ const VOCABULARIOS: Record<TaxonomyDomain, {
   TRIP_VOID_REASON: {
     area: 'operations', section: 'void-reasons', noun: 'motivo', columna: 'Motivo',
   },
+  TMS_PLACEHOLDER_DRIVER_NAME: {
+    area: 'operations', section: 'tms-placeholder-names', noun: 'nombre', columna: 'Nombre del TMS',
+  },
   FLEET_SERVICE_TYPE: {
     area: 'fleet', section: 'subtypes', noun: 'subtipo', columna: 'Subtipo',
   },

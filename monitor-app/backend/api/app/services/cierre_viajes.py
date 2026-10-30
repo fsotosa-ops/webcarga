@@ -54,10 +54,12 @@ SQL_BASE = f"""    SELECT t.id AS trip_id, t.planning_date,
            -- resuelto contra el maestro, después el vínculo, después el TMS.
            t.source_system,
            COALESCE(ta.license_plate, fl.tractor_plate, t.fleet->>'tractor_plate') AS tractor_plate,
-           COALESCE(d.full_name, fl.driver_name_raw, t.fleet->>'driver_name_tms')  AS driver_name,
+           COALESCE(d.full_name,
+                    app.tms_driver_name(COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms'))) AS driver_name,
            -- El nombre que informó el TMS, aparte del resuelto: con él se busca a la
-           -- persona en el Directorio (el mismo emparejamiento del Monitor).
-           COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms')               AS driver_name_tms,
+           -- persona en el Directorio (el mismo emparejamiento del Monitor). Sin los
+           -- rellenos ("POR CONFIRMAR /"), que no son una persona: app.tms_driver_name.
+           app.tms_driver_name(COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms')) AS driver_name_tms,
            COALESCE(c.business_name, t.fleet->>'transporter_name_tms')             AS carrier_name,
            -- Las entidades resueltas contra el directorio, para abrirlas en la vista
            -- rápida (HU 20261011/01). NULL = lo que se ve viene del TMS sin cruzar.

@@ -184,6 +184,9 @@ export function PasoViajesSection({
           </span>
         )
       } },
+    // El estado que informa el TMS (Asignado, Publicada, En ruta, Cancelado…): sin él no
+    // se entiende por qué un viaje está aquí (reunión del 30/10).
+    { id: 'trip_status', header: 'Estado del viaje', value: v => v.trip_status },
     porRegularizar
       ? { id: 'why', header: 'Qué falta', value: v => queFalta(v).join(' · '),
           render: v => (

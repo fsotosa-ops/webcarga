@@ -89,6 +89,15 @@ Pendientes, en orden:
    grupos reescritos; 1 mutación verificada. **Siguiente paso:** mirar en dev Cierre › Flota del día › Equipo Completo y
    Tractoreo a 1440 y 390 contra la maqueta, sin guardar; avisar a Operaciones del pendiente acumulado antes del
    primer cierre. Fuera de esta entrega: separar Viajes en "abandonados" con el estado del TMS.
+   **Ajustes del mismo día (30/10, después de mirarlo en dev):** Por regularizar ordena lo del día primero; columna
+   "Estado del viaje" en la tabla compartida (también en Viajes). Nombres de relleno del TMS ("POR CONFIRMAR /", 8
+   viajes en 45 días): decisión del usuario, opción B = una función en la base, `app.tms_driver_name(raw)` (NULL si
+   es relleno del catálogo `TMS_PLACEHOLDER_DRIVER_NAME` o no tiene letras; usa `public.name_tokens`; el crudo no se
+   toca), que leen el Monitor (`driver_name`, `driver_name_tms`, `_FLEET_MATCH_CASE` "sin identificar", equipos
+   disponibles) y el Cierre. Catálogo editable en Configuración › Operaciones › Nombres de relleno del TMS.
+   Migración `20261109090000_tms_placeholder_driver_names` APLICADA en producción (ensayo con ROLLBACK +
+   autorización del usuario, vía MCP de Supabase). La búsqueda del Monitor sigue leyendo el crudo a propósito.
+   Pendiente de decidir: `verify` del workflow del frontend (en paralelo sin bloquear / solo en main / quitarlo).
 5. Lección del día: un pedido de reunión (export de la Flota del día, 16/10) se perdió por no anotarse. Al revisar una
    reunión, pasar cada pedido al AGENTLOG o a una HU el mismo día.
 

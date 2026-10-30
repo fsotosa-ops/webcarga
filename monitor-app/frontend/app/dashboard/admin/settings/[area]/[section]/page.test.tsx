@@ -17,7 +17,7 @@ vi.mock('../../paneles', () => ({
   EstadosDelViajePanel: () => <div>panel estados</div>,
   EstadosOperacionalesPanel: () => null, EstadosDeEquipoPanel: () => null,
   MotivosDeConductorPanel: () => <div>panel motivos</div>,
-  MotivosDeNoAsignacionPanel: () => null, MotivosDeAnulacionPanel: () => null,
+  MotivosDeNoAsignacionPanel: () => null, MotivosDeAnulacionPanel: () => null, NombresDeRellenoPanel: () => null,
   SubtiposPanel: () => null, TiposDeOperacionPanel: () => null,
   MotivosDeBajaPanel: () => null, MotivosDeReactivacionPanel: () => null,
   MotivosDeActivacionExcepcionalPanel: () => null,

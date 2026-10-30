@@ -493,9 +493,10 @@ _TRIP_SELECT = """
     t.fleet->>'tractor_plate'                     AS tractor_plate_tms,
     COALESCE(tr.license_plate, fl.trailer_plate,
              t.fleet->>'trailer_plate')           AS trailer_plate,
-    COALESCE(d.full_name, fl.driver_name_raw,
-             t.fleet->>'driver_name_tms')         AS driver_name,
-    t.fleet->>'driver_name_tms'                   AS driver_name_tms,
+    -- Sin los rellenos del TMS ("POR CONFIRMAR /"): app.tms_driver_name (30/10).
+    COALESCE(d.full_name, app.tms_driver_name(COALESCE(fl.driver_name_raw,
+             t.fleet->>'driver_name_tms')))       AS driver_name,
+    app.tms_driver_name(t.fleet->>'driver_name_tms') AS driver_name_tms,
     COALESCE(d.tax_id, t.fleet->>'driver_rut_tms') AS driver_tax_id,
     COALESCE(fl.driver_phone,
              t.fleet->>'driver_phone')            AS driver_phone,
@@ -582,7 +583,8 @@ _FLEET_MATCH_CASE = """
     CASE
       WHEN vfr.resolved_carrier_id IS NULL
            AND (t.fleet->>'tractor_plate' IS NOT NULL OR fl.tractor_plate IS NOT NULL
-                OR t.fleet->>'driver_name_tms' IS NOT NULL OR fl.driver_name_raw IS NOT NULL)
+                -- Un relleno del TMS ("POR CONFIRMAR /") no es un dato que cruzar.
+                OR app.tms_driver_name(COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms')) IS NOT NULL)
         THEN 'UNMATCHED'
       -- D2 (14/10): la empresa que el conductor y el tracto tenían EL DÍA del viaje
       -- (app.fleet_assignment_periods). Transferir a alguien ya no deja en MISMATCH
@@ -1314,7 +1316,7 @@ async def available_assets(
                        OR t.trip_status IN ('CANCELADO', 'Declinada', 'Removida')
                 ) AS closed_count,
                 max(t.status_reported_at) AS last_report_at,
-                max(COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms')) AS driver_name,
+                max(app.tms_driver_name(COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms'))) AS driver_name,
                 -- Postgres no tiene max(uuid) — cast a text para agregar y
                 -- volver a uuid (bug real encontrado en producción 2026-07-28).
                 max(vfr.resolved_driver_id::text)::uuid AS driver_id

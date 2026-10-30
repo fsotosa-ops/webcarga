@@ -382,6 +382,13 @@ describe('PasoViajesSection, variante por regularizar', () => {
     expect(screen.queryByText('bloquean la firma del día')).toBeNull()
   })
 
+  it('cada viaje dice su estado del TMS, en Por regularizar y en Viajes', async () => {
+    renderPorRegularizar({ grupos: { ...POR_REGULARIZAR, por_regularizar: [
+      viaje('r9', '2040009', { trip_status: 'Publicada', is_assigned: false, scope: 'equipo_completo' })] } })
+    expect(within((await screen.findByText('2040009')).closest('tr')!).getByText('Publicada')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /Estado del viaje/ })).toBeInTheDocument()
+  })
+
   it('"Qué falta" dice la empresa distinta a la del conductor (Tractoreo)', async () => {
     renderPorRegularizar({ alcance: 'tractoreo' })
     expect(within((await screen.findByText('2040004')).closest('tr')!)

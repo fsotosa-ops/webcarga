@@ -61,7 +61,7 @@ describe('registro de dominios', () => {
         'alert-thresholds', 'driver-reasons', 'equipment-statuses',
         'operational-statuses', 'temperature-ranges',
         // Orígenes y Clientes del TMS se mudaron a Directorio y Tarifario (Parte 3): MUDADAS.
-        'tms-statuses', 'unassigned-reasons', 'void-reasons',
+        'tms-placeholder-names', 'tms-statuses', 'unassigned-reasons', 'void-reasons',
       ],
       fleet:    ['operation-types', 'subtypes'],
       // Ciclo de vida del Directorio (21/10): por qué se da de baja o se reactiva.
@@ -79,6 +79,10 @@ describe('registro de dominios', () => {
     const claves = dominioPorClave('operations')!.secciones.map(s => s.clave)
     expect(claves.indexOf('void-reasons')).toBe(claves.indexOf('unassigned-reasons') + 1)
     expect(SECCION_DE_TAXONOMIA.TRIP_VOID_REASON).toEqual(['operations', 'void-reasons'])
+  })
+
+  it('Operaciones tiene "Nombres de relleno del TMS", el catálogo de app.tms_driver_name (30/10)', () => {
+    expect(SECCION_DE_TAXONOMIA.TMS_PLACEHOLDER_DRIVER_NAME).toEqual(['operations', 'tms-placeholder-names'])
   })
 
   // "Alertas de vencimiento" existe en Certificación y en Seguros: lo único que no
