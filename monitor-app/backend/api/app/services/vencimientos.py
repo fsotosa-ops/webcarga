@@ -37,7 +37,7 @@ from datetime import date
 from typing import Literal, Optional
 
 from ..authz.permissions import Permission
-from ..schemas.states import CARRIER_STATUSES_IN_CERTIFICATION
+from ..schemas.states import CARRIER_STATUSES_IN_CERTIFICATION_SQL
 
 
 
@@ -466,7 +466,7 @@ def in_scope_sql(alias: str = "cr") -> str:
     que quien se reactiva vuelva con sus pendientes): el alcance se aplica al
     leer. Autocontenido sobre `entity_type`/`entity_id`, para que cualquier
     consulta lo pueda usar sin depender de sus JOINs."""
-    en_certificacion = ", ".join(f"'{s}'" for s in CARRIER_STATUSES_IN_CERTIFICATION)
+    en_certificacion = CARRIER_STATUSES_IN_CERTIFICATION_SQL
     activa = f"vg_sc.operational_status IN ({en_certificacion})"
     corriente = (
         f"(CASE {alias}.entity_type "

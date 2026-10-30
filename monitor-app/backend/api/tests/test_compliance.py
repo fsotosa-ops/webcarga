@@ -8,7 +8,11 @@ from fastapi.testclient import TestClient
 from app.auth import get_current_user, get_supabase
 from app.db import get_pool
 from app.routers.compliance import pendiente_predicate, router
+from app.schemas.states import CARRIER_STATUSES_IN_CERTIFICATION
 from tests.conftest import USER, PoolDeUnaConexion, wire_transactional_conn
+
+# La regla de lo dado de baja se prueba contra Postgres (test_certification_lock_integration.py).
+pytestmark = pytest.mark.usefixtures("regla_de_baja_probada_aparte")
 
 
 def make_client(pool, supabase=None):
@@ -645,8 +649,10 @@ def test_la_sabana_global_si_pide_solo_empresas_activas():
     """La otra mitad, y la que se rompe sola si alguien unifica las dos ramas.
 
     Sin `carrier_id` la consulta es la sabana global -"que hay que hacer hoy"-
-    y ahi el filtro por ACTIVE existe por un bug medido (5.4): antes traia
-    LEGACY_INACTIVE/INACTIVE/ONBOARDING y eran mas de la mitad del volumen.
+    y ahi el filtro existe por un bug medido (5.4): antes traia las dadas de
+    baja y eran mas de la mitad del volumen. Desde el 30/10 entran las empresas
+    en certificación, activas y en onboarding: el resumen ya contaba las de
+    onboarding y la lista no las mostraba.
 
     Este test mira el ARGUMENTO, no el resultado; que el filtro efectivamente
     excluya lo verifica el test de integracion contra Postgres real, porque un
@@ -657,7 +663,7 @@ def test_la_sabana_global_si_pide_solo_empresas_activas():
 
     client.get("/api/v1/compliance-records/pending?limit=10")
 
-    assert pool.fetch.call_args.args[8] == "ACTIVE"
+    assert pool.fetch.call_args.args[8] == list(CARRIER_STATUSES_IN_CERTIFICATION)
 
 
 def test_pending_acepta_limit_500_para_la_ficha_de_empresa():
@@ -734,8 +740,8 @@ def test_pending_rows_excludes_inactive_carriers_from_query():
 
     query = pool.fetch.call_args.args[0]
     args = pool.fetch.call_args.args
-    assert "c.operational_status = $8" in query
-    assert args[8] == "ACTIVE"
+    assert "c.operational_status = ANY($8::text[])" in query
+    assert "INACTIVE" not in args[8]
 
 
 def test_pending_sin_estado_se_comporta_igual_que_antes():
@@ -1827,56 +1833,9 @@ async def test_el_resumen_cuadra_con_las_filas_que_devuelve_pending(conexion_rev
         assert s["por_vencer"] == por_vencer_por_sujeto.get(clave, 0), f"sujeto {clave}: por_vencer no cuadra"
         assert s["falta"] == falta_por_sujeto.get(clave, 0), f"sujeto {clave}: falta no cuadra"
 
-# ── Una empresa dada de baja deja de pedir documentos (2026-09-07) ─────────
-
-
-def test_no_se_puede_subir_un_documento_a_una_empresa_dada_de_baja():
-    """Pedido del usuario (07/09): dar de baja bloquea el espacio de
-    certificacion. Bloquea la ESCRITURA, no la lectura — el historial sigue
-    visible porque al reactivar lo primero que se necesita ver es que se vencio
-    durante la baja."""
-    pool = AsyncMock()
-    conn = AsyncMock()
-    wire_transactional_conn(pool, conn)
-    pool.fetchrow.return_value = {
-        "entity_id": "c1", "entity_type": "CARRIER", "status": "MISSING",
-        "expiration_date": None, "metadata": {}, "expiration_policy": "NONE",
-        "empresa_de_baja": "Transportes Cristian González E.i.r.l.",
-    }
-    supabase = MagicMock()
-    client = make_client(pool, supabase=supabase)
-
-    res = client.post(
-        "/api/v1/compliance-records/r1/file",
-        files={"file": ("poliza.pdf", b"contenido", "application/pdf")},
-    )
-
-    assert res.status_code == 409
-    assert "está dada de baja" in res.json()["detail"]
-    # Y el rechazo ocurre ANTES de tocar storage: un 409 despues de subir
-    # dejaria el archivo huerfano.
-    supabase.storage.from_.return_value.upload.assert_not_called()
-
-
-def test_el_bloqueo_resuelve_al_dueno_por_los_tres_caminos():
-    """`entity_id` es polimorfico: apunta a un carrier, a un conductor o a un
-    vehiculo segun `entity_type`. Filtrar por carrier_id a secas da un falso
-    negativo — un error que este proyecto ya cometio.
-
-    Verificado ademas contra la base real (2026-09-07): empresa activa devuelve
-    None, empresa de baja devuelve su nombre, y un conductor de empresa de baja
-    tambien."""
-    import inspect
-
-    from app.routers import compliance
-
-    fuente = inspect.getsource(compliance._apply_compliance_upload)
-    assert "WHEN 'CARRIER' THEN cr.entity_id" in fuente
-    assert "public.driver_assignments da" in fuente
-    assert "public.asset_assignments aa" in fuente
-    # En la MISMA consulta que ya traia el record: una vuelta mas a la base por
-    # cada archivo de una carga masiva de 30 no se paga sola.
-    assert fuente.count("await pool.fetchrow(") == 1
+# ── Una empresa dada de baja deja de pedir documentos ────────────────────────
+# La regla vive en services/certification_lock.py y se prueba contra Postgres,
+# camino por camino, en tests/test_certification_lock_integration.py (30/10).
 
 
 def test_la_respuesta_acepta_los_tipos_de_vigencia_nuevos():

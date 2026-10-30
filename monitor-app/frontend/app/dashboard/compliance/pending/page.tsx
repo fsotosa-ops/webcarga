@@ -92,7 +92,7 @@ function Pending() {
     // pb-24 solo en el teléfono: el layout reserva pb-16 para la barra inferior,
     // pero con etiquetas en dos líneas la barra mide más y tapaba "Guardar" del lote.
     <PageContainer bottomBar>
-      <EncabezadoDePagina titulo="Pendientes" bajada="Solo empresas, conductores y equipos activos.">
+      <EncabezadoDePagina titulo="Pendientes" bajada="Empresas activas y en onboarding, con sus conductores y equipos activos.">
         <SegmentedControl<PendingGroupBy>
           label="Ver por"
           value={groupBy}

@@ -28,6 +28,12 @@ FleetLifecycle = Literal["ACTIVE", "INACTIVE"]
 # misma cola de Pendientes (services/vencimientos.in_scope_sql). Una dada de baja es
 # historial: sus cifras se ven, pero no bloquean ni entran a la cola.
 CARRIER_STATUSES_IN_CERTIFICATION: tuple[str, ...] = ("ACTIVE", "ONBOARDING")
+# La misma lista lista para un `IN (...)` de SQL. Una vez, aquí: antes cada consulta
+# la armaba a mano.
+CARRIER_STATUSES_IN_CERTIFICATION_SQL = ", ".join(f"'{s}'" for s in CARRIER_STATUSES_IN_CERTIFICATION)
+# Lo mismo para un conductor o un equipo: uno dado de baja no recibe documentos,
+# aunque su empresa esté activa (services/certification_lock.py, 30/10).
+FLEET_STATUSES_IN_CERTIFICATION: tuple[str, ...] = ("ACTIVE",)
 
 # ── Transiciones del ciclo de vida (plan 2026-10-21) ──────────────────────────
 # El estado no se edita como un campo: cambia con una acción, y cada acción dice

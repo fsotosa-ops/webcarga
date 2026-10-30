@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from ..authz import Permission, require
 from ..db import get_pool
 from ..schemas.common import EntityType
+from ..services.certification_lock import ensure_subject_open
 from ..services import certification_requests as svc
 
 router = APIRouter(prefix="/certification-requests", tags=["certification-requests"])
@@ -37,6 +38,8 @@ async def create_request(
     body: CertificationRequestBody, pool=Depends(get_pool), user=Depends(require(Permission.CERTIFICATION_REQUEST)),
 ):
     async with pool.acquire() as conn:
+        # Operaciones no pide documentos a lo dado de baja.
+        await ensure_subject_open(conn, body.entity_type, body.entity_id)
         async with conn.transaction():
             return await svc.create(
                 conn, entity_type=body.entity_type, entity_id=body.entity_id, requirement_id=body.requirement_id,

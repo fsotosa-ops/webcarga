@@ -11,6 +11,7 @@ import { Estado } from '@/components/ui/Estado'
 import { PendingSkeleton } from './pending/PendingStates'
 import { PendingSlotPicker, type Slot } from './PendingSlotPicker'
 import type { PendingComplianceRow } from '@/lib/types'
+import { CARRIER_STATUSES_IN_CERTIFICATION } from '@/lib/states'
 import { CarrierSearchPicker, type CarrierSearchResult } from '@/components/dashboard/CarrierSearchPicker'
 import { clavesCertificacion } from '@/lib/queries/certificacion'
 import { inputClass } from '@/components/ui/Field'
@@ -268,6 +269,7 @@ export function TriageClassifyForm({
                   <span className="text-etiqueta font-semibold text-text-primary">Este documento todavía no tiene empresa. ¿De qué empresa es?</span>
                   <div className="mt-1">
                     <CarrierSearchPicker query={busquedaEmpresa} onQueryChange={setBusquedaEmpresa} onPick={onPickCarrier}
+                                         estados={CARRIER_STATUSES_IN_CERTIFICATION}
                                          size="sm" showMinCharsHint placeholder="Buscar empresa…" />
                   </div>
                 </label>

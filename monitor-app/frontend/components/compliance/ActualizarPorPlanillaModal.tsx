@@ -172,7 +172,7 @@ export function ActualizarPorPlanillaModal({ open, onClose, onAplicado, puedeEdi
                 {vacia && (
                   <p className={`text-dato ${TEXTO_CUERPO}`}>
                     No hay documentos pendientes
-                    {historico ? '' : ' en las empresas activas'}. No hay nada que cargar.
+                    {historico ? '' : ' en las empresas activas y en onboarding'}. No hay nada que cargar.
                   </p>
                 )}
                 {resumen.data && !vacia && (<>

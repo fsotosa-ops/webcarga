@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Search, Loader2, Building2 } from 'lucide-react'
 import { carriersApi } from '@/lib/api/carriers'
+import type { CarrierOperationalStatus } from '@/lib/types'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useQuery } from '@tanstack/react-query'
 import { inputClass } from '@/components/ui/Field'
@@ -33,20 +34,23 @@ interface Props {
    *  Sin él, el campo se nombra solo ("Buscar empresa transportista"). */
   inputId?:        string
   describedBy?:    string
+  /** Sólo empresas en estos estados. Para elegir dónde cargar documentos se pasa
+   *  `CARRIER_STATUSES_IN_CERTIFICATION`: una dada de baja no los recibe. */
+  estados?:        readonly CarrierOperationalStatus[]
 }
 
 export function CarrierSearchPicker({
   query, onQueryChange, onPick, placeholder = 'Buscar empresa (nombre o RUT)…',
   excludeId, selectedId, minChars = 2, autoFocus, size = 'md',
-  maxHeightClass = 'max-h-40', showMinCharsHint = false, helperText, inputId, describedBy,
+  maxHeightClass = 'max-h-40', showMinCharsHint = false, helperText, inputId, describedBy, estados,
 }: Props) {
   const [pickingId, setPickingId] = useState<string | null>(null)
   const [err, setErr]             = useState<string | null>(null)
   const qDebounced = useDebouncedValue(query, 250)
 
   const searchQuery = useQuery({
-    queryKey: ['carriers', 'search-picker', qDebounced],
-    queryFn: () => carriersApi.list({ q: qDebounced, limit: 10 }),
+    queryKey: ['carriers', 'search-picker', qDebounced, estados ?? null],
+    queryFn: () => carriersApi.list({ q: qDebounced, limit: 10, ...(estados ? { operational_status: [...estados] } : {}) }),
     enabled: qDebounced.length >= minChars,
   })
   const results = (searchQuery.data?.data ?? []).filter(c => c.id !== excludeId)

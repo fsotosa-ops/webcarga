@@ -427,3 +427,27 @@ async def insertar_asignacion(conn, kind: str, subject_id, carrier_id, *, status
         f"INSERT INTO public.{tabla} ({col}, carrier_id, status, start_date) "
         "VALUES ($1, $2, $3, COALESCE($4::date, public.hoy_chile()))",
         subject_id, carrier_id, status, desde)
+
+
+@pytest.fixture
+def regla_de_baja_probada_aparte(monkeypatch):
+    """Para los tests con la base SIMULADA (AsyncMock) de los routers de
+    Certificación: el mock no sabe responder la consulta de la regla de lo dado
+    de baja, y no es lo que esos tests miden. La regla se prueba contra Postgres,
+    camino por camino, en test_certification_lock_integration.py. Se pide por
+    archivo con `pytestmark`; NUNCA autouse, porque apagaría la regla también
+    en los tests de integración."""
+    from app.routers import certification_requests, compliance, document_ingest
+
+    async def abierto(*_a, **_k):
+        return None
+
+    async def ninguno(*_a, **_k):
+        return {}
+
+    for modulo in (compliance, document_ingest, certification_requests):
+        for nombre, falso in (("ensure_record_open", abierto), ("ensure_subject_open", abierto),
+                              ("locked_records", ninguno)):
+            if hasattr(modulo, nombre):
+                monkeypatch.setattr(modulo, nombre, falso)
+

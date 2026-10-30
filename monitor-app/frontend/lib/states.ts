@@ -4,7 +4,7 @@ import {
   OctagonAlert, ShieldAlert, ShieldCheck, ShieldOff, TriangleAlert, Truck, Undo2, User,
 } from 'lucide-react'
 import type { StatusTone } from '@/components/ui/StatusChip'
-import type { ClosureScope, DirectoryEntity, FunnelBucket, NoticeType, OperationTypeSource } from './types'
+import type { CarrierOperationalStatus, ClosureScope, DirectoryEntity, FunnelBucket, NoticeType, OperationTypeSource } from './types'
 import { hoyEnChile } from './utils/datetime'
 import type { ScopeGap } from './cierre/scope'
 import type { FleetStatus, ReasonType } from './cierre/dayFleet'
@@ -104,9 +104,23 @@ export function isCarrierDeactivated(status: string | null | undefined): boolean
 /** Las empresas cuya carpeta trabaja Certificación (21/10): las que operan y las que
  *  están entrando (onboarding). Se les cargan y revisan documentos; una dada de baja
  *  es historial. Espejo de `CARRIER_STATUSES_IN_CERTIFICATION` (schemas/states.py). */
-export const CARRIER_STATUSES_IN_CERTIFICATION: readonly string[] = ['ACTIVE', 'ONBOARDING']
+export const CARRIER_STATUSES_IN_CERTIFICATION: readonly CarrierOperationalStatus[] = ['ACTIVE', 'ONBOARDING']
 export function isCarrierInCertification(status: string | null | undefined): boolean {
-  return !!status && CARRIER_STATUSES_IN_CERTIFICATION.includes(status)
+  return CARRIER_STATUSES_IN_CERTIFICATION.some(s => s === status)
+}
+/** Un conductor o equipo dado de baja tampoco recibe documentos. Espejo de
+ *  `FLEET_STATUSES_IN_CERTIFICATION` (schemas/states.py). */
+export const FLEET_STATUSES_IN_CERTIFICATION: readonly string[] = ['ACTIVE']
+
+/** Si se le pueden cargar, revisar o pedir documentos. Espejo de
+ *  `services/certification_lock.py` (30/10): lo dado de baja no recibe nada, la
+ *  empresa o el propio conductor o equipo. Sin empresa vigente (`null`) sí: sus
+ *  documentos son de la persona o del vehículo. La pantalla lo usa para no
+ *  ofrecer lo que el servidor va a rechazar. */
+export function acceptsDocuments(carrierStatus: string | null | undefined, subjectStatus?: string | null): boolean {
+  if (carrierStatus && !isCarrierInCertification(carrierStatus)) return false
+  if (subjectStatus && !FLEET_STATUSES_IN_CERTIFICATION.includes(subjectStatus)) return false
+  return true
 }
 export const CARRIER_DEACTIVATED_LABEL = 'Empresa dada de baja'
 

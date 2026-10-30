@@ -14,7 +14,7 @@ import { usePermiso } from '@/lib/authz/PermisosProvider'
 import { CLOSURE_NOTICE, directoryKeys, invalidateDirectory, type DirectoryChange } from '@/lib/queries/directorio'
 import { assetHref, driverHref, returnLink } from '@/lib/navegacion/directory'
 import { monitorSearchHref } from '@/lib/navegacion/viaje'
-import { blockingReason, fleetMemberStyle, isCarrierDeactivated, summaryStyle, type StateStyle } from '@/lib/states'
+import { acceptsDocuments, blockingReason, fleetMemberStyle, isCarrierDeactivated, summaryStyle, type StateStyle } from '@/lib/states'
 import { diaMes, isBlockingPending } from '@/lib/pending'
 import { useAssetTypes } from '@/hooks/useAssetTypes'
 import { Estado } from '@/components/ui/Estado'
@@ -121,6 +121,8 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
   // ── Encabezado ──────────────────────────────────────────────────────────────
   const carrierStatus = summary?.carrier?.operational_status ?? null
   const active = status === 'ACTIVE' && !isCarrierDeactivated(carrierStatus)
+  // Lo dado de baja —él o su empresa— no recibe documentos (lib/states.ts).
+  const recibeDocumentos = acceptsDocuments(carrierStatus, status)
   const chips = summary
     ? [fleetMemberStyle(kind, summary.operational_status, carrierStatus),
        summaryStyle(summary.compliance_summary, active),
@@ -160,7 +162,8 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
   // En Documentos la sección ya tiene su subida y sus pedidos: no se repite arriba.
   // La subida en lote, arriba a la derecha como en la maqueta; la franja de
   // Documentos abre la misma revisión. Operaciones pide desde cada fila.
-  const primaryAction = canUploadDocuments ? <BulkUploadReview trigger="button" carrierId={carrierId} /> : undefined
+  const primaryAction = canUploadDocuments && recibeDocumentos
+    ? <BulkUploadReview trigger="button" carrierId={carrierId} /> : undefined
 
   // ── Detalles ────────────────────────────────────────────────────────────────
   const empresa: ReactNode = summary?.carrier
@@ -220,7 +223,8 @@ export function FleetProfile({ kind, id, variant = 'page', onClose }: {
         )}
       </>}>
         <div id={documentsId}>
-          <EntityDocuments entityType={kind === 'driver' ? 'DRIVER' : 'ASSET'} entityId={id} carrierId={carrierId} />
+          <EntityDocuments entityType={kind === 'driver' ? 'DRIVER' : 'ASSET'} entityId={id} carrierId={carrierId}
+                           recibeDocumentos={recibeDocumentos} />
         </div>
       </ProfileLayout>
 

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ArrowRightLeft } from 'lucide-react'
 import { documentIngestApi } from '@/lib/api/documentIngest'
+import { CARRIER_STATUSES_IN_CERTIFICATION } from '@/lib/states'
 import { CarrierSearchPicker } from '@/components/dashboard/CarrierSearchPicker'
 import { cuantos } from '@/lib/utils/cuantos'
 
@@ -71,6 +72,8 @@ export function MoveToCarrierBar({ targetIds, currentCarrierId, onMoved }: Props
         onQueryChange={setQuery}
         onPick={c => move(c.id)}
         excludeId={currentCarrierId ?? undefined}
+        // Una empresa dada de baja no recibe archivos: no se ofrece como destino.
+        estados={CARRIER_STATUSES_IN_CERTIFICATION}
         placeholder="Buscar empresa…"
         size="sm"
         autoFocus

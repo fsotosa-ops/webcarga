@@ -28,6 +28,7 @@ from ..auth import get_current_user, get_supabase
 from ..authz import Permission, require, require_fields
 from ..db import get_pool
 from ..schemas.carrier import ACTIVE_OPERATIONAL_STATUS, FUNNEL_ACTIVE_STATUSES  # noqa: F401
+from ..schemas.states import CARRIER_STATUSES_IN_CERTIFICATION
 # D1 (R-B4, decisión del usuario 12/10): ONBOARDING se queda en esta mitad
 # visible, a propósito y para siempre. Sale del CONTEO: carrier_compliance la
 # trata como no activa y su funnel_bucket es NULL. Sacarla de aquí mandaría las
@@ -44,6 +45,7 @@ from ..schemas.compliance import (
 )
 from ..schemas.document_ingest import unclassified_predicate
 from ..utils.identity import plate_matches_sql, rut_matches_sql
+from ..services.certification_lock import ensure_record_open, ensure_subject_open, locked_records
 from ..services.upload_match import match_files
 from ..services.audit import log_change, record_manual_edit
 from ..services.vigencia import regla_base_json_sql
@@ -446,16 +448,18 @@ async def get_certification_status(
     }
 
 
-def _estado_de_empresa_a_mostrar(carrier_id: Optional[str]) -> Optional[str]:
+def _estado_de_empresa_a_mostrar(carrier_id: Optional[str]) -> Optional[list[str]]:
     """Que estados de empresa entran en la consulta.
 
     LA COLA DE TRABAJO NO ES EL EXPEDIENTE. Son dos preguntas distintas y
     hasta ahora compartian un filtro:
 
     - Sin `carrier_id` es la sabana global: "que hay que hacer hoy". Ahi solo
-      entran las empresas ACTIVE, y ese filtro existe por un bug medido (5.4):
-      antes traia LEGACY_INACTIVE/INACTIVE/ONBOARDING y eran mas de la mitad
-      del volumen mostrado. No se toca.
+      entran las empresas en certificación (CARRIER_STATUSES_IN_CERTIFICATION:
+      activas y en onboarding, 30/10), y ese filtro existe por un bug medido
+      (5.4): antes traia las dadas de baja y eran mas de la mitad del volumen
+      mostrado. Onboarding entra porque su carpeta es justo la que se arma, y
+      porque el resumen de Pendientes ya la contaba: la lista no la mostraba.
     - Con `carrier_id` es la ficha de UNA empresa: "que paso con esta". Ahi el
       filtro de estado sobra y ademas MIENTE — devolvia cero sujetos y la
       pantalla lo leia como "nunca se le asignaron requisitos". Hoy son 2
@@ -466,10 +470,10 @@ def _estado_de_empresa_a_mostrar(carrier_id: Optional[str]) -> Optional[str]:
     cumplimiento es material de auditoria, y al reactivar lo primero que se
     necesita ver es que se vencio durante la baja.
     """
-    return None if carrier_id else ACTIVE_OPERATIONAL_STATUS
+    return None if carrier_id else list(CARRIER_STATUSES_IN_CERTIFICATION)
 
 
-def _estado_de_empresa_a_mostrar_para(carrier_id: Optional[str], entity_id: Optional[str]) -> Optional[str]:
+def _estado_de_empresa_a_mostrar_para(carrier_id: Optional[str], entity_id: Optional[str]) -> Optional[list[str]]:
     """Lo mismo para una consulta que puede ser el expediente de UNA entidad
     (`entity_id`): la ficha de un conductor o un equipo es su expediente, tenga
     o no empresa (C5), y no la cola global (RF1, Entrega 1 de fichas 15/10)."""
@@ -542,9 +546,9 @@ LEFT JOIN LATERAL (
 LEFT JOIN carrier_operation_types cot ON cot.carrier_id = c.id
 -- $8 nulo = sin filtro de estado. NO es "traer todo por defecto": lo
 -- pasa nulo UNICAMENTE la consulta acotada a UNA empresa (ver
--- `_estado_de_empresa_a_mostrar`). La sabana global sigue pidiendo
--- ACTIVE, que es el bug 5.4 y la razon por la que este filtro existe.
-WHERE ($8::text IS NULL OR c.operational_status = $8)
+-- `_estado_de_empresa_a_mostrar`). La sabana global pide las empresas en
+-- certificación, que es el bug 5.4 y la razon por la que este filtro existe.
+WHERE ($8::text[] IS NULL OR c.operational_status = ANY($8::text[]))
   AND ($1::uuid IS NULL OR c.id = $1)
   AND ($2::text IS NULL OR r.entity_type = $2)
   AND ($3::text IS NULL OR r.requirement_code = $3)
@@ -687,7 +691,7 @@ async def list_pending_compliance_records(
     state: Optional[Literal["overdue", "expiring", "missing", "pending", "all"]] = Query(
         None,
         description="Pendientes: por estado del documento. Cuando viene, manda "
-                    "sobre `estado`, y la cola global se acota a lo activo.",
+                    "sobre `estado`, y la cola global se acota a las empresas en certificación.",
     ),
     pool=Depends(get_pool),
     _=Depends(require(Permission.CERTIFICATION_READ)),
@@ -696,9 +700,8 @@ async def list_pending_compliance_records(
     fila, cruzando toda la flota en vez de navegar empresa por empresa. Ver
     docs/superpowers/plans (plan del módulo). Reusa el mismo criterio de
     atribución DRIVER/ASSET→empresa que `pending-summary`, a nivel de fila.
-    Solo empresas activas (bug 5.4): antes traía también LEGACY_INACTIVE/
-    INACTIVE/ONBOARDING — confirmado contra datos reales que eran más de la
-    mitad del volumen mostrado."""
+    Solo empresas en certificación, activas y en onboarding (bug 5.4: antes
+    traía también las dadas de baja, más de la mitad del volumen mostrado)."""
     estados = list(STATE_FILTERS[state]) if state and STATE_FILTERS[state] else None
     # Con `state` manda sobre `estado`. Si pide estados concretos, se prefiltra
     # por lo pendiente (barato, y la lista y el resumen cuentan igual); `all`
@@ -1152,6 +1155,8 @@ async def cargar_planilla(
         list(pedidas.keys()),
     ) if pedidas else []
     por_id = {r["id_registro"]: r for r in actuales}
+    # Lo dado de baja no recibe documentos, tampoco por planilla.
+    bloqueados = await locked_records(pool, list(por_id))
 
     cambios: list[dict] = []
     sin_cambios = 0
@@ -1160,6 +1165,9 @@ async def cargar_planilla(
         if actual is None:
             errores.append({"fila": None, "registro_id": registro_id,
                             "error": "Ese registro no existe o ya no está vigente"})
+            continue
+        if registro_id in bloqueados:
+            errores.append({"fila": None, "registro_id": registro_id, "error": bloqueados[registro_id]})
             continue
         campos = campos_que_pide(actual["expiration_policy"])
         tipo = actual["tipo_documento"]
@@ -1334,6 +1342,7 @@ async def solicitar_documento(
             if not req or req["target_entity"] != body.entity_type:
                 raise HTTPException(
                     409, "Ese documento no se solicita a pedido, o no está vigente.")
+            await ensure_subject_open(conn, body.entity_type, body.entity_id)
             await encender_registros(
                 conn, [body.entity_id], body.entity_type, body.requirement_id, manual=True)
             fila = await conn.fetchrow(
@@ -1428,6 +1437,8 @@ async def reassign_compliance_document(
                 raise HTTPException(404, "Registro de cumplimiento no encontrado")
             if not origen["file_url"]:
                 raise HTTPException(422, "Ese requisito no tiene ningún archivo que reasignar")
+            # Reasignar escribe en los dos lados: el origen queda vacío.
+            await ensure_record_open(conn, record_id)
 
             storage_path = origen["file_url"]
             meta = origen["metadata"] or {}
@@ -1435,18 +1446,11 @@ async def reassign_compliance_document(
                 meta = json.loads(meta)
 
             if body.to_tray:
-                # Vuelve a la bandeja de la empresa a la que pertenece hoy.
+                # Vuelve a la bandeja de la empresa a la que pertenece hoy:
+                # la respuesta única a "¿de qué empresa es?" (D1).
                 carrier_id = await conn.fetchval(
-                    """
-                    SELECT CASE $2::text
-                        WHEN 'CARRIER' THEN $1::uuid
-                        WHEN 'DRIVER'  THEN (SELECT carrier_id FROM public.driver_assignments
-                                             WHERE driver_id = $1::uuid AND status = 'ACTIVE' LIMIT 1)
-                        WHEN 'ASSET'   THEN (SELECT carrier_id FROM public.asset_assignments
-                                             WHERE asset_id = $1::uuid AND status = 'ACTIVE' LIMIT 1)
-                    END
-                    """,
-                    origen["entity_id"], origen["entity_type"],
+                    "SELECT app.carrier_of($1::text, $2::uuid)",
+                    origen["entity_type"], origen["entity_id"],
                 )
                 if not carrier_id:
                     raise HTTPException(
@@ -1496,6 +1500,7 @@ async def reassign_compliance_document(
                         404,
                         "Esa entidad no tiene ese requisito. Verifica la categoría y el tipo de documento.",
                     )
+                await ensure_record_open(conn, destino["id"])
                 await _apply_stored_document(
                     conn, destino["id"],
                     storage_path=storage_path,
@@ -1549,6 +1554,7 @@ async def patch_compliance_record(
             )
             if not current:
                 raise HTTPException(404, "Registro de cumplimiento no encontrado")
+            await ensure_record_open(conn, record_id)
             if (body.expiration_date is not None and current["status"] in ESTADOS_APROBADOS
                     and Permission.DOCUMENTS_REVIEW.value not in user["permissions"]):
                 raise HTTPException(
@@ -1617,34 +1623,9 @@ async def _apply_compliance_upload(
     # La politica de vencimiento es del REQUISITO, no del registro, asi que
     # esta consulta —la que ya existia— se extiende con el JOIN en vez de
     # agregar una segunda vuelta a la base.
-    # UNA EMPRESA DADA DE BAJA DEJA DE PEDIR DOCUMENTOS.
-    #
-    # Pedido del usuario (07/09): *"si una empresa se da baja en el modulo de
-    # directorio, automaticamente debe dejar de solicitar documentacion, es como
-    # si se bloqueara su espacio de certificacion"*.
-    #
-    # Bloquea la ESCRITURA, no la lectura: dar de baja archiva, no oculta —lo
-    # dice el docstring de `_estado_de_empresa_a_mostrar`— y al reactivar lo
-    # primero que se necesita ver es que se vencio durante la baja.
-    #
-    # Va en ESTA consulta y no en una segunda: es el mismo record, y una vuelta
-    # mas a la base por cada archivo de una carga masiva de 30 no se paga sola.
-    #
-    # `entity_id` es POLIMORFICO —apunta a un carrier, un conductor o un
-    # vehiculo segun `entity_type`—, asi que el CASE resuelve al dueno por cada
-    # camino. Filtrar por carrier_id a secas da un falso negativo, que es un
-    # error que este proyecto ya cometio.
     current = await pool.fetchrow(
         "SELECT cr.entity_id, cr.entity_type, cr.status, cr.expiration_date, cr.metadata, "
-        "       cr.issue_date, cr.period_start, req.expiration_policy, "
-        "       (SELECT c.business_name FROM public.carriers c "
-        "         WHERE c.operational_status <> 'ACTIVE' AND c.id = CASE cr.entity_type "
-        "           WHEN 'CARRIER' THEN cr.entity_id "
-        "           WHEN 'DRIVER'  THEN (SELECT da.carrier_id FROM public.driver_assignments da "
-        "                                 WHERE da.driver_id = cr.entity_id AND da.status = 'ACTIVE' LIMIT 1) "
-        "           ELSE (SELECT aa.carrier_id FROM public.asset_assignments aa "
-        "                  WHERE aa.asset_id = cr.entity_id AND aa.status = 'ACTIVE' LIMIT 1) "
-        "         END) AS empresa_de_baja "
+        "       cr.issue_date, cr.period_start, req.expiration_policy "
         "FROM public.compliance_records cr "
         "JOIN public.compliance_requirements req ON req.id = cr.requirement_id "
         "WHERE cr.id = $1 AND cr.is_current = true",
@@ -1653,15 +1634,10 @@ async def _apply_compliance_upload(
     if not current:
         raise HTTPException(404, "Registro de cumplimiento no encontrado")
 
-    # Tambien ANTES de tocar storage, por el mismo motivo del comentario de
-    # abajo: un rechazo despues de subir deja el blob huerfano.
-    bloqueada = current.get("empresa_de_baja")
-    if bloqueada:
-        raise HTTPException(
-            409,
-            f"{bloqueada} está dada de baja: su certificación quedó bloqueada. "
-            "Reactívala desde el Directorio para volver a cargar documentos.",
-        )
+    # Lo dado de baja no recibe documentos (services/certification_lock.py).
+    # ANTES de tocar storage, por el mismo motivo del comentario de abajo: un
+    # rechazo despues de subir deja el blob huerfano.
+    await ensure_record_open(pool, record_id)
 
     # ANTES de tocar storage. Si validaramos despues, el rechazo dejaria el
     # blob huerfano — que es exactamente el defecto que este trabajo viene a
@@ -1897,6 +1873,7 @@ async def delete_compliance_file(
             )
             if not current:
                 raise HTTPException(404, "Registro de cumplimiento no encontrado")
+            await ensure_record_open(conn, record_id)
 
             metadata = current["metadata"] or {}
             if isinstance(metadata, str):

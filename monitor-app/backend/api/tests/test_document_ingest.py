@@ -18,6 +18,9 @@ from app.db import get_pool
 from app.routers.document_ingest import list_queue, router
 from tests.conftest import USER, PoolDeUnaConexion, wire_transactional_conn
 
+# La regla de lo dado de baja se prueba contra Postgres (test_certification_lock_integration.py).
+pytestmark = pytest.mark.usefixtures("regla_de_baja_probada_aparte")
+
 
 def make_client(pool, supabase=None):
     app = FastAPI()

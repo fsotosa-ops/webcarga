@@ -50,18 +50,22 @@ Pendientes, en orden:
    `next/font/local` (`8435c417`): el deploy ya no depende de Google. Sin mirar en pantalla: popover del Monitor y
    Pendientes del Cierre (necesitan un caso real). Detalle del kit: el pie gris de `PanelLateral` centrado deja las
    esquinas de abajo rectas (todas las ventanas centradas).
-7. **AUDITORÍA (30/10): una empresa en onboarding NO puede recibir archivos.** Confirmado leyendo el código: la
-   guarda de "dada de baja" compara `operational_status <> 'ACTIVE'` en `backend/api/app/routers/compliance.py:1641`
-   (subir por fila y `/bulk-file`) y `document_ingest.py:529` (clasificar en la bandeja). Es del 07/09, antes de que
-   existiera ONBOARDING (21/10). El frontend muestra "Subir" (`isCarrierInCertification`) y el backend responde 409
-   "está dada de baja". Bloquea también a la flota de la empresa y a una empresa reactivada que vuelve a onboarding;
-   y como activar exige la carpeta completa, el círculo se cierra. Otros hallazgos del informe: `/pending` sin
-   empresa filtra solo ACTIVE aunque su resumen cuenta onboarding (`compliance.py:469,547`); la planilla por defecto
-   excluye onboarding (`plantilla_certificacion.py:205`); la ficha de flota muestra "Subir" sin mirar el estado de la
-   empresa; y varios caminos escriben sin guarda en empresas dadas de baja (planilla, PATCH, reasignar, solicitar,
-   mover a la bandeja; sujeto sin asignación activa pasa siempre). **Siguiente paso:** que el usuario decida si la
-   baja bloquea toda escritura; luego arreglar C1/C2 con `CARRIER_STATUSES_IN_CERTIFICATION` (no un literal) + test
-   con ONBOARDING, y alinear `/pending` y la planilla.
+7. **Lo dado de baja no recibe documentación, por ningún camino (30/10): en `dev`, falta mirarlo en pantalla.**
+   Auditoría: la guarda vieja comparaba `<> 'ACTIVE'` (07/09, antes de onboarding) y estaba copiada en subir y
+   clasificar; onboarding no podía recibir archivos ("está dada de baja") y otros ocho caminos escribían sin regla en
+   empresas de baja. Decisión del usuario: la baja (temporal o definitiva) no acepta nada; un conductor/equipo dado de
+   baja tampoco; uno sin empresa vigente sí. **Arquitectura:** una regla en `backend/api/app/services/
+   certification_lock.py` (`locked_records`, `ensure_record_open`, `ensure_subject_open`) sobre `app.carrier_of` y
+   `CARRIER_STATUSES_IN_CERTIFICATION` / `FLEET_STATUSES_IN_CERTIFICATION` (nueva) en `schemas/states.py`, más
+   `CARRIER_STATUSES_IN_CERTIFICATION_SQL` (antes armada a mano en 2 servicios). La llaman: subir, carga en lote,
+   clasificar, planilla (error por fila), editar, borrar archivo, reasignar (origen y destino), solicitar, pedido de
+   Operaciones, subir a la bandeja y mover hacia una empresa (sacar de una de baja sí). `/pending` global y la
+   planilla por defecto pasan a activas + onboarding. Frontend: `acceptsDocuments` en `lib/states.ts` (espejo),
+   ficha de conductor/equipo oculta subir/revisar/pedir; los buscadores de destino de la bandeja filtran por estados
+   en certificación. **Tests:** `tests/test_certification_lock_integration.py` (13, contra Postgres en transacción
+   revertida, un test por camino; 2 mutaciones verificadas); los tests con mock usan el fixture opt-in
+   `regla_de_baja_probada_aparte`. **Siguiente paso:** mirar en dev una empresa en onboarding (Subir funciona) y una
+   ficha de conductor dado de baja (sin Subir), sin guardar en datos reales.
 5. Lección del día: un pedido de reunión (export de la Flota del día, 16/10) se perdió por no anotarse. Al revisar una
    reunión, pasar cada pedido al AGENTLOG o a una HU el mismo día.
 

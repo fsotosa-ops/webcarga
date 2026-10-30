@@ -44,6 +44,14 @@ beforeEach(() => {
 })
 
 describe('CarrierSearchPicker', () => {
+  it('con estados, busca sólo empresas en esos estados (destino de documentos)', async () => {
+    render(<Controlled estados={['ACTIVE', 'ONBOARDING']} />)
+    fireEvent.change(screen.getByLabelText('Buscar empresa transportista'), { target: { value: 'Transportes' } })
+    await screen.findByText('Transportes Sur Spa')
+    expect(carriersApi.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ operational_status: ['ACTIVE', 'ONBOARDING'] }))
+  })
+
   it('does not query until minChars is reached', () => {
     render(<Controlled />)
     fireEvent.change(screen.getByLabelText('Buscar empresa transportista'), { target: { value: 'T' } })

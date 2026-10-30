@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 from ..schemas.states import (
-    BLOCKING_STATES, CARRIER_STATUSES_IN_CERTIFICATION, SEVERITY_ORDER, BlockingCounts, ComplianceSummary,
+    BLOCKING_STATES, CARRIER_STATUSES_IN_CERTIFICATION_SQL, SEVERITY_ORDER, BlockingCounts, ComplianceSummary,
     FunnelBucket, StateCounts,
 )
 from .vencimientos import (
@@ -192,7 +192,7 @@ def entity_compliance_cte() -> str:
 
 # Las empresas cuya carpeta se trabaja (activas y en onboarding), como lista SQL: la
 # definición vive en el glosario (schemas/states.py).
-_EN_CERTIFICACION = ", ".join(f"'{s}'" for s in CARRIER_STATUSES_IN_CERTIFICATION)
+_EN_CERTIFICACION = CARRIER_STATUSES_IN_CERTIFICATION_SQL
 
 
 def carrier_compliance_cte() -> str:

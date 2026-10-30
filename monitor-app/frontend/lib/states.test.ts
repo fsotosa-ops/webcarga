@@ -174,3 +174,21 @@ describe('tipos de entidad: una palabra y un ícono (glosario)', () => {
     })
   })
 })
+
+describe('acceptsDocuments (espejo de services/certification_lock.py)', () => {
+  it('activa y en onboarding reciben; dada de baja no', async () => {
+    const { acceptsDocuments } = await import('./states')
+    expect(acceptsDocuments('ACTIVE', 'ACTIVE')).toBe(true)
+    expect(acceptsDocuments('ONBOARDING', 'ACTIVE')).toBe(true)
+    expect(acceptsDocuments('INACTIVE', 'ACTIVE')).toBe(false)
+  })
+  it('un conductor o equipo dado de baja no recibe, aunque su empresa esté activa', async () => {
+    const { acceptsDocuments } = await import('./states')
+    expect(acceptsDocuments('ACTIVE', 'INACTIVE')).toBe(false)
+  })
+  it('sin empresa vigente sí recibe: sus documentos son de la persona o del vehículo', async () => {
+    const { acceptsDocuments } = await import('./states')
+    expect(acceptsDocuments(null, 'ACTIVE')).toBe(true)
+  })
+})
+

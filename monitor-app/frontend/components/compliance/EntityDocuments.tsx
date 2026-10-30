@@ -36,15 +36,18 @@ export function useEntityPendingRows(entityId: string) {
   })
 }
 
-export function EntityDocuments({ entityType, entityId, carrierId }: {
+export function EntityDocuments({ entityType, entityId, carrierId, recibeDocumentos }: {
   entityType: 'DRIVER' | 'ASSET'
   entityId: string
   /** Para reasignar y para el contexto de la subida en lote; la consulta es por entidad. */
   carrierId: string | null
+  /** `acceptsDocuments` de la ficha: si él o su empresa están dados de baja, la
+   *  sección se lee pero no ofrece cargar, revisar ni pedir (el servidor lo rechaza). */
+  recibeDocumentos: boolean
 }) {
-  const canEdit = usePermiso('documents.upload')
-  const puedeRevisar = usePermiso('documents.review')
-  const puedePedir = usePermiso('certification.request')
+  const canEdit = usePermiso('documents.upload') && recibeDocumentos
+  const puedeRevisar = usePermiso('documents.review') && recibeDocumentos
+  const puedePedir = usePermiso('certification.request') && recibeDocumentos
   const subirDocumento = useSubirDocumento()
   const queryClient = useQueryClient()
   const preview = useDocumentPreview(canEdit)

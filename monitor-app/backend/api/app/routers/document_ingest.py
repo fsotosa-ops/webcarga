@@ -24,6 +24,7 @@ from ..schemas.document_ingest import (
     ClassifyBatchBody, IngestUploadResult, MoveItemsBody, TrayPage,
     UndoClassifyBody, UndoClassifyResult, unclassified_predicate,
 )
+from ..services.certification_lock import ensure_record_open, ensure_subject_open
 from ..services.audit import log_change
 from ..services.document_matcher import RequirementAlias, classify_match, match_document
 from ..services.matcher_io import cargar_catalogo, cargar_universo
@@ -335,6 +336,8 @@ async def upload_to_tray(
     """Sube N archivos a la bandeja de una empresa, sin clasificarlos."""
     _check_upload_size(files)
     async with pool.acquire() as conn:
+        # La bandeja de una empresa dada de baja tampoco recibe archivos.
+        await ensure_subject_open(conn, "CARRIER", carrier_id)
         async with conn.transaction():
             batch_id, items, errors, duplicates = await _ingest_files(
                 conn, supabase, carrier_id=carrier_id, files=files, actor=user["sub"],
@@ -519,20 +522,7 @@ async def classify_batch(
                        cr.period_start, req.expiration_policy, cr.file_url,
                        -- Tiene un documento vigente: la misma regla de "vencido" de todo el módulo.
                        (cr.file_url IS NOT NULL AND cr.expiration_date IS NOT NULL
-                        AND NOT {vencido_predicate('cr')}) AS vigente,
-                       -- Misma regla que en el camino de carga directa
-                       -- (`_apply_compliance_upload`): una empresa dada de baja
-                       -- deja de pedir documentos. La Bandeja es el OTRO camino
-                       -- de escritura, y guardar uno solo deja la puerta de
-                       -- atras abierta.
-                       (SELECT c.business_name FROM public.carriers c
-                         WHERE c.operational_status <> 'ACTIVE' AND c.id = CASE cr.entity_type
-                           WHEN 'CARRIER' THEN cr.entity_id
-                           WHEN 'DRIVER'  THEN (SELECT da.carrier_id FROM public.driver_assignments da
-                                                 WHERE da.driver_id = cr.entity_id AND da.status = 'ACTIVE' LIMIT 1)
-                           ELSE (SELECT aa.carrier_id FROM public.asset_assignments aa
-                                  WHERE aa.asset_id = cr.entity_id AND aa.status = 'ACTIVE' LIMIT 1)
-                         END) AS empresa_de_baja
+                        AND NOT {vencido_predicate('cr')}) AS vigente
                 FROM public.compliance_records cr
                 JOIN public.compliance_requirements req ON req.id = cr.requirement_id
                 WHERE cr.entity_id = $1 AND cr.requirement_id = $2 AND cr.is_current = true
@@ -544,12 +534,9 @@ async def classify_batch(
                     404,
                     "Esa entidad no tiene ese requisito. Verifica la categoría y el tipo de documento.",
                 )
-            if record.get("empresa_de_baja"):
-                raise HTTPException(
-                    409,
-                    f"{record['empresa_de_baja']} está dada de baja: su certificación quedó "
-                    "bloqueada. Reactívala desde el Directorio para clasificarle documentos.",
-                )
+            # Lo dado de baja no recibe documentos: la bandeja es otro camino de
+            # escritura y la regla es la misma (services/certification_lock.py).
+            await ensure_record_open(conn, record["id"])
 
             # Qué pide el tipo (HU-C1, entrega 2b): fecha, emisión o período —
             # la misma regla que la carga directa.
@@ -628,6 +615,9 @@ async def move_items(
         raise HTTPException(422, "Se requiere al menos un documento")
 
     async with pool.acquire() as conn:
+        # Hacia una empresa dada de baja no se mueve nada; sacar un archivo
+        # varado de ella hacia una en certificación sí se puede.
+        await ensure_subject_open(conn, "CARRIER", body.carrier_id)
         async with conn.transaction():
             result = await conn.execute(
                 "UPDATE public.document_ingest_items SET carrier_id = $2, updated_at = NOW() "

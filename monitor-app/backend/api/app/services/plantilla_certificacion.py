@@ -39,6 +39,7 @@ sube. Escribirla dos veces es como este router llegó a tener una lista de
 columnas escrita tres veces y un 500 con toda la suite en verde.
 """
 
+from ..schemas.states import CARRIER_STATUSES_IN_CERTIFICATION_SQL
 from .vencimientos import (
     lleva_emision_sql,
     lleva_fecha_sql,
@@ -198,11 +199,13 @@ SELECT r.id::text                                   AS {COLUMNA_LLAVE},
        {lleva_fecha_sql("r")}                       AS lleva_vencimiento
 FROM resueltas r
 LEFT JOIN public.carriers c ON c.id = r.carrier_id
--- 'activas' descarta por construcción las filas sin empresa (c es NULL), que
--- son 88: 48 vehículos y 40 conductores sin asignación activa. Son trabajo real
--- pero no son de nadie todavía, y meterlos en la planilla de las 39 empresas
--- activas es ruido. Salen con alcance='todas'.
-WHERE ($1::text = 'todas' OR c.operational_status = 'ACTIVE')
+-- 'activas' son las empresas en certificación: las que operan y las que están en
+-- onboarding (30/10), que son justo las que arman su carpeta. Descarta por
+-- construcción las filas sin empresa (c es NULL), que son 88: 48 vehículos y 40
+-- conductores sin asignación activa. Son trabajo real pero no son de nadie
+-- todavía, y meterlos en la planilla de las empresas es ruido. Salen con
+-- alcance='todas'.
+WHERE ($1::text = 'todas' OR c.operational_status IN ({CARRIER_STATUSES_IN_CERTIFICATION_SQL}))
 -- Bloques contiguos: quien llena una empresa trabaja seguido y no salta por el
 -- archivo. El orden de `entidad` es el del negocio, no el alfabético.
 ORDER BY c.business_name NULLS LAST,

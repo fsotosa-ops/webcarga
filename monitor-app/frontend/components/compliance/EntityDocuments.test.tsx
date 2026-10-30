@@ -24,10 +24,10 @@ function fila(over: Partial<PendingComplianceRow>): PendingComplianceRow {
   } as PendingComplianceRow
 }
 
-function montar(carrierId: string | null = 'c1') {
+function montar(carrierId: string | null = 'c1', recibeDocumentos = true) {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <EntityDocuments entityType="DRIVER" entityId="d1" carrierId={carrierId} />
+      <EntityDocuments entityType="DRIVER" entityId="d1" carrierId={carrierId} recibeDocumentos={recibeDocumentos} />
     </QueryClientProvider>,
   )
 }
@@ -35,6 +35,17 @@ function montar(carrierId: string | null = 'c1') {
 beforeEach(() => { vi.mocked(complianceApi.listPending).mockReset(); negados.set = new Set() })
 
 describe('EntityDocuments (la sección Documentos de una ficha)', () => {
+  it('dado de baja (él o su empresa): se lee, pero no ofrece subir, subir en lote ni pedir', async () => {
+    vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 1, rows: [
+      fila({ document_state: 'OVERDUE', status: 'APPROVED_MANUAL', tiene_archivo: true, vence_el: '2026-10-02', expiration_date: '2026-10-02' }),
+    ] } as never)
+    montar('c1', false)
+    expect(await screen.findByText('Venció el 02/10')).toBeInTheDocument()
+    expect(screen.queryByText('Subir')).not.toBeInTheDocument()
+    expect(screen.queryByText('Subida en lote')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Pedir/ })).not.toBeInTheDocument()
+  })
+
   it('F5: abre en el primer filtro que tiene algo, en orden Vencidos → Faltan → Por vencer → Todos', async () => {
     vi.mocked(complianceApi.listPending).mockResolvedValue({ total: 3, rows: [
       fila({ id: 'a', document_name: 'Hoja de vida' }),
