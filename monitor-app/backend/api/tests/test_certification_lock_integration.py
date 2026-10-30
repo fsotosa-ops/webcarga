@@ -216,3 +216,49 @@ async def test_clasificar_hacia_una_empresa_de_baja_se_rechaza(conexion_revertid
 async def test_un_conductor_sin_empresa_vigente_recibe_documentos(conexion_revertida):
     conn = conexion_revertida
     await ensure_subject_open(conn, "DRIVER", await s.driver(conn, None))
+
+
+# ── Reactivar abre de nuevo ───────────────────────────────────────────────────
+# La regla lee el estado al momento de escribir, no una marca guardada: reactivar
+# alcanza. Una empresa que vuelve con la carpeta incompleta entra en onboarding
+# (28/10), y en onboarding se carga.
+
+
+async def test_una_empresa_reactivada_vuelve_a_onboarding_y_recibe_archivos(conexion_revertida):
+    from app.services import lifecycle
+    from tests.test_lifecycle_integration import _reason
+
+    conn = conexion_revertida
+    user = await _usuario_real(conn)
+    empresa = await s.carrier(conn, status="ACTIVE")
+    registro = await _registro(conn, "CARRIER", empresa)  # pendiente: la carpeta queda incompleta
+
+    await lifecycle.transition(conn, entity="CARRIER", entity_id=empresa, action="deactivate", actor=user["sub"],
+                               reason_id=await _reason(conn, "DEACTIVATION_REASON", "RELATIONSHIP_ENDED"))
+    await _rechaza(upload_compliance_file(
+        registro, file=_pdf(), expiration_date=None, issue_date=None, period_start=None,
+        pool=PoolDeUnaConexion(conn), supabase=_supabase(), user=user))
+
+    reactivada = await lifecycle.transition(
+        conn, entity="CARRIER", entity_id=empresa, action="reactivate", actor=user["sub"],
+        reason_id=await _reason(conn, "REACTIVATION_REASON", "RELATIONSHIP_RESUMED"))
+    assert reactivada["operational_status"] == "ONBOARDING"
+
+    supabase = _supabase()
+    await upload_compliance_file(registro, file=_pdf(), expiration_date=None, issue_date=None, period_start=None,
+                                 pool=PoolDeUnaConexion(conn), supabase=supabase, user=user)
+    supabase.storage.from_.return_value.upload.assert_called_once()
+
+
+async def test_un_conductor_reactivado_vuelve_a_recibir_documentos(conexion_revertida):
+    from app.services import lifecycle
+    from tests.test_lifecycle_integration import _reason
+
+    conn = conexion_revertida
+    user = await _usuario_real(conn)
+    conductor = await s.driver(conn, await s.carrier(conn, status="ACTIVE"), status="INACTIVE")
+    await _rechaza(ensure_subject_open(conn, "DRIVER", conductor))
+
+    await lifecycle.transition(conn, entity="DRIVER", entity_id=conductor, action="reactivate", actor=user["sub"],
+                               reason_id=await _reason(conn, "REACTIVATION_REASON", "RELATIONSHIP_RESUMED"))
+    await ensure_subject_open(conn, "DRIVER", conductor)
