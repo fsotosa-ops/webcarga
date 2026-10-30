@@ -17,6 +17,8 @@ const RAIZ = join(__dirname, '..', 'app')
 function segmentos(dir: string, acc = new Set<string>()): Set<string> {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     if (!e.isDirectory() || e.name.startsWith(".") || e.name === "node_modules") continue
+    // Una carpeta privada (`_fuentes`) no es ruta, ni nada de lo que tiene adentro.
+    if (e.name.startsWith('_')) continue
     // [param], (grupo), @slot y (.)intercepción no son texto de la URL.
     if (!/^[[(@]/.test(e.name)) acc.add(e.name)
     segmentos(join(dir, e.name), acc)

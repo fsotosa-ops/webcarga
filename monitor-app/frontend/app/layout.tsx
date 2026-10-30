@@ -2,14 +2,14 @@ import type { Metadata } from 'next'
 import localFont from 'next/font/local'
 import './globals.css'
 
-// Las fuentes viven en el repo (`app/fonts`, subconjunto latino, variables) y
+// Las fuentes viven en el repo (`app/_fonts`, subconjunto latino, variables) y
 // no se bajan de Google en cada build: con `next/font/google`, una falla de red
 // del runner rompía el deploy entero (08/10 y 30/10). Para cambiar un peso o
 // una familia, se baja el woff2 de Google Fonts y se reemplaza el archivo.
 // Licencias: Roboto (Apache 2.0), Fira Code y Mulish (OFL).
 const roboto = localFont({
   variable: '--font-roboto',
-  src: './fonts/roboto-latin.woff2',
+  src: './_fonts/roboto-latin.woff2',
   weight: '400 700',
 })
 
@@ -19,13 +19,13 @@ const roboto = localFont({
 // filas. Emparejamiento recomendado por ui-ux-pro-max para tableros de datos.
 const firaCode = localFont({
   variable: '--font-fira-code',
-  src: './fonts/fira-code-latin.woff2',
+  src: './_fonts/fira-code-latin.woff2',
   weight: '400 600',
 })
 
 const mulish = localFont({
   variable: '--font-mulish',
-  src: './fonts/mulish-latin.woff2',
+  src: './_fonts/mulish-latin.woff2',
   weight: '400 800',
 })
 
