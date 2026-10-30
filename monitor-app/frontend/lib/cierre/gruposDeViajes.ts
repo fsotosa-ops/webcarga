@@ -1,16 +1,18 @@
 import type { FleetGap, GrupoDelCierre, ViajeDelCierre } from '@/lib/types'
 
 /** Las tres preguntas de la pestaña Viajes del Cierre (spec 2026-10-11): qué falta
- *  declarar, qué sigue vivo sin depender del cierre, y qué ya se declaró. */
-export type PestanaDeViajes = 'to_resolve' | 'tracking' | 'resolved'
+ *  declarar, qué sigue vivo sin depender del cierre, y qué ya se declaró. Y una cuarta
+ *  que NO vive en esa pestaña: lo que hay que regularizar antes de firmar (30/10), que
+ *  se resuelve desde la tarjeta "Por regularizar" de la Flota del día. */
+export type PestanaDeViajes = 'to_resolve' | 'tracking' | 'resolved' | 'to_regularize'
 
 export type FilaDeViaje = ViajeDelCierre & { grupo: GrupoDelCierre }
 
 export const PESTANAS_DE_VIAJES: { id: PestanaDeViajes; etiqueta: string; bajada: string; vacio: string }[] = [
   {
     id: 'to_resolve', etiqueta: 'Por resolver',
-    bajada: 'Declara por qué no se tomó un viaje, o completa la flota de una asignación incompleta.',
-    vacio: 'Nada por resolver: puedes firmar el día',
+    bajada: 'Declara por qué no se tomó una oferta retirada o un viaje abandonado por el TMS.',
+    vacio: 'Nada por resolver aquí. Lo que bloquea la firma está en Flota del día › Por regularizar',
   },
   {
     id: 'tracking', etiqueta: 'En seguimiento',
@@ -24,15 +26,15 @@ export const PESTANAS_DE_VIAJES: { id: PestanaDeViajes; etiqueta: string; bajada
   },
 ]
 
-/** Qué se hace con un viaje de Por resolver: declarar el motivo de no asignación
- *  o completar su flota en el detalle del viaje. */
-export type TripAction = 'declare' | 'complete' | 'none'
+/** Qué se hace con un viaje: declarar el motivo de no asignación, completar su flota
+ *  en el detalle del viaje, o regularizarlo (completar o declarar que no se tomará). */
+export type TripAction = 'declare' | 'complete' | 'regularize' | 'none'
 
 type Presentacion = {
   pestana: PestanaDeViajes
   /** La etiqueta corta del filtro de chips dentro de la pestaña. */
   chip: string
-  /** Lo mismo que cuenta `bloquean` en la API: hoy, rezago y la asignación incompleta del día. */
+  /** Lo mismo que cuenta `bloquean` en la API: los por regularizar. */
   bloqueaLaFirma: (v: ViajeDelCierre, fecha: string) => boolean
   action: TripAction
   /** "Por qué está aquí" (Por resolver), "Situación" (En seguimiento) o el motivo (Resueltos). */
@@ -42,15 +44,23 @@ type Presentacion = {
 const siempre = () => true
 const nunca = () => false
 
-const PIEZA: Record<FleetGap, string> = { tractor: 'tracto', driver: 'conductor' }
+const PIEZA: Record<FleetGap, string> = { tractor: 'Tracto', driver: 'Conductor', carrier: 'Empresa' }
 
-/** "Falta conductor", "Falta tracto" o "Falta tracto y conductor". */
-function loQueFalta(v: ViajeDelCierre): string {
-  const piezas = (['tractor', 'driver'] as const).filter(p => v.missing_fleet?.includes(p)).map(p => PIEZA[p])
-  return piezas.length ? `Falta ${piezas.join(' y ')}` : 'Flota incompleta'
+/** Qué le falta a un viaje por regularizar, en el orden en que se completa: "Sin
+ *  asignar"; o las piezas que faltan (Tracto, Conductor, Empresa); o "Empresa distinta
+ *  a la del conductor". Son las marcas de la columna "Qué falta". */
+export function queFalta(v: ViajeDelCierre): string[] {
+  if (v.is_assigned === false) return ['Sin asignar']
+  const piezas = (['tractor', 'driver', 'carrier'] as const).filter(p => v.missing_fleet?.includes(p)).map(p => PIEZA[p])
+  if (piezas.length) return piezas
+  return v.carrier_mismatch ? ['Empresa distinta a la del conductor'] : ['Flota incompleta']
 }
 
-const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`
+/** Hay con qué buscar al conductor: falta, pero el TMS informó un nombre (el caso que
+ *  el Monitor ya empareja). */
+export function conductorPorEmparejar(v: ViajeDelCierre): boolean {
+  return v.is_assigned !== false && !v.driver_id && !!v.driver_name_tms
+}
 
 /** Días de calendario entre la planificación y la fecha del cierre. Se cuenta en
  *  UTC sobre fechas sin hora, así el huso horario del navegador no mueve el día. */
@@ -63,17 +73,11 @@ export function diasAtras(planning: string, fecha: string): number {
  *  no compila. Va anotado y no con `satisfies` para que todo `porQue` tenga la
  *  misma firma y se pueda llamar con (viaje, fecha) desde cualquier grupo. */
 export const GRUPOS_DE_VIAJES: Record<GrupoDelCierre, Presentacion> = {
-  hoy: { pestana: 'to_resolve', chip: 'Del día', bloqueaLaFirma: siempre, action: 'declare', porQue: () => 'Del día' },
-  rezago: {
-    pestana: 'to_resolve', chip: 'Rezago', bloqueaLaFirma: siempre, action: 'declare',
-    porQue: (v, fecha) => `Rezago · ${plural(diasAtras(v.planning_date, fecha), 'día', 'días')}`,
-  },
-  // Minuta 09/10 §2.4: asignado, pero sin tracto o sin conductor resueltos. Se
-  // completa en el detalle del viaje, no se declara; bloquea solo si es del día.
-  incomplete_assignment: {
-    pestana: 'to_resolve', chip: 'Asignación incompleta', action: 'complete',
-    bloqueaLaFirma: (v, fecha) => v.planning_date === fecha,
-    porQue: v => loQueFalta(v),
+  // Reunión del 30/10: lo que el coordinador resuelve antes de firmar. Juntó "Del día",
+  // "Rezago" y "Asignación incompleta", que vivían en la pestaña Viajes sin bloquear.
+  por_regularizar: {
+    pestana: 'to_regularize', chip: 'Por regularizar', bloqueaLaFirma: siempre, action: 'regularize',
+    porQue: v => queFalta(v).join(' · '),
   },
   // Ofertas que el TMS retiró porque WebCarga no las tomó (Sodimac, 07/10).
   oferta_sin_declarar: {
@@ -123,7 +127,12 @@ export function closureTrips(grupos: Partial<Record<GrupoDelCierre, ViajeDelCier
 
 /** La palabra de la pestaña de un viaje: el valor de la columna Situación. */
 export function situationOf(f: FilaDeViaje): string {
-  return PESTANAS_DE_VIAJES.find(p => p.id === GRUPOS_DE_VIAJES[f.grupo].pestana)!.etiqueta
+  return PESTANAS_DE_VIAJES.find(p => p.id === GRUPOS_DE_VIAJES[f.grupo].pestana)?.etiqueta ?? GRUPOS_DE_VIAJES[f.grupo].chip
+}
+
+/** Los viajes por regularizar, en el orden de `filasDePestana`. */
+export function tripsToRegularize(grupos: Partial<Record<GrupoDelCierre, ViajeDelCierre[]>>): FilaDeViaje[] {
+  return filasDePestana(grupos, 'to_regularize')
 }
 
 export function pestanaInicial(grupos: Partial<Record<GrupoDelCierre, ViajeDelCierre[]>>): PestanaDeViajes {

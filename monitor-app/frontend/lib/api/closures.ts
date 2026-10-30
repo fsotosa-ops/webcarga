@@ -24,6 +24,9 @@ export type CierrePendienteError = {
   pending:            { driver_id: string; full_name: string; status: DriverDayStatusValue }[]
   pending_equipment:  EquipmentClosePending[]
   sin_flota:          SinFlota[]
+  /** Los viajes por regularizar (30/10). Opcional: backend y frontend se despliegan por separado. */
+  por_regularizar?:   { trip_id: string; source_system_trip_id: string | null; client_name: string | null;
+                        planning_date: string | null }[]
 }
 
 export type CierreFirmado = {

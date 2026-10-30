@@ -43,6 +43,8 @@ SQL_BASE = f"""    SELECT t.id AS trip_id, t.planning_date,
            {nombre_del_cliente('t', 'sh')} AS client_name,
            t.source_system_trip_id, t.trip_status, t.unassigned_reason_id,
            t.is_active, t.is_assigned,
+           -- Un estado que no es carga (cancelado, declinado) no se regulariza.
+           COALESCE(s.counts_as_load, true) AS counts_as_load,
            round((EXTRACT(EPOCH FROM (now() - t.status_reported_at)) / 86400)::numeric, 1)
                AS dias_sin_novedad,
            s.group_id,
@@ -53,6 +55,9 @@ SQL_BASE = f"""    SELECT t.id AS trip_id, t.planning_date,
            t.source_system,
            COALESCE(ta.license_plate, fl.tractor_plate, t.fleet->>'tractor_plate') AS tractor_plate,
            COALESCE(d.full_name, fl.driver_name_raw, t.fleet->>'driver_name_tms')  AS driver_name,
+           -- El nombre que informó el TMS, aparte del resuelto: con él se busca a la
+           -- persona en el Directorio (el mismo emparejamiento del Monitor).
+           COALESCE(fl.driver_name_raw, t.fleet->>'driver_name_tms')               AS driver_name_tms,
            COALESCE(c.business_name, t.fleet->>'transporter_name_tms')             AS carrier_name,
            -- Las entidades resueltas contra el directorio, para abrirlas en la vista
            -- rápida (HU 20261011/01). NULL = lo que se ve viene del TMS sin cruzar.
@@ -76,10 +81,17 @@ SQL_BASE = f"""    SELECT t.id AS trip_id, t.planning_date,
            (t.tms_absence_kind = 'oferta_retirada') AS oferta_retirada,
            -- Asignación incompleta (minuta 09/10 §2.4): lo que le falta al viaje
            -- resuelto contra el directorio, con la misma fuente que Flota del día.
+           -- Sin empresa resuelta es el "asignado a WebCarga" sin un tercero (30/10).
            array_remove(ARRAY[
                CASE WHEN vfr.resolved_tractor_asset_id IS NULL THEN 'tractor' END,
-               CASE WHEN vfr.resolved_driver_id IS NULL THEN 'driver' END
+               CASE WHEN vfr.resolved_driver_id IS NULL THEN 'driver' END,
+               CASE WHEN vfr.resolved_carrier_id IS NULL THEN 'carrier' END
            ], NULL) AS missing_fleet,
+           -- La empresa del viaje no es la del conductor ese día (o el conductor no
+           -- tiene empresa): el MISMATCH de Tractoreo, dicho por el viaje y para los
+           -- dos alcances. La empresa del conductor a esa fecha ya la trae la vista.
+           (vfr.resolved_driver_id IS NOT NULL AND vfr.resolved_carrier_id IS NOT NULL
+            AND vfr.resolved_driver_home_carrier_id IS DISTINCT FROM vfr.resolved_carrier_id) AS carrier_mismatch,
            -- D5: la última entrega en destino, sólo si TODOS los destinos tienen
            -- una. Mismo orden que _cargo_delivered en trips.py: lo manual, después
            -- el GPS, después el TMS.
@@ -112,11 +124,20 @@ SQL_BASE = f"""    SELECT t.id AS trip_id, t.planning_date,
       AND t.voided_at IS NULL
 """
 
-# Una sola definición del grupo, usada en el CASE y en el WHERE. Bloquea la firma
-# solo si es del día (lo cuenta `bloquean` en GET /trips/cierre-viajes).
-INCOMPLETE_ASSIGNMENT = (
-    "(is_assigned AND cardinality(missing_fleet) > 0 "
-    "AND (planning_date = $1::date OR is_active))"
+# La misma cota de días que usa app.trips_del_dia: más atrás, el Cierre no mira.
+HORIZONTE_DIAS = 45
+
+# POR REGULARIZAR (reunión del 30/10): todo viaje con datos incompletos, del día o
+# pendiente de antes, que el coordinador tiene que resolver antes de firmar —
+# completar la asignación o declarar que no se tomará—. Junta lo que eran tres
+# grupos de esta pestaña ("hoy", "rezago" y "asignación incompleta") y suma lo que
+# no se veía: la empresa que falta (asignado a WebCarga sin un tercero) y la
+# empresa distinta a la del conductor. Una sola definición, usada en el CASE, en el
+# WHERE y en la firma (`cierre_lineas.cerrar`).
+TO_REGULARIZE = (
+    f"(planning_date BETWEEN $1::date - {HORIZONTE_DIAS} AND $1::date AND counts_as_load "
+    "AND ((is_active AND NOT is_assigned) "
+    "OR (is_assigned AND (cardinality(missing_fleet) > 0 OR carrier_mismatch))))"
 )
 
 SQL_GRUPOS_CIERRE = f"""
@@ -125,25 +146,21 @@ WITH base AS (
 )
 SELECT trip_id, planning_date, client_name, source_system_trip_id, trip_status,
        unassigned_reason_id, dias_sin_novedad,
-       source_system, tractor_plate, driver_name, carrier_name, missing_fleet,
+       source_system, tractor_plate, driver_name, driver_name_tms, carrier_name,
+       missing_fleet, carrier_mismatch, is_assigned,
        carrier_id, driver_id, tractor_asset_id,
        operation_type_id, operation_type_source, operation_type_conflict,
        CASE
            WHEN oferta_retirada THEN 'oferta_sin_declarar'
-           -- Minuta 09/10 §2.4 (decisiones del usuario del 11/10): asignado pero sin
-           -- tracto o sin conductor resueltos. Los del día (activos o cerrados) y
-           -- los activos de antes; se completa la flota, no se declara motivo. Va
-           -- antes que "Espera cierre del TMS": un Sodimac con solo la rampla
-           -- primero se completa (§2.3).
-           WHEN {INCOMPLETE_ASSIGNMENT} THEN 'incomplete_assignment'
+           -- Va antes que "Espera cierre del TMS": un Sodimac con solo la rampla
+           -- primero se completa (minuta 09/10 §2.3).
+           WHEN {TO_REGULARIZE} THEN 'por_regularizar'
            -- Ítem 6 (minuta 09/10): asignado, pero el TMS del cliente todavía no lo
            -- cierra. Va aparte, sin importar la fecha ni si el TMS dejó de reportar
            -- (Sodimac puede tardar hasta el martes siguiente): no es "en curso" ni
            -- "abandonado", y no pide motivo. Lo decide el grupo del estado en el
            -- catálogo (Configuración › Estados), no una lista de estados en el código.
            WHEN is_assigned AND group_id = 'pendiente_cierre_tms' THEN 'pendiente_cierre_tms'
-           WHEN is_active AND NOT is_assigned AND planning_date = $1::date THEN 'hoy'
-           WHEN is_active AND NOT is_assigned AND planning_date < $1::date THEN 'rezago'
            WHEN is_active AND is_assigned     AND planning_date < $1::date THEN 'en_curso'
            ELSE 'abandonado'
        END AS grupo
@@ -158,9 +175,8 @@ FROM base
 WHERE unassigned_reason_id IS NULL
   AND NOT eliminado_en_tms
   AND (oferta_retirada
-   OR {INCOMPLETE_ASSIGNMENT}
+   OR {TO_REGULARIZE}
    OR (is_assigned AND group_id = 'pendiente_cierre_tms')
-   OR (is_active AND NOT is_assigned)
    OR (is_active AND is_assigned AND planning_date < $1::date)
    OR (NOT is_active
        AND group_id IN {GRUPOS_NO_TERMINALES}
@@ -184,7 +200,8 @@ ORDER BY grupo, planning_date DESC
 SQL_CON_MOTIVO = f"""
 SELECT b.trip_id, b.planning_date, b.client_name, b.source_system_trip_id, b.trip_status,
        b.unassigned_reason_id, b.dias_sin_novedad,
-       b.source_system, b.tractor_plate, b.driver_name, b.carrier_name, b.missing_fleet,
+       b.source_system, b.tractor_plate, b.driver_name, b.driver_name_tms, b.carrier_name,
+       b.missing_fleet, b.carrier_mismatch, b.is_assigned,
        b.carrier_id, b.driver_id, b.tractor_asset_id,
        b.operation_type_id, b.operation_type_source, b.operation_type_conflict,
        'con_motivo' AS grupo

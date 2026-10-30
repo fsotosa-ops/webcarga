@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { dailyClosuresApi, type CambiosDeLinea } from '@/lib/api/dailyClosures'
@@ -41,6 +41,10 @@ interface Props {
   onOpenQuickView?: (target: QuickViewTarget, rowKey: string) => void
   /** La fila desde la que está abierta la vista rápida: queda marcada. */
   activeRowKey?: string | null
+  /** La tarjeta "Por regularizar" (30/10): los VIAJES de este alcance que hay que
+   *  resolver antes de firmar. `lista` es lo que se ve al elegirla (la tabla de viajes
+   *  que arma la página); `cantidad` sin dato todavía no afirma un cero. */
+  porRegularizar?: { cantidad: number | undefined; lista: ReactNode }
 }
 
 /** Flota del día (Cierre con un solo patrón, spec §4): la tabla de datos del kit
@@ -50,7 +54,11 @@ interface Props {
  *  en la URL. Lo que escribe (motivo, vigencia, comentario, lote) es lo de siempre. */
 export function FlotaDelDiaSection({
   fecha, alcance, unassignedReasons, onSelectTrip, onCreateManualTrip, onOpenQuickView, activeRowKey = null,
+  porRegularizar,
 }: Props) {
+  // La tarjeta "Por regularizar" cambia la lista (viajes en vez de la flota); tocar
+  // cualquier otra vuelve a la flota.
+  const [verPorRegularizar, setVerPorRegularizar] = useState(false)
   const queryClient = useQueryClient()
   const flota = useDayFleet(fecha)
   const [view, setView] = useUrlView()
@@ -208,9 +216,11 @@ export function FlotaDelDiaSection({
       { value: null, label: 'Todos' },
       { column: 'status', value: FLEET_STATUS_LABEL.ASSIGNED, label: 'Asignados', tone: 'resolved' },
       { column: 'status', value: FLEET_STATUS_LABEL.UNASSIGNED, label: 'No asignados' },
-      // Por regularizar solo existe en Tractoreo: un tracto no puede estar "en la empresa equivocada".
-      ...(alcance === 'tractoreo'
-        ? [{ column: 'status', value: FLEET_STATUS_LABEL.TO_REGULARIZE, label: FLEET_STATUS_LABEL.TO_REGULARIZE, tone: 'urgent' as const }]
+      // En los dos alcances (30/10): los viajes con datos incompletos, que bloquean la
+      // firma. Antes existía solo en Tractoreo y contaba conductores.
+      ...(porRegularizar
+        ? [{ kind: 'action' as const, label: FLEET_STATUS_LABEL.TO_REGULARIZE, tone: 'urgent' as const,
+             count: porRegularizar.cantidad, active: verPorRegularizar, onSelect: () => setVerPorRegularizar(true) }]
         : []),
     ] },
     { label: 'No asignados, por tipo de motivo', tiles: [
@@ -225,7 +235,9 @@ export function FlotaDelDiaSection({
 
   return (
     <div className="space-y-4">
-      <ShortcutTiles model={model} groups={recuadros} />
+      <ShortcutTiles model={model} groups={recuadros} onFilterTile={() => setVerPorRegularizar(false)} />
+
+      {verPorRegularizar && porRegularizar ? porRegularizar.lista : (<>
 
       {sinOrigen > 0 && (
         <p className="text-etiqueta text-informativo">
@@ -275,6 +287,7 @@ export function FlotaDelDiaSection({
             return next
           }),
         }} />
+      </>)}
     </div>
   )
 }

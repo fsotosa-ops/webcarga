@@ -1595,10 +1595,17 @@ export type ViajeDelCierre = {
   trip_status:             string | null
   tractor_plate:           string | null
   driver_name:             string | null
+  /** El nombre que informó el TMS, aparte del resuelto: con él se busca a la persona
+   *  en el Directorio (el emparejamiento del Monitor). */
+  driver_name_tms?:        string | null
   carrier_name:            string | null
   origin:                  string | null
   destinations:            string[]
   dias_sin_novedad:        number
+  /** La empresa del viaje no es la del conductor ese día (30/10). */
+  carrier_mismatch?:       boolean
+  /** Sin asignar, o asignado con algo faltante: "Por regularizar" los dice distinto. */
+  is_assigned?:            boolean
   unassigned_reason_id:    string | null
   unassigned_reason_label: string | null
   /** Lo que le falta a la flota resuelta contra el directorio (minuta 09/10 §2.4).
@@ -1624,18 +1631,21 @@ export type ViajeDelCierre = {
 export type OperationTypeSource = 'declared' | 'client' | 'tractor'
 
 /** Una pieza de la flota del viaje que no está resuelta contra el directorio. */
-export type FleetGap = 'tractor' | 'driver'
+/** `carrier`: sin empresa resuelta, el "asignado a WebCarga" sin un tercero (30/10). */
+export type FleetGap = 'tractor' | 'driver' | 'carrier'
 
 /** `con_motivo` (HU-D3): declarados desde el cierre de ese día o después. */
-export type GrupoDelCierre = 'hoy' | 'rezago' | 'en_curso' | 'abandonado' | 'con_motivo' | 'oferta_sin_declarar'
+export type GrupoDelCierre = 'en_curso' | 'abandonado' | 'con_motivo' | 'oferta_sin_declarar'
   // Ítem 6 (minuta 09/10): asignados cuyo estado del TMS está en el grupo "Pendiente de cierre TMS".
   | 'pendiente_cierre_tms'
-  // Minuta 09/10 §2.4: asignados sin tracto o sin conductor resueltos; se completan.
-  | 'incomplete_assignment'
+  // Reunión del 30/10: sin asignar, o asignados con tracto, conductor o empresa faltante, o
+  // con la empresa distinta a la del conductor. Juntó "hoy", "rezago" y "asignación
+  // incompleta"; se resuelven en la tarjeta "Por regularizar" de la Flota del día.
+  | 'por_regularizar'
 
 export type CierreViajesResponse = {
   grupos:   Record<GrupoDelCierre, ViajeDelCierre[]>
-  /** Cuántos impiden firmar el día: `hoy`, `rezago` y la asignación incompleta del día. */
+  /** Cuántos impiden firmar el día: los `por_regularizar`. */
   bloquean: number
   /** Bloque 0, 0.6: la misma marca de frescura que el resto del Cierre. */
   calculado_a?:     string | null

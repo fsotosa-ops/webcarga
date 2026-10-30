@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ClipboardCheck, Truck, Loader2, UserX, CheckCircle2, LockOpen,
+  ClipboardCheck, Truck, Loader2, UserX, CheckCircle2, LockOpen, Route,
 } from 'lucide-react'
 import { fetchTripsMeta } from '@/lib/api/tripsMeta'
 import { dailyClosuresApi } from '@/lib/api/dailyClosures'
@@ -25,7 +25,7 @@ import { AvisoDeActualizacion, refetchWhilePending } from '@/components/dashboar
 import { Estado } from '@/components/ui/Estado'
 import { urlDelViaje } from '@/lib/navegacion/viaje'
 import { esUrlVieja, leerUrlDelCierre, urlDelCierre } from '@/lib/navegacion/cierre'
-import { GRUPOS_DE_VIAJES, closureTrips } from '@/lib/cierre/gruposDeViajes'
+import { GRUPOS_DE_VIAJES, closureTrips, tripsToRegularize } from '@/lib/cierre/gruposDeViajes'
 import { scopeSummary } from '@/lib/cierre/dayFleet'
 import { useClosureNotices } from '@/hooks/useClosureNotices'
 import { inScope } from '@/lib/cierre/scope'
@@ -121,6 +121,7 @@ function ClosuresCenterPageInner() {
   // número. Un número sin sus filas no dice qué hacer.
   const [pendientesConductores, setPendientesConductores] = useState<ItemPendiente[]>([])
   const [pendientesEquipos, setPendientesEquipos] = useState<ItemPendiente[]>([])
+  const [pendientesViajes, setPendientesViajes] = useState<ItemPendiente[]>([])
   const [overrideOpen, setOverrideOpen] = useState(false)
   const [overrideNote, setOverrideNote] = useState('')
   const [reabrirOpen, setReabrirOpen] = useState(false)
@@ -227,11 +228,17 @@ function ClosuresCenterPageInner() {
       .filter(v => GRUPOS_DE_VIAJES[v.grupo].pestana === 'to_resolve' && inScope(v.scope, alcance)).length
     : null
   const avisos = useClosureNotices(fecha, alcance).notices?.length || null
+  // Los viajes por regularizar del alcance (30/10): la cifra de la tarjeta de la Flota
+  // del día y del resumen. Sin dato todavía, no se afirma un cero.
+  const porRegularizar = cierreViajesQuery.data
+    ? tripsToRegularize(cierreViajesQuery.data.grupos).filter(v => inScope(v.scope, alcance)).length
+    : undefined
 
   const motivosViajesQuery = useQuery({
     queryKey: taxonomyKey('TRIP_UNASSIGNED_REASON'),
     queryFn: () => taxonomiesApi.list('TRIP_UNASSIGNED_REASON'),
-    enabled: tab === 'trips',
+    // También en la Flota del día: "No se tomará el viaje" de Por regularizar los usa.
+    enabled: tab === 'trips' || tab === 'fleet',
     staleTime: 5 * 60_000,
   })
 
@@ -278,7 +285,7 @@ function ClosuresCenterPageInner() {
   async function handleConfirmClose(override?: boolean) {
     setClosing(true)
     setCloseError(null); setSinFlota(null)
-    setPendientesConductores([]); setPendientesEquipos([])
+    setPendientesConductores([]); setPendientesEquipos([]); setPendientesViajes([])
     try {
       await closuresApi.cerrar(fecha, override, overrideNote)
       setOverridePending(false); setOverrideOpen(false); setOverrideNote('')
@@ -298,6 +305,14 @@ function ClosuresCenterPageInner() {
             clave: p.asset_id,
             texto: p.carrier_name ? `${p.tractor_plate} — ${p.carrier_name}` : p.tractor_plate,
             href: p.carrier_id ? `/dashboard/carriers/${p.carrier_id}?tab=equipos` : undefined,
+          })),
+        )
+        setPendientesViajes(
+          (e.detail.por_regularizar ?? []).map(v => ({
+            clave: v.trip_id,
+            texto: [v.source_system_trip_id ?? v.trip_id, v.client_name, v.planning_date?.split('-').reverse().slice(0, 2).join('/')]
+              .filter(Boolean).join(' · '),
+            href: urlDelViaje(v.trip_id, urlDeEsteCierre()),
           })),
         )
         setCloseError(e.detail.message)
@@ -358,7 +373,7 @@ function ClosuresCenterPageInner() {
           <span className="text-dato text-text-primary">
             {/* Las palabras de los recuadros: asignados + no asignados + por regularizar = todos. */}
             {resumen.assigned} asignados · {resumen.unassigned} no asignados
-            {resumen.toRegularize ? ` · ${resumen.toRegularize} por regularizar` : ''}
+            {porRegularizar ? <span className="text-status-incidente"> · {porRegularizar} por regularizar</span> : null}
             {' · '}{String(resumen.utilizationPct).replace('.', ',')} % de utilización
             {resumen.blocking ? (
               <span className="text-status-incidente"> · {resumen.blocking} sin motivo {resumen.blocking === 1 ? 'bloquea' : 'bloquean'} la firma</span>
@@ -404,6 +419,30 @@ function ClosuresCenterPageInner() {
               onSelectTrip={handleSelectTrip}
               onOpenQuickView={puedeVerDirectorio ? openQuickView : undefined}
               activeRowKey={quickView.current ? quickViewOrigin : null}
+              // La tarjeta "Por regularizar" (30/10): la misma tabla de viajes de la
+              // pestaña Viajes, en su variante, con las mismas escrituras.
+              porRegularizar={cierreViajesQuery.isError ? undefined : {
+                cantidad: porRegularizar,
+                lista: (
+                  <PasoViajesSection
+                    key={fecha}
+                    variante="por_regularizar"
+                    fecha={fecha}
+                    alcance={alcance}
+                    grupos={cierreViajesQuery.data?.grupos}
+                    bloquean={cierreViajesQuery.data?.bloquean}
+                    tripHref={id => urlDelViaje(id, urlDeEsteCierre())}
+                    onOpenQuickView={puedeVerDirectorio ? openQuickView : undefined}
+                    activeTripId={quickView.current ? quickViewOrigin : null}
+                    cargando={cierreViajesQuery.isLoading}
+                    motivos={motivosViajesQuery.data ?? []}
+                    onCerrar={handleCerrarViajes}
+                    onDeshacer={handleDeshacerViajes}
+                    meta={tripsMeta}
+                    soloLectura={diaCerrado || cierreQuery.isLoading}
+                  />
+                ),
+              }}
               // Sin `onCreateManualTrip`: esta página todavía no aloja el
               // TripAssignDialog (TODO Tarea 1.3/1.4, mismo patrón que
               // monitor/page.tsx con prefillFleet/handleNewTripFromFleet), y
@@ -465,7 +504,7 @@ function ClosuresCenterPageInner() {
               <h2 className="text-lectura font-semibold text-text-primary">Confirmar cierre</h2>
               <p className="mt-0.5 text-dato text-informativo">
                 {puedeFirmar
-                  ? 'Firma conductores y tractos juntos. Los dos exigen motivo en sus pendientes; Equipo Completo nunca bloquea.'
+                  ? 'Firma conductores y tractos juntos. Bloquean la firma los pendientes sin motivo y los viajes por regularizar de los dos alcances.'
                   : 'El cierre lo firma Operaciones. Puedes revisarlo, pero no firmarlo.'}
               </p>
             </div>
@@ -483,6 +522,11 @@ function ClosuresCenterPageInner() {
                 titulo="Tractos sin motivo"
                 icono={<Truck size={11} />}
                 items={pendientesEquipos}
+              />
+              <PendientesDelCierre
+                titulo="Viajes por regularizar"
+                icono={<Route size={11} />}
+                items={pendientesViajes}
               />
               {sinFlota && <SinFlotaList casos={sinFlota} />}
             </div>

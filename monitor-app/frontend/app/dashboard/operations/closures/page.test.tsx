@@ -105,10 +105,17 @@ const CERRADO: DailyClosureStatus = {
 }
 
 const VIAJES_VACIOS = {
-  grupos: { hoy: [], rezago: [], oferta_sin_declarar: [], abandonado: [], en_curso: [], pendiente_cierre_tms: [],
-            con_motivo: [], incomplete_assignment: [] },
+  grupos: { por_regularizar: [], oferta_sin_declarar: [], abandonado: [], en_curso: [], pendiente_cierre_tms: [],
+            con_motivo: [] },
   bloquean: 0,
 }
+
+/** Un viaje del Cierre, con lo mínimo que la página lee. */
+const viajeDelCierre = (trip_id: string, nro: string, extra: Record<string, unknown> = {}) => ({
+  trip_id, planning_date: '2026-08-04', client_name: 'Sodimac', source_system: 'sodimac', source_system_trip_id: nro,
+  trip_status: 'Asignado', tractor_plate: null, driver_name: null, carrier_name: null, origin: null, destinations: [],
+  dias_sin_novedad: 0.2, unassigned_reason_id: null, unassigned_reason_label: null, ...extra,
+})
 
 beforeEach(async () => {
   const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
@@ -134,8 +141,14 @@ describe('ClosuresCenterPage', () => {
       driverRow({ ...LINE.notWorking, driver_id: 'd3' }),
       driverRow({ ...LINE.toRegularize, driver_id: 'd4' }),
     ] })
+    // "Por regularizar" son los VIAJES del alcance (30/10), no las filas de la flota.
+    const { tripsApi } = await import('@/lib/api/trips')
+    vi.mocked(tripsApi.cierreViajes).mockResolvedValue({ ...VIAJES_VACIOS, bloquean: 2, grupos: { ...VIAJES_VACIOS.grupos,
+      por_regularizar: [viajeDelCierre('r1', '2040001', { scope: 'tractoreo' }), viajeDelCierre('r2', '2040002', { scope: 'equipo_completo' })] } })
     renderPage()
-    expect(await screen.findByText(/1 asignados · 2 no asignados · 1 por regularizar · 25 % de utilización/)).toBeInTheDocument()
+    // "por regularizar" va en su color: la frase se lee entera en el contenedor.
+    expect(await screen.findByText((_, el) => el?.tagName === 'SPAN' && el.parentElement?.tagName === 'DIV'
+      && /^1 asignados · 2 no asignados · 1 por regularizar · 25 % de utilización/.test(el.textContent ?? ''))).toBeInTheDocument()
     expect(screen.getByText(/1 sin motivo bloquea la firma/)).toBeInTheDocument()
   })
 
@@ -233,12 +246,8 @@ describe('ClosuresCenterPage', () => {
     const { tripsApi } = await import('@/lib/api/trips')
     vi.mocked(dailyClosuresApi.get).mockReturnValue(new Promise(() => {}))
     vi.mocked(tripsApi.cierreViajes).mockResolvedValue({
-      grupos: { hoy: [{ trip_id: 't1', planning_date: '2026-08-04', client_name: 'Walmart', source_system: 'qanalytics',
-        source_system_trip_id: '2032999', trip_status: 'Asignado', tractor_plate: null, driver_name: null, carrier_name: null,
-        origin: null, destinations: [], dias_sin_novedad: 0.2, unassigned_reason_id: null, unassigned_reason_label: null }],
-        rezago: [], oferta_sin_declarar: [], abandonado: [], en_curso: [], pendiente_cierre_tms: [], con_motivo: [],
-        incomplete_assignment: [] },
-      bloquean: 1,
+      ...VIAJES_VACIOS,
+      grupos: { ...VIAJES_VACIOS.grupos, oferta_sin_declarar: [viajeDelCierre('t1', '2032999')] },
     })
     abrirEn('date=2026-08-04&tab=trips')
     renderPage()
@@ -416,6 +425,39 @@ describe('ClosuresCenterPage', () => {
     expect(conEmpresa.closest('a')).toHaveAttribute('href', '/dashboard/carriers/cf?tab=equipos')
     // Sin empresa no se inventa un destino: se nombra igual, sin link.
     expect(screen.getByText('LCSR30').closest('a')).toBeNull()
+  })
+
+  it('la firma rechazada nombra los viajes por regularizar y lleva a cada uno', async () => {
+    const { closuresApi, isCierrePendienteError } = await import('@/lib/api/closures')
+    vi.mocked(closuresApi.cerrar).mockRejectedValue(Object.assign(new Error('1 viaje(s) por regularizar'), {
+      status: 409,
+      detail: { message: '1 viaje(s) por regularizar — no se puede cerrar el día', pending: [], pending_equipment: [],
+                sin_flota: [], por_regularizar: [{ trip_id: 'r1', source_system_trip_id: '2040001', client_name: 'Sodimac',
+                                                   planning_date: '2026-08-04' }] },
+    }))
+    vi.mocked(isCierrePendienteError).mockReturnValue(true)
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar cierre' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar cierre' }))
+    expect(await screen.findByText('Viajes por regularizar (1)')).toBeInTheDocument()
+    expect(screen.getByText('2040001 · Sodimac · 04/08').closest('a')).toHaveAttribute('href', expect.stringContaining('r1'))
+  })
+
+  it('Equipo Completo tiene la tarjeta Por regularizar, y al elegirla muestra sus viajes', async () => {
+    const { tripsApi } = await import('@/lib/api/trips')
+    vi.mocked(tripsApi.cierreViajes).mockResolvedValue({ ...VIAJES_VACIOS, bloquean: 1, grupos: { ...VIAJES_VACIOS.grupos,
+      por_regularizar: [viajeDelCierre('r2', '2040002', { scope: 'equipo_completo', is_assigned: false,
+        missing_fleet: ['tractor', 'driver', 'carrier'] })] } })
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Equipo Completo' }))
+    const tarjeta = await screen.findByRole('button', { name: 'Por regularizar, 1' })
+    fireEvent.click(tarjeta)
+    expect(tarjeta).toHaveAttribute('aria-pressed', 'true')
+    expect(await screen.findByRole('table', { name: 'Viajes por regularizar' })).toBeInTheDocument()
+    expect(screen.getByText('2040002')).toBeInTheDocument()
+    // Tocar otra tarjeta vuelve a la flota.
+    fireEvent.click(screen.getByRole('button', { name: /^Todos/ }))
+    expect(screen.queryByRole('table', { name: 'Viajes por regularizar' })).toBeNull()
   })
 
   // La causa raiz de que la barra de seleccion de "Viajes" no se pegara nunca:

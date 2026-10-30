@@ -30,7 +30,7 @@ from fastapi import HTTPException
 from .cliente_del_viaje import join_cliente, nombre_del_cliente
 from .audit import log_change
 from .closure_scope import is_scope_sql
-from .cierre_viajes import SQL_VIAJES_DEL_DIA
+from .cierre_viajes import SQL_GRUPOS_CIERRE, SQL_VIAJES_DEL_DIA
 from .driver_roster import tractoreo_roster_cte
 from .pre_cierre import avisos_del_dia
 
@@ -638,7 +638,17 @@ async def cerrar(pool, fecha: date, *, override: bool, override_note: str | None
                 fecha,
             )]
             sin_flota = pendientes_de_flota(avisos)
-            forzados = len(conductores_pendientes) + len(tractos_pendientes) + len(sin_flota)
+            # Los viajes por regularizar (reunión del 30/10): la MISMA consulta que
+            # muestra la tarjeta de la Flota del día, no una segunda definición.
+            viajes_por_regularizar = [
+                {"trip_id": str(r["trip_id"]), "source_system_trip_id": r["source_system_trip_id"],
+                 "client_name": r["client_name"],
+                 "planning_date": r["planning_date"].isoformat() if r["planning_date"] else None}
+                for r in await conn.fetch(
+                    f"SELECT g.* FROM ({SQL_GRUPOS_CIERRE}) g WHERE g.grupo = 'por_regularizar'", fecha)
+            ]
+            forzados = (len(conductores_pendientes) + len(tractos_pendientes) + len(sin_flota)
+                        + len(viajes_por_regularizar))
 
             if forzados and not override:
                 # Tres motivos distintos, tres listas: un solo número no dice
@@ -650,11 +660,14 @@ async def cerrar(pool, fecha: date, *, override: bool, override_note: str | None
                     partes.append(f"{len(tractos_pendientes)} tracto(s) sin motivo")
                 if sin_flota:
                     partes.append(f"{len(sin_flota)} viaje(s) con flota fuera del directorio")
+                if viajes_por_regularizar:
+                    partes.append(f"{len(viajes_por_regularizar)} viaje(s) por regularizar")
                 raise HTTPException(409, {
                     "message": " y ".join(partes) + " — no se puede cerrar el día",
                     "pending": conductores_pendientes,
                     "pending_equipment": tractos_pendientes,
                     "sin_flota": sin_flota,
+                    "por_regularizar": viajes_por_regularizar,
                 })
 
             if forzados:
@@ -672,6 +685,11 @@ async def cerrar(pool, fecha: date, *, override: bool, override_note: str | None
                     await log_change(
                         conn, actor=user["sub"], entity_type="ASSET", entity_id=t["asset_id"],
                         action="cierre_override", field="status", old_value="UNASSIGNED", new_value=nota,
+                    )
+                for v in viajes_por_regularizar:
+                    await log_change(
+                        conn, actor=user["sub"], entity_type="TRIP", entity_id=v["trip_id"],
+                        action="cierre_override", field="por_regularizar", old_value=None, new_value=nota,
                     )
                 if sin_flota:
                     # Contra el usuario: lo que falta es justamente la entidad

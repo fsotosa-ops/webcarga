@@ -69,6 +69,26 @@ Pendientes, en orden:
    muestra "Subir" por fila y "Subir documentos"; la ficha de un conductor dado de baja muestra sus documentos sin
    "Subir" ni "Pedir"; Pendientes dice "Empresas activas y en onboarding…" y lista a Albistur y Crismat en
    Póliza de Seguro Vigente › Faltan. Ojo: si la reactivación rige mañana (día firmado), hasta entonces rechaza.
+8. **"Por regularizar" de viajes en los dos alcances (30/10, reunión Granola "Webcarga 2.0"): listo, sin desplegar
+   todavía al escribir esto.** Bugs 1/3/4/5 de la reunión: viajes del día con datos incompletos (Sodimac con patente sin
+   conductor, "asignado a WebCarga" sin tercero, manuales) no llegaban al coordinador ni bloqueaban la firma.
+   Decisiones del usuario: VIAJES en los dos alcances; bloquean la firma (override vigente); el día + pendientes de los
+   45 días anteriores; tarjeta + "Completar asignación" + "No se tomará el viaje". Maqueta aprobada (visual companion,
+   `por-regularizar-ec.html`). **Arquitectura:** una definición `TO_REGULARIZE` en `services/cierre_viajes.py` (sin
+   asignar y activo; asignado con tracto/conductor/empresa faltante; empresa ≠ la del conductor vía
+   `resolved_driver_home_carrier_id` de la vista), grupo `por_regularizar` del MISMO `GET /trips/cierre-viajes`
+   (reemplaza hoy/rezago/incomplete_assignment, que salen de la pestaña Viajes); `cerrar()` lo exige con la misma
+   consulta (409 `por_regularizar`, override con traza por viaje). Filas nuevas: `driver_name_tms`, `carrier_mismatch`,
+   `is_assigned`, `missing_fleet` con `carrier`. Frontend: variante `variante="por_regularizar"` de
+   `PasoViajesSection` (vista en memoria, no en la URL), tarjeta de acción nueva en el kit (`ShortcutTiles`, `kind:
+   'action'`), `FlotaDelDiaSection` recibe `porRegularizar {cantidad, lista}`; el emparejamiento de conductor del
+   Monitor se EXTRAJO a `components/dashboard/AsignarConductorDialog.tsx` (lo usan Monitor y Por regularizar); "No se
+   tomará" = `bulk-close` existente. Medido en la base real: 79 viajes por regularizar hoy en la ventana (pendiente
+   acumulado: el primer cierre pedirá limpiarlos o override). **Tests:** backend `test_trips_to_regularize_integration.py`
+   (14) + `test_cierre_viajes.py` adaptado + 174 del Cierre verdes; frontend variante (9), kit (3), Flota (2), página (2),
+   grupos reescritos; 1 mutación verificada. **Siguiente paso:** mirar en dev Cierre › Flota del día › Equipo Completo y
+   Tractoreo a 1440 y 390 contra la maqueta, sin guardar; avisar a Operaciones del pendiente acumulado antes del
+   primer cierre. Fuera de esta entrega: separar Viajes en "abandonados" con el estado del TMS.
 5. Lección del día: un pedido de reunión (export de la Flota del día, 16/10) se perdió por no anotarse. Al revisar una
    reunión, pasar cada pedido al AGENTLOG o a una HU el mismo día.
 

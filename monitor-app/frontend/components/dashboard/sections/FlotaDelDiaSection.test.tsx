@@ -1053,3 +1053,23 @@ describe('FlotaDelDiaSection', () => {
     }
   })
 })
+
+describe('FlotaDelDiaSection, la tarjeta Por regularizar (30/10)', () => {
+  it('está en los dos alcances, con la cifra que le pasa la página', async () => {
+    const { setAlcance } = renderSection({ porRegularizar: { cantidad: 4, lista: <p>Lista de viajes</p> } })
+    expect(await screen.findByRole('button', { name: 'Por regularizar, 4' })).toBeInTheDocument()
+    setAlcance('equipo_completo')
+    expect(await screen.findByRole('button', { name: 'Por regularizar, 4' })).toBeInTheDocument()
+  })
+
+  it('al elegirla muestra la lista de viajes en vez de la flota; otra tarjeta vuelve a la flota', async () => {
+    renderSection({ porRegularizar: { cantidad: 1, lista: <p>Lista de viajes</p> } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Por regularizar, 1' }))
+    expect(screen.getByText('Lista de viajes')).toBeInTheDocument()
+    expect(screen.queryByRole('table', { name: 'Flota del día' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^No asignados/ }))
+    expect(screen.queryByText('Lista de viajes')).toBeNull()
+    expect(await screen.findByRole('table', { name: 'Flota del día' })).toBeInTheDocument()
+  })
+})
+

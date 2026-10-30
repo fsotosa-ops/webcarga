@@ -2158,14 +2158,17 @@ async def cierre_viajes(
     pool=Depends(get_pool),
     _=Depends(require(Permission.OPERATIONS_READ)),
 ):
-    """Los cuatro grupos del paso "Viajes" del Cierre.
+    """Los grupos de viajes del Cierre.
 
-    Sólo `hoy` y `rezago` bloquean el cierre: son cargas que nos ofrecieron y
-    todavía no contestamos. `en_curso` y `abandonado` se muestran para que no
-    desaparezcan de la vista —regla 5 de Pablo, "si no me cerraron el viaje no
-    me lo van a pagar"— pero no impiden firmar el día. Tampoco
-    `pendiente_cierre_tms` (ítem 6): ya están asignados; falta el cierre del TMS.
-    `incomplete_assignment` (minuta 09/10 §2.4) bloquea solo si es del día.
+    `por_regularizar` (reunión del 30/10) son los que el coordinador tiene que
+    resolver antes de firmar: sin asignar, asignados con algo faltante (tracto,
+    conductor o empresa) o con la empresa distinta a la del conductor, del día o
+    pendientes de los 45 días anteriores. La Flota del día los muestra en su
+    tarjeta "Por regularizar", por alcance, y la firma los exige
+    (`cierre_lineas.cerrar`). Los demás grupos —`en_curso`, `abandonado`,
+    `pendiente_cierre_tms`, `oferta_sin_declarar`, `con_motivo`— quedan en la
+    pestaña Viajes para que no desaparezcan de la vista (regla 5 de Pablo, "si no
+    me cerraron el viaje no me lo van a pagar"), pero no impiden firmar.
 
     Declarado ANTES de GET /{trip_id} — FastAPI matchea rutas en el orden en
     que se registran, así que el literal "/cierre-viajes" debe ir antes del
@@ -2194,8 +2197,8 @@ async def cierre_viajes(
     zonas = await trip_zones(pool, [str(r["trip_id"]) for r in filas])
 
     grupos: dict[str, list] = {
-        "hoy": [], "rezago": [], "en_curso": [], "abandonado": [], "con_motivo": [],
-        "oferta_sin_declarar": [], "pendiente_cierre_tms": [], "incomplete_assignment": [],
+        "por_regularizar": [], "en_curso": [], "abandonado": [], "con_motivo": [],
+        "oferta_sin_declarar": [], "pendiente_cierre_tms": [],
     }
     for r in filas:
         stops = paradas.get(str(r["trip_id"]), [])
@@ -2209,6 +2212,7 @@ async def cierre_viajes(
             "trip_status": r["trip_status"],
             "tractor_plate": r["tractor_plate"],
             "driver_name": r["driver_name"],
+            "driver_name_tms": r["driver_name_tms"],
             "carrier_name": r["carrier_name"],
             "origin": origen,
             "destinations": [p["local"] for p in stops if p.get("stop_type") == "DESTINATION" and p.get("local")],
@@ -2217,6 +2221,9 @@ async def cierre_viajes(
             "unassigned_reason_id": str(r["unassigned_reason_id"]) if r["unassigned_reason_id"] else None,
             "unassigned_reason_label": r["unassigned_reason_label"],
             "missing_fleet": list(r["missing_fleet"] or []),
+            "carrier_mismatch": r["carrier_mismatch"],
+            # Sin asignar o asignado con algo faltante: "Por regularizar" los dice distinto.
+            "is_assigned": r["is_assigned"],
             "carrier_id": r["carrier_id"],
             "driver_id": r["driver_id"],
             "tractor_asset_id": r["tractor_asset_id"],
@@ -2227,11 +2234,10 @@ async def cierre_viajes(
             "operation_type_conflict": r["operation_type_conflict"],
         })
 
-    # Una asignación incompleta bloquea solo si es del día (decisión del 11/10).
-    incompletas_del_dia = sum(1 for v in grupos["incomplete_assignment"] if v["planning_date"] == day.isoformat())
     return {
         "grupos": grupos,
-        "bloquean": len(grupos["hoy"]) + len(grupos["rezago"]) + incompletas_del_dia,
+        # Lo que exige la firma: exactamente "por regularizar" (la misma consulta).
+        "bloquean": len(grupos["por_regularizar"]),
         # La misma marca que daily-closure y equipment-closures (bloque 0, 0.6):
         # mientras el día tiene un recálculo pendiente, la pantalla relee cada 15 s.
         **await frescura_del_dia(pool, day),

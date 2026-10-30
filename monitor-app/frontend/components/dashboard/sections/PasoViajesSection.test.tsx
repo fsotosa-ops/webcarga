@@ -9,6 +9,12 @@ vi.mock('next/navigation', async () => (await import('@/lib/testing/inMemoryNavi
 vi.mock('@/lib/api/tablePreferences', () => ({
   tablePreferencesApi: { get: vi.fn().mockResolvedValue(null), save: vi.fn(), reset: vi.fn() },
 }))
+vi.mock('@/lib/authz/PermisosProvider', () => ({ usePermiso: () => true }))
+vi.mock('@/lib/api/trips', async orig => {
+  const real = await orig<typeof import('@/lib/api/trips')>()
+  return { ...real, tripsApi: { ...real.tripsApi,
+    driverCandidates: vi.fn().mockResolvedValue({ candidatos: [], trip_ids_de_la_persona: ['r1'] }) } }
+})
 import { memoryUrl } from '@/lib/testing/inMemoryNavigation'
 import { EMPTY_VIEW, readView, writeView } from '@/lib/table/viewInUrl'
 
@@ -21,11 +27,18 @@ const viaje = (id: string, nroTms: string, extra = {}) => ({
 
 // Un Nº de viaje distinto por fila: repetirlo escondía que la etiqueta de cada
 // desplegable no distinguía una fila de otra.
+// Lo que queda en Viajes para declarar (30/10): ofertas retiradas y abandonados.
+// "Del día", "Rezago" y la asignación incompleta pasaron a "Por regularizar".
 const GRUPOS = {
-  hoy: [viaje('t1', '2032999', { tractor_plate: 'LRTD11' })],
-  rezago: [viaje('t2', '2033000', { planning_date: '2026-10-07', driver_name: 'Juan Uno' })],
-  oferta_sin_declarar: [viaje('t7', '808702', { client_name: 'Sodimac' })],
-  abandonado: [viaje('t4', '2033002', { planning_date: '2026-09-01', dias_sin_novedad: 31.6 })],
+  por_regularizar: [],
+  oferta_sin_declarar: [
+    viaje('t7', '808702', { client_name: 'Sodimac' }),
+    viaje('t1', '2032999', { tractor_plate: 'LRTD11' }),
+  ],
+  abandonado: [
+    viaje('t4', '2033002', { planning_date: '2026-09-01', dias_sin_novedad: 31.6 }),
+    viaje('t2', '2033000', { planning_date: '2026-10-07', driver_name: 'Juan Uno' }),
+  ],
   en_curso: [viaje('t3', '2033001', { planning_date: '2026-10-09', trip_status: 'RETORNANDO' })],
   pendiente_cierre_tms: [
     viaje('t5', '885613', { planning_date: '2026-10-07', tractor_plate: 'PYST91' }),
@@ -33,14 +46,7 @@ const GRUPOS = {
   ],
   con_motivo: [viaje('t8', '2033003', { unassigned_reason_label: 'No da por tarifa' })],
 }
-const SIN_POR_RESOLVER = { ...GRUPOS, hoy: [], rezago: [], oferta_sin_declarar: [], abandonado: [] }
-// Asignación incompleta (minuta 09/10 §2.4): una del día y una activa de antes.
-const INCOMPLETAS = {
-  incomplete_assignment: [
-    viaje('t10', '2034000', { tractor_plate: 'FRTC42', missing_fleet: ['driver'] }),
-    viaje('t11', '2034001', { planning_date: '2026-10-08', driver_name: 'Juan Dos', missing_fleet: ['tractor'] }),
-  ],
-}
+const SIN_POR_RESOLVER = { ...GRUPOS, oferta_sin_declarar: [], abandonado: [] }
 const MOTIVOS = [{ id: 'm1', label: 'No da por tarifa' }]
 
 type Props = ComponentProps<typeof PasoViajesSection>
@@ -86,21 +92,20 @@ describe('PasoViajesSection', () => {
     expect(screen.getByRole('button', { name: 'Quitar filtro Situación' })).toBeInTheDocument()
   })
 
-  it('Por resolver junta hoy, rezago, ofertas y abandonados, del más antiguo al más nuevo', async () => {
+  it('Por resolver junta ofertas retiradas y abandonados, del más antiguo al más nuevo', async () => {
     renderViajes()
     await screen.findByRole('button', { name: 'Por resolver, 4' })
     // A igual fecha (10/10), el Nº de viaje se compara como número: 808702 < 2032999.
     expect(numerosDeViaje()).toEqual(['2033002', '2033000', '808702', '2032999'])
   })
 
-  it('cada fila dice por qué está aquí, y las que bloquean la firma lo marcan', async () => {
+  it('cada fila dice por qué está aquí, y nada de Viajes bloquea la firma (eso es Por regularizar)', async () => {
     renderViajes()
-    const rezago = (await screen.findByText('2033000')).closest('tr')!
-    expect(within(rezago).getByText('Rezago · 3 días')).toBeInTheDocument()
-    expect(within(rezago).getByText('Bloquea la firma')).toBeInTheDocument()
+    const abandonado = (await screen.findByText('2033000')).closest('tr')!
+    expect(within(abandonado).getByText('Abandonado por el TMS')).toBeInTheDocument()
     const oferta = screen.getByText('808702').closest('tr')!
     expect(within(oferta).getByText('Oferta retirada por el TMS')).toBeInTheDocument()
-    expect(within(oferta).queryByText('Bloquea la firma')).toBeNull()
+    expect(screen.queryByText('Bloquea la firma')).toBeNull()
   })
 
   it('lo de días anteriores dice hace cuántos días', async () => {
@@ -195,17 +200,17 @@ describe('PasoViajesSection', () => {
     renderViajes()
     await screen.findByText('2033002')
     fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Por qué está aquí' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Rezago, 1' }))
-    expect(numerosDeViaje()).toEqual(['2033000'])
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Oferta retirada, 2' }))
+    expect(numerosDeViaje()).toEqual(['808702', '2032999'])
     expect(screen.getByRole('button', { name: 'Quitar filtro Por qué está aquí' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Rezago, 1' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Oferta retirada, 2' }))
     expect(numerosDeViaje()).toHaveLength(4)
   })
 
   it('una situación vacía lo dice en una línea, sin filas (los encabezados quedan: ahí están los filtros)', async () => {
     conSituacion('Por resolver')
     renderViajes({ grupos: SIN_POR_RESOLVER })
-    expect(await screen.findByText(/^Nada por resolver: puedes firmar el día/)).toBeInTheDocument()
+    expect(await screen.findByText(/^Nada por resolver aquí/)).toBeInTheDocument()
     expect(within(tabla()).getAllByRole('row')).toHaveLength(1)
   })
 
@@ -228,7 +233,7 @@ describe('PasoViajesSection', () => {
     await screen.findByRole('button', { name: 'Por resolver, 4' })
     rerender({ bloquean: 0, grupos: SIN_POR_RESOLVER })
     expect(recuadro(/^Por resolver/)).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText(/^Nada por resolver: puedes firmar el día/)).toBeInTheDocument()
+    expect(screen.getByText(/^Nada por resolver aquí/)).toBeInTheDocument()
   })
 
   it('un viaje declarado en su fila sale de la selección del lote', async () => {
@@ -244,7 +249,9 @@ describe('PasoViajesSection', () => {
   it('un viaje seleccionado que deja de estar por resolver no cuenta en el lote', async () => {
     const { rerender } = renderViajes()
     fireEvent.click(within((await screen.findByText('2032999')).closest('tr')!).getByRole('checkbox'))
-    rerender({ bloquean: 1, grupos: { ...GRUPOS, hoy: [], con_motivo: [...GRUPOS.con_motivo, GRUPOS.hoy[0]] } })
+    const declarado = GRUPOS.oferta_sin_declarar[1]
+    rerender({ bloquean: 1, grupos: { ...GRUPOS, oferta_sin_declarar: [GRUPOS.oferta_sin_declarar[0]],
+      con_motivo: [...GRUPOS.con_motivo, declarado] } })
     expect(screen.queryByText('1 seleccionado')).toBeNull()
   })
 
@@ -259,7 +266,7 @@ describe('PasoViajesSection', () => {
   })
 
   it('cada fila trae patente, conductor, empresa, origen y destinos', async () => {
-    renderViajes({ grupos: { ...GRUPOS, hoy: [viaje('t1', '2032999', {
+    renderViajes({ grupos: { ...GRUPOS, oferta_sin_declarar: [viaje('t1', '2032999', {
       tractor_plate: 'LRTD11', driver_name: 'Ana Soto', carrier_name: 'Transportes Sur',
       origin: 'CD Lo Aguirre', destinations: ['Local 1', 'Local 2'],
     })] } })
@@ -276,26 +283,11 @@ describe('PasoViajesSection', () => {
     expect(await screen.findByText('2033001')).toBeInTheDocument()
   })
 
-  it('la asignación incompleta dice qué falta, lleva a completar la flota y no pide motivo', async () => {
-    renderViajes({ grupos: { ...GRUPOS, ...INCOMPLETAS } })
-    const delDia = (await screen.findByText('2034000')).closest('tr')!
-    expect(within(delDia).getByText('Falta conductor')).toBeInTheDocument()
-    expect(within(delDia).getByText('Bloquea la firma')).toBeInTheDocument()
-    expect(within(delDia).getByRole('link', { name: 'Completar asignación del viaje 2034000' }))
-      .toHaveAttribute('href', '/viaje/t10')
-    expect(within(delDia).queryByRole('combobox')).toBeNull()
-    expect(within(delDia).queryByRole('checkbox')).toBeNull()
-
-    const deAntes = screen.getByText('2034001').closest('tr')!
-    expect(within(deAntes).getByText('Falta tracto')).toBeInTheDocument()
-    expect(within(deAntes).queryByText('Bloquea la firma')).toBeNull()
-  })
-
   it('empresa, conductor y patente del directorio abren la vista rápida; lo del TMS sin cruzar queda en texto', async () => {
     const onOpenQuickView = vi.fn()
     renderViajes({
       onOpenQuickView,
-      grupos: { ...GRUPOS, hoy: [viaje('t1', '2032999', {
+      grupos: { ...GRUPOS, oferta_sin_declarar: [viaje('t1', '2032999', {
         tractor_plate: 'LRTD11', tractor_asset_id: 'a1', driver_name: 'QUINTANA SOSA', driver_id: null,
         carrier_name: 'Bugarín', carrier_id: 'c1',
       })] },
@@ -317,7 +309,7 @@ describe('PasoViajesSection', () => {
   // ── Alcance (D6, C9) ───────────────────────────────────────────────────────
 
   it('cada alcance ve sus viajes y los que no tienen tracto, marcados "Sin tracto"', async () => {
-    const grupos = { ...GRUPOS, hoy: [
+    const grupos = { ...GRUPOS, oferta_sin_declarar: [
       viaje('t1', '2032999', { tractor_plate: 'LRTD11', scope: 'tractoreo' }),
       viaje('t20', '2035000', { tractor_plate: 'EQCO11', scope: 'equipo_completo' }),
       viaje('t21', '2035001', { scope: null }),
@@ -334,7 +326,7 @@ describe('PasoViajesSection', () => {
   })
 
   it('un viaje con tracto sin tipo de operación no dice "Sin tracto": dice lo que le falta', async () => {
-    renderViajes({ grupos: { ...GRUPOS, hoy: [
+    renderViajes({ grupos: { ...GRUPOS, oferta_sin_declarar: [
       viaje('t1', '2032999', { tractor_plate: 'ABCD12', tractor_asset_id: 'a1', scope: null }),
       viaje('t21', '2035001', { scope: null }),
     ] } })
@@ -345,8 +337,8 @@ describe('PasoViajesSection', () => {
   })
 
   it('cada viaje dice la zona de su destino, y la zona filtra', async () => {
-    renderViajes({ grupos: { ...GRUPOS, hoy: [viaje('t1', '2032999', { destination_zone: 'RM' })],
-      rezago: [viaje('t2', '2033000', { planning_date: '2026-10-07', destination_zone: 'Región' })] } })
+    renderViajes({ grupos: { ...GRUPOS, oferta_sin_declarar: [viaje('t1', '2032999', { destination_zone: 'RM' })],
+      abandonado: [viaje('t2', '2033000', { planning_date: '2026-10-07', destination_zone: 'Región' })] } })
     expect(within((await screen.findByText('2032999')).closest('tr')!).getByText('RM')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Zona' }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Región, 1' }))
@@ -360,5 +352,104 @@ describe('PasoViajesSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Columnas' }))
     expect(screen.queryByRole('checkbox', { name: 'Mostrar Resolver' })).toBeNull()
     expect(screen.getByRole('checkbox', { name: 'Mostrar Cliente' })).toBeInTheDocument()
+  })
+})
+
+// ── La variante "Por regularizar" (30/10) ─────────────────────────────────────
+
+const POR_REGULARIZAR = {
+  ...GRUPOS,
+  por_regularizar: [
+    viaje('r1', '2040001', { client_name: 'Sodimac', is_assigned: true, missing_fleet: ['driver'],
+      tractor_plate: 'GGBC24', driver_name: 'PEREZ SOTO JUAN', driver_name_tms: 'PEREZ SOTO JUAN',
+      carrier_name: 'Transportes Andina', scope: 'equipo_completo' }),
+    viaje('r2', '2040002', { client_name: 'Sodimac', is_assigned: true, missing_fleet: ['tractor', 'driver', 'carrier'],
+      carrier_name: 'WebCarga SpA', scope: 'equipo_completo' }),
+    viaje('r3', '2040003', { is_assigned: false, missing_fleet: ['tractor', 'driver', 'carrier'], scope: 'equipo_completo' }),
+    viaje('r4', '2040004', { is_assigned: true, missing_fleet: [], carrier_mismatch: true, scope: 'tractoreo' }),
+  ],
+}
+const renderPorRegularizar = (props: Partial<Props> = {}) =>
+  renderViajes({ variante: 'por_regularizar', alcance: 'equipo_completo', grupos: POR_REGULARIZAR, ...props })
+const tablaPorRegularizar = () => screen.getByRole('table', { name: 'Viajes por regularizar' })
+
+describe('PasoViajesSection, variante por regularizar', () => {
+  it('muestra solo los por regularizar del alcance, sin los recuadros de Viajes', async () => {
+    renderPorRegularizar()
+    expect(await screen.findByText('3 viajes por regularizar')).toBeInTheDocument()
+    expect(numerosDeViaje()).toEqual(['2040001', '2040002', '2040003'])
+    expect(screen.queryByRole('button', { name: /^Por resolver/ })).toBeNull()
+    expect(screen.queryByText('bloquean la firma del día')).toBeNull()
+  })
+
+  it('"Qué falta" dice la empresa distinta a la del conductor (Tractoreo)', async () => {
+    renderPorRegularizar({ alcance: 'tractoreo' })
+    expect(within((await screen.findByText('2040004')).closest('tr')!)
+      .getByText('Empresa distinta a la del conductor')).toBeInTheDocument()
+  })
+
+  it('"Qué falta" dice cada pieza, o "Sin asignar"', async () => {
+    renderPorRegularizar()
+    const sinTercero = (await screen.findByText('2040002')).closest('tr')!
+    for (const p of ['Tracto', 'Conductor', 'Empresa']) expect(within(sinTercero).getByText(p)).toBeInTheDocument()
+    expect(within(screen.getByText('2040003').closest('tr')!).getByText('Sin asignar')).toBeInTheDocument()
+  })
+
+  it('el conductor que informó el TMS abre el emparejamiento del Monitor', async () => {
+    renderPorRegularizar()
+    const fila = (await screen.findByText('2040001')).closest('tr')!
+    fireEvent.click(within(fila).getByRole('button', { name: 'Asignar conductor' }))
+    expect(await screen.findByRole('dialog', { name: 'Asignar conductor a PEREZ SOTO JUAN' })).toBeInTheDocument()
+  })
+
+  it('sin nombre del TMS, o con tracto o empresa faltante, se completa en el viaje', async () => {
+    renderPorRegularizar()
+    const fila = (await screen.findByText('2040002')).closest('tr')!
+    expect(within(fila).getByRole('link', { name: 'Completar en el viaje 2040002' })).toHaveAttribute('href', '/viaje/r2')
+    expect(within(fila).queryByRole('button', { name: 'Asignar conductor' })).toBeNull()
+  })
+
+  it('"No se tomará el viaje" pide el motivo y declara con el escritor de siempre', async () => {
+    const { onCerrar } = renderPorRegularizar()
+    const fila = (await screen.findByText('2040003')).closest('tr')!
+    fireEvent.click(within(fila).getByRole('button', { name: 'No se tomará el viaje 2040003' }))
+    const dialogo = await screen.findByRole('dialog', { name: 'No se tomará el viaje' })
+    const confirmar = within(dialogo).getByRole('button', { name: 'No se tomará' })
+    expect(confirmar).toBeDisabled()
+    fireEvent.change(within(dialogo).getByLabelText(/Motivo/), { target: { value: 'm1' } })
+    fireEvent.click(confirmar)
+    await waitFor(() => expect(onCerrar).toHaveBeenCalledWith(['r3'], 'm1'))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'No se tomará el viaje' })).toBeNull())
+  })
+
+  it('en lote: todos se pueden seleccionar y declarar juntos', async () => {
+    const { onCerrar } = renderPorRegularizar()
+    await screen.findByText('2040001')
+    expect(within(tablaPorRegularizar()).getAllByRole('checkbox')).toHaveLength(3)
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar viaje 2040002' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar viaje 2040003' }))
+    fireEvent.click(screen.getByRole('button', { name: 'No se tomará el viaje' }))
+    const dialogo = await screen.findByRole('dialog', { name: 'No se tomará el viaje' })
+    expect(within(dialogo).getByText(/Los 2 viajes salen de Por regularizar/)).toBeInTheDocument()
+    fireEvent.change(within(dialogo).getByLabelText(/Motivo/), { target: { value: 'm1' } })
+    fireEvent.click(within(dialogo).getByRole('button', { name: 'No se tomará' }))
+    await waitFor(() => expect(onCerrar).toHaveBeenCalledWith(['r2', 'r3'], 'm1'))
+  })
+
+  it('con el día firmado no se asigna ni se declara', async () => {
+    renderPorRegularizar({ soloLectura: true })
+    await screen.findByText('2040001')
+    expect(screen.queryByRole('button', { name: 'Asignar conductor' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /No se tomará/ })).toBeNull()
+    expect(within(tablaPorRegularizar()).queryAllByRole('checkbox')).toHaveLength(0)
+  })
+
+  it('no escribe su vista en la URL: la URL es de la tabla de la flota', async () => {
+    renderPorRegularizar()
+    await screen.findByText('2040001')
+    const antes = memoryUrl.params().toString()
+    fireEvent.change(screen.getByRole('searchbox', { name: /buscar/i }), { target: { value: 'gGBC24' } })
+    await waitFor(() => expect(numerosDeViaje()).toEqual(['2040001']))
+    expect(memoryUrl.params().toString()).toBe(antes)
   })
 })

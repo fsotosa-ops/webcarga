@@ -210,6 +210,9 @@ export type ScopeSummary = {
   assigned: number
   /** Los no asignados, con o sin motivo: lo mismo que el recuadro "No asignados". */
   unassigned: number
+  /** Filas de la FLOTA por regularizar (conductores con empresa distinta, MISMATCH): cuadran
+   *  la suma de los recuadros. Los VIAJES por regularizar (30/10), que son lo que muestra
+   *  la tarjeta y bloquea la firma, los cuenta la página desde la pestaña Viajes. */
   toRegularize: number
   utilizationPct: number
   /** Lo que bloquea la firma; `null` donde no se exige motivo (Equipo Completo). */
@@ -223,7 +226,8 @@ export function scopeSummary(
 ): ScopeSummary {
   if (alcance === 'equipo_completo') {
     const s = equipment.equipos_completos.summary
-    // Equipo Completo no tiene "por regularizar": eso es del conductor (Tractoreo).
+    // Ninguna fila de la flota de Equipo Completo es MISMATCH (eso es del conductor de
+    // Tractoreo); sus viajes por regularizar se cuentan aparte.
     return { assigned: s.assigned, unassigned: s.unassigned, toRegularize: 0, utilizationPct: s.utilization_pct, blocking: null }
   }
   const filas = filasDeTractoreo(drivers, equipment)

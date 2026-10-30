@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
+from tests import d1_subjects as s
 from tests.conftest import PoolDeUnaConexion, _usuario_real, usuario
 
 pytestmark = pytest.mark.integracion
@@ -34,6 +35,7 @@ async def _crear_viaje(
     is_assigned,
     dias_sin_novedad=0,
     trip_status=ESTADO_NO_TERMINAL,
+    flota=None,
 ):
     """Inserta un viaje sintetico en app.trips, dentro de la transaccion
     revertida de `conexion_revertida` — nunca sobrevive al test.
@@ -56,23 +58,30 @@ async def _crear_viaje(
         is_active, is_assigned,
     )
     if is_assigned:
-        # Asignado de verdad: tracto y conductor resueltos contra el directorio.
-        # Sin flota resuelta, el viaje es una asignación incompleta (minuta 09/10
-        # §2.4) y cae en ese grupo, no en el que el test quiere probar.
+        # Asignado de verdad: tracto, conductor y empresa resueltos contra el
+        # directorio, y de la MISMA empresa. Con algo faltante o con el conductor de
+        # otra empresa, el viaje está "por regularizar" (30/10) y cae en ese grupo,
+        # no en el que el test quiere probar.
+        # `flota` reutiliza una ya creada: crear asignaciones después de firmar un
+        # día choca (con razón) con la guarda de día cerrado.
+        empresa, tracto, conductor = flota or await flota_coherente(conexion)
         await conexion.execute(
             """
-            INSERT INTO app.trip_fleet_links (trip_id, tractor_asset_id, driver_id, link_source)
-            VALUES ($1,
-                    (SELECT id FROM public.assets WHERE license_plate IS NOT NULL ORDER BY id LIMIT 1),
-                    (SELECT id FROM public.drivers WHERE operational_status = 'ACTIVE' ORDER BY id LIMIT 1),
-                    'manual')
+            INSERT INTO app.trip_fleet_links (trip_id, tractor_asset_id, driver_id, carrier_id, link_source)
+            VALUES ($1, $2, $3, $4, 'manual')
             ON CONFLICT (trip_id) DO UPDATE
                 SET tractor_asset_id = EXCLUDED.tractor_asset_id, driver_id = EXCLUDED.driver_id,
-                    link_source = 'manual'
+                    carrier_id = EXCLUDED.carrier_id, link_source = 'manual'
             """,
-            trip_id,
+            trip_id, tracto, conductor, empresa,
         )
     return trip_id
+
+
+async def flota_coherente(conexion) -> tuple[str, str, str]:
+    """Una empresa con un tracto y un conductor suyos."""
+    empresa = await s.carrier(conexion, status="ACTIVE")
+    return empresa, await s.asset(conexion, empresa), await s.driver(conexion, empresa)
 
 
 async def test_el_dominio_de_motivos_existe_y_tiene_codigo_estable(conexion_revertida):
@@ -89,12 +98,9 @@ async def test_el_dominio_de_motivos_existe_y_tiene_codigo_estable(conexion_reve
 
 
 def _bloquean_esperado(resp: dict, dia: date) -> int:
-    """Lo que impide firmar: hoy, rezago y la asignación incompleta del día
-    (minuta 09/10 §2.4). Nada más: ni en curso, ni abandonados, ni pendientes de
-    cierre del TMS."""
-    incompletas_del_dia = [v for v in resp["grupos"]["incomplete_assignment"]
-                           if v["planning_date"] == dia.isoformat()]
-    return len(resp["grupos"]["hoy"]) + len(resp["grupos"]["rezago"]) + len(incompletas_del_dia)
+    """Lo que impide firmar: los viajes por regularizar (30/10). Nada más: ni en
+    curso, ni abandonados, ni pendientes de cierre del TMS."""
+    return len(resp["grupos"]["por_regularizar"])
 
 
 async def test_cada_grupo_clasifica_al_viaje_que_le_corresponde(conexion_revertida):
@@ -128,8 +134,8 @@ async def test_cada_grupo_clasifica_al_viaje_que_le_corresponde(conexion_reverti
     grupo_por_id = {f["trip_id"]: f["grupo"] for f in filas}
 
     esperado = {
-        id_hoy: "hoy",
-        id_rezago: "rezago",
+        id_hoy: "por_regularizar",
+        id_rezago: "por_regularizar",
         id_en_curso: "en_curso",
         id_abandonado: "abandonado",
     }
@@ -205,9 +211,11 @@ async def test_un_viaje_declarado_desde_cualquier_pantalla_sale_de_los_cuatro_gr
 
     filas = await conexion_revertida.fetch(SQL_GRUPOS_CIERRE, FECHA_NEGOCIO)
     grupo_por_id = {f["trip_id"]: f["grupo"] for f in filas}
+    # "hoy" y "rezago" son, desde el 30/10, "por regularizar".
     for grupo, trip_id in ids.items():
-        assert grupo_por_id.get(trip_id) == grupo, (
-            f"precondicion: el viaje sintetico tiene que arrancar en {grupo}")
+        esperado = "en_curso" if grupo == "en_curso" else "por_regularizar"
+        assert grupo_por_id.get(trip_id) == esperado, (
+            f"precondicion: el viaje sintetico tiene que arrancar en {esperado}")
 
     # Lo unico que hace el PATCH del Monitor: escribe el motivo y nada mas.
     # No toca is_active ni is_working, a diferencia de bulk-close.
@@ -284,8 +292,8 @@ async def test_el_endpoint_agrupa_y_dice_cuantos_bloquean(conexion_revertida):
     resp = await cierre_viajes(fecha="2026-08-18",
                                pool=PoolDeUnaConexion(conexion_revertida), _=None)
 
-    assert set(resp["grupos"]) == {"hoy", "rezago", "en_curso", "abandonado", "con_motivo", "oferta_sin_declarar",
-                                   "pendiente_cierre_tms", "incomplete_assignment"}
+    assert set(resp["grupos"]) == {"por_regularizar", "en_curso", "abandonado", "con_motivo",
+                                   "oferta_sin_declarar", "pendiente_cierre_tms"}
     assert resp["bloquean"] == _bloquean_esperado(resp, FECHA_NEGOCIO)
 
     grupo_por_id = {
@@ -294,8 +302,8 @@ async def test_el_endpoint_agrupa_y_dice_cuantos_bloquean(conexion_revertida):
         for item in items
     }
     esperado = {
-        id_hoy: "hoy",
-        id_rezago: "rezago",
+        id_hoy: "por_regularizar",
+        id_rezago: "por_regularizar",
         id_en_curso: "en_curso",
         id_abandonado: "abandonado",
     }
@@ -303,7 +311,7 @@ async def test_el_endpoint_agrupa_y_dice_cuantos_bloquean(conexion_revertida):
         assert grupo_por_id.get(str(trip_id)) == grupo_esperado, (
             f"el viaje sintetico de {grupo_esperado} no aterrizo en ese grupo")
 
-    item_hoy = next(v for v in resp["grupos"]["hoy"] if v["trip_id"] == str(id_hoy))
+    item_hoy = next(v for v in resp["grupos"]["por_regularizar"] if v["trip_id"] == str(id_hoy))
     # El viaje sintético no tiene cliente vinculado en el directorio: se muestra
     # con su texto y la marca, nunca desaparece (spec 2026-10-11).
     assert item_hoy["client_name"] == "TEST-CIERRE · sin vincular"
@@ -339,7 +347,7 @@ async def test_el_endpoint_no_pierde_el_orden_por_fecha(conexion_revertida):
     resp = await cierre_viajes(fecha="2026-08-18",
                                pool=PoolDeUnaConexion(conexion_revertida), _=None)
 
-    ids_rezago = [v["trip_id"] for v in resp["grupos"]["rezago"]]
+    ids_rezago = [v["trip_id"] for v in resp["grupos"]["por_regularizar"]]
     assert ids_rezago.index(str(id_reciente)) < ids_rezago.index(str(id_viejo)), (
         "el mas reciente deberia listarse primero (planning_date DESC)")
 
@@ -575,14 +583,16 @@ async def test_un_viaje_que_llega_despues_de_la_firma_es_un_ajuste(conexion_reve
     from tests.conftest import con_roles, ADMIN_EQUIVALENTE
 
     fecha_cierre = date(2099, 1, 6)
-    await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True)
-    await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True)
+    flota = await flota_coherente(conexion_revertida)
+    await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True, flota=flota)
+    await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True, flota=flota)
     pool = PoolDeUnaConexion(conexion_revertida)
     admin = con_roles(await _usuario_real(conexion_revertida), *ADMIN_EQUIVALENTE)
     await cierre_lineas.cerrar(pool, fecha_cierre, override=True, override_note="prueba", user=admin)
 
     # Llega un viaje después de firmar (fecha retroactiva del TMS).
-    tardio = await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True)
+    tardio = await _crear_viaje(conexion_revertida, planning_date=fecha_cierre, is_active=True, is_assigned=True,
+                                flota=flota)
 
     resp = await get_daily_closure_status(fecha=fecha_cierre.isoformat(), pool=pool, _=None)
 
@@ -672,7 +682,7 @@ async def test_cada_viaje_trae_el_contexto_del_monitor(conexion_revertida):
 
     resp = await cierre_viajes(fecha="2026-08-18", pool=PoolDeUnaConexion(conn), _=None)
 
-    v = next(v for v in resp["grupos"]["hoy"] if v["trip_id"] == str(trip_id))
+    v = next(v for v in resp["grupos"]["por_regularizar"] if v["trip_id"] == str(trip_id))
     assert v["source_system"] == "sodimac"
     assert v["tractor_plate"] == "ZZTEST"
     assert v["driver_name"] == "Conductor TMS"
@@ -702,7 +712,7 @@ async def test_un_viaje_declarado_queda_en_con_motivo_y_deshacer_lo_devuelve(con
 
     await bulk_reopen_trips(TripBulkReopenBody(trip_ids=[str(trip_id)]), pool, user)
 
-    assert await _grupo_de(await cierre_viajes(fecha=hoy.isoformat(), pool=pool, _=None), trip_id) == "hoy"
+    assert await _grupo_de(await cierre_viajes(fecha=hoy.isoformat(), pool=pool, _=None), trip_id) == "por_regularizar"
     fila = await conn.fetchrow(
         "SELECT is_active, unassigned_reason_id, manually_edited_fields FROM app.trips WHERE id = $1", trip_id)
     assert fila["is_active"] is True
@@ -877,7 +887,7 @@ async def test_una_oferta_retirada_sin_declarar_va_a_su_grupo_y_no_bloquea(conex
     resp = await cierre_viajes(fecha="2026-08-18", pool=pool, _=None)
     assert await _grupo_de(resp, oferta) == "oferta_sin_declarar"
     assert await _grupo_de(resp, eliminado) is None
-    assert str(oferta) not in {v["trip_id"] for v in resp["grupos"]["hoy"]}
+    assert str(oferta) not in {v["trip_id"] for v in resp["grupos"]["por_regularizar"]}
 
     await conn.execute(
         "UPDATE app.trips SET unassigned_reason_id = $2::uuid WHERE id = $1",
@@ -923,7 +933,7 @@ async def test_un_asignado_pendiente_de_cierre_del_tms_tiene_su_propio_grupo(con
 
 
 async def test_un_pendiente_de_cierre_sin_asignar_sigue_pidiendo_motivo(conexion_revertida):
-    """El grupo es para asignados: sin patente ni conductor, sigue en hoy/rezago."""
+    """El grupo es para asignados: sin patente ni conductor, sigue por regularizar."""
     from app.services.cierre_viajes import SQL_GRUPOS_CIERRE
 
     estado = await _estado_pendiente_de_cierre(conexion_revertida)
@@ -932,7 +942,7 @@ async def test_un_pendiente_de_cierre_sin_asignar_sigue_pidiendo_motivo(conexion
         is_active=True, is_assigned=False, trip_status=estado)
 
     grupos = {r["trip_id"]: r["grupo"] for r in await conexion_revertida.fetch(SQL_GRUPOS_CIERRE, FECHA_NEGOCIO)}
-    assert grupos.get(sin_asignar) == "rezago"
+    assert grupos.get(sin_asignar) == "por_regularizar"
 
 
 async def test_los_pendientes_de_cierre_no_bloquean_la_firma(conexion_revertida):

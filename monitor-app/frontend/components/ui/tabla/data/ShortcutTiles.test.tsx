@@ -96,3 +96,41 @@ describe('ShortcutTiles (C1, C3)', () => {
     expect(screen.getByRole('group', { name: 'Por tipo de motivo' })).toBeInTheDocument()
   })
 })
+
+describe('ShortcutTiles, recuadro de acción', () => {
+  function ConAccion({ cuenta }: { cuenta: number | undefined }) {
+    const [view, setView] = useState(EMPTY_VIEW)
+    const [activo, setActivo] = useState(false)
+    const model = useDataTable({ rows: FILAS, columns: COLUMNAS, getRowId: r => r.id, view, onViewChange: setView })
+    const grupos: ShortcutTileGroup[] = [{ tiles: [
+      ...GRUPOS[0].tiles,
+      { kind: 'action', label: 'Por regularizar', tone: 'urgent', count: cuenta, active: activo, onSelect: () => setActivo(true) },
+    ] }]
+    return (<>
+      <ShortcutTiles model={model} groups={grupos} onFilterTile={() => setActivo(false)} />
+      {activo ? <p>Otra lista</p> : <p>La tabla</p>}
+    </>)
+  }
+
+  it('no filtra la tabla: cambia de lista, y mientras está activo los de filtro no se marcan', () => {
+    render(<ConAccion cuenta={3} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Por regularizar, 3' }))
+    expect(screen.getByText('Otra lista')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Por regularizar, 3' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Todos, 5' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('tocar uno de filtro lo apaga y vuelve a la tabla', () => {
+    render(<ConAccion cuenta={3} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Por regularizar, 3' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Asignados, 1' }))
+    expect(screen.getByText('La tabla')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Asignados, 1' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('sin dato todavía no afirma un cero', () => {
+    render(<ConAccion cuenta={undefined} />)
+    expect(screen.getByRole('button', { name: 'Por regularizar' })).toHaveTextContent('—')
+  })
+})
+
