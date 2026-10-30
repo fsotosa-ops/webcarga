@@ -428,7 +428,7 @@ describe('PreCierrePendingSection', () => {
     }))
     renderSection()
     fireEvent.click(await screen.findByRole('button', { name: 'Dar de alta a este conductor' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Agregar conductor' }))
 
     const salida = await screen.findByRole('button', { name: 'Ya está registrado: actualizar el cierre' })
     expect(screen.queryByRole('button', { name: /^Asignar a/ })).not.toBeInTheDocument()

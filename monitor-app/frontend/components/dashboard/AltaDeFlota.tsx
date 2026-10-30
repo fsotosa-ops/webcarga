@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Loader2, Plus, X } from 'lucide-react'
+import { Loader2, Plus } from 'lucide-react'
 import { driversApi } from '@/lib/api/drivers'
 import { assetsApi } from '@/lib/api/assets'
 import { carriersApi } from '@/lib/api/carriers'
@@ -14,7 +14,9 @@ import { CarrierSearchPicker, type CarrierSearchResult } from './CarrierSearchPi
 import { useAssetTypes } from '@/hooks/useAssetTypes'
 import type { AssetType, ManagementType } from '@/lib/types'
 import { nombreLegible } from '@/lib/utils/nombres'
-import { inputClass } from '@/components/ui/Field'
+import { Field, inputClass } from '@/components/ui/Field'
+import { Button } from '@/components/ui/Button'
+import { PanelLateral } from '@/components/ui/PanelLateral'
 
 /** Lo que devuelve el backend en un 409 al dar de alta un RUT que ya existe.
  *  Trae el id porque sin él el mensaje sería un callejón sin salida: la persona
@@ -27,20 +29,14 @@ function conductorYaExiste(e: unknown): ConductorYaExiste | null {
   return d && d.code === 'CONDUCTOR_YA_EXISTE' && d.driver_id ? (d as ConductorYaExiste) : null
 }
 
-// En un contenedor angosto (el popover del Monitor) cada campo toma la fila
-// entera; en uno ancho (la ficha) van en una sola fila. Container query: el
-// alta se adapta a donde la pongan, sin una variante por anfitrión.
-// Por eso la raíz abierta lleva `w-full`: un contenedor de consultas no se mide
-// por su contenido (su ancho propio cuenta como vacío), así que donde el
-// anfitrión lo mide por contenido —una fila flex, como en Certificación, o una
-// celda de tabla— quedaba del ancho del padding y los campos se montaban. Ocupa
-// siempre el ancho de su lugar.
-const INPUT = `${inputClass({ size: 'sm' })} @max-md:basis-full @max-md:w-full`
+const INPUT = `${inputClass()} w-full`
 
 interface Props {
   /** La empresa a la que se va a asignar lo que se cree. `null`: se pregunta en
    *  el mismo formulario (el alta desde el Cierre, donde todavía no se sabe). */
   carrierId: string | null
+  /** El nombre de esa empresa, para decir en el diálogo a quién queda asignado. */
+  nombreEmpresa?: string
   /** El RUT ya conocido, que no se edita: el que el TMS informó y por el que el
    *  viaje está bloqueando el cierre (alta desde el Cierre, F-23). */
   rutFijo?: string
@@ -101,9 +97,19 @@ interface Props {
  * Los dos catálogos (`subtipo` y `gestión`) son conceptos HERMANOS y ninguno se
  * deduce del otro: la migración 20260803050000 los separó a propósito porque
  * hay 37 tractocamiones cuya gestión es "Equipo Completo".
+ *
+ * POR QUÉ UN DIÁLOGO (30/10). Era una franja que se desplegaba dentro de la
+ * página y se acomodaba al ancho de su lugar con container queries. En
+ * Certificación, ese lugar era un ítem de una fila flex, que se mide por su
+ * contenido, y un contenedor de consultas cuenta su contenido como vacío: el
+ * alta quedaba del ancho del padding y los campos se montaban. Además los
+ * campos no tenían etiqueta (solo placeholder) y los botones no eran del kit.
+ * Crear un registro de tres o cuatro campos es un diálogo centrado (el
+ * estándar de Salesforce, Linear y Stripe, y el `placement="center"` del kit):
+ * se abre igual desde los cuatro anfitriones, sin depender de su ancho.
  */
 export function AltaDeFlota({
-  carrierId, rutFijo, etiqueta, tipo, gestionesDeclaradas, prefill, abiertoAlInicio,
+  carrierId, nombreEmpresa, rutFijo, etiqueta, tipo, gestionesDeclaradas, prefill, abiertoAlInicio,
   abierto: abiertoProp, onAbiertoChange, onCreado, yaExiste: salida, etiquetaGuardar,
 }: Props) {
   const controlado = abiertoProp !== undefined
@@ -113,6 +119,7 @@ export function AltaDeFlota({
     if (!controlado) setAbiertoLocal(v)
     onAbiertoChange?.(v)
   }
+  const formId = useId()
   const [guardando, setGuardando] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [yaExiste, setYaExiste] = useState<ConductorYaExiste | null>(null)
@@ -224,113 +231,142 @@ export function AltaDeFlota({
     }
   }
 
-  if (!abierto) {
-    // En modo controlado el disparador lo pone quien aloja: dibujar otro acá
-    // daría dos botones para lo mismo en la misma tarjeta.
-    if (controlado) return null
-    return (
-      <button
-        type="button"
-        onClick={() => setAbierto(true)}
-        className="inline-flex items-center gap-1 text-etiqueta font-semibold text-accent hover:underline"
-      >
-        <Plus size={12} /> {etiqueta ?? (esEquipo ? 'Agregar equipo' : 'Agregar conductor')}
-      </button>
-    )
+  // Cancelar descarta lo escrito: el componente sigue montado en el modo no
+  // controlado, y sin esto lo de una persona aparecía al abrir para la
+  // siguiente. Lo que llegó precargado (el nombre o la patente del TMS) vuelve.
+  function cerrar() {
+    setTaxId(''); setNombre(tipo === 'conductor' ? prefill ?? '' : '')
+    setPatente(tipo === 'equipo' ? prefill ?? '' : '')
+    setAssetType(''); setSubtipoId(''); setGestionId(''); setCdBaseId('')
+    setEmpresa(null); setBusquedaEmpresa('')
+    setError(null); setYaExiste(null)
+    setAbierto(false)
   }
 
-  return (
-    <div className="@container w-full p-3 rounded-lg bg-bg-main">
-      {/* Un solo contenedor: en angosto, el orden pone los botones al final,
-          después de la empresa, como en cualquier formulario. */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {esEquipo ? (
-          <>
-            <select aria-label="Tipo de vehículo" value={assetType}
-                    onChange={e => setAssetType(e.target.value as AssetType)}
-                    className={`${INPUT} w-36 bg-white`}>
-              {assetTypes.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
-            </select>
-            {llevaCarroceria && (
-              <select aria-label="Subtipo" value={subtipoId}
-                      onChange={e => setSubtipoId(e.target.value)}
-                      className={`${INPUT} w-44 bg-white`}>
-                <option value="">Subtipo (opcional)</option>
-                {(subtiposQuery.data ?? []).map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
-              </select>
-            )}
-            <select aria-label="Tipo de gestión" value={gestionId}
-                    onChange={e => setGestionId(e.target.value)}
-                    className={`${INPUT} w-44 bg-white`}>
-              <option value="">Gestión (opcional)</option>
-              {(gestionesQuery.data ?? []).map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
-            </select>
-            <input aria-label="Patente" placeholder="Patente" value={patente}
-                   onChange={e => setPatente(e.target.value)}
-                   className={`${INPUT} w-28 font-mono uppercase`} />
-          </>
-        ) : (
-          <>
-            {rutFijo
-              ? <span className={`${INPUT} w-36 font-mono bg-white`} aria-label="RUT">{rutFijo}</span>
-              : <input aria-label="RUT" placeholder="RUT" value={taxId}
-                       onChange={e => setTaxId(e.target.value)}
-                       className={`${INPUT} w-36 font-mono`} />}
-            <input aria-label="Nombre completo" placeholder="Nombre completo" value={nombre}
-                   onChange={e => setNombre(e.target.value)}
-                   className={`${INPUT} flex-1 min-w-40`} />
-            <select aria-label="Origen habitual" value={cdBaseId}
-                    onChange={e => setCdBaseId(e.target.value)}
-                    className={`${INPUT} w-44`}>
-              <option value="">Origen habitual (opcional)</option>
-              {(cdsQuery.data?.data ?? []).map(cd => (
-                <option key={cd.id} value={cd.id}>{cd.name}</option>
-              ))}
-            </select>
-          </>
-        )}
-        <div className="flex items-center gap-2 @max-md:order-last">
-          <button type="button" onClick={guardar} disabled={guardando || !completo}
-                  className="px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-medium hover:bg-accent/90 disabled:opacity-50">
-            {guardando ? <Loader2 size={13} className="animate-spin" aria-label="Guardando" /> : etiquetaGuardar ?? 'Guardar'}
-          </button>
-          <button type="button" onClick={() => { setAbierto(false); setError(null) }}
-                  aria-label="Cerrar" disabled={guardando}
-                  className="p-1.5 text-informativo hover:text-text-primary disabled:opacity-50">
-            <X size={14} />
-          </button>
-        </div>
+  const textoPorDefecto = esEquipo ? 'Agregar equipo' : 'Agregar conductor'
 
-      {carrierId === null && (
-        empresa ? (
-          <p className="basis-full flex items-center gap-1.5 text-etiqueta text-text-primary">
-            Empresa: <span className="font-semibold">{empresa.business_name}</span>
-            <button type="button" onClick={() => { setEmpresa(null); setBusquedaEmpresa('') }}
-                    className="text-informativo underline hover:text-text-primary">cambiar</button>
-          </p>
-        ) : (
-          <div className="basis-full space-y-0.5">
-            <CarrierSearchPicker query={busquedaEmpresa} onQueryChange={setBusquedaEmpresa} onPick={setEmpresa}
-                                 placeholder="Buscar empresa…" size="sm" maxHeightClass="max-h-28" />
-            <p className="text-etiqueta text-informativo">Sin empresa no entra al cierre, y mañana vuelve a bloquear.</p>
-          </div>
-        )
+  return (
+    <>
+      {/* En modo controlado el disparador lo pone quien aloja: dibujar otro acá
+          daría dos botones para lo mismo en la misma tarjeta. */}
+      {!controlado && (
+        <Button variant="link" size="sm" onClick={() => setAbierto(true)}>
+          <Plus size={12} aria-hidden="true" /> {etiqueta ?? textoPorDefecto}
+        </Button>
       )}
-      {esEquipo && (
-        <p className="basis-full text-etiqueta text-informativo">
-          La gestión decide si el equipo entra al cierre de Tractoreo. Sin ella, sus
-          conductores no aparecen en la cuadratura del día.
-        </p>
+      {abierto && (
+        <PanelLateral
+          placement="center"
+          titulo={etiqueta ?? textoPorDefecto}
+          description={carrierId && nombreEmpresa ? `Queda asignado a ${nombreEmpresa}.` : undefined}
+          onCerrar={cerrar}
+          // Mientras guarda no se cierra: cerrar parecería cancelar algo que ya viajó.
+          dismissible={!guardando}
+          pie={
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={cerrar} disabled={guardando}>Cancelar</Button>
+              <Button variant="primary" type="submit" form={formId} disabled={guardando || !completo}>
+                {guardando && <Loader2 size={13} className="animate-spin" aria-hidden="true" />}
+                {guardando ? 'Guardando…' : etiquetaGuardar ?? textoPorDefecto}
+              </Button>
+            </div>
+          }
+        >
+          <form id={formId} onSubmit={e => { e.preventDefault(); void guardar() }} className="space-y-4">
+            {esEquipo ? (
+              <>
+                <Field label="Patente" required>
+                  {(id, d) => (
+                    <input id={id} aria-describedby={d} value={patente} autoFocus
+                           onChange={e => setPatente(e.target.value)}
+                           className={`${INPUT} font-identificador uppercase`} />
+                  )}
+                </Field>
+                <Field label="Tipo de vehículo">
+                  {(id, d) => (
+                    <select id={id} aria-describedby={d} value={assetType}
+                            onChange={e => setAssetType(e.target.value as AssetType)} className={INPUT}>
+                      {assetTypes.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
+                    </select>
+                  )}
+                </Field>
+                {llevaCarroceria && (
+                  <Field label="Carrocería" hint="Opcional.">
+                    {(id, d) => (
+                      <select id={id} aria-describedby={d} value={subtipoId}
+                              onChange={e => setSubtipoId(e.target.value)} className={INPUT}>
+                        <option value="">Sin definir</option>
+                        {(subtiposQuery.data ?? []).map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                      </select>
+                    )}
+                  </Field>
+                )}
+                <Field label="Tipo de gestión"
+                       hint="Opcional. Decide si el equipo entra al cierre de Tractoreo: sin ella, sus conductores no aparecen en la cuadratura del día.">
+                  {(id, d) => (
+                    <select id={id} aria-describedby={d} value={gestionId}
+                            onChange={e => setGestionId(e.target.value)} className={INPUT}>
+                      <option value="">Sin definir</option>
+                      {(gestionesQuery.data ?? []).map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                    </select>
+                  )}
+                </Field>
+              </>
+            ) : (
+              <>
+                <Field label="RUT" required hint={rutFijo ? 'Lo informó el TMS.' : undefined}>
+                  {(id, d) => rutFijo
+                    ? <input id={id} aria-describedby={d} value={rutFijo} readOnly
+                             className={`${INPUT} font-identificador bg-bg-main`} />
+                    : <input id={id} aria-describedby={d} value={taxId} autoFocus placeholder="12.345.678-9"
+                             onChange={e => setTaxId(e.target.value)}
+                             className={`${INPUT} font-identificador`} />}
+                </Field>
+                <Field label="Nombre completo" required>
+                  {(id, d) => (
+                    <input id={id} aria-describedby={d} value={nombre} autoFocus={!!rutFijo}
+                           placeholder="Como figura en su licencia"
+                           onChange={e => setNombre(e.target.value)} className={INPUT} />
+                  )}
+                </Field>
+                <Field label="Origen habitual" hint="Opcional. El CD desde el que suele salir; se puede definir después.">
+                  {(id, d) => (
+                    <select id={id} aria-describedby={d} value={cdBaseId}
+                            onChange={e => setCdBaseId(e.target.value)} className={INPUT}>
+                      <option value="">Sin definir</option>
+                      {(cdsQuery.data?.data ?? []).map(cd => <option key={cd.id} value={cd.id}>{cd.name}</option>)}
+                    </select>
+                  )}
+                </Field>
+              </>
+            )}
+
+            {carrierId === null && (
+              <Field label="Empresa" hint="Sin empresa no entra al cierre del día, y mañana vuelve a bloquear.">
+                {(id, d) => empresa ? (
+                  <p id={id} className="flex items-center gap-2 text-dato text-text-primary">
+                    <span className="font-semibold">{empresa.business_name}</span>
+                    <Button variant="link" size="sm" onClick={() => { setEmpresa(null); setBusquedaEmpresa('') }}>
+                      Cambiar
+                    </Button>
+                  </p>
+                ) : (
+                  <CarrierSearchPicker query={busquedaEmpresa} onQueryChange={setBusquedaEmpresa} onPick={setEmpresa}
+                                       inputId={id} describedBy={d} placeholder="Buscar empresa…" maxHeightClass="max-h-40" />
+                )}
+              </Field>
+            )}
+
+            {error && <p role="alert" className="text-etiqueta text-status-incidente">{error}</p>}
+            {/* La salida del callejón: si ya existe, usarla es lo que se venía a hacer. */}
+            {yaExiste && salida && (
+              <Button variant="secondary" className="w-full" disabled={guardando} onClick={() => usarExistente(yaExiste)}>
+                {salida.accion(nombreLegible(yaExiste.full_name))}
+              </Button>
+            )}
+          </form>
+        </PanelLateral>
       )}
-      {error && <p className="basis-full @max-md:order-1 text-etiqueta text-status-incidente">{error}</p>}
-      {/* La salida del callejón: si ya existe, usarla es lo que se venía a hacer. */}
-      {yaExiste && salida && (
-        <button type="button" disabled={guardando} onClick={() => usarExistente(yaExiste)}
-                className="basis-full @max-md:order-1 rounded-lg border border-status-incidente/35 bg-white px-3 py-1.5 text-etiqueta font-medium text-status-incidente hover:bg-status-incidente/10 disabled:opacity-50">
-          {salida.accion(nombreLegible(yaExiste.full_name))}
-        </button>
-      )}
-      </div>
-    </div>
+    </>
   )
 }

@@ -473,6 +473,7 @@ function EmpresaDetailPageInner() {
             // El alta compartida con el Cierre y Certificación (`AltaDeFlota`).
             <AltaDeFlota
               carrierId={id}
+              nombreEmpresa={carrierQuery.data?.business_name}
               tipo="conductor"
               prefill={handoffDriverName ?? undefined}
               abierto={addDriverOpen}
@@ -513,6 +514,7 @@ function EmpresaDetailPageInner() {
           form={addAssetOpen && (
             <AltaDeFlota
               carrierId={id}
+              nombreEmpresa={carrierQuery.data?.business_name}
               tipo="equipo"
               gestionesDeclaradas={carrierQuery.data?.management_types}
               prefill={handoffTractorPlate ?? undefined}

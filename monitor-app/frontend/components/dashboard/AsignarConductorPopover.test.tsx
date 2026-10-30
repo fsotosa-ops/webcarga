@@ -123,7 +123,7 @@ describe('AsignarConductorPopover', () => {
   it('el alta propone el nombre del TMS, ya legible', () => {
     render_(<AsignarConductorPopover {...base} candidatos={[]} />)
     fireEvent.click(screen.getByRole('button', { name: /dar de alta/i }))
-    expect(screen.getByLabelText('Nombre completo')).toHaveValue('Suarez Lopez Efrain Eduardo')
+    expect(screen.getByLabelText(/Nombre completo/)).toHaveValue('Suarez Lopez Efrain Eduardo')
   })
 
   // Era lo único que esta alta no tenía frente a la común (HU-28).

@@ -29,12 +29,16 @@ interface Props {
   /** Muestra "Escribe al menos N caracteres…" en vez de no renderizar nada bajo el mínimo */
   showMinCharsHint?: boolean
   helperText?:     React.ReactNode
+  /** El `id` del campo de búsqueda, para que una etiqueta de `Field` lo nombre.
+   *  Sin él, el campo se nombra solo ("Buscar empresa transportista"). */
+  inputId?:        string
+  describedBy?:    string
 }
 
 export function CarrierSearchPicker({
   query, onQueryChange, onPick, placeholder = 'Buscar empresa (nombre o RUT)…',
   excludeId, selectedId, minChars = 2, autoFocus, size = 'md',
-  maxHeightClass = 'max-h-40', showMinCharsHint = false, helperText,
+  maxHeightClass = 'max-h-40', showMinCharsHint = false, helperText, inputId, describedBy,
 }: Props) {
   const [pickingId, setPickingId] = useState<string | null>(null)
   const [err, setErr]             = useState<string | null>(null)
@@ -75,7 +79,9 @@ export function CarrierSearchPicker({
           autoFocus={autoFocus}
           onChange={e => onQueryChange(e.target.value)}
           placeholder={placeholder}
-          aria-label="Buscar empresa transportista"
+          id={inputId}
+          aria-label={inputId ? undefined : 'Buscar empresa transportista'}
+          aria-describedby={describedBy}
           className={inputCls}
         />
       </div>

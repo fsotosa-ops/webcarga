@@ -44,14 +44,20 @@ Pendientes, en orden:
    no habilitadas, así que hoy bloquearían o marcarían todo. Casos borde ya listados: granularidad
    (empresa o conductor y tracto), excepción con motivo, viaje en curso, "por vencer" no bloquea, viaje
    futuro, faltante sin fecha y aviso agrupado por sujeto y día.
-6. **Alta de conductor/equipo en Certificación (30/10): ARREGLADO, falta mirarlo en dev.** Salía angosta y con
-   los campos montados. Causa: la raíz de `AltaDeFlota` es un `@container` (`container-type: inline-size`, desde
-   `34b3fac9`), que no se mide por su contenido; Certificación la pone como ítem de una fila flex, así que quedaba
-   del ancho del padding (24 px medidos en una reproducción aislada). Arreglo en el componente compartido, no en el
-   anfitrión: la raíz abierta lleva `w-full` (contrato: ocupa el ancho de su lugar). Ficha de empresa y popover del
-   Monitor no cambian (ya eran bloques). **Siguiente paso:** en dev, Certificación › empresa nueva › "Agregar
-   conductor"/"Agregar equipo" a 1440 y 390; mirar también "Dar de alta a este conductor" en Pendientes del Cierre
-   (celda de tabla, mismo mecanismo). Deuda vista, no tocada: los botones del formulario no usan `Button` del kit.
+6. **Alta de conductor/equipo como diálogo (30/10): comiteada y en `dev`, falta mirarla en dev.** Salía angosta y
+   con los campos montados en Certificación. Causa: la raíz de `AltaDeFlota` era un `@container`, que no se mide por
+   su contenido, dentro de una fila flex (24 px medidos). Primero se subió `w-full` (`8b49b64e`); al revisarlo contra
+   el estándar el usuario eligió en el visual companion la opción A: **diálogo centrado del kit** (`PanelLateral
+   placement="center"`, como "Nuevo viaje"; Salesforce/Linear/Stripe). Campos con `Field` (etiqueta, asterisco,
+   ayuda), pie con `Button` (Cancelar / Agregar conductor|equipo), Enter guarda, no se cierra mientras guarda,
+   Cancelar descarta y vuelve a lo precargado, 409 muestra error y salida sin cerrar, RUT del TMS de solo lectura,
+   "Empresa" con su consecuencia cuando no viene dada. Sin container queries. Prop nueva `nombreEmpresa` ("Queda
+   asignado a X"); `CarrierSearchPicker` acepta `inputId`/`describedBy` para que lo nombre la etiqueta. 9 tests (2
+   mutaciones verificadas), tsc y build OK. Suite completa: 4 fallas bajo carga (14 min); `PasoViajesSection` pasa
+   sola y no usa el alta; las otras 3 no se identificaron (se cortó para no cargar la máquina del usuario: probar en
+   dev, no en local). **Siguiente paso:** ver en CI si vitest queda verde; en dev, Certificación › empresa › Agregar
+   conductor/equipo a 1440 y 390, ficha de empresa, popover del Monitor y Pendientes del Cierre, SIN guardar nada.
+   Deuda vista: `NewCarrierPanel` tiene la misma forma vieja (placeholder como etiqueta, botones crudos).
 5. Lección del día: un pedido de reunión (export de la Flota del día, 16/10) se perdió por no anotarse. Al revisar una
    reunión, pasar cada pedido al AGENTLOG o a una HU el mismo día.
 
