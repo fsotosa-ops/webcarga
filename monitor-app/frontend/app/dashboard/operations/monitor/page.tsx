@@ -26,7 +26,7 @@ import {
 } from '@/lib/utils/alertSignals'
 import { usePinnedAlertSignals } from '@/hooks/usePinnedAlertSignals'
 import { AlertsPopover } from '@/components/dashboard/AlertsPopover'
-import { AsignarConductorPopover } from '@/components/dashboard/AsignarConductorPopover'
+import { AsignarConductorDialog } from '@/components/dashboard/AsignarConductorDialog'
 import { useAnularViajes } from '@/hooks/useAnularViajes'
 import { useMotivosDeAnulacion } from '@/hooks/useMotivosDeAnulacion'
 import { BarraDeSeleccion } from '@/components/ui/BarraDeSeleccion'
@@ -42,7 +42,6 @@ import { MONITOR, monitorFiltersFromUrl } from '@/lib/navegacion/viaje'
 import { TRIP_STAGES, SIGNAL_TONE_TEXT, tripStageStyle } from '@/lib/states'
 import { STATUS_TONE_CLASS, STATUS_TONE_DOT } from '@/components/ui/StatusChip'
 import { PageContainer } from '@/components/ui/PageContainer'
-import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { Tabs } from '@/components/ui/Tabs'
 import { SearchInput } from '@/components/ui/SearchInput'
@@ -210,22 +209,12 @@ function DiarioPageInner() {
   // ── Identificar al conductor desde la tabla (2026-08-18) ───────────────
   const puedeEditar = usePermiso('trips.edit_sensitive')
   // El alta crea el conductor y lo vincula a su empresa: eso pide directory.edit.
-  const puedeDarDeAlta = usePermiso('directory.edit')
   // Vista rápida del tracto, el conductor o la empresa de una fila, como en el Cierre (D4).
   const puedeVerDirectorio = usePermiso('directory.read')
   const puedePedirDocumentos = usePermiso('certification.request')
   const quickView = useQuickView()
   const [asignando, setAsignando] = useState<Trip | null>(null)
   const [soloSinIdentificar, setSoloSinIdentificar] = useState(false)
-
-  // Los candidatos y los viajes REALES de esa persona vienen juntos del
-  // backend: el alcance que promete el popover se aplica a los ids que él
-  // devuelve, no a un conteo hecho acá sobre lo que la tabla tiene cargado.
-  const candidatosQuery = useQuery({
-    queryKey: ['driver-candidates', asignando?.driver_name_tms],
-    queryFn: () => tripsApi.driverCandidates(asignando!.driver_name_tms!),
-    enabled: Boolean(asignando?.driver_name_tms),
-  })
 
   const visibleTrips = useMemo(() => {
     let result = trips
@@ -665,36 +654,11 @@ function DiarioPageInner() {
         onImported={handleBulkImported}
         meta={tripsMeta}
       />
-      {asignando?.driver_name_tms && (
-        <Dialog label={`Asignar conductor a ${asignando.driver_name_tms}`} onClose={() => setAsignando(null)}
-          className="inset-0 m-auto h-fit w-fit animate-modal-in">
-            <AsignarConductorPopover
-              nombreTms={asignando.driver_name_tms}
-              candidatos={candidatosQuery.data?.candidatos ?? []}
-              viajesDeLaPersona={candidatosQuery.data?.trip_ids_de_la_persona.length ?? 0}
-              cargando={candidatosQuery.isLoading}
-              onCancelar={() => setAsignando(null)}
-              onAsignar={async (driverId, aTodos) => {
-                const ids = aTodos
-                  ? candidatosQuery.data?.trip_ids_de_la_persona ?? [asignando.id]
-                  : [asignando.id]
-                const asignado = await tripsApi.assignDriver(driverId, ids)
-                await queryClient.invalidateQueries({ queryKey: ['trips'] })
-                // Con aviso (empresa no habilitada) el popover queda abierto
-                // para mostrarlo; "Continuar" lo cierra (D1 §7.1).
-                if (asignado.warnings?.length) return asignado.warnings
-                setAsignando(null)
-              }}
-              // NO lleva try/catch acá a propósito: la promesa se le devuelve al
-              // popover, que es quien tiene el botón y por lo tanto quien puede
-              // mostrar el error, apagar el control y ofrecer la salida. Lo que
-              // sí importa es que `setAsignando(null)` viene DESPUÉS del await:
-              // si la API falla, el popover queda abierto con lo que se escribió.
-              // El alta es la común (AltaDeFlota): crea y después llama a onAsignar.
-              puedeDarDeAlta={puedeDarDeAlta}
-            />
-        </Dialog>
-      )}
+      {/* El emparejamiento de conductor, compartido con "Por regularizar" del Cierre. */}
+      <AsignarConductorDialog
+        viaje={asignando?.driver_name_tms ? { id: asignando.id, driver_name_tms: asignando.driver_name_tms } : null}
+        onClose={() => setAsignando(null)}
+      />
       <FleetCenterDialog
         open={showFleetCenter}
         fecha={today}
