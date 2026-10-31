@@ -97,6 +97,9 @@ Pendientes, en orden:
    disponibles) y el Cierre. Catálogo editable en Configuración › Operaciones › Nombres de relleno del TMS.
    Migración `20261109090000_tms_placeholder_driver_names` APLICADA en producción (ensayo con ROLLBACK +
    autorización del usuario, vía MCP de Supabase). La búsqueda del Monitor sigue leyendo el crudo a propósito.
+   **Verificado en dev (30/10, `20c11ef8`, sin guardar):** Equipo Completo › Por regularizar 58 viajes, lo del día
+   primero (30/10 → 29/10 → 28/10), columna "Estado del viaje", ya no aparece "POR CONFIRMAR"; Configuración ›
+   Operaciones › Nombres de relleno del TMS lista "POR CONFIRMAR" con "Nuevo nombre".
    Pendiente de decidir: `verify` del workflow del frontend (en paralelo sin bloquear / solo en main / quitarlo).
 5. Lección del día: un pedido de reunión (export de la Flota del día, 16/10) se perdió por no anotarse. Al revisar una
    reunión, pasar cada pedido al AGENTLOG o a una HU el mismo día.
