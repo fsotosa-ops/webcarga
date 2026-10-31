@@ -165,6 +165,18 @@ describe('FlotaDelDiaSection', () => {
     expect(screen.getByRole('checkbox', { name: 'Región, 0' })).toBeInTheDocument()
   })
 
+  it('la columna Estado del viaje dice lo que informa el TMS para el viaje de hoy', async () => {
+    const { dailyClosuresApi } = await import('@/lib/api/dailyClosures')
+    vi.mocked(dailyClosuresApi.get).mockResolvedValue({
+      ...DRIVERS_STATUS,
+      drivers: [driverRow({ ...LINE.assigned, driver_id: 'd1', full_name: 'Ana Soto', today_trip_status: 'RUTA' })],
+    })
+    await soloConductores()
+    renderSection()
+    expect(within((await screen.findByText('Ana Soto')).closest('tr')!).getByText('RUTA')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: /Estado del viaje/ })).toBeInTheDocument()
+  })
+
   it('un conductor sin tracto habitual lo dice, con el chip de su tipo de operación', async () => {
     // Antes la columna mostraba el tracto de su ÚLTIMO viaje de cualquier fecha
     // (`last_known_tractor_plate`) bajo el título "Tracto habitual": no era el

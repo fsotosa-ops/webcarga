@@ -32,6 +32,16 @@ describe('las filas de la Flota del día', () => {
     ])
   })
 
+  it('cada fila trae el estado del TMS de su viaje de hoy, venga del conductor o del tracto', () => {
+    const { drivers, equipment } = conTracto(
+      { asset_id: 'tr9', tractor_plate: 'BDLC92', status: 'ASSIGNED', driver_id: 'd9', trip_id: 't',
+        today_trip_status: 'RUTA' },
+      [driverRow({ ...LINE.assigned, driver_id: 'dx', full_name: 'Otro', today_trip_status: 'CERRADO FINALIZADO' })])
+    const filas = buildFleetRows(drivers, equipment, 'tractoreo')
+    expect(filas.find(f => f.secondary === 'BDLC92')?.tripStatus).toBe('RUTA')
+    expect(filas.find(f => f.primary === 'Otro')?.tripStatus).toBe('CERRADO FINALIZADO')
+  })
+
   it('Equipo Completo: una fila por equipo', () => {
     expect(buildFleetRows(DRIVERS_STATUS, EQUIPMENT_STATUS, 'equipo_completo').map(f => f.secondary)).toEqual(['XYZ111', 'XYZ222'])
   })

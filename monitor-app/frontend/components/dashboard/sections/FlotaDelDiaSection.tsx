@@ -142,6 +142,10 @@ export function FlotaDelDiaSection({
       ) },
     { id: 'tripCode', header: 'Nº viaje', value: r => r.tripCode,
       render: r => <span className="font-identificador text-informativo">{r.tripCode ?? '—'}</span> },
+    // El estado que informa el TMS para ese viaje (30/10): el mismo nombre de columna
+    // que en Viajes y en Por regularizar.
+    { id: 'tripStatus', header: 'Estado del viaje', value: r => r.tripStatus,
+      render: r => <span>{r.tripStatus ?? '—'}</span> },
     // Origen habitual DECLARADO. "Sin origen" es un pendiente del directorio, no un dato faltante.
     { id: 'cd', header: 'Origen habitual', value: r => r.cd, options: catalogoDeCds,
       render: r => <span className="text-informativo">{r.cd ?? 'Sin origen'}</span> },

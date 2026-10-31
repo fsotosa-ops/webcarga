@@ -63,6 +63,9 @@ SELECT dds.driver_id, d.full_name, d.tax_id, c.id AS carrier_id, c.business_name
        -- *"para no estar adivinando por que esta la patente nomas, no esta el
        -- numero de viaje, nada"*.
        today_trip.source_system_trip_id AS today_trip_code,
+       -- El estado que informa el TMS para ese viaje (30/10): sin él no se entiende
+       -- por qué una fila está como está.
+       today_trip.trip_status AS today_trip_status,
        today_trip.origen AS today_trip_origin,
        last_tractor.tractor_plate AS last_known_tractor_plate,
        last_tractor.operation_type AS last_known_operation_type,
@@ -140,7 +143,7 @@ LEFT JOIN LATERAL (
 -- distintas, dos columnas distintas: un NULL con dos significados es la
 -- clase de bug que este proyecto ya vio cinco veces.
 LEFT JOIN LATERAL (
-    SELECT t3.id AS trip_id, t3.source_system_trip_id, {origen_del_viaje('t3')} AS origen
+    SELECT t3.id AS trip_id, t3.source_system_trip_id, t3.trip_status, {origen_del_viaje('t3')} AS origen
     FROM app.trips t3
     JOIN app.v_trip_fleet_resolution vfr3 ON vfr3.trip_id = t3.id
     WHERE vfr3.resolved_driver_id = dds.driver_id

@@ -64,6 +64,8 @@ export type FleetRow = {
   unassignedReasonId: string | null
   validUntil: string | null
   tripCode: string | null
+  /** El estado que informa el TMS para el viaje de hoy; sin viaje, ninguno. */
+  tripStatus: string | null
   /** La zona del destino del viaje de hoy (la misma del Reporte); sin viaje, ninguna. */
   zone: string | null
   /** De dónde salió la carga HOY (el hecho del TMS). */
@@ -100,6 +102,7 @@ function filaDeConductor(d: FilaConductor, extra: Partial<FleetRow> = {}): Fleet
     unassignedReasonId: d.unassigned_reason_id,
     validUntil: d.valid_until,
     tripCode: d.today_trip_code,
+    tripStatus: d.today_trip_status ?? null,
     zone: d.destination_zone ?? null,
     origin: d.today_trip_origin,
     cd: d.home_cd_name,
@@ -136,6 +139,7 @@ function filaDeTracto(e: EquipmentDayStatusRow): FleetRow {
     unassignedReasonId: e.unassigned_reason_id,
     validUntil: e.valid_until,
     tripCode: e.today_trip_code,
+    tripStatus: e.today_trip_status ?? null,
     zone: e.destination_zone ?? null,
     origin: e.today_trip_origin,
     cd: e.home_cd_name,

@@ -91,6 +91,8 @@ SELECT
     -- el local de origen de HOY: el hecho del TMS. `home_cd_name` es la otra
     -- pregunta —de quien es la asistencia— y por eso van en columnas distintas.
     today_trip.source_system_trip_id AS today_trip_code,
+    -- El estado que informa el TMS para ese viaje (30/10).
+    today_trip.trip_status AS today_trip_status,
     today_trip.origen AS today_trip_origin,
     -- Generador de carga (quien pone la carga: Walmart, Iansa, Colun). Sale
     -- del MISMO lateral que ya lee app.trips, no de una consulta nueva. El
@@ -119,7 +121,7 @@ LEFT JOIN LATERAL (
 ) sd ON true
 LEFT JOIN LATERAL (
     SELECT t.id AS trip_id, vfr.resolved_driver_id AS trip_driver_id, td.full_name AS trip_driver_name,
-           t.source_system_trip_id, {origen_del_viaje('t')} AS origen,
+           t.source_system_trip_id, t.trip_status, {origen_del_viaje('t')} AS origen,
            {nombre_del_cliente('t', 'sh')} AS client_name
     FROM app.trips t
     JOIN app.v_trip_fleet_resolution vfr ON vfr.trip_id = t.id

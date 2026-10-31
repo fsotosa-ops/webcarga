@@ -1225,6 +1225,8 @@ export type DriverDayStatusRow = {
    *  la patente y nada más; Pablo, 04/09: *"para no estar adivinando por qué
    *  está la patente nomás, no está el número de viaje, nada"*. */
   today_trip_code:             string | null
+  /** El estado que informa el TMS para el viaje de hoy (30/10). Opcional: despliegues separados. */
+  today_trip_status?:          string | null
   today_trip_origin:           string | null
   /** La zona del destino del viaje de hoy (RM, Z0, Región, Sin clasificar), la misma
    *  del Reporte (`services/destination_zone.py`). Opcional: backend y frontend se
@@ -1449,7 +1451,7 @@ export type DailyClosureReportRow = Omit<
   // Tarea 7 (plan 2.4): _REPORT_SQL (backend) no trae estos campos —
   // solo _DETAIL_SQL (GET /daily-closures) los expone.
   | 'last_known_tractor_plate' | 'last_known_operation_type' | 'today_trip_id'
-  | 'today_trip_code' | 'today_trip_origin' | 'destination_zone' | 'comentario' | 'valid_until'
+  | 'today_trip_code' | 'today_trip_status' | 'today_trip_origin' | 'destination_zone' | 'comentario' | 'valid_until'
   // home_cd_name SÍ viaja en _REPORT_SQL (el pivot puede cortar por CD); el id, no.
   | 'home_cd_id'
 > & {
@@ -1498,6 +1500,8 @@ export type EquipmentDayStatusRow = {
    *  `home_cd_name` es la otra pregunta —de quién es la asistencia—, y por eso
    *  van en campos distintos. */
   today_trip_code:         string | null
+  /** El estado que informa el TMS para el viaje de hoy (30/10). Opcional: despliegues separados. */
+  today_trip_status?:      string | null
   today_trip_origin:       string | null
   /** La zona del destino del viaje de hoy, la misma del Reporte. Opcional (despliegues separados). */
   destination_zone?:       string | null

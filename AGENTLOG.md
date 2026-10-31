@@ -100,6 +100,8 @@ Pendientes, en orden:
    **Verificado en dev (30/10, `20c11ef8`, sin guardar):** Equipo Completo › Por regularizar 58 viajes, lo del día
    primero (30/10 → 29/10 → 28/10), columna "Estado del viaje", ya no aparece "POR CONFIRMAR"; Configuración ›
    Operaciones › Nombres de relleno del TMS lista "POR CONFIRMAR" con "Nuevo nombre".
+   Columna "Estado del viaje" también en la Flota del día (30/10): `today_trip_status` en `daily_closures` y
+   `equipment_closures` (mismo LATERAL del viaje de hoy), `FleetRow.tripStatus`, columna junto a "Nº viaje".
    Pendiente de decidir: `verify` del workflow del frontend (en paralelo sin bloquear / solo en main / quitarlo).
 5. Lección del día: un pedido de reunión (export de la Flota del día, 16/10) se perdió por no anotarse. Al revisar una
    reunión, pasar cada pedido al AGENTLOG o a una HU el mismo día.
