@@ -19,10 +19,22 @@
 > (**Ciclo de vida del Directorio con motivo (21/10)** cerrado y archivado: estado de baja único, acciones con motivo,
 > ambas migraciones aplicadas en la real. El test de sincronía de etapas del viaje (rojo desde el 17/10) quedó arreglado el mismo día.)
 
-### PARA LA PRÓXIMA SESIÓN (actualizado el 28/10 al cierre)
+### PARA LA PRÓXIMA SESIÓN (actualizado el 30/10 al cierre)
 
-Todo lo del 28/10 está comiteado, en `dev` y desplegado (último `53fd04c4`). En producción: migraciones
-`20261107090000` y `20261108090000` APLICADAS. Crismat reactivada desde la app: quedó en onboarding.
+Todo lo del 30/10 está comiteado y en `dev` (último `1215f9d5`). En producción: migración
+`20261109090000_tms_placeholder_driver_names` APLICADA (ensayo con ROLLBACK + autorización, vía MCP de Supabase).
+
+**Primero, el lunes:**
+- **Avisar a Operaciones (Pablo/Fabián) ANTES del primer cierre:** "Por regularizar" bloquea la firma y hoy arrastra
+  ~79 viajes de los últimos 45 días (52 Tractoreo / 57 Equipo Completo; 30 sin tipo cuentan en los dos). O los
+  limpian (completar asignación o "No se tomará el viaje") o firman con override.
+- **Mirar en dev la columna "Estado del viaje" de la Flota del día** (`1215f9d5`, sin verificar en pantalla).
+- **Decidir el `verify` del workflow del frontend** (tarda 3 min y bloquea el deploy de 1 min): recomendado
+  correrlo en paralelo sin bloquear (quitar `needs: verify`); alternativas: solo en `main`, o quitarlo.
+- Pendientes de la reunión del 30/10 que NO se hicieron: estado "No factible" de empresa con comentario
+  obligatorio; matriz de estados y reglas de negocio para el equipo (Felipe); tablero Jira/Trello con el Excel de
+  hallazgos de Enrique; exportar documentación en carpetas por empresa/conductor/equipo; separar la pestaña Viajes
+  en "abandonados por el TMS" con su estado (la columna ya está); regla "en ruta más de X días pasa a histórico".
 
 Pendientes, en orden:
 0. Configuración ordenada (22/10): CERRADA, con sus 6 menores, probada en dev. Detalle en `AGENTLOG_ARCHIVE.md`
@@ -44,33 +56,12 @@ Pendientes, en orden:
    no habilitadas, así que hoy bloquearían o marcarían todo. Casos borde ya listados: granularidad
    (empresa o conductor y tracto), excepción con motivo, viaje en curso, "por vencer" no bloquea, viaje
    futuro, faltante sin fecha y aviso agrupado por sujeto y día.
-6. **Diálogos del kit para altas + fuentes locales (30/10): en `dev`.** Alta de conductor/equipo como diálogo
-   centrado (`6cf365b3`), verificada en dev (Certificación, ficha › Conductores, 1440 y 390; sin guardar). "Nueva
-   empresa" con el mismo patrón y "RUT" en vez de "Tax ID" (`694c9d7f`). Fuentes en `app/fonts` con
-   `next/font/local` (`8435c417`): el deploy ya no depende de Google. Sin mirar en pantalla: popover del Monitor y
-   Pendientes del Cierre (necesitan un caso real). Detalle del kit: el pie gris de `PanelLateral` centrado deja las
-   esquinas de abajo rectas (todas las ventanas centradas).
-7. **Lo dado de baja no recibe documentación, por ningún camino (30/10): en `dev`, VERIFICADO en pantalla.**
-   Auditoría: la guarda vieja comparaba `<> 'ACTIVE'` (07/09, antes de onboarding) y estaba copiada en subir y
-   clasificar; onboarding no podía recibir archivos ("está dada de baja") y otros ocho caminos escribían sin regla en
-   empresas de baja. Decisión del usuario: la baja (temporal o definitiva) no acepta nada; un conductor/equipo dado de
-   baja tampoco; uno sin empresa vigente sí. **Arquitectura:** una regla en `backend/api/app/services/
-   certification_lock.py` (`locked_records`, `ensure_record_open`, `ensure_subject_open`) sobre `app.carrier_of` y
-   `CARRIER_STATUSES_IN_CERTIFICATION` / `FLEET_STATUSES_IN_CERTIFICATION` (nueva) en `schemas/states.py`, más
-   `CARRIER_STATUSES_IN_CERTIFICATION_SQL` (antes armada a mano en 2 servicios). La llaman: subir, carga en lote,
-   clasificar, planilla (error por fila), editar, borrar archivo, reasignar (origen y destino), solicitar, pedido de
-   Operaciones, subir a la bandeja y mover hacia una empresa (sacar de una de baja sí). `/pending` global y la
-   planilla por defecto pasan a activas + onboarding. Frontend: `acceptsDocuments` en `lib/states.ts` (espejo),
-   ficha de conductor/equipo oculta subir/revisar/pedir; los buscadores de destino de la bandeja filtran por estados
-   en certificación. **Tests:** `tests/test_certification_lock_integration.py` (13, contra Postgres en transacción
-   revertida, un test por camino; 2 mutaciones verificadas); los tests con mock usan el fixture opt-in
-   `regla_de_baja_probada_aparte`. Reactivar abre de nuevo (test: baja → 409 → reactivar con carpeta incompleta →
-   ONBOARDING → sube; conductor reactivado también, `9f54c58e`). Verificado en dev sin guardar: Albistur (onboarding)
-   muestra "Subir" por fila y "Subir documentos"; la ficha de un conductor dado de baja muestra sus documentos sin
-   "Subir" ni "Pedir"; Pendientes dice "Empresas activas y en onboarding…" y lista a Albistur y Crismat en
-   Póliza de Seguro Vigente › Faltan. Ojo: si la reactivación rige mañana (día firmado), hasta entonces rechaza.
-8. **"Por regularizar" de viajes en los dos alcances (30/10, reunión Granola "Webcarga 2.0"): listo, sin desplegar
-   todavía al escribir esto.** Bugs 1/3/4/5 de la reunión: viajes del día con datos incompletos (Sodimac con patente sin
+6. **Diálogos del kit para altas, fuentes locales y regla de lo dado de baja (30/10): CERRADOS y verificados en dev.**
+   Detalle en `AGENTLOG_ARCHIVE.md` (sección "2026-10-30 — Altas en diálogo, fuentes locales y lo dado de baja").
+   Quedó anotado, sin hacer: el pie gris de `PanelLateral` centrado deja rectas las esquinas de abajo (todo el kit), y
+   `NewCarrierPanel` ya tiene la forma nueva. Nada de esto bloquea.
+7. **"Por regularizar" de viajes en los dos alcances (30/10, reunión Granola "Webcarga 2.0"): DESPLEGADO y
+   verificado en dev.** Bugs 1/3/4/5 de la reunión: viajes del día con datos incompletos (Sodimac con patente sin
    conductor, "asignado a WebCarga" sin tercero, manuales) no llegaban al coordinador ni bloqueaban la firma.
    Decisiones del usuario: VIAJES en los dos alcances; bloquean la firma (override vigente); el día + pendientes de los
    45 días anteriores; tarjeta + "Completar asignación" + "No se tomará el viaje". Maqueta aprobada (visual companion,
